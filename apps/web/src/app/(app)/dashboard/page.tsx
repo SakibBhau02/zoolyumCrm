@@ -171,7 +171,7 @@ export default function DashboardPage() {
             <div className="mt-5 flex flex-wrap gap-2.5">
               <Link
                 href="/tasks"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-4 py-2 text-[12.5px] font-semibold text-white shadow-lg shadow-primary/30 transition-transform hover:scale-[1.02]"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-4 py-2 text-[12.5px] font-semibold text-white transition-transform hover:scale-[1.02]"
               >
                 <ListTodo className="size-4" /> Log time
               </Link>

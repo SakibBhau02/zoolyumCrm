@@ -10,7 +10,7 @@ function OrgNode({ node, depth = 0 }: { node: any; depth?: number }) {
         <Avatar name={node.name} size="size-6" />
         <p className="text-[12.5px] font-semibold">{node.name}</p>
         <p className="text-[11px] text-muted-foreground">{node.roleTitle}</p>
-        {depth === 0 && <span className="rounded-full bg-brand-gradient px-2 py-0.5 text-[9px] font-bold text-white shadow-md shadow-primary/25">Lead</span>}
+        {depth === 0 && <span className="rounded-full bg-brand-gradient px-2 py-0.5 text-[9px] font-bold text-white">Lead</span>}
       </div>
       {(node.directReports ?? []).map((c: any) => <OrgNode key={c.id} node={c} depth={depth + 1} />)}
     </div>

@@ -112,7 +112,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={busy}
-              className="mt-2 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient py-3 text-[13px] font-bold text-white shadow-lg shadow-primary/30 transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient py-3 text-[13px] font-bold text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? "Signing in…" : "Sign in"}
               <ArrowRight className="size-4" />

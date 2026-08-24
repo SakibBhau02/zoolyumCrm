@@ -343,7 +343,7 @@ export default function ReportsPage() {
                             className={cn(
                               "flex size-6 shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold",
                               i < 3
-                                ? "bg-brand-gradient text-white shadow-md shadow-primary/25"
+                                ? "bg-brand-gradient text-white"
                                 : "bg-muted text-muted-foreground"
                             )}
                           >

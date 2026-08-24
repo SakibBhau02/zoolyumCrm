@@ -21,7 +21,7 @@ export default function TabNav() {
           className={cn(
             "whitespace-nowrap rounded-lg px-3 py-1.5 text-[11.5px] font-semibold transition-all",
             active?.value === t.value
-              ? "bg-brand-gradient text-white shadow-md shadow-primary/25"
+              ? "bg-brand-gradient text-white"
               : "text-muted-foreground hover:text-foreground"
           )}
         >

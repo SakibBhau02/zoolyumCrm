@@ -1438,7 +1438,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
 
             <div className="flex flex-wrap gap-1.5">
               {([{ key: "overview", label: `Activity (${detail.activityLog?.length ?? 0})` }, { key: "subtasks", label: `Subtasks (${detail.subtasks?.length ?? 0})` }, { key: "comments", label: `Comments (${detail.comments?.length ?? 0})` }, { key: "time", label: `Time Log (${detail.timeLogs?.length ?? 0})` }, { key: "deps", label: `Dependencies (${detail.dependencies?.length ?? 0})` }, { key: "files", label: `Files & Links (${(detail.attachments?.length ?? 0) + (detail.referenceLinks?.length ?? 0)})` }] as const).map((t) => (
-                <button key={t.key} onClick={() => setTab(t.key)} className={cn("rounded-xl px-3 py-1.5 text-[11.5px] font-bold transition-all", tab === t.key ? "bg-brand-gradient text-white shadow-md shadow-primary/25" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground")}>{t.label}</button>
+                <button key={t.key} onClick={() => setTab(t.key)} className={cn("rounded-xl px-3 py-1.5 text-[11.5px] font-bold transition-all", tab === t.key ? "bg-brand-gradient text-white" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground")}>{t.label}</button>
               ))}
             </div>
 

@@ -64,7 +64,7 @@ export default function LandingPage() {
           </Link>
           <Link
             href="/login"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-4 py-2 text-[12.5px] font-bold text-white shadow-lg shadow-primary/25 transition-transform hover:scale-[1.02]"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-4 py-2 text-[12.5px] font-bold text-white shadow-primary/25 transition-transform hover:scale-[1.02]"
           >
             Sign in <ArrowRight className="size-3.5" />
           </Link>
@@ -98,7 +98,7 @@ export default function LandingPage() {
           <div className="mt-8 flex items-center justify-center gap-3">
             <Link
               href="/login"
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-6 py-3 text-[13px] font-bold text-white shadow-lg shadow-primary/30 transition-transform hover:scale-[1.02]"
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-6 py-3 text-[13px] font-bold text-white transition-transform hover:scale-[1.02]"
             >
               Open dashboard <ArrowRight className="size-4" />
             </Link>

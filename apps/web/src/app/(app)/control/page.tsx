@@ -1070,7 +1070,7 @@ function SettingsTab({ settings, settingsLoading, settingsError, saving, onSave,
               onClick={() => setSection(s.id)}
               className={cn(
                 "flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[12.5px] font-semibold transition-all",
-                section === s.id ? "bg-brand-gradient text-white shadow-md shadow-primary/25" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                section === s.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
               <s.icon className="size-4 shrink-0" />
@@ -1325,7 +1325,7 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
         </p>
         <div className="mt-6 flex justify-end gap-2">
           <button onClick={() => setDeleteUser(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
-          <button onClick={removeUser} disabled={deleting} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-lg shadow-rose-500/30 transition-all hover:scale-[1.02] disabled:opacity-60">
+          <button onClick={removeUser} disabled={deleting} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02] disabled:opacity-60">
             {deleting ? "Deleting…" : "Delete user"}
           </button>
         </div>
@@ -1552,7 +1552,7 @@ function DataTab({ audit, auditLoading, onRefresh, notify }: any) {
           </Field>
           <div className="flex justify-end gap-2">
             <button onClick={() => setDeleteOpen(false)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
-            <button onClick={wipe} disabled={confirm !== "DELETE" || deleting} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-lg shadow-rose-500/30 transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50">
+            <button onClick={wipe} disabled={confirm !== "DELETE" || deleting} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50">
               {deleting ? "Deleting…" : "Delete everything"}
             </button>
           </div>

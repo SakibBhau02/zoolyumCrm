@@ -91,7 +91,7 @@ export function SectionTitle({
 
 export function GradientBadge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground shadow-md shadow-primary/20">
+    <span className="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
       {children}
     </span>
   );
@@ -235,7 +235,7 @@ export function StatCard({
           {icon && (
             <div
               className={cn(
-                "flex size-10 shrink-0 items-center justify-center rounded-xl text-white shadow-md shadow-primary/20",
+                "flex size-10 shrink-0 items-center justify-center rounded-xl text-white",
                 ICON_GRADIENTS[index % ICON_GRADIENTS.length]
               )}
             >

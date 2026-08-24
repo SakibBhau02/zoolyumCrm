@@ -1072,7 +1072,7 @@ export default function AccountsPage() {
               if (deleteTarget === "client") deleteClient();
               else if (deleteTarget) removeContact(deleteTarget.id);
             }}
-            className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-lg shadow-rose-500/30 transition-all hover:scale-[1.02]"
+            className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02]"
           >
             Delete
           </button>

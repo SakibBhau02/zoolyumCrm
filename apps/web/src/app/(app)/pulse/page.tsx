@@ -2924,7 +2924,7 @@ export default function PulsePage() {
           ))}
         </ul>
         <div className="mt-5 flex justify-end">
-          <button onClick={() => setDupWarn(null)} className="rounded-xl bg-brand-gradient px-4 py-2 text-[12.5px] font-bold text-white shadow-lg shadow-primary/30">
+          <button onClick={() => setDupWarn(null)} className="rounded-xl bg-brand-gradient px-4 py-2 text-[12.5px] font-bold text-white">
             Understood
           </button>
         </div>
@@ -2939,7 +2939,7 @@ export default function PulsePage() {
           <button onClick={() => setDeleteLead(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             Cancel
           </button>
-          <button onClick={deleteLeadFn} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-lg shadow-rose-500/30 transition-all hover:scale-[1.02]">
+          <button onClick={deleteLeadFn} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02]">
             Delete
           </button>
         </div>

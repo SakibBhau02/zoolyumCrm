@@ -39,7 +39,7 @@ export function BrandLogo({
     return (
       <span className="flex items-center gap-2.5">
         <span
-          className={`flex items-center justify-center rounded-xl shadow-lg shadow-primary/20 ${isLarge ? "size-14 rounded-2xl" : "size-9"}`}
+          className={`flex items-center justify-center rounded-xl ${isLarge ? "size-14 rounded-2xl" : "size-9"}`}
           style={{
             background: "var(--primary, oklch(0.56 0.23 290))",
           }}

@@ -468,7 +468,7 @@ export default function PortalClientPage() {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-6 py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-gradient shadow-md shadow-primary/25">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-gradient">
               <Sparkles className="size-4 text-white" />
             </div>
             <div className="min-w-0">
@@ -495,7 +495,7 @@ export default function PortalClientPage() {
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11.5px] font-semibold transition-all",
                 tab === t.value
-                  ? "bg-brand-gradient text-white shadow-md shadow-primary/25"
+                  ? "bg-brand-gradient text-white"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -713,7 +713,7 @@ export default function PortalClientPage() {
                       className={cn(
                         "rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition-colors",
                         projFilter === f.key
-                          ? "bg-brand-gradient text-white shadow-md shadow-primary/25"
+                          ? "bg-brand-gradient text-white"
                           : "border border-border bg-card text-muted-foreground hover:text-foreground"
                       )}
                     >
@@ -881,7 +881,7 @@ export default function PortalClientPage() {
                         className={cn(
                           "rounded-full px-3 py-1 text-[11px] font-semibold transition-colors",
                           replyProject === g.project.id
-                            ? "bg-brand-gradient text-white shadow-md shadow-primary/25"
+                            ? "bg-brand-gradient text-white"
                             : "bg-muted text-muted-foreground hover:text-foreground"
                         )}
                       >

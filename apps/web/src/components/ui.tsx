@@ -181,7 +181,7 @@ export function Segmented<T extends string>({
           className={cn(
             "rounded-lg px-3 py-1.5 text-[11.5px] font-semibold transition-all",
             value === o.value
-              ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+              ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:text-foreground"
           )}
         >
@@ -229,10 +229,10 @@ export function FormActions({
         type="submit"
         disabled={busy}
         className={cn(
-          "rounded-xl px-4 py-2 text-[12.5px] font-bold text-white shadow-lg transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60",
+          "rounded-xl px-4 py-2 text-[12.5px] font-bold text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60",
           danger
-            ? "bg-rose-500 shadow-rose-500/30"
-            : "bg-primary text-primary-foreground shadow-primary/20 hover:bg-primary/90"
+            ? "bg-rose-500"
+            : "bg-primary text-primary-foreground hover:bg-primary/90"
         )}
       >
         {busy ? "Saving…" : submitLabel}
