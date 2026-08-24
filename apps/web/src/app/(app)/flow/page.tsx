@@ -196,15 +196,15 @@ function ProjectModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={editing ? `Edit project — ${editing.name}` : "New project"} size="xl">
+    <Modal open={open} onClose={onClose} title={editing ? `Edit project â€” ${editing.name}` : "New project"} size="xl">
       <form onSubmit={save} className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Project name *">
-            <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Website revamp — Acme" autoFocus />
+            <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Website revamp â€” Acme" autoFocus />
           </Field>
           <Field label="Client *">
             <Select value={f.clientId} onChange={(e) => setF({ ...f, clientId: e.target.value })}>
-              <option value="">Select client…</option>
+              <option value="">Select clientâ€¦</option>
               {(clients ?? []).map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
             </Select>
           </Field>
@@ -297,13 +297,13 @@ function ProjectModal({
           <p className="mb-3 text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Links</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Brief link">
-              <Input value={f.briefLink} onChange={(e) => setF({ ...f, briefLink: e.target.value })} placeholder="https://…" />
+              <Input value={f.briefLink} onChange={(e) => setF({ ...f, briefLink: e.target.value })} placeholder="https://â€¦" />
             </Field>
             <Field label="Drive link">
-              <Input value={f.driveLink} onChange={(e) => setF({ ...f, driveLink: e.target.value })} placeholder="https://…" />
+              <Input value={f.driveLink} onChange={(e) => setF({ ...f, driveLink: e.target.value })} placeholder="https://â€¦" />
             </Field>
             <Field label="Research link">
-              <Input value={f.researchLink} onChange={(e) => setF({ ...f, researchLink: e.target.value })} placeholder="https://…" />
+              <Input value={f.researchLink} onChange={(e) => setF({ ...f, researchLink: e.target.value })} placeholder="https://â€¦" />
             </Field>
           </div>
         </div>
@@ -376,15 +376,15 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense }: { finan
         </div>
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Margin</p>
-          <p className="mt-0.5 text-[13px] font-heading font-bold tabular-nums">{finance?.margin != null ? `${finance.margin}%` : "—"}</p>
+          <p className="mt-0.5 text-[13px] font-heading font-bold tabular-nums">{finance?.margin != null ? `${finance.margin}%` : "â€”"}</p>
         </div>
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Payment status</p>
-          <p className="mt-0.5 text-[13px] font-heading font-bold">{finance?.project?.paymentStatus ? label(finance.project.paymentStatus) : "—"}</p>
+          <p className="mt-0.5 text-[13px] font-heading font-bold">{finance?.project?.paymentStatus ? label(finance.project.paymentStatus) : "â€”"}</p>
         </div>
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Next billing</p>
-          <p className="mt-0.5 text-[13px] font-heading font-bold">{finance?.project?.nextBillingDate ? formatDate(finance.project.nextBillingDate) : "—"}</p>
+          <p className="mt-0.5 text-[13px] font-heading font-bold">{finance?.project?.nextBillingDate ? formatDate(finance.project.nextBillingDate) : "â€”"}</p>
         </div>
       </div>
 
@@ -431,7 +431,7 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense }: { finan
                 <Td className="text-right font-semibold tabular-nums">{formatBDT(e.amount)}</Td>
                 <Td className="text-muted-foreground">{formatDate(e.date)}</Td>
                 <Td><StatusBadge status={e.approvalStatus} /></Td>
-                <Td className="text-muted-foreground">{e.submittedBy ?? "—"}</Td>
+                <Td className="text-muted-foreground">{e.submittedBy ?? "â€”"}</Td>
               </Tr>
             ))}
           </tbody>
@@ -475,14 +475,14 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
     }
   };
   return (
-    <Modal open={open} onClose={onClose} title={`Create invoice — ${project?.name ?? ""}`}>
+    <Modal open={open} onClose={onClose} title={`Create invoice â€” ${project?.name ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
-        <Field label="Line description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Monthly retainer — August" autoFocus /></Field>
+        <Field label="Line description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Monthly retainer â€” August" autoFocus /></Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Amount (BDT) *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="25000" /></Field>
           <Field label="Due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
         </div>
-        <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Payment terms…" /></Field>
+        <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Payment termsâ€¦" /></Field>
         {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Create invoice" />
       </form>
@@ -516,9 +516,9 @@ function ProjectExpenseModal({ open, project, bankAccounts, onClose, onSaved }: 
     }
   };
   return (
-    <Modal open={open} onClose={onClose} title={`Add expense — ${project?.name ?? ""}`}>
+    <Modal open={open} onClose={onClose} title={`Add expense â€” ${project?.name ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
-        <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Google Ads — August" autoFocus /></Field>
+        <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Google Ads â€” August" autoFocus /></Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Amount (BDT) *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="8000" /></Field>
           <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{label(c)}</option>)}</Select></Field>
@@ -794,7 +794,7 @@ export default function FlowPage() {
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.message ?? "Import failed");
-      notify(`Imported ${body?.imported ?? 0} projects${body?.skipped?.length ? ` · skipped ${body.skipped.length}` : ""}`);
+      notify(`Imported ${body?.imported ?? 0} projects${body?.skipped?.length ? ` ï¿½ skipped ${body.skipped.length}` : ""}`);
       reload();
     } catch (e2: any) {
       notify(e2.message ?? "Import failed");
@@ -973,7 +973,7 @@ export default function FlowPage() {
         <span className="text-[10px] font-bold tabular-nums text-muted-foreground">{p.uid ?? ""}</span>
       </div>
       <h3 className="mt-2.5 truncate text-[13.5px] font-bold">{p.name}</h3>
-      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{p.client.companyName}{p.assignedPm ? ` · PM: ${p.assignedPm.name}` : ""}</p>
+      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{p.client.companyName}{p.assignedPm ? ` ï¿½ PM: ${p.assignedPm.name}` : ""}</p>
       <div className="mt-3">{progressBar(p)}</div>
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {badge(STATUS_STYLE[p.status] ?? STATUS_STYLE.PLANNING, label(p.status))}
@@ -1022,7 +1022,7 @@ export default function FlowPage() {
   };
 
   const fileSize = (n: number | null | undefined) =>
-    n == null ? "—" : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round((n ?? 0) / 1024))} KB`;
+    n == null ? "â€”" : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round((n ?? 0) / 1024))} KB`;
 
   const clearFilters = () => {
     setQ(""); setStatusFilter(""); setHealthFilter(""); setClientFilter(""); setManagerFilter("");
@@ -1038,7 +1038,7 @@ export default function FlowPage() {
         </motion.div>
       )}
       <PageHeader
-        title="Flow — Project Management"
+        title="Flow â€” Project Management"
         subtitle="Every engagement tracked end-to-end with predictive risk flagging."
         actions={
           <>
@@ -1051,7 +1051,7 @@ export default function FlowPage() {
               <Download className="size-3.5" /> Export
             </Btn>
             <Btn variant="ghost" onClick={() => importRef.current?.click()} className={importing ? "opacity-50" : ""}>
-              <Upload className="size-3.5" /> {importing ? "Importing…" : "Import"}
+              <Upload className="size-3.5" /> {importing ? "Importingâ€¦" : "Import"}
             </Btn>
             <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden" onChange={onPickImport} />
             <Btn variant="primary" onClick={() => setCreateOpen(true)}>
@@ -1067,11 +1067,11 @@ export default function FlowPage() {
             <StatCard label="In Progress" value={stats.active} sub="currently running" icon={<Rocket className="size-5" />} />
             <StatCard label="Completed" value={stats.completed} sub="delivered" icon={<CheckCircle2 className="size-5" />} />
             <StatCard label="Total Budget" value={formatBDT(stats.budget)} sub="across all projects" icon={<Wallet className="size-5" />} />
-            <StatCard label="Total Spent" value={formatBDT(stats.spent)} sub={stats.budget ? `${Math.round((stats.spent / stats.budget) * 100)}% of budget` : "—"} icon={<Wallet className="size-5" />} />
+            <StatCard label="Total Spent" value={formatBDT(stats.spent)} sub={stats.budget ? `${Math.round((stats.spent / stats.budget) * 100)}% of budget` : "â€”"} icon={<Wallet className="size-5" />} />
           </div>
           {stats.atRisk > 0 && (
             <button onClick={() => setHealthFilter("AT_RISK")} className="mt-3 flex w-full items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-left text-[11.5px] font-semibold text-amber-400 transition-colors hover:bg-amber-500/15">
-              <AlertTriangle className="size-3.5" /> {stats.atRisk} project{stats.atRisk > 1 ? "s" : ""} at risk or delayed — click to filter
+              <AlertTriangle className="size-3.5" /> {stats.atRisk} project{stats.atRisk > 1 ? "s" : ""} at risk or delayed â€” click to filter
             </button>
           )}
           <div className="mt-4">
@@ -1081,7 +1081,7 @@ export default function FlowPage() {
                 <input
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search by name, client or uid…"
+                  placeholder="Search by name, client or uidâ€¦"
                   className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
                 />
               </div>
@@ -1133,7 +1133,7 @@ export default function FlowPage() {
                   <TableShell
                     footer={
                       <>
-                        <span className="text-[11.5px] text-muted-foreground">{filtered.length} projects · on-time rate {overview?.onTimeRate ?? "—"}%</span>
+                        <span className="text-[11.5px] text-muted-foreground">{filtered.length} projects ï¿½ on-time rate {overview?.onTimeRate ?? "â€”"}%</span>
                         <Btn variant="ghost" onClick={() => setTab("capacity")}>Capacity planner</Btn>
                       </>
                     }
@@ -1159,13 +1159,13 @@ export default function FlowPage() {
                                     {p.name}
                                     {p.uid && <span className="text-[10.5px] font-semibold text-muted-foreground">{p.uid}</span>}
                                   </p>
-                                  <p className="text-[11px] text-muted-foreground">{p.client.companyName}{p.assignedPm ? ` · ${p.assignedPm.name}` : ""}{p.category ? ` · ${p.category}` : ""}</p>
+                                  <p className="text-[11px] text-muted-foreground">{p.client.companyName}{p.assignedPm ? ` ï¿½ ${p.assignedPm.name}` : ""}{p.category ? ` ï¿½ ${p.category}` : ""}</p>
                                 </div>
                               </div>
                             </Td>
                             <Td><StatusBadge status={p.status} /></Td>
                             <Td>{badge(PRIORITY_STYLE[p.priority ?? "MEDIUM"] ?? PRIORITY_STYLE.MEDIUM, p.priority ?? "MEDIUM")}</Td>
-                            <Td className="font-semibold tabular-nums">{p.progress != null ? `${p.progress}%` : "—"}</Td>
+                            <Td className="font-semibold tabular-nums">{p.progress != null ? `${p.progress}%` : "â€”"}</Td>
                             <Td>{budgetBar(p)}</Td>
                             <Td className="text-muted-foreground">{formatDate(p.targetEndDate)}</Td>
                             <Td>
@@ -1262,7 +1262,7 @@ export default function FlowPage() {
                         <Td>
                           <div className="flex items-center gap-2.5">
                             <ProgressRing value={Math.min(100, Math.max(0, m.utilizationPct ?? 0))} size={40} label={`${Math.round(m.utilizationPct ?? 0)}%`} />
-                            <span className="text-[11px] text-muted-foreground">{m.targetHours ? `${Math.round(((m.loggedHours ?? 0) / m.targetHours) * 100)}% of target` : "—"}</span>
+                            <span className="text-[11px] text-muted-foreground">{m.targetHours ? `${Math.round(((m.loggedHours ?? 0) / m.targetHours) * 100)}% of target` : "â€”"}</span>
                           </div>
                         </Td>
                         <Td>
@@ -1296,7 +1296,7 @@ export default function FlowPage() {
             <Avatar name={detail?.client?.companyName ?? "?"} />
             <div className="min-w-0">
               <h3 className="truncate font-heading text-[17px] font-semibold">{detail?.name ?? "Project"}</h3>
-              <p className="truncate text-[11px] text-muted-foreground">{detail?.client?.companyName ?? ""}{detail?.uid ? ` · ${detail.uid}` : ""}{detail?.code ? ` · ${detail.code}` : ""}</p>
+              <p className="truncate text-[11px] text-muted-foreground">{detail?.client?.companyName ?? ""}{detail?.uid ? ` ï¿½ ${detail.uid}` : ""}{detail?.code ? ` ï¿½ ${detail.code}` : ""}</p>
             </div>
           </div>
         }
@@ -1360,15 +1360,15 @@ export default function FlowPage() {
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <div className="rounded-2xl border border-border/60 p-3.5">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Budget</p>
-                <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{detail.budgetAmount != null ? formatBDT(detail.budgetAmount) : "—"}</p>
+                <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{detail.budgetAmount != null ? formatBDT(detail.budgetAmount) : "â€”"}</p>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                   <div className={`h-full rounded-full ${budgetPct(detail) >= 90 ? "bg-rose-500" : budgetPct(detail) >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, budgetPct(detail))}%` }} />
                 </div>
-                <p className="mt-1 text-[10px] text-muted-foreground">{formatBDT(detail.spentAmount ?? detail.budgetSpent ?? 0)} spent · {budgetPct(detail)}%</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">{formatBDT(detail.spentAmount ?? detail.budgetSpent ?? 0)} spent ï¿½ {budgetPct(detail)}%</p>
               </div>
               <div className="rounded-2xl border border-border/60 p-3.5">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Progress</p>
-                <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{detail.progress != null ? `${detail.progress}%` : "—"}</p>
+                <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{detail.progress != null ? `${detail.progress}%` : "â€”"}</p>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                   <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, detail.progress ?? 0)}%` }} />
                 </div>
@@ -1390,11 +1390,11 @@ export default function FlowPage() {
                 <AlertTriangle className="size-3.5" /> Risk profile
               </p>
               <div className="flex flex-wrap items-end gap-3">
-                <Field label="Score (0–100)">
+                <Field label="Score (0â€“100)">
                   <Input type="number" min={0} max={100} value={riskScore} onChange={(e) => setRiskScore(e.target.value)} className="!w-28" />
                 </Field>
                 <Field label="Driver">
-                  <Input value={riskDriver} onChange={(e) => setRiskDriver(e.target.value)} placeholder="Scope creep, key-person risk…" className="!min-w-52" />
+                  <Input value={riskDriver} onChange={(e) => setRiskDriver(e.target.value)} placeholder="Scope creep, key-person riskâ€¦" className="!min-w-52" />
                 </Field>
                 <Btn variant="outline" onClick={saveRisk} className={riskBusy ? "opacity-50" : ""}>
                   <RefreshCw className="size-3.5" /> Save
@@ -1412,14 +1412,14 @@ export default function FlowPage() {
               <Fact label="Target" value={formatDate(detail.targetEndDate)} />
               <Fact label="Budget" value={formatBDT(detail.budgetAmount)} />
               <Fact label="Spent" value={formatBDT(detail.spentAmount ?? detail.budgetSpent ?? 0)} />
-              <Fact label="Progress" value={detail.progress != null ? `${detail.progress}%` : "—"} />
-              <Fact label="PM" value={detail.assignedPm?.name ?? "—"} />
+              <Fact label="Progress" value={detail.progress != null ? `${detail.progress}%` : "â€”"} />
+              <Fact label="PM" value={detail.assignedPm?.name ?? "â€”"} />
               <Fact label="Tasks" value={`${detail.tasksCompleted ?? detail.tasks.length}/${detail.tasksTotal ?? detail.tasks.length}`} />
-              <Fact label="Category" value={detail.category || "—"} />
-              <Fact label="Priority" value={detail.priority ? label(detail.priority) : "—"} />
-              <Fact label="Billing" value={detail.billingType ? `${label(detail.billingType)}${detail.recurringInterval ? ` · ${detail.recurringInterval}` : ""}` : "—"} />
-              <Fact label="Next billing" value={detail.nextBillingDate ? formatDate(detail.nextBillingDate) : "—"} />
-              <Fact label="Payment" value={detail.paymentStatus ? label(detail.paymentStatus) : "—"} />
+              <Fact label="Category" value={detail.category || "â€”"} />
+              <Fact label="Priority" value={detail.priority ? label(detail.priority) : "â€”"} />
+              <Fact label="Billing" value={detail.billingType ? `${label(detail.billingType)}${detail.recurringInterval ? ` ï¿½ ${detail.recurringInterval}` : ""}` : "â€”"} />
+              <Fact label="Next billing" value={detail.nextBillingDate ? formatDate(detail.nextBillingDate) : "â€”"} />
+              <Fact label="Payment" value={detail.paymentStatus ? label(detail.paymentStatus) : "â€”"} />
               <Fact label="Total billed" value={formatBDT(detail.totalBilled)} />
             </div>
             <Segmented
@@ -1445,7 +1445,7 @@ export default function FlowPage() {
                       <div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase">Lead</p>
                         <p className="text-[12.5px] font-semibold">{detail.sourceLead.name}</p>
-                        <p className="text-[10.5px] text-muted-foreground">{detail.sourceLead.company ?? "—"} · source: {label(detail.sourceLead.source)} · {label(detail.sourceLead.vertical)}</p>
+                        <p className="text-[10.5px] text-muted-foreground">{detail.sourceLead.company ?? "â€”"} ï¿½ source: {label(detail.sourceLead.source)} ï¿½ {label(detail.sourceLead.vertical)}</p>
                       </div>
                       <div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase">Deal size</p>
@@ -1453,7 +1453,7 @@ export default function FlowPage() {
                       </div>
                       <div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase">Contact</p>
-                        <p className="text-[12.5px] font-semibold">{detail.sourceLead.contactEmail ?? detail.sourceLead.contactPhone ?? "—"}</p>
+                        <p className="text-[12.5px] font-semibold">{detail.sourceLead.contactEmail ?? detail.sourceLead.contactPhone ?? "â€”"}</p>
                       </div>
                       {detail.sourceProposal ? (
                         <div className="ml-auto">
@@ -1528,7 +1528,7 @@ export default function FlowPage() {
             {detailTab === "milestones" && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <Input value={msName} onChange={(e) => setMsName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addMilestone()} placeholder="Milestone name…" />
+                  <Input value={msName} onChange={(e) => setMsName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addMilestone()} placeholder="Milestone nameâ€¦" />
                   <Input type="date" value={msDue} onChange={(e) => setMsDue(e.target.value)} className="!w-40" />
                   <Btn variant="primary" onClick={addMilestone} className={msBusy ? "opacity-50" : ""}>
                     <Plus className="size-3.5" /> Add
@@ -1558,12 +1558,12 @@ export default function FlowPage() {
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-[11.5px] text-muted-foreground">{detail.files.length} attachments</span>
                   <Btn variant="outline" onClick={() => fileRef.current?.click()} className={uploading ? "opacity-50" : ""}>
-                    <Upload className="size-3.5" /> {uploading ? "Uploading…" : "Upload"}
+                    <Upload className="size-3.5" /> {uploading ? "Uploadingâ€¦" : "Upload"}
                   </Btn>
                   <input ref={fileRef} type="file" className="hidden" onChange={onPickFile} />
                 </div>
                 {!detail.files.length ? (
-                  <p className="text-[11.5px] text-muted-foreground">No files yet — upload the first one.</p>
+                  <p className="text-[11.5px] text-muted-foreground">No files yet â€” upload the first one.</p>
                 ) : (
                   detail.files.map((f) => (
                     <div key={f.id} className="flex flex-wrap items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
@@ -1572,7 +1572,7 @@ export default function FlowPage() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[12.5px] font-semibold">{f.fileName ?? f.name ?? "file"}</p>
-                        <p className="truncate text-[10.5px] text-muted-foreground">{fileSize(f.size)} · {f.uploadedBy?.name ?? "unknown"} · {timeAgo(f.uploadedAt)}</p>
+                        <p className="truncate text-[10.5px] text-muted-foreground">{fileSize(f.size)} ï¿½ {f.uploadedBy?.name ?? "unknown"} ï¿½ {timeAgo(f.uploadedAt)}</p>
                       </div>
                       <StatusBadge status={f.approvalStatus ?? "PENDING"} />
                       {f.approvalStatus !== "APPROVED" && (
@@ -1599,7 +1599,7 @@ export default function FlowPage() {
                     {[...Array(3)].map((_, i) => <SkeletonBlock key={i} className="h-14" />)}
                   </div>
                 ) : !discussions?.length ? (
-                  <p className="text-[11.5px] text-muted-foreground">No discussions yet — start the conversation.</p>
+                  <p className="text-[11.5px] text-muted-foreground">No discussions yet â€” start the conversation.</p>
                 ) : (
                   discussions.map((d) => {
                     const name = d.author?.name ?? d.portalUser?.name ?? "Team";
@@ -1619,7 +1619,7 @@ export default function FlowPage() {
                   })
                 )}
                 <div className="flex items-center gap-2 border-t border-border/60 pt-3">
-                  <Input value={msg} onChange={(e) => setMsg(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendDiscussion()} placeholder="Write a message…" />
+                  <Input value={msg} onChange={(e) => setMsg(e.target.value)} onKeyDown={(e) => e.key === "Enter" && sendDiscussion()} placeholder="Write a messageâ€¦" />
                   <Btn variant="primary" onClick={sendDiscussion} className={sending ? "opacity-50" : ""}>
                     <Send className="size-3.5" /> Send
                   </Btn>
@@ -1645,7 +1645,7 @@ export default function FlowPage() {
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[12.5px] font-semibold">{t.title}</p>
-                        <p className="text-[10.5px] text-muted-foreground">{t.assignedTo?.name ?? "unassigned"}{t.dueDate ? ` · due ${formatDate(t.dueDate)}` : ""}</p>
+                        <p className="text-[10.5px] text-muted-foreground">{t.assignedTo?.name ?? "unassigned"}{t.dueDate ? ` ï¿½ due ${formatDate(t.dueDate)}` : ""}</p>
                       </div>
                       <StatusBadge status={t.status} />
                       <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
@@ -1668,7 +1668,7 @@ export default function FlowPage() {
                 <EmptyState title="Finance data unavailable" hint="Could not load project finance." />
               ))}
             <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 flex items-center justify-between gap-2 border-t border-border/60 bg-card px-6 py-3.5">
-              <span className="text-[11.5px] text-muted-foreground">{detail.milestones.length} milestones · {detail.files.length} files · {detail.tasks.length} tasks</span>
+              <span className="text-[11.5px] text-muted-foreground">{detail.milestones.length} milestones ï¿½ {detail.files.length} files ï¿½ {detail.tasks.length} tasks</span>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Btn variant="outline" onClick={() => setFinExpOpen(true)}>
                   <ReceiptText className="size-3.5" /> Add Expense
@@ -1739,7 +1739,7 @@ export default function FlowPage() {
       />
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete project?">
         <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-          {deleteTarget ? `This permanently deletes "${deleteTarget.name}" and its milestones, files, and discussions. Tasks referencing it will be orphaned — proceed carefully.` : ""}
+          {deleteTarget ? `This permanently deletes "${deleteTarget.name}" and its milestones, files, and discussions. Tasks referencing it will be orphaned â€” proceed carefully.` : ""}
         </p>
         <div className="mt-6 flex justify-end gap-2">
           <button onClick={() => setDeleteTarget(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
