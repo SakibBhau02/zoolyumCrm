@@ -1,0 +1,1709 @@
+// Zoolyum OS — Prisma schema
+// Architecture: 9 domain modules (Pulse, Accounts, Flow, Tasks, People,
+// Capital, Insight, Portal, Control) over a single connected relational model.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Shared enums
+// ══════════════════════════════════════════════════════════════════════
+
+enum Vertical {
+  EDUCATION
+  HEALTHCARE
+  D2C
+  OTHER
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum HealthLevel {
+  GREEN
+  YELLOW
+  RED
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 9 — Control (Admin & Settings, RBAC)
+// ══════════════════════════════════════════════════════════════════════
+
+enum Module {
+  PULSE
+  ACCOUNTS
+  FLOW
+  TASKS
+  PEOPLE
+  CAPITAL
+  INSIGHT
+  PORTAL
+  CONTROL
+}
+
+enum AccessLevel {
+  NONE
+  VIEW
+  EDIT
+  APPROVE
+}
+
+model Role {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  description       String?
+  modulePermissions Json // { PULSE: {view,edit,approve}, ... }
+  users             User[]
+  createdAt         DateTime @default(now())
+}
+
+model User {
+  id                           String                   @id @default(cuid())
+  name                         String
+  email                        String                   @unique
+  passwordHash                 String
+  role                         Role                     @relation(fields: [roleId], references: [id])
+  roleId                       String
+  employee                     Employee?                @relation(fields: [employeeId], references: [id])
+  employeeId                   String?                  @unique
+  isActive                     Boolean                  @default(true)
+  createdAt                    DateTime                 @default(now())
+  lastLoginAt                  DateTime?
+  integrations                 Integration[]
+  leads                        Lead[]
+  leadActivities               LeadActivity[]
+  leadMeetings                 LeadMeeting[]
+  leadNotes                    LeadNote[]
+  clients                      Client[]
+  clientDocuments              ClientDocument[]
+  projects                     Project[]
+  projectFiles                 ProjectFile[]
+  taskComments                 TaskComment[]
+  attendanceCorrections        Attendance[]
+  attendanceCorrectionLogs     AttendanceCorrection[]
+  performanceReviews           PerformanceReview[]
+  submittedExpenses            Expense[]                @relation("ExpenseSubmitted")
+  approvedExpenses             Expense[]                @relation("ExpenseApproved")
+  leaveApprovals               LeaveRequest[]           @relation("LeaveApproval")
+  invoices                     Invoice[]
+  payments                     Payment[]
+  manualIncome                 ManualIncome[]
+  creditNotes                  CreditNote[]
+  journalEntries               JournalEntry[]
+  financeAuditLogs             FinanceAuditLog[]
+  reportDefinitions            ReportDefinition[]
+  dismissedCorrelationInsights CorrelationInsight[]
+  portalUsers                  PortalUser[]             @relation("PortalUserAccount")
+  clientComments               ClientComment[]
+  notifications                Notification[]
+  notificationPreferences      NotificationPreference[]
+}
+
+model Integration {
+  id             String            @id @default(cuid())
+  providerName   String
+  type           IntegrationType
+  status         IntegrationStatus @default(DISCONNECTED)
+  credentialsEnc String?
+  connectedBy    User?             @relation(fields: [connectedById], references: [id])
+  connectedById  String?
+  connectedAt    DateTime?
+  createdAt      DateTime          @default(now())
+}
+
+enum IntegrationType {
+  ADS
+  PAYMENT
+  BANKING
+  FX_RATE
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+}
+
+model BrandingConfig {
+  id                     String   @id @default(cuid())
+  logoUrl                String?
+  logoDarkUrl            String?
+  logoLightUrl           String?
+  appName                String?  @default("Zoolyum OS")
+  primaryColor           String?
+  secondaryColor         String?
+  invoiceNumberingFormat String   @default("ZLM-{year}-{seq}")
+  updatedAt              DateTime @updatedAt
+}
+
+model SystemAuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String
+  beforeValue Json?
+  afterValue  Json?
+  timestamp   DateTime @default(now())
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Cross-cutting — Notifications & Settings (Control)
+// ══════════════════════════════════════════════════════════════════════
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String // lead_assigned, task_assigned, invoice_paid, ...
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+model NotificationPreference {
+  id      String  @id @default(cuid())
+  userId  String
+  type    String // NEW_LEAD, TASK_REMINDER, INVOICE_PAID, CLIENT_MESSAGE, OVERDUE_PAYMENT, WEEKLY_REPORT
+  channel String // EMAIL, PUSH, SMS
+  enabled Boolean @default(true)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, channel])
+}
+
+model Settings {
+  id                 String   @id @default("default")
+  companyProfile     Json     @default("{}")
+  regional           Json     @default("{}")
+  invoiceTemplate    Json     @default("{}")
+  financeConfig      Json     @default("{}")
+  pipelineStages     Json     @default("[]")
+  leadCategories     Json     @default("[]")
+  clientTiers        Json     @default("[]")
+  healthScoreWeights Json     @default("[]")
+  taskStatuses       Json     @default("[]")
+  taskAutomation     Boolean  @default(true)
+  notifications      Json     @default("[]")
+  integrations       Json     @default("[]")
+  emailTemplates     Json     @default("[]")
+  appearance         Json     @default("{}")
+  updatedAt          DateTime @updatedAt
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 1 — Pulse (CRM / Lead Pipeline)
+// ══════════════════════════════════════════════════════════════════════
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  QUALIFIED
+  PROPOSAL_SENT
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  COMPLETED
+  MISSED
+}
+
+model LeadCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String?
+  createdAt DateTime @default(now())
+  leads     Lead[]
+}
+
+enum LeadSource {
+  FACEBOOK
+  REFERRAL
+  COLD
+  WEBSITE
+  EMAIL
+  OTHER
+  LINKEDIN
+  GOOGLE_ADS
+  WHATSAPP
+  COLD_CALL
+  EMAIL_CAMPAIGN
+  EVENT
+  PARTNER
+  INBOUND_PHONE
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model PipelineStage {
+  id      String @id @default(cuid())
+  name    String @unique
+  order   Int    @unique
+  slaDays Int    @default(5)
+}
+
+model LeadMeeting {
+  id           String        @id @default(cuid())
+  lead         Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId       String
+  title        String
+  type         MeetingType   @default(VIDEO_CALL)
+  scheduledAt  DateTime
+  durationMins Int           @default(30)
+  meetingLink  String?
+  location     String?
+  attendees    Json?
+  status       MeetingStatus @default(SCHEDULED)
+  notes        String?
+  createdBy    User?         @relation(fields: [createdById], references: [id])
+  createdById  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([leadId])
+}
+
+enum MeetingType {
+  CALL
+  VIDEO_CALL
+  IN_PERSON
+  DEMO
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Lead {
+  id                String          @id @default(cuid())
+  name              String
+  company           String?
+  contactEmail      String?
+  contactPhone      String?
+  source            LeadSource      @default(OTHER)
+  vertical          Vertical        @default(OTHER)
+  temperature       LeadTemperature @default(WARM)
+  leadCategory      LeadCategory?   @relation(fields: [leadCategoryId], references: [id], onDelete: SetNull)
+  leadCategoryId    String?
+  probability       Int             @default(50)
+  starred           Boolean         @default(false)
+  tags              String[]        @default([])
+  website           String?
+  pageLink          String?
+  uid               String?         @unique
+  stage             LeadStage       @default(NEW)
+  stageEnteredAt    DateTime?       @default(now())
+  priority          LeadPriority    @default(MEDIUM)
+  leadScore         Int?            @default(0) // weighted 0-100
+  estimatedDealSize Decimal?        @db.Decimal(14, 2)
+  currency          String          @default("BDT")
+  assignedTo        User?           @relation(fields: [assignedToId], references: [id])
+  assignedToId      String?
+  client            Client?         @relation("ClientFromLead", fields: [convertedClientId], references: [id])
+  convertedClientId String?         @unique // Client.id when won
+  lastContactedAt   DateTime?
+  firstResponseAt   DateTime?
+  nextFollowUpAt    DateTime?
+  notes             String?
+  createdAt         DateTime        @default(now())
+  activities        LeadActivity[]
+  followUps         LeadFollowUp[]
+  notesList         LeadNote[]
+  proposals         Proposal[]
+  meetings          LeadMeeting[]
+  projects          Project[]       @relation("ProjectSourceLead")
+  lostReason        LostReason?
+
+  @@index([stage])
+  @@index([assignedToId])
+  @@index([leadCategoryId])
+  @@index([leadScore])
+  @@index([createdAt])
+  @@index([nextFollowUpAt])
+  @@index([temperature])
+  @@index([priority])
+  @@index([stage, createdAt])
+}
+
+model LeadNote {
+  id          String   @id @default(cuid())
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId      String
+  content     String
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([leadId])
+  @@index([createdById])
+}
+
+model LeadFollowUp {
+  id        String         @id @default(cuid())
+  lead      Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId    String
+  date      DateTime
+  notes     String         @default("")
+  status    FollowUpStatus @default(SCHEDULED)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([leadId, status, date])
+}
+
+model LeadActivity {
+  id         String       @id @default(cuid())
+  lead       Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId     String
+  type       ActivityType
+  content    String
+  changes    Json?
+  loggedBy   User?        @relation(fields: [loggedById], references: [id])
+  loggedById String?
+  loggedAt   DateTime     @default(now())
+
+  @@index([leadId])
+  @@index([loggedAt])
+}
+
+enum ActivityType {
+  CREATED
+  UPDATED
+  STAGE_CHANGED
+  CALL
+  EMAIL
+  MEETING
+  NOTE
+  WHATSAPP
+  LINKEDIN
+}
+
+model Proposal {
+  id               String         @id @default(cuid())
+  lead             Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId           String
+  versionNumber    Int            @default(1)
+  fileUrl          String?
+  portalLink       String?
+  sentDate         DateTime?
+  viewed           Boolean        @default(false)
+  viewDurationSecs Int?           @default(0)
+  status           ProposalStatus @default(DRAFT)
+  project          Project?       @relation("ProjectSourceProposal")
+  createdAt        DateTime       @default(now())
+
+  @@index([leadId])
+}
+
+enum ProposalStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+model LostReason {
+  id             String             @id @default(cuid())
+  lead           Lead               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  leadId         String             @unique
+  reasonCategory LostReasonCategory
+  notes          String?
+  recordedAt     DateTime           @default(now())
+}
+
+enum LostReasonCategory {
+  PRICE
+  TIMING
+  COMPETITOR
+  GHOSTED
+  NO_BUDGET
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 2 — Accounts (Client Management)
+// ══════════════════════════════════════════════════════════════════════
+
+enum BillingCycleType {
+  MONTHLY_RETAINER
+  PROJECT_BASED
+  ONE_TIME
+}
+
+model Client {
+  id                 String            @id @default(cuid())
+  companyName        String
+  industryVertical   Vertical          @default(OTHER)
+  accountOwner       User?             @relation(fields: [accountOwnerId], references: [id])
+  accountOwnerId     String?
+  healthScore        Int?              @default(75) // 0-100 computed
+  healthLevel        HealthLevel       @default(GREEN)
+  healthDriver       String? // "Yellow — 2 overdue invoices"
+  billingCycleType   BillingCycleType  @default(MONTHLY_RETAINER)
+  currencyPreference String            @default("BDT")
+  contractStartDate  DateTime?
+  renewalDate        DateTime?
+  notes              String?
+  lead               Lead?             @relation("ClientFromLead")
+  createdAt          DateTime          @default(now())
+  contacts           ClientContact[]
+  documents          ClientDocument[]
+  healthLogs         ClientHealthLog[]
+  churnFlags         ChurnRiskFlag[]
+  projects           Project[]
+  invoices           Invoice[]
+  creditBalances     CreditBalance[]
+  creditNotes        CreditNote[]
+  expense            Expense[]
+  calendarEvents     CalendarEvent[]
+
+  @@index([accountOwnerId])
+}
+
+model ClientContact {
+  id                  String      @id @default(cuid())
+  client              Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId            String
+  name                String
+  roleTitle           String?
+  email               String?
+  phone               String?
+  isPrimary           Boolean     @default(false)
+  portalAccessEnabled Boolean     @default(false)
+  lastPortalLogin     DateTime?
+  portalUser          PortalUser?
+}
+
+model ClientDocument {
+  id           String        @id @default(cuid())
+  client       Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId     String
+  type         ClientDocType
+  fileUrl      String
+  uploadedBy   User?         @relation(fields: [uploadedById], references: [id])
+  uploadedById String?
+  isEncrypted  Boolean       @default(false)
+  uploadedAt   DateTime      @default(now())
+}
+
+enum ClientDocType {
+  MOU
+  PROPOSAL
+  BRAND_ASSET
+  CREDENTIAL
+}
+
+model ClientHealthLog {
+  id            String   @id @default(cuid())
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId      String
+  score         Int
+  driverSummary String?
+  recordedAt    DateTime @default(now())
+}
+
+model ChurnRiskFlag {
+  id             String    @id @default(cuid())
+  client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId       String
+  riskLevel      RiskLevel
+  matchedPattern String?
+  flaggedAt      DateTime  @default(now())
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 3 — Flow (Project Management)
+// ══════════════════════════════════════════════════════════════════════
+
+enum ProjectType {
+  RETAINER
+  FIXED
+  CAMPAIGN
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum HealthStatus {
+  ON_TRACK
+  AT_RISK
+  DELAYED
+}
+
+model ProjectTemplate {
+  id                    String    @id @default(cuid())
+  name                  String
+  description           String?
+  benchmarkDurationDays Int?
+  benchmarkHours        Int?
+  defaultTaskList       Json? // blueprint of tasks
+  projects              Project[]
+}
+
+model Project {
+  id                String           @id @default(cuid())
+  uid               String?          @unique
+  client            Client           @relation(fields: [clientId], references: [id])
+  clientId          String
+  name              String
+  type              ProjectType      @default(FIXED)
+  template          ProjectTemplate? @relation(fields: [templateId], references: [id])
+  templateId        String?
+  sourceLead        Lead?            @relation("ProjectSourceLead", fields: [sourceLeadId], references: [id], onDelete: SetNull)
+  sourceLeadId      String?
+  sourceProposal    Proposal?        @relation("ProjectSourceProposal", fields: [sourceProposalId], references: [id], onDelete: SetNull)
+  sourceProposalId  String?          @unique
+  startDate         DateTime
+  targetEndDate     DateTime?
+  status            ProjectStatus    @default(ACTIVE)
+  healthStatus      HealthStatus     @default(ON_TRACK)
+  riskScore         Int?             @default(0) // 0-100 calculated
+  riskDriver        String?
+  category          String?          @default("")
+  priority          String?          @default("MEDIUM")
+  progress          Int              @default(0)
+  budgetAmount      Decimal?         @db.Decimal(14, 2)
+  spentAmount       Decimal?         @db.Decimal(14, 2)
+  currency          String           @default("BDT")
+  team              String[]         @default([])
+  billingType       String           @default("ONE_TIME")
+  recurringInterval String?
+  nextBillingDate   DateTime?
+  monthlyRate       Decimal?         @db.Decimal(14, 2)
+  totalBilled       Decimal?         @db.Decimal(14, 2)
+  paymentStatus     String           @default("PENDING")
+  briefLink         String?
+  driveLink         String?
+  researchLink      String?
+  assignedPm        User?            @relation(fields: [assignedPmId], references: [id])
+  assignedPmId      String?
+  createdAt         DateTime         @default(now())
+  milestones        Milestone[]
+  files             ProjectFile[]
+  riskLogs          ProjectRiskLog[]
+  tasks             Task[]
+  invoices          Invoice[]
+  budgets           Budget[]
+  comments          ClientComment[]
+  expenses          Expense[]
+  contentPosts      ContentPost[]
+  calendarEvents    CalendarEvent[]
+
+  @@index([clientId])
+  @@index([assignedPmId])
+}
+
+model Milestone {
+  id            String          @id @default(cuid())
+  project       Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId     String
+  name          String
+  dueDate       DateTime?
+  status        MilestoneStatus @default(PENDING)
+  clientVisible Boolean         @default(false)
+  completedAt   DateTime?
+
+  @@index([projectId])
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PRODUCTION
+  REVIEW
+  COMPLETED
+}
+
+model ProjectFile {
+  id             String             @id @default(cuid())
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId      String
+  milestoneId    String?
+  fileUrl        String
+  versionNumber  Int                @default(1)
+  uploadedBy     User?              @relation(fields: [uploadedById], references: [id])
+  uploadedById   String?
+  approvalStatus FileApprovalStatus @default(PENDING)
+  uploadedAt     DateTime           @default(now())
+
+  @@index([projectId])
+  @@index([milestoneId])
+}
+
+enum FileApprovalStatus {
+  PENDING
+  APPROVED
+  REVISION_REQUESTED
+}
+
+model ProjectRiskLog {
+  id            String   @id @default(cuid())
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId     String
+  riskScore     Int
+  primaryDriver String?
+  calculatedAt  DateTime @default(now())
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 4 — Tasks (Task Management & Time)
+// ══════════════════════════════════════════════════════════════════════
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+  BLOCKED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Task {
+  id                 String           @id @default(cuid())
+  project            Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId          String?
+  title              String
+  description        String?
+  assignedTo         Employee?        @relation(fields: [assignedToId], references: [id])
+  assignedToId       String?
+  reporter           Employee?        @relation("taskReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  reporterId         String?
+  priority           Priority         @default(MEDIUM)
+  dueDate            DateTime?
+  startDate          DateTime?
+  taskType           String           @default("general") // general, bug, feature, improvement, research, design, documentation
+  status             TaskStatus       @default(TODO)
+  estimatedHours     Decimal?         @db.Decimal(8, 2)
+  actualHours        Decimal          @default(0) @db.Decimal(8, 2)
+  parentTaskId       String?
+  sortOrder          Int              @default(0)
+  isClientVisible    Boolean          @default(false)
+  isRecurring        Boolean          @default(false)
+  recurrenceSchedule String?
+  tags               String[]         @default([])
+  isBlocked          Boolean          @default(false)
+  archivedAt         DateTime?
+  referenceLinks     Json?            @default("[]") // [{id,title,url,type}]
+  attachments        Json?            @default("[]") // [{id,name,url,size,type,uploadedByName,uploadedAt}]
+  assignees          Json?            @default("[]") // [{id,name}] additional collaborators
+  customFields       Json?            @default("[]") // [{id,key,value}]
+  activityLog        Json?            @default("[]") // [{action, field, from, to, at, by}]
+  createdAt          DateTime         @default(now())
+  timeLogs           TimeLog[]
+  comments           TaskComment[]
+  dependencies       TaskDependency[] @relation("taskDependsOn")
+  dependents         TaskDependency[] @relation("dependsOnTask")
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([projectId])
+}
+
+model TaskDependency {
+  id              String @id @default(cuid())
+  task            Task   @relation("taskDependsOn", fields: [taskId], references: [id], onDelete: Cascade)
+  taskId          String
+  dependsOnTask   Task   @relation("dependsOnTask", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+  dependsOnTaskId String
+  type            String @default("blocked-by") // blocked-by, blocks, related
+
+  @@unique([taskId, dependsOnTaskId])
+}
+
+model TimeLog {
+  id         String    @id @default(cuid())
+  task       Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId     String
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  employeeId String?
+  hours      Decimal   @db.Decimal(6, 2)
+  date       DateTime
+  loggedVia  LoggedVia @default(MANUAL)
+  isBillable Boolean   @default(true)
+  notes      String?
+  createdAt  DateTime  @default(now())
+
+  @@index([taskId])
+  @@index([employeeId, date])
+}
+
+enum LoggedVia {
+  MANUAL
+  TIMER
+}
+
+model TaskComment {
+  id               String        @id @default(cuid())
+  task             Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId           String
+  parent           TaskComment?  @relation("commentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  parentId         String?
+  replies          TaskComment[] @relation("commentReplies")
+  author           User?         @relation(fields: [authorId], references: [id])
+  authorId         String?
+  content          String
+  mentionedUserIds Json?
+  reactions        Json?         @default("[]") // [{emoji, userIds[]}]
+  createdAt        DateTime      @default(now())
+}
+
+model EstimateAccuracyLog {
+  id             String    @id @default(cuid())
+  employee       Employee? @relation(fields: [employeeId], references: [id])
+  employeeId     String?
+  taskType       String?
+  estimatedHours Decimal?  @db.Decimal(8, 2)
+  actualHours    Decimal?  @db.Decimal(8, 2)
+  varianceRatio  Float?
+  taskId         String?
+  createdAt      DateTime  @default(now())
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 5 — People (HRM)
+// ══════════════════════════════════════════════════════════════════════
+
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  EXITED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  WFH
+}
+
+enum LeaveType {
+  CASUAL
+  SICK
+  EARNED
+  UNPAID
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PayrollStatus {
+  DRAFT
+  FINALIZED
+  PAID
+}
+
+model Employee {
+  id                 String                @id @default(cuid())
+  name               String
+  roleTitle          String
+  department         String?
+  email              String?
+  phone              String?
+  workLocation       String                @default("Remote")
+  employmentType     String                @default("full-time")
+  salary             Decimal?              @db.Decimal(14, 2)
+  payFrequency       String                @default("monthly")
+  documents          Json?                 @default("[]") // [{id,name,type,url,uploadedAt}]
+  careerHistory      Json?                 @default("[]") // [{event,title,date}]
+  joinDate           DateTime
+  reportingManager   Employee?             @relation("reportsTo", fields: [reportingManagerId], references: [id])
+  reportingManagerId String?
+  reports            Employee[]            @relation("reportsTo")
+  employmentStatus   EmploymentStatus      @default(ACTIVE)
+  costRate           Decimal?              @db.Decimal(14, 2) // restricted to Owner/HR/Finance
+  skillTags          String[]              @default([])
+  deviceId           String?               @unique // fingerprint device PIN / user ID
+  weeklyOffDays      String[]              @default([]) // per-employee override, empty = follow policy
+  shiftStart         String?               @default("10:00") // HH:mm override
+  shiftEnd           String?               @default("18:00")
+  graceMinutes       Int?                  // override
+  user               User?
+  attendance         Attendance[]
+  leaveRequests      LeaveRequest[]
+  leaveBalances      LeaveBalance[]
+  payrollRecords     PayrollRecord[]
+  performanceReviews PerformanceReview[]
+  utilizationLogs    UtilizationLog[]
+  attritionFlags     AttritionRiskFlag[]
+  tasks              Task[]
+  reportedTasks      Task[]                @relation("taskReporter")
+  timeLogs           TimeLog[]
+  estimateLogs       EstimateAccuracyLog[]
+  okrs               Okr[]
+  enrollments        TrainingEnrollment[]
+  punches            PunchLog[]
+  attendanceCorrections AttendanceCorrection[]
+}
+
+model Attendance {
+  id                  String           @id @default(cuid())
+  employee            Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId          String
+  date                DateTime         @db.Date
+  checkInTime         DateTime?
+  checkOutTime        DateTime?
+  status              AttendanceStatus @default(PRESENT)
+  isManuallyCorrected Boolean          @default(false)
+  correctedBy         User?            @relation(fields: [correctedById], references: [id])
+  correctedById       String?
+  corrections         AttendanceCorrection[]
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model LeaveRequest {
+  id           String      @id @default(cuid())
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId   String
+  leaveType    LeaveType
+  startDate    DateTime    @db.Date
+  endDate      DateTime    @db.Date
+  status       LeaveStatus @default(PENDING)
+  approvedBy   User?       @relation("LeaveApproval", fields: [approvedById], references: [id])
+  approvedById String?
+  appliedAt    DateTime    @default(now())
+}
+
+model LeaveBalance {
+  id          String    @id @default(cuid())
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId  String
+  leaveType   LeaveType
+  balanceDays Decimal   @db.Decimal(5, 1)
+  period      String // e.g. "2026"
+
+  @@unique([employeeId, leaveType, period])
+}
+
+model PayrollRecord {
+  id                   String        @id @default(cuid())
+  employee             Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId           String
+  period               String // "2026-07"
+  basicSalary          Decimal       @db.Decimal(14, 2)
+  allowances           Decimal       @default(0) @db.Decimal(14, 2)
+  deductions           Decimal       @default(0) @db.Decimal(14, 2)
+  unpaidLeaveDeduction Decimal       @default(0) @db.Decimal(14, 2)
+  lateDeduction        Decimal       @default(0) @db.Decimal(14, 2)
+  halfDayDeduction     Decimal       @default(0) @db.Decimal(14, 2)
+  absentDeduction      Decimal       @default(0) @db.Decimal(14, 2)
+  bonus                Decimal       @default(0) @db.Decimal(14, 2)
+  netPay               Decimal       @db.Decimal(14, 2)
+  status               PayrollStatus @default(DRAFT)
+  auditTrail           Json?         @default("[]")
+  breakdown            Json?         @default("{}") // {workingDays, divisor, dailyRate, lateCount, halfDays, absentDays}
+  salaryExpense        Expense?
+  createdAt            DateTime      @default(now())
+
+  @@index([period])
+}
+
+model PerformanceReview {
+  id               String    @id @default(cuid())
+  employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId       String
+  reviewPeriod     String
+  status           String    @default("PENDING") // PENDING | COMPLETED
+  selfScore        Decimal?  @db.Decimal(5, 2)
+  managerScore     Decimal?  @db.Decimal(5, 2)
+  objectiveSignals Json?     @default("{}")
+  goalsSet         Json?     @default("[]")
+  reviewedBy       User?     @relation(fields: [reviewedById], references: [id])
+  reviewedById     String?
+  reviewedAt       DateTime?
+  createdAt        DateTime  @default(now())
+}
+
+model UtilizationLog {
+  id              String   @id @default(cuid())
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId      String
+  weekStartDate   DateTime @db.Date
+  billableHours   Decimal  @db.Decimal(6, 2)
+  availableHours  Decimal  @db.Decimal(6, 2)
+  utilizationRate Float
+
+  @@unique([employeeId, weekStartDate])
+}
+
+model AttritionRiskFlag {
+  id                  String    @id @default(cuid())
+  employee            Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId          String
+  riskLevel           RiskLevel
+  contributingFactors String?
+  flaggedAt           DateTime  @default(now())
+}
+
+model Okr {
+  id              String   @id @default(cuid())
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId      String
+  title           String
+  quarter         String
+  keyResults      Json     @default("[]") // [{id,title,target,current}]
+  overallProgress Float    @default(0)
+  status          String   @default("on-track")
+  createdAt       DateTime @default(now())
+}
+
+model TrainingCourse {
+  id          String               @id @default(cuid())
+  title       String
+  description String               @default("")
+  type        String               @default("optional")
+  category    String               @default("technical")
+  duration    Float                @default(0)
+  provider    String               @default("")
+  format      String               @default("online")
+  enrollments TrainingEnrollment[]
+  createdAt   DateTime             @default(now())
+}
+
+model TrainingEnrollment {
+  id          String         @id @default(cuid())
+  course      TrainingCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId    String
+  employee    Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId  String
+  status      String         @default("enrolled")
+  progress    Float          @default(0)
+  enrolledAt  DateTime       @default(now())
+  completedAt DateTime?
+
+  @@unique([courseId, employeeId])
+}
+
+model Candidate {
+  id             String   @id @default(cuid())
+  firstName      String
+  lastName       String
+  email          String
+  phone          String   @default("")
+  position       String
+  department     String   @default("")
+  stage          String   @default("applied")
+  source         String   @default("")
+  appliedAt      String
+  notes          Json     @default("[]")
+  interviews     Json     @default("[]")
+  rating         Float    @default(0)
+  expectedSalary Decimal? @db.Decimal(14, 2)
+  skills         Json     @default("[]")
+  createdAt      DateTime @default(now())
+}
+
+model Holiday {
+  id          String   @id @default(cuid())
+  date        String   @unique // YYYY-MM-DD
+  name        String
+  description String?
+  tentative   Boolean  @default(false) // e.g. lunar Eid dates — confirm before payroll month
+  isGovernment Boolean @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model AttendancePolicy {
+  id              String   @id @default("default")
+  weeklyOffDays   String[] @default(["FRIDAY", "SATURDAY"])
+  graceMinutes    Int      @default(15)
+  shiftStart      String   @default("10:00")
+  shiftEnd        String   @default("18:00")
+  halfDayCutoff   String   @default("12:00")
+  lateLadder      Json     @default("[{\"lates\":3,\"days\":1},{\"lates\":6,\"days\":2},{\"lates\":9,\"days\":3}]")
+  dailyRateDivisor Int     @default(26) // 0 = auto (actual working days in month)
+  proRataEnabled  Boolean  @default(false)
+  updatedAt       DateTime @default(now()) @updatedAt
+}
+
+model PunchLog {
+  id           String    @id @default(cuid())
+  deviceId     String // PIN / user ID from the fingerprint device (or employee.deviceId for kiosk)
+  employee     Employee? @relation(fields: [employeeId], references: [id])
+  employeeId   String?
+  punchTime    DateTime
+  verifyMethod String?
+  workCode     String?
+  deviceSn     String?
+  source       String    @default("DEVICE") // DEVICE | CSV | KIOSK
+  isProcessed  Boolean   @default(false)
+  unmatched    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+
+  @@index([employeeId, punchTime])
+  @@index([punchTime])
+  @@index([unmatched])
+}
+
+model AttendanceCorrection {
+  id            String     @id @default(cuid())
+  attendance    Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  attendanceId  String
+  employee      Employee   @relation(fields: [employeeId], references: [id])
+  employeeId    String
+  field         String // checkInTime | checkOutTime | status
+  oldValue      String?
+  newValue      String?
+  reason        String?
+  correctedBy   User?      @relation(fields: [correctedById], references: [id])
+  correctedById String?
+  createdAt     DateTime   @default(now())
+
+  @@index([attendanceId])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 6 — Capital (Finance)
+// ══════════════════════════════════════════════════════════════════════
+
+enum AccountCategory {
+  REVENUE
+  DIRECT_COST
+  OPEX
+  ASSET
+  LIABILITY
+}
+
+model Account {
+  id                 String              @id @default(cuid())
+  code               String?
+  name               String
+  category           AccountCategory
+  isActive           Boolean             @default(true)
+  expenses           Expense[]
+  journalLines       JournalEntryLine[]
+  categoryDefs       ExpenseCategoryDef[]
+}
+
+model Vendor {
+  id          String    @id @default(cuid())
+  name        String
+  contactInfo String?
+  category    String?
+  email       String?
+  phone       String?
+  address     String?
+  paymentTerms String?
+  bankDetails String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  expenses    Expense[]
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Expense {
+  id                 String           @id @default(cuid())
+  description        String
+  amount             Decimal          @db.Decimal(14, 2)
+  currency           String           @default("BDT")
+  exchangeRate       Decimal?         @default(1) @db.Decimal(10, 4)
+  category           String           @default("MISC")
+  subcategory        String?
+  account            Account?         @relation(fields: [accountId], references: [id])
+  accountId          String?
+  date               DateTime         @db.Date
+  dueDate            DateTime?        @db.Date
+  isPayable          Boolean          @default(false)
+  paidAmount         Decimal?         @default(0) @db.Decimal(14, 2)
+  vendor             Vendor?          @relation(fields: [vendorId], references: [id])
+  vendorId           String?
+  paymentMethod      PaymentMethod    @default(CASH)
+  isClientBillable   Boolean          @default(false)
+  client             Client?          @relation(fields: [clientId], references: [id])
+  clientId           String?
+  project            Project?         @relation(fields: [projectId], references: [id])
+  projectId          String?
+  receiptUrl         String?
+  approvalStatus     ApprovalStatus   @default(APPROVED)
+  submittedBy        User?            @relation("ExpenseSubmitted", fields: [submittedById], references: [id])
+  submittedById      String?
+  approvedBy         User?            @relation("ExpenseApproved", fields: [approvedById], references: [id])
+  approvedById       String?
+  isRecurring        Boolean          @default(false)
+  recurrenceSchedule String?
+  linkedInvoiceLine  InvoiceLineItem?
+  bankAccount        BankAccount?     @relation(fields: [bankAccountId], references: [id])
+  bankAccountId      String?
+  balanceDeducted    Boolean          @default(false)
+  payrollRecord      PayrollRecord?   @relation(fields: [payrollRecordId], references: [id])
+  payrollRecordId    String?          @unique
+  payments           Payment[]
+  createdAt          DateTime         @default(now())
+
+  @@index([approvalStatus])
+  @@index([date])
+  @@index([clientId])
+  @@index([projectId])
+}
+
+model ExpenseCategoryDef {
+  id            String   @id @default(cuid())
+  key           String   @unique
+  name          String
+  subcategories Json     @default("[]") // string[] of subcategory labels
+  account       Account? @relation(fields: [accountId], references: [id])
+  accountId     String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
+
+enum InvoiceType {
+  ONE_TIME
+  RECURRING
+  ADVANCE
+  COMBINED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  VOID
+}
+
+model Invoice {
+  id            String            @id @default(cuid())
+  invoiceNumber String            @unique
+  client        Client            @relation(fields: [clientId], references: [id])
+  clientId      String
+  project       Project?          @relation(fields: [projectId], references: [id])
+  projectId     String?
+  currency      String            @default("BDT")
+  exchangeRate  Decimal?          @default(1) @db.Decimal(10, 4)
+  issueDate     DateTime          @db.Date
+  dueDate       DateTime?         @db.Date
+  status        InvoiceStatus     @default(DRAFT)
+  invoiceType   InvoiceType       @default(ONE_TIME)
+  taxApplicable Boolean           @default(false)
+  taxRate       Decimal?          @db.Decimal(5, 2)
+  notes         String?
+  createdBy     User?             @relation(fields: [createdById], references: [id])
+  createdById   String?
+  createdAt     DateTime          @default(now())
+  lineItems     InvoiceLineItem[]
+  payments      Payment[]
+  installments  Installment[]
+  creditNotes   CreditNote[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([issueDate])
+}
+
+enum RevenueTag {
+  AGENCY_REVENUE
+  PASS_THROUGH
+  MANAGEMENT_FEE
+}
+
+model InvoiceLineItem {
+  id              String     @id @default(cuid())
+  invoice         Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId       String
+  description     String
+  quantity        Decimal    @default(1) @db.Decimal(8, 2)
+  unitPrice       Decimal    @db.Decimal(14, 2)
+  amount          Decimal    @db.Decimal(14, 2)
+  revenueTag      RevenueTag @default(AGENCY_REVENUE)
+  linkedExpense   Expense?   @relation(fields: [linkedExpenseId], references: [id])
+  linkedExpenseId String?    @unique
+  milestoneId     String?
+}
+
+enum PaymentType {
+  IN
+  REFUND
+}
+
+enum PaymentMethod {
+  BKASH
+  NAGAD
+  CASH
+  BANK_TRANSFER
+  CARD
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  invoice         Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId       String?
+  expense         Expense?      @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  expenseId       String?
+  installment     Installment?  @relation(fields: [installmentId], references: [id])
+  installmentId   String?
+  type            PaymentType   @default(IN)
+  amount          Decimal       @db.Decimal(14, 2)
+  currency        String        @default("BDT")
+  exchangeRate    Decimal?      @default(1) @db.Decimal(10, 4)
+  paymentMethod   PaymentMethod
+  referenceId     String?
+  paymentDate     DateTime      @db.Date
+  recordedBy      User?         @relation(fields: [recordedById], references: [id])
+  recordedById    String?
+  notes           String?
+  bankAccount     BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  bankAccountId   String?
+  balanceCredited Boolean       @default(false)
+  creditNote      CreditNote?   @relation("RefundPayment")
+  createdAt       DateTime      @default(now())
+
+  @@index([paymentDate])
+  @@index([invoiceId])
+  @@index([expenseId])
+  @@index([bankAccountId])
+}
+
+model Installment {
+  id         String   @id @default(cuid())
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoiceId  String
+  sequence   Int
+  amount     Decimal  @db.Decimal(14, 2)
+  dueDate    DateTime @db.Date
+  status     String   @default("PENDING") // PENDING | PARTIAL | PAID
+  paidAmount Decimal  @default(0) @db.Decimal(14, 2)
+  payments   Payment[]
+  createdAt  DateTime @default(now())
+
+  @@index([invoiceId])
+}
+
+model ManualIncome {
+  id              String        @id @default(cuid())
+  description     String
+  amount          Decimal       @db.Decimal(14, 2)
+  currency        String        @default("BDT")
+  exchangeRate    Decimal?      @default(1) @db.Decimal(10, 4)
+  category        String        @default("OTHER_INCOME")
+  date            DateTime      @db.Date
+  paymentMethod   PaymentMethod @default(CASH)
+  bankAccount     BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  bankAccountId   String?
+  notes           String?
+  recordedBy      User?         @relation(fields: [recordedById], references: [id])
+  recordedById    String?
+  createdAt       DateTime      @default(now())
+
+  @@index([date])
+}
+
+enum CreditNoteType {
+  CREDIT_NOTE
+  REFUND
+  WRITE_OFF
+}
+
+model CreditNote {
+  id              String         @id @default(cuid())
+  referenceNumber String         @unique
+  type            CreditNoteType
+  client          Client         @relation(fields: [clientId], references: [id])
+  clientId        String
+  invoice         Invoice?       @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  invoiceId       String?
+  amount          Decimal        @db.Decimal(14, 2)
+  currency        String         @default("BDT")
+  exchangeRate    Decimal?       @default(1) @db.Decimal(10, 4)
+  reason          String
+  date            DateTime       @db.Date
+  status          String         @default("ISSUED") // ISSUED | APPLIED | VOID
+  createdBy       User?          @relation(fields: [createdById], references: [id])
+  createdById     String?
+  refundPayment   Payment?       @relation("RefundPayment", fields: [refundPaymentId], references: [id])
+  refundPaymentId String?        @unique
+  createdAt       DateTime       @default(now())
+
+  @@index([clientId])
+  @@index([date])
+}
+
+model JournalEntry {
+  id              String              @id @default(cuid())
+  entryType       String              // INVOICE | PAYMENT | EXPENSE | CREDIT_NOTE | REFUND | WRITE_OFF | MANUAL
+  reference       String
+  entryDate       DateTime            @db.Date
+  sourceId        String?
+  notes           String?
+  reversedEntry   JournalEntry?       @relation("EntryReversal", fields: [reversedEntryId], references: [id])
+  reversedEntryId String?             @unique
+  reversedEntries JournalEntry[]      @relation("EntryReversal")
+  createdBy       User?               @relation(fields: [createdById], references: [id])
+  createdById     String?
+  lines           JournalEntryLine[]
+  createdAt       DateTime            @default(now())
+
+  @@index([entryType])
+  @@index([entryDate])
+  @@index([sourceId])
+}
+
+model JournalEntryLine {
+  id        String       @id @default(cuid())
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  entryId   String
+  account   Account      @relation(fields: [accountId], references: [id])
+  accountId String
+  debit     Decimal      @default(0) @db.Decimal(14, 2)
+  credit    Decimal      @default(0) @db.Decimal(14, 2)
+  memo      String?
+
+  @@index([accountId])
+}
+
+model CreditBalance {
+  id                 String   @id @default(cuid())
+  client             Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId           String
+  amount             Decimal  @db.Decimal(14, 2)
+  currency           String   @default("BDT")
+  source             String
+  appliedToInvoiceId String?
+  createdAt          DateTime @default(now())
+}
+
+model Budget {
+  id           String      @id @default(cuid())
+  scopeType    BudgetScope
+  project      Project?    @relation(fields: [projectId], references: [id])
+  projectId    String?
+  departmentId String?
+  category     String?
+  budgetAmount Decimal     @db.Decimal(14, 2)
+  currency     String      @default("BDT")
+  periodStart  DateTime?
+  periodEnd    DateTime?
+}
+
+enum BudgetScope {
+  PROJECT
+  DEPARTMENT
+}
+
+model BankAccount {
+  id                    String                 @id @default(cuid())
+  accountName           String
+  accountType           BankAccountType
+  currency              String                 @default("BDT")
+  currentBalance        Decimal                @default(0) @db.Decimal(14, 2)
+  reconciliationRecords ReconciliationRecord[]
+  payments              Payment[]
+  expenses              Expense[]
+  manualIncome          ManualIncome[]
+}
+
+enum BankAccountType {
+  BANK
+  BKASH
+  NAGAD
+  CASH
+}
+
+enum MatchStatus {
+  MATCHED
+  UNMATCHED
+  MANUAL_REVIEW
+}
+
+model ReconciliationRecord {
+  id                 String      @id @default(cuid())
+  bankAccount        BankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  bankAccountId      String
+  statementDate      DateTime    @db.Date
+  statementAmount    Decimal     @db.Decimal(14, 2)
+  statementReference String?
+  matchedPaymentId   String?
+  matchStatus        MatchStatus @default(UNMATCHED)
+}
+
+model FinanceAuditLog {
+  id            String   @id @default(cuid())
+  entityType    String
+  entityId      String
+  action        String
+  performedBy   User?    @relation(fields: [performedById], references: [id])
+  performedById String?
+  beforeValue   Json?
+  afterValue    Json?
+  timestamp     DateTime @default(now())
+
+  @@index([timestamp])
+  @@index([entityType, entityId])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 10 — Calendar (Content Calendar & Monthly Planner)
+// ══════════════════════════════════════════════════════════════════════
+
+enum ContentPostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+}
+
+model ContentPost {
+  id            String            @id @default(cuid())
+  title         String
+  content       String            @default("")
+  platforms     Json              @default("[]") // ["facebook","instagram","twitter","linkedin","tiktok"]
+  scheduledDate String // YYYY-MM-DD
+  scheduledTime String            @default("10:00")
+  status        ContentPostStatus @default(DRAFT)
+  project       Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId     String?
+  hasImage      Boolean           @default(false)
+  hasVideo      Boolean           @default(false)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([status])
+  @@index([scheduledDate])
+}
+
+enum CalendarEventType {
+  CAMPAIGN
+  CONTENT
+  MEETING
+  DEADLINE
+  MILESTONE
+}
+
+model CalendarEvent {
+  id        String            @id @default(cuid())
+  title     String
+  type      CalendarEventType @default(MEETING)
+  date      String // YYYY-MM-DD
+  client    Client?           @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  clientId  String?
+  createdAt DateTime          @default(now())
+  project   Project?          @relation(fields: [projectId], references: [id])
+  projectId String?
+
+  @@index([date])
+  @@index([projectId])
+}
+
+model DailyTarget {
+  id        String   @id @default(cuid())
+  title     String
+  target    Float    @default(1)
+  current   Float    @default(0)
+  unit      String   @default("")
+  category  String   @default("sales")
+  period    String // YYYY-MM
+  createdAt DateTime @default(now())
+
+  @@index([period])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 4 — Tasks (Templates & Automation)
+// ══════════════════════════════════════════════════════════════════════
+
+model TaskTemplate {
+  id                    String   @id @default(cuid())
+  name                  String
+  description           String?
+  category              String?
+  benchmarkDurationDays Int?
+  benchmarkHours        Decimal? @db.Decimal(8, 2)
+  defaultTasks          Json     @default("[]") // [{title, priority, estimatedHours, subtasks:[]}]
+  createdAt             DateTime @default(now())
+}
+
+model AutomationRule {
+  id        String   @id @default(cuid())
+  name      String
+  trigger   String // status-changed, assigned, overdue
+  action    String // assign-to, set-status, add-tag
+  config    Json     @default("{}")
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 7 — Insight (Reports & Analytics)
+// ══════════════════════════════════════════════════════════════════════
+
+model ReportDefinition {
+  id          String    @id @default(cuid())
+  name        String
+  createdBy   User?     @relation(fields: [createdById], references: [id])
+  createdById String?
+  metrics     Json?     @default("[]")
+  dimensions  Json?     @default("[]")
+  filters     Json?     @default("{}")
+  schedule    String?
+  lastRunAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([createdAt])
+}
+
+model CorrelationInsight {
+  id              String    @id @default(cuid())
+  description     String
+  supportingData  Json?     @default("{}")
+  confidenceLevel Float?
+  surfacedAt      DateTime  @default(now())
+  dismissedBy     User?     @relation(fields: [dismissedById], references: [id])
+  dismissedById   String?
+  dismissedAt     DateTime?
+
+  @@index([surfacedAt])
+}
+
+model ExecutiveDigestLog {
+  id             String   @id @default(cuid())
+  period         String
+  generatedAt    DateTime @default(now())
+  snapshotData   Json?    @default("{}")
+  deliveryStatus String   @default("SENT")
+
+  @@index([generatedAt])
+}
+
+model MetricSnapshot {
+  id         String   @id @default(cuid())
+  metricName String
+  scope      String   @default("COMPANY")
+  scopeId    String?
+  value      Float
+  recordedAt DateTime @default(now())
+
+  @@index([metricName, recordedAt])
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// Module 8 — Portal (Client Portal)
+// ══════════════════════════════════════════════════════════════════════
+
+model PortalUser {
+  id                   String                @id @default(cuid())
+  clientContact        ClientContact         @relation(fields: [clientContactId], references: [id], onDelete: Cascade)
+  clientContactId      String                @unique
+  user                 User?                 @relation("PortalUserAccount", fields: [userId], references: [id])
+  userId               String?               @unique
+  passwordHash         String
+  lastLoginAt          DateTime?
+  isActive             Boolean               @default(true)
+  createdAt            DateTime              @default(now())
+  activities           PortalActivityLog[]
+  clientComments       ClientComment[]
+  deliverableApprovals DeliverableApproval[]
+}
+
+enum PortalAction {
+  VIEWED_INVOICE
+  APPROVED_DELIVERABLE
+  COMMENTED
+  LOGGED_IN
+}
+
+model PortalActivityLog {
+  id                String       @id @default(cuid())
+  portalUser        PortalUser   @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+  portalUserId      String
+  action            PortalAction
+  relatedEntityType String?
+  relatedEntityId   String?
+  timestamp         DateTime     @default(now())
+
+  @@index([timestamp])
+  @@index([portalUserId])
+}
+
+enum CommentSentiment {
+  NEUTRAL
+  POSITIVE
+  NEGATIVE_URGENT
+}
+
+model ClientComment {
+  id           String           @id @default(cuid())
+  project      Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String
+  portalUser   PortalUser?      @relation(fields: [portalUserId], references: [id])
+  portalUserId String?
+  author       User?            @relation(fields: [authorId], references: [id])
+  authorId     String?
+  content      String
+  sentiment    CommentSentiment @default(NEUTRAL)
+  createdAt    DateTime         @default(now())
+
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REVISION_REQUESTED
+}
+
+model DeliverableApproval {
+  id            String           @id @default(cuid())
+  projectFileId String
+  portalUser    PortalUser       @relation(fields: [portalUserId], references: [id])
+  portalUserId  String
+  decision      ApprovalDecision
+  revisionNotes String?
+  decidedAt     DateTime         @default(now())
+
+  @@index([decidedAt])
+  @@index([projectFileId])
+}
