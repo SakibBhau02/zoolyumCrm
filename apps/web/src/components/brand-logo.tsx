@@ -39,9 +39,9 @@ export function BrandLogo({
     return (
       <span className="flex items-center gap-2.5">
         <span
-          className={`flex items-center justify-center rounded-xl shadow-lg shadow-violet-600/30 ${isLarge ? "size-14 rounded-2xl" : "size-9"}`}
+          className={`flex items-center justify-center rounded-xl shadow-lg shadow-primary/20 ${isLarge ? "size-14 rounded-2xl" : "size-9"}`}
           style={{
-            background: "var(--brand-gradient, linear-gradient(135deg, oklch(0.56 0.23 290), oklch(0.6 0.21 310), oklch(0.62 0.16 220)))",
+            background: "var(--primary, oklch(0.56 0.23 290))",
           }}
         >
           <Sparkles className={isLarge ? "size-7 text-white" : "size-4.5 text-white"} />
