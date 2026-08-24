@@ -158,7 +158,7 @@ function BillingBadge({ billingType }: { billingType: string }) {
         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide",
         recurring
           ? "bg-sky-500/10 text-sky-600 ring-1 ring-sky-500/20 dark:text-sky-300"
-          : "bg-violet-500/10 text-violet-600 ring-1 ring-violet-500/20 dark:text-violet-300"
+          : "bg-primary/10 text-primary ring-1 ring-primary/20 dark:text-primary"
       )}
     >
       {recurring ? <RefreshCw className="size-3" /> : <Zap className="size-3" />}
@@ -468,7 +468,7 @@ export default function PortalClientPage() {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-6 py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-gradient shadow-md shadow-violet-500/25">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-gradient shadow-md shadow-primary/25">
               <Sparkles className="size-4 text-white" />
             </div>
             <div className="min-w-0">
@@ -495,7 +495,7 @@ export default function PortalClientPage() {
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11.5px] font-semibold transition-all",
                 tab === t.value
-                  ? "bg-brand-gradient text-white shadow-md shadow-violet-500/25"
+                  ? "bg-brand-gradient text-white shadow-md shadow-primary/25"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -564,7 +564,7 @@ export default function PortalClientPage() {
                             )}
                             <a
                               href={`mailto:${m.email}`}
-                              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-300"
+                              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary dark:hover:text-primary"
                               title={`Email ${m.name}`}
                             >
                               <Mail className="size-3.5" />
@@ -590,7 +590,7 @@ export default function PortalClientPage() {
                                 ) : a.action === "APPROVED_DELIVERABLE" ? (
                                   <CheckCircle2 className="size-3.5 text-emerald-500" />
                                 ) : (
-                                  <MessageSquare className="size-3.5 text-violet-500" />
+                                  <MessageSquare className="size-3.5 text-primary" />
                                 )}
                               </div>
                               <p className="flex-1 text-[12.5px]">
@@ -620,7 +620,7 @@ export default function PortalClientPage() {
                     ) : (
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         {dash.projects.map((p) => (
-                          <CardShell key={p.id} className="cursor-pointer transition-all hover:border-violet-500/30">
+                          <CardShell key={p.id} className="cursor-pointer transition-all hover:border-primary/30">
                             <div className="flex items-start justify-between gap-2">
                               <p className="text-[14px] font-semibold">{p.name}</p>
                               <StatusBadge status={p.status} />
@@ -644,7 +644,7 @@ export default function PortalClientPage() {
                       title="Recent invoices"
                       subtitle="Your latest invoices at a glance. Click a row to view and download."
                       actions={
-                        <button onClick={() => setTab("invoices")} className="text-[12.5px] font-semibold text-violet-600 underline-offset-2 hover:underline dark:text-violet-300">
+                        <button onClick={() => setTab("invoices")} className="text-[12.5px] font-semibold text-primary underline-offset-2 hover:underline dark:text-primary">
                           View all →
                         </button>
                       }
@@ -713,7 +713,7 @@ export default function PortalClientPage() {
                       className={cn(
                         "rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition-colors",
                         projFilter === f.key
-                          ? "bg-brand-gradient text-white shadow-md shadow-violet-500/25"
+                          ? "bg-brand-gradient text-white shadow-md shadow-primary/25"
                           : "border border-border bg-card text-muted-foreground hover:text-foreground"
                       )}
                     >
@@ -731,7 +731,7 @@ export default function PortalClientPage() {
                           : true
                     )
                     .map((p) => (
-                      <CardShell key={p.id} className="cursor-pointer transition-all hover:border-violet-500/30">
+                      <CardShell key={p.id} className="cursor-pointer transition-all hover:border-primary/30">
                         <div onClick={() => setOpenProject(p)}>
                           <div className="flex items-start justify-between gap-2">
                             <p className="text-[14px] font-semibold">{p.name}</p>
@@ -750,7 +750,7 @@ export default function PortalClientPage() {
                           <p className="mt-1.5 text-[11px] text-muted-foreground">
                             {p.progress}% complete · {p.milestones.length} milestones · {p.tasks.length} tasks
                           </p>
-                          <p className="mt-3 text-[11.5px] font-medium text-violet-600 dark:text-violet-300">View details →</p>
+                          <p className="mt-3 text-[11.5px] font-medium text-primary dark:text-primary">View details →</p>
                         </div>
                       </CardShell>
                     ))}
@@ -881,7 +881,7 @@ export default function PortalClientPage() {
                         className={cn(
                           "rounded-full px-3 py-1 text-[11px] font-semibold transition-colors",
                           replyProject === g.project.id
-                            ? "bg-brand-gradient text-white shadow-md shadow-violet-500/25"
+                            ? "bg-brand-gradient text-white shadow-md shadow-primary/25"
                             : "bg-muted text-muted-foreground hover:text-foreground"
                         )}
                       >
@@ -963,7 +963,7 @@ export default function PortalClientPage() {
                     )}
                     <a
                       href={`mailto:${m.email}`}
-                      className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground transition-colors hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-300"
+                      className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary dark:hover:text-primary"
                       title={`Email ${m.name}`}
                     >
                       <Mail className="size-3.5" />
@@ -1075,7 +1075,7 @@ export default function PortalClientPage() {
                         href={f.fileUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-semibold text-violet-600 transition-colors hover:bg-violet-500/10 dark:text-violet-300"
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-semibold text-primary transition-colors hover:bg-primary/10 dark:text-primary"
                       >
                         View
                         <ExternalLink className="size-3.5" />

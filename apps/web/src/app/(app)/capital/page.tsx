@@ -26,7 +26,7 @@ const EXPENSE_STATUSES = ["PENDING", "APPROVED", "REJECTED"];
 const label = (v: string) => v.replace(/_/g, " ").toLowerCase();
 
 const CAT_TONES: Record<string, string> = {
-  AD_SPEND: "bg-violet-500/10 text-violet-600 dark:text-violet-300 ring-1 ring-violet-500/20",
+  AD_SPEND: "bg-primary/10 text-primary dark:text-primary ring-1 ring-primary/20",
   MARKETING: "bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-300 ring-1 ring-fuchsia-500/20",
   FREELANCER: "bg-sky-500/10 text-sky-600 dark:text-sky-300 ring-1 ring-sky-500/20",
   PRODUCTION: "bg-amber-500/10 text-amber-600 dark:text-amber-300 ring-1 ring-amber-500/20",
@@ -39,7 +39,7 @@ const CAT_TONES: Record<string, string> = {
 };
 
 const ENTITY_TONES: Record<string, string> = {
-  INVOICE: "bg-violet-500/15 text-violet-300",
+  INVOICE: "bg-primary/15 text-primary",
   PAYMENT: "bg-emerald-500/15 text-emerald-400",
   EXPENSE: "bg-amber-500/15 text-amber-400",
   VENDOR: "bg-sky-500/15 text-sky-400",
@@ -134,7 +134,7 @@ function InvoiceFormModal({ open, onClose, clients, projects, onSaved }: { open:
           <Field label="Tax">
             <div className="flex items-center gap-2">
               <label className="flex cursor-pointer items-center gap-1.5 text-[12px]">
-                <input type="checkbox" checked={f.taxApplicable} onChange={(e) => setF({ ...f, taxApplicable: e.target.checked })} className="size-3.5 accent-violet-500" />
+                <input type="checkbox" checked={f.taxApplicable} onChange={(e) => setF({ ...f, taxApplicable: e.target.checked })} className="size-3.5 accent-primary" />
                 Apply tax
               </label>
               {f.taxApplicable && <Input type="number" min={0} max={100} value={f.taxRate} onChange={(e) => setF({ ...f, taxRate: e.target.value })} placeholder="%" className="!w-20" />}
@@ -156,7 +156,7 @@ function InvoiceFormModal({ open, onClose, clients, projects, onSaved }: { open:
                 <button type="button" onClick={() => setF({ ...f, lines: f.lines.filter((_, idx) => idx !== i) })} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="size-3.5" /></button>
               </div>
             ))}
-            <button type="button" onClick={() => setF({ ...f, lines: [...f.lines, { description: "", unitPrice: "", quantity: "1" }] })} className="flex items-center gap-1 text-[11.5px] font-bold text-violet-400 transition-colors hover:text-violet-300"><Plus className="size-3" /> Add line item</button>
+            <button type="button" onClick={() => setF({ ...f, lines: [...f.lines, { description: "", unitPrice: "", quantity: "1" }] })} className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3" /> Add line item</button>
             <div className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2">
               <span className="text-[11.5px] font-semibold text-muted-foreground">Total</span>
               <span className="text-[13px] font-bold tabular-nums">{formatBDT(total)}</span>
@@ -242,7 +242,7 @@ function EditInvoiceModal({ invoice, onClose, clients, projects, onSaved }: { in
           <Field label="Tax">
             <div className="flex items-center gap-2">
               <label className="flex cursor-pointer items-center gap-1.5 text-[12px]">
-                <input type="checkbox" checked={f.taxApplicable} onChange={(e) => setF({ ...f, taxApplicable: e.target.checked })} className="size-3.5 accent-violet-500" />
+                <input type="checkbox" checked={f.taxApplicable} onChange={(e) => setF({ ...f, taxApplicable: e.target.checked })} className="size-3.5 accent-primary" />
                 Apply tax
               </label>
               {f.taxApplicable && <Input type="number" min={0} max={100} value={f.taxRate} onChange={(e) => setF({ ...f, taxRate: e.target.value })} placeholder="%" className="!w-20" />}
@@ -263,7 +263,7 @@ function EditInvoiceModal({ invoice, onClose, clients, projects, onSaved }: { in
                 <button type="button" onClick={() => setF({ ...f, lines: f.lines.filter((_, idx) => idx !== i) })} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="size-3.5" /></button>
               </div>
             ))}
-            <button type="button" onClick={() => setF({ ...f, lines: [...f.lines, { description: "", unitPrice: "", quantity: "1" }] })} className="flex items-center gap-1 text-[11.5px] font-bold text-violet-400 transition-colors hover:text-violet-300"><Plus className="size-3" /> Add line item</button>
+            <button type="button" onClick={() => setF({ ...f, lines: [...f.lines, { description: "", unitPrice: "", quantity: "1" }] })} className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3" /> Add line item</button>
             <div className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2">
               <span className="text-[11.5px] font-semibold text-muted-foreground">Total</span>
               <span className="text-[13px] font-bold tabular-nums">{formatBDT(total)}</span>
@@ -398,7 +398,7 @@ function InstallmentModal({ invoice, open, onClose, onSaved }: { invoice: any; o
         ) : (
           <>
             <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
-              <input type="checkbox" checked={custom} onChange={(e) => setCustom(e.target.checked)} className="size-4 rounded accent-violet-500" />
+              <input type="checkbox" checked={custom} onChange={(e) => setCustom(e.target.checked)} className="size-4 rounded accent-primary" />
               Custom amounts & dates
             </label>
             {!custom ? (
@@ -419,7 +419,7 @@ function InstallmentModal({ invoice, open, onClose, onSaved }: { invoice: any; o
                     <button type="button" onClick={() => setRows(rows.filter((_, idx) => idx !== i))} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="size-3.5" /></button>
                   </div>
                 ))}
-                <button type="button" onClick={() => setRows([...rows, { amount: "", dueDate: "" }])} className="flex items-center gap-1 text-[11.5px] font-bold text-violet-400 transition-colors hover:text-violet-300"><Plus className="size-3" /> Add installment</button>
+                <button type="button" onClick={() => setRows([...rows, { amount: "", dueDate: "" }])} className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3" /> Add installment</button>
               </div>
             )}
           </>
@@ -737,7 +737,7 @@ function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories, vendor
         </div>
         <div className="grid grid-cols-2 gap-4">
           <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
-            <input type="checkbox" checked={f.billable} onChange={(e) => setF({ ...f, billable: e.target.checked })} className="size-4 rounded accent-violet-500" />
+            <input type="checkbox" checked={f.billable} onChange={(e) => setF({ ...f, billable: e.target.checked })} className="size-4 rounded accent-primary" />
             Client billable (pass-through)
           </label>
           <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
@@ -1070,7 +1070,7 @@ function CategoriesModal({ open, categories, accounts, onClose, onSaved }: { ope
             <Field label="GL account"><Select value={f.accountId} onChange={(e) => setF({ ...f, accountId: e.target.value })}><option value="">No account</option>{(accounts ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.code ? `${a.code} — ` : ""}{a.name}</option>)}</Select></Field>
             {editing && (
               <label className="flex cursor-pointer items-center gap-2 pt-4 text-[12.5px] font-medium">
-                <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-4 rounded accent-violet-500" />
+                <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-4 rounded accent-primary" />
                 Active
               </label>
             )}
@@ -1094,7 +1094,7 @@ function CategoriesModal({ open, categories, accounts, onClose, onSaved }: { ope
                   <Td className="text-[11.5px] text-muted-foreground">{(c.subcategories ?? []).slice(0, 3).join(", ")}{(c.subcategories ?? []).length > 3 ? ` +${c.subcategories.length - 3}` : ""}</Td>
                   <Td className="text-[11.5px]">{c.account ? `${c.account.code} — ${c.account.name}` : "—"}</Td>
                   <Td><StatusBadge status={c.isActive ? "Active" : "Inactive"} /></Td>
-                  <Td><button onClick={() => startEdit(c)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-violet-500/10 hover:text-violet-400" title="Edit"><Pencil className="size-3.5" /></button></Td>
+                  <Td><button onClick={() => startEdit(c)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="Edit"><Pencil className="size-3.5" /></button></Td>
                 </Tr>
               ))}
             </tbody>
@@ -1826,7 +1826,7 @@ function ReportsTab({ reports, aging, forecast, statements, apAging, budgets, pr
                 const remaining = Number(b.budgetAmount) - spent;
                 return (
                   <Tr key={b.id} index={i}>
-                    <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold", b.scopeType === "PROJECT" ? "bg-violet-500/10 text-violet-500 ring-1 ring-violet-500/20" : "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20")}>{label(b.scopeType)}</span></Td>
+                    <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold", b.scopeType === "PROJECT" ? "bg-primary/10 text-primary ring-1 ring-primary/20" : "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20")}>{label(b.scopeType)}</span></Td>
                     <Td className="font-medium">{b.project?.name ?? label(b.category ?? "—")}</Td>
                     <Td className="text-right font-semibold tabular-nums">{formatBDT(b.budgetAmount)}</Td>
                     <Td className="text-right tabular-nums text-rose-500">{formatBDT(spent)}</Td>
@@ -1834,7 +1834,7 @@ function ReportsTab({ reports, aging, forecast, statements, apAging, budgets, pr
                     <Td className="text-[11px] text-muted-foreground">{b.periodStart ? `${formatDate(b.periodStart)} → ${b.periodEnd ? formatDate(b.periodEnd) : "open"}` : "All time"}</Td>
                     <Td>
                       <div className="flex items-center gap-0.5">
-                        <button onClick={() => { setBudgetEdit(b); setBudgetOpen(true); }} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-violet-500/10 hover:text-violet-400" title="Edit"><Pencil className="size-3.5" /></button>
+                        <button onClick={() => { setBudgetEdit(b); setBudgetOpen(true); }} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="Edit"><Pencil className="size-3.5" /></button>
                         <button onClick={() => deleteBudget(b.id)} disabled={budgetBusy} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500 disabled:opacity-50" title="Delete"><Trash2 className="size-3.5" /></button>
                       </div>
                     </Td>
@@ -2013,7 +2013,7 @@ function AccountModal({ open, onClose, onSaved, editing }: { open: boolean; onCl
         <Field label="Account name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Insurance" autoFocus /></Field>
         {editing && (
           <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
-            <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-4 rounded accent-violet-500" />
+            <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-4 rounded accent-primary" />
             Active (usable for new entries)
           </label>
         )}
@@ -2062,12 +2062,12 @@ function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSaved }: {
                 <Tr key={a.id} index={i}>
                   <Td className="font-mono text-[12px] tabular-nums text-muted-foreground">{a.code ?? "—"}</Td>
                   <Td className="font-medium">{a.name}</Td>
-                  <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold", a.category === "ASSET" ? "bg-emerald-500/10 text-emerald-500 ring-1 ring-emerald-500/20" : a.category === "LIABILITY" ? "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20" : a.category === "REVENUE" ? "bg-violet-500/10 text-violet-500 ring-1 ring-violet-500/20" : "bg-sky-500/10 text-sky-500 ring-1 ring-sky-500/20")}>{label(a.category)}</span></Td>
+                  <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold", a.category === "ASSET" ? "bg-emerald-500/10 text-emerald-500 ring-1 ring-emerald-500/20" : a.category === "LIABILITY" ? "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20" : a.category === "REVENUE" ? "bg-primary/10 text-primary ring-1 ring-primary/20" : "bg-sky-500/10 text-sky-500 ring-1 ring-sky-500/20")}>{label(a.category)}</span></Td>
                   <Td className={cn("text-right font-semibold tabular-nums", balanceOf(a.id) < 0 ? "text-rose-500" : "")}>{formatBDT(balanceOf(a.id))}</Td>
                   <Td><StatusBadge status={a.isActive ? "Active" : "Inactive"} /></Td>
                   <Td>
                     <div className="flex items-center gap-0.5">
-                      <button onClick={() => onEdit(a)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-violet-500/10 hover:text-violet-400" title="Edit"><Pencil className="size-3.5" /></button>
+                      <button onClick={() => onEdit(a)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="Edit"><Pencil className="size-3.5" /></button>
                       {a.isActive && <button onClick={() => onDelete(a)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500" title="Deactivate"><Trash2 className="size-3.5" /></button>}
                     </div>
                   </Td>
@@ -2131,7 +2131,7 @@ function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved }: { v
                     <Td><StatusBadge status={v.isActive ? "Active" : "Inactive"} /></Td>
                     <Td>
                       <div className="flex items-center gap-0.5">
-                        <button onClick={() => onEdit(v)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-violet-500/10 hover:text-violet-400" title="Edit"><Pencil className="size-3.5" /></button>
+                        <button onClick={() => onEdit(v)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="Edit"><Pencil className="size-3.5" /></button>
                         <button onClick={() => onDelete(v)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500" title="Delete"><Trash2 className="size-3.5" /></button>
                       </div>
                     </Td>
@@ -2161,7 +2161,7 @@ function ActivityTab({ activity, refresh }: { activity: any[] | null; refresh: (
               <div className="flex flex-col gap-2.5">
                 {activity.map((a) => (
                   <div key={a.id} className="flex items-start gap-3">
-                    <span className={cn("mt-1 size-2 shrink-0 rounded-full", a.entityType === "PAYMENT" ? "bg-emerald-500" : a.entityType === "EXPENSE" ? "bg-amber-400" : a.entityType === "INVOICE" ? "bg-violet-500" : "bg-sky-400")} />
+                    <span className={cn("mt-1 size-2 shrink-0 rounded-full", a.entityType === "PAYMENT" ? "bg-emerald-500" : a.entityType === "EXPENSE" ? "bg-amber-400" : a.entityType === "INVOICE" ? "bg-primary" : "bg-sky-400")} />
                     <div className="min-w-0 flex-1 rounded-xl border border-border/60 px-3 py-2">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase", ENTITY_TONES[a.entityType] ?? "bg-muted text-muted-foreground")}>{label(a.entityType)}</span>

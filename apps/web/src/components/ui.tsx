@@ -82,7 +82,7 @@ export function Modal({
             transition={{ duration: 0.22, ease: EASE }}
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              "card-lift max-h-[92vh] w-full overflow-y-auto rounded-2xl border border-border/60 bg-card p-6 shadow-2xl shadow-violet-500/10",
+              "card-lift max-h-[92vh] w-full overflow-y-auto rounded-2xl border border-border/60 bg-card p-6 shadow-2xl shadow-primary/10",
               size === "md" && "max-w-md",
               size === "lg" && "max-w-2xl",
               size === "xl" && "max-w-4xl"

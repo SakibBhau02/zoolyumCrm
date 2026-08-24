@@ -59,7 +59,7 @@ export function Tr({
       transition={{ duration: 0.35, delay: index * 0.04, ease: EASE }}
       onClick={onClick}
       className={cn(
-        "border-b border-border/40 transition-colors last:border-0 hover:bg-violet-50/40 dark:hover:bg-violet-950/30",
+        "border-b border-border/40 transition-colors last:border-0 hover:bg-primary/40 dark:hover:bg-primary/30",
         className
       )}
     >

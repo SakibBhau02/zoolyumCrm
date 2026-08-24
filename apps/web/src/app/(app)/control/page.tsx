@@ -1070,7 +1070,7 @@ function SettingsTab({ settings, settingsLoading, settingsError, saving, onSave,
               onClick={() => setSection(s.id)}
               className={cn(
                 "flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[12.5px] font-semibold transition-all",
-                section === s.id ? "bg-brand-gradient text-white shadow-md shadow-violet-500/25" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                section === s.id ? "bg-brand-gradient text-white shadow-md shadow-primary/25" : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
               <s.icon className="size-4 shrink-0" />
@@ -1152,7 +1152,7 @@ function UserFormModal({ open, onClose, roles, initial, onSaved }: any) {
         </Field>
         {editing && (
           <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
-            <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-3.5 accent-violet-500" />
+            <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-3.5 accent-primary" />
             Account active
           </label>
         )}
@@ -1357,9 +1357,9 @@ function RolesTab({ roles, loading, error, onRetry }: any) {
                   <div>
                     <p className="flex items-center gap-2 font-heading text-[15px] font-semibold">
                       {r.name}
-                      {r.name === "Owner" && <ShieldCheck className="size-4 text-violet-400" />}
+                      {r.name === "Owner" && <ShieldCheck className="size-4 text-primary" />}
                     </p>
-                    {r.name === "Owner" && <p className="mt-0.5 text-[11px] font-bold text-violet-400">Full access to every module</p>}
+                    {r.name === "Owner" && <p className="mt-0.5 text-[11px] font-bold text-primary">Full access to every module</p>}
                   </div>
                   <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{r._count?.users ?? 0} users</span>
                 </div>
@@ -1380,7 +1380,7 @@ function RolesTab({ roles, loading, error, onRetry }: any) {
                             <Tr key={m} index={i}>
                               <Td className="text-[12px] font-medium">{label(m)}</Td>
                               {["view", "edit", "approve"].map((k) => (
-                                <Td key={k}><input type="checkbox" checked={!!p?.[k]} disabled className="size-3.5 accent-violet-500" /></Td>
+                                <Td key={k}><input type="checkbox" checked={!!p?.[k]} disabled className="size-3.5 accent-primary" /></Td>
                               ))}
                             </Tr>
                           );

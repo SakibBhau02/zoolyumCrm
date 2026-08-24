@@ -1,0 +1,20 @@
+import { test, expect } from "@playwright/test";
+
+test("staff can view an invoice from the capital Invoices tab", async ({ page }) => {
+  await page.goto("/login");
+  await page.getByPlaceholder("you@zoolyum.com").fill("sakib@zoolyum.com");
+  await page.getByPlaceholder("••••••••").fill("zoolyum123");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.waitForURL(/\/dashboard/);
+
+  await page.goto("/capital?tab=invoices");
+  await expect(page.locator("tbody tr").first()).toBeVisible();
+
+  const firstRow = page.locator("tbody tr").first();
+  const invoiceNumber = (await firstRow.locator("td").first().innerText()).trim().split("\n")[0];
+  await firstRow.click();
+
+  await expect(page.getByText(invoiceNumber, { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("Line items", { exact: true })).toBeVisible();
+  await expect(page.getByText("Download PDF", { exact: true })).toBeVisible();
+});

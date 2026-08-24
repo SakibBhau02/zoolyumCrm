@@ -81,7 +81,7 @@ export function Sidebar() {
                     className={cn(
                       "group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[12.5px] font-medium transition-colors",
                       active
-                        ? "bg-sidebar-primary text-white shadow-lg shadow-violet-600/25"
+                        ? "bg-sidebar-primary text-white shadow-lg shadow-primary/25"
                         : "text-white/70 hover:bg-sidebar-accent hover:text-white"
                     )}
                   >
@@ -96,7 +96,7 @@ export function Sidebar() {
                       <span
                         className={cn(
                           "rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide",
-                          active ? "bg-white/25 text-white" : "bg-violet-500/15 text-violet-300"
+                          active ? "bg-white/25 text-white" : "bg-primary/15 text-primary"
                         )}
                       >
                         {item.badge}

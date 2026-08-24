@@ -63,17 +63,24 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
 
     // Buttons must be solid (no gradient) — per branding request, use primary solid
     if (primary) {
+      root.style.setProperty("--chart-1", primary);
       root.style.setProperty("--brand-gradient", primary);
       root.style.setProperty("--brand-gradient-soft", `color-mix(in oklch, ${primary} 12%, transparent)`);
     } else {
+      root.style.removeProperty("--chart-1");
       root.style.removeProperty("--brand-gradient");
       root.style.removeProperty("--brand-gradient-soft");
     }
-    // bg-mesh keeps subtle dual-tone radials (overall site background)
+    if (secondary) {
+      root.style.setProperty("--chart-2", secondary);
+      root.style.setProperty("--brand-mesh-secondary", withAlpha(secondary, "1A"));
+    } else {
+      root.style.removeProperty("--chart-2");
+      root.style.removeProperty("--brand-mesh-secondary");
+    }
+    // bg-mesh primary radial
     if (primary) root.style.setProperty("--brand-mesh-primary", withAlpha(primary, "1A"));
     else root.style.removeProperty("--brand-mesh-primary");
-    if (secondary) root.style.setProperty("--brand-mesh-secondary", withAlpha(secondary, "1A"));
-    else root.style.removeProperty("--brand-mesh-secondary");
   }, [branding]);
 
   const refresh = useCallback(async () => {

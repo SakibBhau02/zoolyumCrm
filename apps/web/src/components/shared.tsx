@@ -106,7 +106,7 @@ const STATUS_STYLES: Record<string, string> = {
   BLOCKED: "bg-rose-500/10 text-rose-600 dark:text-rose-300 ring-1 ring-rose-500/20",
   // leads
   NEW: "bg-sky-500/10 text-sky-600 dark:text-sky-300 ring-1 ring-sky-500/20",
-  CONTACTED: "bg-violet-500/10 text-violet-600 dark:text-violet-300 ring-1 ring-violet-500/20",
+  CONTACTED: "bg-primary/10 text-primary dark:text-primary ring-1 ring-primary/20",
   QUALIFIED: "bg-teal-500/10 text-teal-600 dark:text-teal-300 ring-1 ring-teal-500/20",
   PROPOSAL_SENT: "bg-amber-500/10 text-amber-600 dark:text-amber-300 ring-1 ring-amber-500/20",
   NEGOTIATION: "bg-orange-500/10 text-orange-600 dark:text-orange-300 ring-1 ring-orange-500/20",
@@ -124,7 +124,7 @@ const STATUS_STYLES: Record<string, string> = {
   // invoices
   DRAFT: "bg-muted text-muted-foreground ring-1 ring-border",
   SENT: "bg-sky-500/10 text-sky-600 dark:text-sky-300 ring-1 ring-sky-500/20",
-  VIEWED: "bg-violet-500/10 text-violet-600 dark:text-violet-300 ring-1 ring-violet-500/20",
+  VIEWED: "bg-primary/10 text-primary dark:text-primary ring-1 ring-primary/20",
   PARTIALLY_PAID: "bg-amber-500/10 text-amber-600 dark:text-amber-300 ring-1 ring-amber-500/20",
   PAID: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 ring-1 ring-emerald-500/20",
   OVERDUE: "bg-rose-500/10 text-rose-600 dark:text-rose-300 ring-1 ring-rose-500/20",
@@ -235,7 +235,7 @@ export function StatCard({
           {icon && (
             <div
               className={cn(
-                "flex size-10 shrink-0 items-center justify-center rounded-xl text-white shadow-md shadow-violet-500/20",
+                "flex size-10 shrink-0 items-center justify-center rounded-xl text-white shadow-md shadow-primary/20",
                 ICON_GRADIENTS[index % ICON_GRADIENTS.length]
               )}
             >

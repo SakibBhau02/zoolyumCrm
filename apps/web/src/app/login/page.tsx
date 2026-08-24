@@ -46,7 +46,7 @@ export default function LoginPage() {
         transition={{ duration: 0.6, ease: EASE }}
         className="relative w-full max-w-md"
       >
-        <div className="glass rounded-3xl border border-border/60 p-8 shadow-2xl shadow-violet-500/10">
+        <div className="glass rounded-3xl border border-border/60 p-8 shadow-2xl shadow-primary/10">
           <div className="mb-8 flex flex-col items-center text-center">
             <BrandLogo height={36} />
             <h1 className="mt-4 font-heading text-2xl font-bold">
@@ -112,7 +112,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={busy}
-              className="mt-2 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient py-3 text-[13px] font-bold text-white shadow-lg shadow-violet-500/30 transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient py-3 text-[13px] font-bold text-white shadow-lg shadow-primary/30 transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? "Signing in…" : "Sign in"}
               <ArrowRight className="size-4" />

@@ -1,0 +1,23 @@
+{
+  "name": "zoolyum-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zoolyum OS — Agency Operating System (CRM, Projects, HRM, Finance)",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "npm run prisma:migrate --prefix apps/api",
+    "db:seed": "npm run prisma:seed --prefix apps/api",
+    "db:reset": "npm run prisma:reset --prefix apps/api",
+    "dev": "start /b cmd /c \"npm run dev:api > %TEMP%\\dev-api.log 2>&1\" && start /b cmd /c \"npm run dev:web > %TEMP%\\dev-web.log 2>&1\"",
+    "dev:api": "npm run start:dev --prefix apps/api",
+    "dev:web": "npm run dev --prefix apps/web",
+    "build": "npm run build --prefix apps/api && npm run build --prefix apps/web"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
+}
