@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { randomUUID } from "crypto";
@@ -7,14 +7,11 @@ import { mkdirSync } from "fs";
 import { ControlService } from "./control.service";
 import { Public } from "../common/decorators/public.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
-import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
-import { RolesGuard } from "../common/guards/roles.guard";
 import { UpdateBrandingDto } from "./dto/update-branding.dto";
 
 // Stored relative to process.cwd() — works in both dev (repo root) and prod (dist) because we mkdirSync recursively on upload
 const BRANDING_UPLOADS_DIR = join(process.cwd(), "uploads/branding");
 
-@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("control")
 export class ControlController {
   constructor(private readonly control: ControlService) {}
