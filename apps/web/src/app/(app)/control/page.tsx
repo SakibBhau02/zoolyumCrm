@@ -806,10 +806,9 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
   }, [branding]);
 
   const handleFile = async (file: File, variant: "dark" | "light") => {
-    const allowed = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
-    const isImage = file.type.startsWith("image/");
-    if (!isImage && !allowed.includes(file.type)) {
-      notify("Only image files are allowed");
+    const allowed = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      notify("Only png, jpeg, webp images are allowed");
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -912,7 +911,7 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
               <input
                 ref={darkInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/*"
+                accept="image/png,image/jpeg,image/webp"
                 className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f, "dark"); e.target.value = ""; }}
               />
@@ -947,7 +946,7 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
               <input
                 ref={lightInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/*"
+                accept="image/png,image/jpeg,image/webp"
                 className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f, "light"); e.target.value = ""; }}
               />

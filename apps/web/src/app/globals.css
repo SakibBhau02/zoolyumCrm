@@ -10,6 +10,7 @@
   --card-foreground: oklch(0.22 0.03 285);
   --primary: oklch(0.52 0.22 290);
   --primary-foreground: oklch(0.985 0.004 285);
+  --secondary: oklch(0.62 0.14 220);
   --muted: oklch(0.955 0.01 285);
   --muted-foreground: oklch(0.52 0.03 285);
   --border: oklch(0.91 0.012 285);
@@ -32,6 +33,7 @@
   --card-foreground: oklch(0.94 0.01 285);
   --primary: oklch(0.68 0.18 290);
   --primary-foreground: oklch(0.18 0.02 285);
+  --secondary: oklch(0.68 0.12 220);
   --muted: oklch(0.26 0.02 285);
   --muted-foreground: oklch(0.7 0.02 285);
   --border: oklch(1 0 0 / 10%);

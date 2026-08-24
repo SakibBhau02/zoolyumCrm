@@ -11,6 +11,7 @@ import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { UpdateBrandingDto } from "./dto/update-branding.dto";
 
+// Stored relative to process.cwd() — works in both dev (repo root) and prod (dist) because we mkdirSync recursively on upload
 const BRANDING_UPLOADS_DIR = join(process.cwd(), "uploads/branding");
 
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -52,8 +53,8 @@ export class ControlController {
       }),
       limits: { fileSize: 5 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const ok = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"].includes(file.mimetype);
-        cb(ok ? null : new BadRequestException("Only image files are allowed"), ok);
+        const ok = ["image/png", "image/jpeg", "image/webp"].includes(file.mimetype);
+        cb(ok ? null : new BadRequestException("Only image files are allowed (png, jpeg, webp)"), ok);
       },
     }),
   )

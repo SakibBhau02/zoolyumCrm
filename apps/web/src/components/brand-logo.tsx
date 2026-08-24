@@ -24,12 +24,17 @@ export function BrandLogo({
   }, []);
 
   const appName = branding?.appName ?? "Zoolyum OS";
+  const [failed, setFailed] = useState(false);
   const effectiveDark = variant === "light" ? true : variant === "dark" ? false : isDark;
   const src = effectiveDark
     ? (branding?.logoLightUrl ?? branding?.logoUrl ?? null)
     : (branding?.logoDarkUrl ?? branding?.logoUrl ?? null);
 
-  if (!src) {
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+
+  if (!src || failed) {
     const isLarge = height >= 36;
     return (
       <span className="flex items-center gap-2.5">
@@ -52,6 +57,7 @@ export function BrandLogo({
       alt={appName}
       style={{ height }}
       className="max-w-[180px] object-contain"
+      onError={() => setFailed(true)}
     />
   );
 }

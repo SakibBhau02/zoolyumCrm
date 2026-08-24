@@ -52,9 +52,13 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
 
     if (primary) {
       root.style.setProperty("--primary", primary);
+    } else {
+      root.style.removeProperty("--primary");
     }
     if (secondary) {
       root.style.setProperty("--secondary", secondary);
+    } else {
+      root.style.removeProperty("--secondary");
     }
 
     if (primary && secondary) {
@@ -63,9 +67,13 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
         "--brand-gradient-soft",
         `linear-gradient(135deg, ${withAlpha(primary, "14")}, ${withAlpha(secondary, "14")})`
       );
-      // mesh radials with alpha - use hex + alpha fallback 1A ~10%
       root.style.setProperty("--brand-mesh-primary", withAlpha(primary, "1A"));
       root.style.setProperty("--brand-mesh-secondary", withAlpha(secondary, "1A"));
+    } else {
+      root.style.removeProperty("--brand-gradient");
+      root.style.removeProperty("--brand-gradient-soft");
+      root.style.removeProperty("--brand-mesh-primary");
+      root.style.removeProperty("--brand-mesh-secondary");
     }
   }, [branding]);
 

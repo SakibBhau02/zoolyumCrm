@@ -1,8 +1,9 @@
-import { IsHexColor, IsOptional, IsString, Matches } from "class-validator";
+import { IsHexColor, IsOptional, IsString, Matches, MaxLength } from "class-validator";
 
 export class UpdateBrandingDto {
   @IsOptional()
   @IsString()
+  @MaxLength(60)
   appName?: string;
 
   @IsOptional()

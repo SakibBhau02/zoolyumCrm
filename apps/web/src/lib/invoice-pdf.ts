@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { API_URL } from "./api";
 
 export interface PdfInvoiceLine {
   description?: string;
@@ -286,13 +287,19 @@ function detectImageFormat(urlOrMime: string): string {
   return "PNG";
 }
 
+function resolveLogoFetchUrl(url: string): string {
+  if (url.startsWith("/api/")) return `${API_URL}${url.slice(4)}`;
+  return url;
+}
+
 export async function buildInvoicePdfAsync(inv: PdfInvoice, branding?: InvoiceBranding | null): Promise<jsPDF> {
   if (!branding?.logoDarkUrl || branding.logoBase64 || branding.logoDarkUrl.startsWith("data:")) {
     return buildInvoicePdf(inv, branding);
   }
   let logoBase64: string | null = null;
   try {
-    const res = await fetch(branding.logoDarkUrl);
+    const fetchUrl = resolveLogoFetchUrl(branding.logoDarkUrl);
+    const res = await fetch(fetchUrl);
     if (!res.ok) throw new Error(`fetch ${res.status}`);
     const contentType = res.headers.get("content-type") ?? "";
     const buf = await res.arrayBuffer();
