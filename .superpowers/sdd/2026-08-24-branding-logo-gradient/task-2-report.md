@@ -52,3 +52,45 @@
 ## Notes
 - Old file cleanup not implemented (spec says delete only after new upload succeeds) — deferred, no data loss, additive.
 - No breaking change: existing `logoUrl` preserved.
+
+---
+
+## Fix Round 1 — 2026-08-24 (reviewer findings)
+
+### Findings Addressed
+
+1. **[CRITICAL] Missing auth guards** — Added `@UseGuards(JwtAuthGuard, RolesGuard)` at controller class level and `@Roles("Owner", "CONTROL")` on `PATCH /control/branding` and `POST /control/branding/upload`. Imports added for `JwtAuthGuard`, `RolesGuard`, `Roles`, `UseGuards`. Global `APP_GUARD` already enforces JWT/Roles, but explicit controller guards restore expected spec pattern (§3 Auth: `JwtAuthGuard` + `RolesGuard` — PATCH/POST require CONTROL). Verified `control.controller.ts:1,16,36,42` contains guards and roles.
+
+2. **[CRITICAL] IsUrl rejects relative upload URL** — Changed `logoDarkUrl`, `logoLightUrl`, `logoUrl` in `dto/update-branding.dto.ts:1-18` from `@IsUrl()` to `@IsString() + @Matches(/^(https?:\/\/|\/)[^\s]+$/)` allowing both absolute `https://...` and relative `/api/control/branding/uploads/...` (which upload returns). Validated via `validate()` in tsx: relative `/api/control/branding/uploads/abc-123.png` → PASS, absolute `https://example.com/logo.svg` → PASS, `not-a-url` → correctly rejected.
+
+3. **[Medium] Old file cleanup** — Implemented in `control.service.ts:1-4,133-158` : `tryDeleteOld()` extracts `basename` from old URL, sanitizes, checks `includes("uploads/branding")`, and `unlinkSync` if file exists. Called for `logoDarkUrl`, `logoLightUrl`, `logoUrl` when `existing` present and URL changed. Wraps in try/catch to avoid breaking update. Imports `basename`, `join`, `existsSync`, `unlinkSync`.
+
+4. **[Medium] Path traversal** — Fixed `serveBrandingFile` in `control.controller.ts:64-73` to reject `..`, `/`, `\` with `BadRequestException("Invalid filename")`, then `sanitized = filename.replace(...)` and `safe = basename(sanitized)` before `join(BRANDING_UPLOADS_DIR, safe)`.
+
+5. **[Low] Unused imports / fs import** — Removed `CurrentUser` import; replaced `require("fs").mkdirSync` with proper `import { mkdirSync } from "fs"` at top (`control.controller.ts:6`). Added `basename` to path import.
+
+### Verification (fix round)
+
+- `npx tsc --noEmit` in `apps/api` → PASS (no output)
+- `npm run build` in `apps/api` → PASS (`nest build` succeeds)
+- `npx tsx verify-fix.ts` DTO relative URL test →
+  - `relative url: PASS`
+  - `absolute https: PASS`
+  - `http absolute: PASS`
+  - `invalid no slash: PASS` (rejected)
+  - `empty string should fail: PASS`
+  - `valid hex primary: PASS`
+  - `invalid hex: PASS`
+  - Controller guards/basename/traversal/mkdirSync/no CurrentUser → all PASS
+  - Service unlink → PASS
+- `git diff` shows only intended 3 files changed.
+
+### Files Changed This Round
+
+- `apps/api/src/control/control.controller.ts` — guards, roles, basename traversal fix, fs import cleanup
+- `apps/api/src/control/dto/update-branding.dto.ts` — relative URL support via Matches
+- `apps/api/src/control/control.service.ts` — old file deletion logic
+
+### Remaining / Deferred
+
+- None for these findings; all 5 items resolved.

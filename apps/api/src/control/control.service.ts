@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
+import { basename, join } from "path";
+import { existsSync, unlinkSync } from "fs";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 
@@ -132,6 +134,22 @@ export class ControlService {
 
   async updateBranding(body: any) {
     const existing = await this.prisma.brandingConfig.findFirst();
+    // cleanup old files if URL changed and points to uploads/branding
+    const tryDeleteOld = (oldUrl?: string | null, newUrl?: string | null) => {
+      if (!oldUrl || !newUrl || oldUrl === newUrl) return;
+      if (!oldUrl.includes("uploads/branding")) return;
+      try {
+        const filename = basename(oldUrl);
+        const safe = filename.replace(/[^a-zA-Z0-9.\-_]/g, "");
+        const full = join(process.cwd(), "uploads/branding", safe);
+        if (existsSync(full)) unlinkSync(full);
+      } catch {}
+    };
+    if (existing) {
+      tryDeleteOld(existing.logoDarkUrl, body.logoDarkUrl);
+      tryDeleteOld(existing.logoLightUrl, body.logoLightUrl);
+      tryDeleteOld((existing as any).logoUrl, body.logoUrl);
+    }
     const result = existing
       ? await this.prisma.brandingConfig.update({ where: { id: existing.id }, data: body })
       : await this.prisma.brandingConfig.create({ data: body });

@@ -1,15 +1,19 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Res, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { randomUUID } from "crypto";
-import { join } from "path";
+import { basename, join } from "path";
+import { mkdirSync } from "fs";
 import { ControlService } from "./control.service";
-import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { Public } from "../common/decorators/public.decorator";
+import { Roles } from "../common/decorators/roles.decorator";
+import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
+import { RolesGuard } from "../common/guards/roles.guard";
 import { UpdateBrandingDto } from "./dto/update-branding.dto";
 
 const BRANDING_UPLOADS_DIR = join(process.cwd(), "uploads/branding");
 
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller("control")
 export class ControlController {
   constructor(private readonly control: ControlService) {}
@@ -30,16 +34,18 @@ export class ControlController {
   }
 
   @Patch("branding")
+  @Roles("Owner", "CONTROL")
   updateBranding(@Body() dto: UpdateBrandingDto) {
     return this.control.updateBranding(dto);
   }
 
   @Post("branding/upload")
+  @Roles("Owner", "CONTROL")
   @UseInterceptors(
     FileInterceptor("file", {
       storage: diskStorage({
         destination: (_req, _file, cb) => {
-          require("fs").mkdirSync(BRANDING_UPLOADS_DIR, { recursive: true });
+          mkdirSync(BRANDING_UPLOADS_DIR, { recursive: true });
           cb(null, BRANDING_UPLOADS_DIR);
         },
         filename: (_req, file, cb) => cb(null, `${randomUUID()}-${file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "")}`),
@@ -58,7 +64,11 @@ export class ControlController {
   @Get("branding/uploads/:filename")
   @Public()
   serveBrandingFile(@Param("filename") filename: string, @Res() res: any) {
-    const safe = filename.replace(/[^a-zA-Z0-9.\-_]/g, "");
+    if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      throw new BadRequestException("Invalid filename");
+    }
+    const sanitized = filename.replace(/[^a-zA-Z0-9.\-_]/g, "");
+    const safe = basename(sanitized);
     return res.sendFile(join(BRANDING_UPLOADS_DIR, safe));
   }
 

@@ -1,4 +1,4 @@
-import { IsHexColor, IsOptional, IsString, IsUrl } from "class-validator";
+import { IsHexColor, IsOptional, IsString, Matches } from "class-validator";
 
 export class UpdateBrandingDto {
   @IsOptional()
@@ -6,15 +6,18 @@ export class UpdateBrandingDto {
   appName?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
+  @Matches(/^(https?:\/\/|\/)[^\s]+$/, { message: "logoDarkUrl must be a valid URL or relative path" })
   logoDarkUrl?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
+  @Matches(/^(https?:\/\/|\/)[^\s]+$/, { message: "logoLightUrl must be a valid URL or relative path" })
   logoLightUrl?: string;
 
   @IsOptional()
-  @IsUrl()
+  @IsString()
+  @Matches(/^(https?:\/\/|\/)[^\s]+$/, { message: "logoUrl must be a valid URL or relative path" })
   logoUrl?: string;
 
   @IsOptional()
