@@ -9,3 +9,5 @@ Task 4: complete (commit 19607f0 — control/page.tsx BrandingSection + e2e/cont
 Task 3: complete (commit d07d69d, review clean with 6 minor nits deferred)
 Task 4: complete (commit 19607f0, review clean)
 Task 5: complete (commit 6816ae9 — brand-logo.tsx with isDark MutationObserver + fallback, sidebar/login/portal-login/landing consumers, root BrandingProvider, tsc pass)
+Task 5: complete (commit 6816ae9, review clean)
+Task 6: complete (commit 2edbd29 — invoice-pdf.ts hexToRgb + branding param + buildInvoicePdfAsync fetch/base64/addImage fallback, capital/portal-client payslip consumers useBranding, tsc pass web+api)
