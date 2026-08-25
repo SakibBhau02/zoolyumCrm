@@ -524,17 +524,43 @@ async function main() {
   const projects = new Map<string, any>();
   for (let i = 0; i < projectDefs.length; i++) {
     const p = projectDefs[i];
+    const slug = p.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const clientSlug = p.client.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const isRecurring = p.billing === "RECURRING";
+    const nextBilling = isRecurring
+      ? p.interval === "7-days"
+        ? daysFromNow(7)
+        : p.interval === "15-days"
+          ? daysFromNow(15)
+          : p.interval === "30-days"
+            ? daysFromNow(30)
+            : daysFromNow(30)
+      : null;
     const proj = await prisma.project.create({
       data: {
         clientId: clients.get(p.client).id, name: p.name, type: p.type, templateId: p.tpl,
-        assignedPmId: p.pm, budgetAmount: bdt(p.budget), status: p.status,
+        assignedPmId: p.pm,
+        // amount synced to budgetAmount for compat; both must be present for new model
+        amount: bdt(p.budget),
+        budgetAmount: bdt(p.budget),
+        status: p.status,
         healthStatus: p.health, riskScore: p.risk, riskDriver: p.driver,
         startDate: daysAgo(p.start), targetEndDate: daysFromNow(p.end),
         uid: `PJ-${String(i + 1).padStart(4, "0")}`,
         category: p.cat, priority: p.prio, progress: p.prog,
         spentAmount: bdt(p.spent), team: p.team,
-        billingType: p.billing, recurringInterval: p.interval,
+        billingType: p.billing as any, recurringInterval: p.interval,
+        nextBillingDate: nextBilling,
+        monthlyRate: isRecurring ? bdt(p.budget) : undefined,
         paymentStatus: p.pay,
+        description: `${p.name} — professional delivery for ${p.client} (${p.cat}). Scope covers ${p.cat.toLowerCase()} with milestone-driven timeline, budget-burn tracking and client-visible deliverables.`,
+        projectLink: `https://live.example.com/${slug}`,
+        websiteUrl: `https://${clientSlug}.com`,
+        socialLinks: {
+          facebook: `https://fb.com/${clientSlug}`,
+          linkedin: `https://linkedin.com/company/${clientSlug}`,
+          instagram: `https://instagram.com/${clientSlug}`,
+        },
       },
     });
     projects.set(p.name, proj);

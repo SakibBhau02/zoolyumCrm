@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -14,7 +15,8 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { randomUUID } from "crypto";
-import { extname, join } from "path";
+import { basename, extname, join } from "path";
+import { mkdirSync } from "fs";
 import { ProjectType } from "@prisma/client";
 import { FlowService } from "./flow.service";
 import { CurrentUser, AuthUser } from "../common/decorators/current-user.decorator";
@@ -137,10 +139,18 @@ export class FlowController {
   @UseInterceptors(
     FileInterceptor("file", {
       storage: diskStorage({
-        destination: UPLOAD_DIR,
+        destination: (_req, _file, cb) => {
+          mkdirSync(UPLOAD_DIR, { recursive: true });
+          cb(null, UPLOAD_DIR);
+        },
         filename: (_req, file, cb) => cb(null, `${randomUUID()}--${file.originalname.replace(/[^\w.\-]/g, "_")}`),
       }),
       limits: { fileSize: 15 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        const allowed = ["application/pdf", "image/png", "image/jpeg", "image/webp", "application/zip", "application/x-zip-compressed", "image/svg+xml"];
+        const ok = allowed.includes(file.mimetype);
+        cb(ok ? null : new BadRequestException("Only pdf/image/zip files are allowed"), ok);
+      },
     })
   )
   upload(@UploadedFile() file: Express.Multer.File) {
@@ -151,7 +161,18 @@ export class FlowController {
   @Public()
   @Get("uploads/:filename")
   serveUpload(@Param("filename") filename: string, @Res() res: any) {
-    res.sendFile(join(UPLOAD_DIR, filename));
+    if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      throw new BadRequestException("Invalid filename");
+    }
+    const sanitized = filename.replace(/[^a-zA-Z0-9.\-_]/g, "");
+    const safe = basename(sanitized);
+    const filePath = join(UPLOAD_DIR, safe);
+    // defense-in-depth: ensure resolved path stays inside UPLOAD_DIR
+    if (!filePath.startsWith(UPLOAD_DIR)) {
+      throw new BadRequestException("Invalid filename");
+    }
+    res.setHeader("Content-Disposition", `attachment; filename="${safe}"`);
+    return res.sendFile(filePath);
   }
 
   @Post("files")

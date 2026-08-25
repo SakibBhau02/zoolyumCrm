@@ -25,8 +25,10 @@ async function bootstrap() {
   });
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: false,
+      whitelist: true,
+      forbidNonWhitelisted: false,
       transform: true,
+      transformOptions: { enableImplicitConversion: true },
     })
   );
   const port = Number(process.env.PORT ?? 4000);
