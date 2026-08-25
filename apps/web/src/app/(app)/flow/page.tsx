@@ -3,14 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import {
-  AlertTriangle, Banknote, Calendar, CheckCircle2, ChevronRight, CircleDollarSign, Download, Eye, FileArchive,
-  FileSpreadsheet, FileText, HandCoins, Image, LayoutGrid, Link2, List, Pencil, Plus, ReceiptText, RefreshCw,
-  Rocket, Search, Send, SquareKanban, Trash2, Upload, Users, Wallet, Workflow, X,
+  AlertTriangle, Banknote, Calendar, CheckCircle2, ChevronRight, CircleDollarSign, Download, Eye, Facebook, FileArchive,
+  FileSpreadsheet, FileText, Globe, HandCoins, Image, Instagram, LayoutGrid, Linkedin, Link2, List, Pencil, Plus, ReceiptText, RefreshCw,
+  Rocket, Search, Send, SquareKanban, Trash2, Upload, UploadCloud, Users, Wallet, Workflow, X,
 } from "lucide-react";
 import { apiFetch, API_URL, getToken } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { formatBDT, formatDate, timeAgo } from "@/lib/format";
-import { Avatar, EmptyState, FadeIn, PageHeader, SkeletonBlock, StatCard, StatusBadge, cn } from "@/components/shared";
+import { Avatar, EmptyState, FadeIn, PageHeader, SectionTitle, SkeletonBlock, StatCard, StatusBadge, cn } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { ProgressRing } from "@/components/charts";
 import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
@@ -49,11 +49,15 @@ const PAYMENT_STYLE: Record<string, string> = {
 interface ProjectRow {
   id: string; uid?: string | null; name: string; code?: string | null; status: string; healthStatus: string;
   riskScore: number | null; riskDriver: string | null; budgetAmount: number | null;
+  amount?: number | null; currency?: string | null;
   spentAmount?: number | null; budgetSpent?: number | null; startDate: string | null; targetEndDate: string | null;
   progress?: number | null; category?: string | null; priority?: string | null; team?: string[];
   type?: string | null;
+  description?: string | null;
   billingType?: string | null; recurringInterval?: string | null; nextBillingDate?: string | null;
   monthlyRate?: number | null; totalBilled?: number | null; paymentStatus?: string | null;
+  projectLink?: string | null; websiteUrl?: string | null; socialLinks?: { facebook?: string; linkedin?: string; instagram?: string } | null;
+  referenceLinks?: any; references?: any[];
   briefLink?: string | null; driveLink?: string | null; researchLink?: string | null;
   tasksTotal?: number; tasksCompleted?: number;
   client: { id: string; companyName: string };
@@ -109,25 +113,38 @@ function ProjectModal({
 }) {
   const [f, setF] = useState({
     name: "", clientId: "", status: "PLANNING", priority: "MEDIUM", category: "",
-    type: "FIXED", assignedPmId: "", budgetAmount: "", spentAmount: "", progress: "0",
+    type: "FIXED", assignedPmId: "", amount: "", spentAmount: "", progress: "0",
+    currency: "BDT",
     startDate: "", targetEndDate: "", billingType: "ONE_TIME", recurringInterval: "30-days",
     nextBillingDate: "", monthlyRate: "", totalBilled: "", paymentStatus: "PENDING",
+    description: "",
+    projectLink: "", websiteUrl: "", socialLinks: { facebook: "", linkedin: "", instagram: "" } as { facebook: string; linkedin: string; instagram: string },
     briefLink: "", driveLink: "", researchLink: "", team: [] as string[],
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // references preview
+  const [refs, setRefs] = useState<any[] | null>(null);
+  const [refTitle, setRefTitle] = useState("");
+  const [refUrl, setRefUrl] = useState("");
+  const [refType, setRefType] = useState("OTHER");
+  const [refBusy, setRefBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const refFileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     setErr(null);
     if (editing) {
+      const sl: any = (editing as any).socialLinks ?? {};
       setF({
         name: editing.name, clientId: editing.client.id, status: editing.status,
         priority: editing.priority ?? "MEDIUM", category: editing.category ?? "",
         type: editing.type ?? "FIXED", assignedPmId: editing.assignedPm?.id ?? "",
-        budgetAmount: editing.budgetAmount != null ? String(editing.budgetAmount) : "",
+        amount: (editing as any).amount != null ? String((editing as any).amount) : editing.budgetAmount != null ? String(editing.budgetAmount) : "",
         spentAmount: editing.spentAmount != null ? String(editing.spentAmount) : editing.budgetSpent != null ? String(editing.budgetSpent) : "",
         progress: editing.progress != null ? String(editing.progress) : "0",
+        currency: (editing as any).currency ?? "BDT",
         startDate: editing.startDate ? String(editing.startDate).slice(0, 10) : "",
         targetEndDate: editing.targetEndDate ? String(editing.targetEndDate).slice(0, 10) : "",
         billingType: editing.billingType ?? "ONE_TIME", recurringInterval: editing.recurringInterval ?? "30-days",
@@ -135,17 +152,28 @@ function ProjectModal({
         monthlyRate: editing.monthlyRate != null ? String(editing.monthlyRate) : "",
         totalBilled: editing.totalBilled != null ? String(editing.totalBilled) : "",
         paymentStatus: editing.paymentStatus ?? "PENDING",
+        description: (editing as any).description ?? "",
+        projectLink: (editing as any).projectLink ?? "", websiteUrl: (editing as any).websiteUrl ?? "",
+        socialLinks: { facebook: sl.facebook ?? "", linkedin: sl.linkedin ?? "", instagram: sl.instagram ?? "" },
         briefLink: editing.briefLink ?? "", driveLink: editing.driveLink ?? "", researchLink: editing.researchLink ?? "",
         team: editing.team ?? [],
       });
+      // fetch references preview
+      setRefs(null);
+      apiFetch<any[]>(`/flow/projects/${editing.id}/references`).then((r) => setRefs(r)).catch(() => setRefs([]));
     } else {
       setF({
         name: "", clientId: "", status: "PLANNING", priority: "MEDIUM", category: "",
-        type: "FIXED", assignedPmId: "", budgetAmount: "", spentAmount: "", progress: "0",
+        type: "FIXED", assignedPmId: "", amount: "", spentAmount: "", progress: "0",
+        currency: "BDT",
         startDate: "", targetEndDate: "", billingType: "ONE_TIME", recurringInterval: "30-days",
         nextBillingDate: "", monthlyRate: "", totalBilled: "", paymentStatus: "PENDING",
+        description: "",
+        projectLink: "", websiteUrl: "", socialLinks: { facebook: "", linkedin: "", instagram: "" },
         briefLink: "", driveLink: "", researchLink: "", team: [],
       });
+      setRefs(null);
+      setRefTitle(""); setRefUrl(""); setRefType("OTHER");
     }
   }, [open, editing]);
 
@@ -158,16 +186,65 @@ function ProjectModal({
   const toggleTeam = (name: string) =>
     setF((p) => ({ ...p, team: p.team.includes(name) ? p.team.filter((t) => t !== name) : [...p.team, name] }));
 
+  const addReferenceLink = async () => {
+    if (!editing?.id) return;
+    if (!refTitle.trim() || !refUrl.trim()) { setErr("Reference title and URL are required"); return; }
+    setRefBusy(true); setErr(null);
+    try {
+      await apiFetch(`/flow/projects/${editing.id}/references`, { method: "POST", body: JSON.stringify({ title: refTitle.trim(), url: refUrl.trim(), type: refType }) });
+      setRefTitle(""); setRefUrl("");
+      const updated = await apiFetch<any[]>(`/flow/projects/${editing.id}/references`);
+      setRefs(updated);
+    } catch (e: any) { setErr(e.message ?? "Add reference failed"); } finally { setRefBusy(false); }
+  };
+
+  const handleRefFile = async (file: File) => {
+    if (!editing?.id) { setErr("Save project first to attach files"); return; }
+    if (!file) return;
+    setRefBusy(true); setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const token = getToken();
+      const res = await fetch(`${API_URL}/flow/upload`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.fileUrl) throw new Error(body?.message ?? "Upload failed");
+      await apiFetch(`/flow/projects/${editing.id}/references`, { method: "POST", body: JSON.stringify({ title: body.originalName ?? file.name, fileUrl: body.fileUrl, type: "OTHER" }) });
+      const updated = await apiFetch<any[]>(`/flow/projects/${editing.id}/references`);
+      setRefs(updated);
+    } catch (e: any) { setErr(e.message ?? "Upload failed"); } finally { setRefBusy(false); }
+  };
+
+  const onRefFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) await handleRefFile(file);
+  };
+
+  const onDropRef = async (e: React.DragEvent) => {
+    e.preventDefault(); setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) await handleRefFile(file);
+  };
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!f.name.trim()) return setErr("Project name is required");
     if (!f.clientId) return setErr("Select a client");
+    if (f.billingType === "RECURRING" && (!f.monthlyRate || Number(f.monthlyRate) < 1)) return setErr("Monthly rate is required for recurring billing (min 1)");
+    if (f.amount && Number(f.amount) < 0) return setErr("Project amount must be >= 0");
+    if (f.startDate && f.targetEndDate && new Date(f.startDate) > new Date(f.targetEndDate)) return setErr("Start date must be before due date");
+    if (f.description && f.description.length > 2000) return setErr("Description is too long (max 2000)");
     setBusy(true);
     setErr(null);
-    const body = {
+    const social = (f.socialLinks.facebook || f.socialLinks.linkedin || f.socialLinks.instagram) ? { facebook: f.socialLinks.facebook.trim() || undefined, linkedin: f.socialLinks.linkedin.trim() || undefined, instagram: f.socialLinks.instagram.trim() || undefined } : undefined;
+    const amountNum = f.amount ? Number(f.amount) : null;
+    const body: any = {
       name: f.name.trim(), clientId: f.clientId, status: f.status, priority: f.priority,
       category: f.category.trim() || "General", type: f.type, assignedPmId: f.assignedPmId || undefined,
-      budgetAmount: f.budgetAmount ? Number(f.budgetAmount) : null,
+      description: f.description.trim() || undefined,
+      amount: amountNum, budgetAmount: amountNum,
+      currency: f.currency,
       spentAmount: f.spentAmount ? Number(f.spentAmount) : null,
       progress: Math.min(100, Math.max(0, Number(f.progress) || 0)),
       startDate: f.startDate || null, targetEndDate: f.targetEndDate || null,
@@ -176,6 +253,8 @@ function ProjectModal({
       monthlyRate: f.monthlyRate ? Number(f.monthlyRate) : null,
       totalBilled: f.totalBilled ? Number(f.totalBilled) : 0,
       paymentStatus: f.paymentStatus,
+      projectLink: f.projectLink.trim() || null, websiteUrl: f.websiteUrl.trim() || null,
+      socialLinks: social,
       briefLink: f.briefLink.trim() || null, driveLink: f.driveLink.trim() || null,
       researchLink: f.researchLink.trim() || null, team: f.team,
       templateId: undefined,
@@ -197,105 +276,167 @@ function ProjectModal({
 
   return (
     <Modal open={open} onClose={onClose} title={editing ? `Edit project — ${editing.name}` : "New project"} size="xl">
-      <form onSubmit={save} className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Project name *">
-            <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Website revamp — Acme" autoFocus />
-          </Field>
-          <Field label="Client *">
-            <Select value={f.clientId} onChange={(e) => setF({ ...f, clientId: e.target.value })}>
-              <option value="">Select client…</option>
-              {(clients ?? []).map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
-            </Select>
-          </Field>
-        </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <Field label="Status">
-            <Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
-              {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
-            </Select>
-          </Field>
-          <Field label="Priority">
-            <Select value={f.priority} onChange={(e) => setF({ ...f, priority: e.target.value })}>
-              {PRIORITIES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
-            </Select>
-          </Field>
-          <Field label="Category">
-            <Input list="project-categories" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} placeholder="Branding" />
-            <datalist id="project-categories">
-              {CATEGORIES.map((c) => <option key={c} value={c} />)}
-            </datalist>
-          </Field>
-          <Field label="Project type">
-            <Select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
-              {["FIXED", "RETAINER", "CAMPAIGN"].map((t) => <option key={t} value={t}>{label(t)}</option>)}
-            </Select>
-          </Field>
-          <Field label="Project manager">
-            <Select value={f.assignedPmId} onChange={(e) => setF({ ...f, assignedPmId: e.target.value })}>
-              <option value="">Unassigned</option>
-              {(managers ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </Select>
-          </Field>
-          <Field label="Progress (%)">
-            <Input type="number" min={0} max={100} value={f.progress} onChange={(e) => setF({ ...f, progress: e.target.value })} />
-          </Field>
-          <Field label="Budget (BDT)">
-            <Input type="number" min={0} value={f.budgetAmount} onChange={(e) => setF({ ...f, budgetAmount: e.target.value })} placeholder="500000" />
-          </Field>
-          <Field label="Spent (BDT)">
-            <Input type="number" min={0} value={f.spentAmount} onChange={(e) => setF({ ...f, spentAmount: e.target.value })} placeholder="120000" />
-          </Field>
-          <Field label="Start date">
-            <Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} />
-          </Field>
-          <Field label="Due date">
-            <Input type="date" value={f.targetEndDate} onChange={(e) => setF({ ...f, targetEndDate: e.target.value })} />
-          </Field>
-        </div>
-        <div className="rounded-2xl border border-border/60 p-4">
-          <p className="mb-3 text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Billing</p>
-          <div className="flex flex-col gap-3">
+      <form onSubmit={save} className="flex max-h-[72vh] flex-col gap-6 overflow-y-auto pr-1">
+        {/* Company & Category */}
+        <section>
+          <SectionTitle title="Company & Category" subtitle="Client, type and scope" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Project name *">
+              <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Project name" autoFocus />
+            </Field>
+            <Field label="Client *">
+              <Select value={f.clientId} onChange={(e) => setF({ ...f, clientId: e.target.value })}>
+                <option value="">Select client…</option>
+                {(clients ?? []).map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Field label="Category">
+              <Input list="project-categories" value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })} placeholder="Branding" />
+              <datalist id="project-categories">
+                {CATEGORIES.map((c) => <option key={c} value={c} />)}
+              </datalist>
+            </Field>
+            <Field label="Project type">
+              <Select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+                {["FIXED", "RETAINER", "CAMPAIGN"].map((t) => <option key={t} value={t}>{label(t)}</option>)}
+              </Select>
+            </Field>
+            <Field label="Priority">
+              <Select value={f.priority} onChange={(e) => setF({ ...f, priority: e.target.value })}>
+                {PRIORITIES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
+              </Select>
+            </Field>
+            <Field label="Status">
+              <Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
+                {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
+              </Select>
+            </Field>
+            <Field label="Start date">
+              <Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} />
+            </Field>
+            <Field label="Due date">
+              <Input type="date" value={f.targetEndDate} onChange={(e) => setF({ ...f, targetEndDate: e.target.value })} />
+            </Field>
+          </div>
+          <div className="mt-4">
+            <Field label="Description">
+              <Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Scope, deliverables, out of scope…" rows={3} className="min-h-[72px]" />
+            </Field>
+          </div>
+        </section>
+
+        {/* Amount & Finance */}
+        <section className="rounded-2xl border border-border/60 p-4">
+          <SectionTitle title="Amount & Finance" subtitle="Budget, billing and progress" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Field label="Project Amount (BDT) *">
+              <Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="500000" />
+            </Field>
+            <Field label="Spent (BDT)">
+              <Input type="number" min={0} value={f.spentAmount} onChange={(e) => setF({ ...f, spentAmount: e.target.value })} placeholder="120000" />
+            </Field>
+            <Field label="Currency">
+              <Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}>
+                {["BDT", "USD", "SAR", "AED"].map((c) => <option key={c} value={c}>{c}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <div className="mt-4">
+            <Field label={`Progress — ${f.progress}%`}>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={f.progress}
+                onChange={(e) => setF({ ...f, progress: e.target.value })}
+                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-muted-foreground"><span>0%</span><span>100%</span></div>
+            </Field>
+          </div>
+          <div className="mt-4">
+            <p className="mb-2 text-[11.5px] font-semibold text-muted-foreground">Billing type</p>
             <Segmented
               options={[{ value: "ONE_TIME", label: "One-time" }, { value: "RECURRING", label: "Recurring" }]}
               value={f.billingType}
               onChange={(v) => setF({ ...f, billingType: v })}
             />
-            {f.billingType === "RECURRING" && (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <Field label="Billing interval">
-                  <Select value={f.recurringInterval} onChange={(e) => setF({ ...f, recurringInterval: e.target.value })}>
-                    {BILLING_INTERVALS.map((i) => <option key={i} value={i}>{i}</option>)}
-                  </Select>
-                </Field>
-                <Field label="Monthly rate (BDT)">
-                  <Input type="number" min={0} value={f.monthlyRate} onChange={(e) => setF({ ...f, monthlyRate: e.target.value })} placeholder="40000" />
-                </Field>
-                <Field label="Total billed (BDT)">
-                  <Input type="number" min={0} value={f.totalBilled} onChange={(e) => setF({ ...f, totalBilled: e.target.value })} placeholder="160000" />
-                </Field>
-                <Field label="Next billing date">
-                  <Input type="date" value={f.nextBillingDate} onChange={(e) => setF({ ...f, nextBillingDate: e.target.value })} />
-                </Field>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-              <Field label="Payment status">
-                <Select value={f.paymentStatus} onChange={(e) => setF({ ...f, paymentStatus: e.target.value })}>
-                  {PAYMENT_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
+          </div>
+          {f.billingType === "RECURRING" && (
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <Field label="Billing interval">
+                <Select value={f.recurringInterval} onChange={(e) => setF({ ...f, recurringInterval: e.target.value })}>
+                  {BILLING_INTERVALS.map((i) => <option key={i} value={i}>{i}</option>)}
                 </Select>
               </Field>
+              <Field label="Monthly rate (BDT) *">
+                <Input type="number" min={1} value={f.monthlyRate} onChange={(e) => setF({ ...f, monthlyRate: e.target.value })} placeholder="40000" />
+              </Field>
+              <Field label="Total billed (BDT)">
+                <Input type="number" min={0} value={f.totalBilled} onChange={(e) => setF({ ...f, totalBilled: e.target.value })} placeholder="160000" />
+              </Field>
+              <Field label="Next billing date">
+                <Input type="date" value={f.nextBillingDate} onChange={(e) => setF({ ...f, nextBillingDate: e.target.value })} />
+              </Field>
             </div>
-            {f.billingType === "RECURRING" && effectiveNextBilling && (
-              <p className="rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-[11.5px] font-semibold text-primary">
-                Next billing will be {formatDate(effectiveNextBilling)} (auto from start date + interval)
-              </p>
-            )}
+          )}
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Payment status">
+              <Select value={f.paymentStatus} onChange={(e) => setF({ ...f, paymentStatus: e.target.value })}>
+                {PAYMENT_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
+              </Select>
+            </Field>
           </div>
-        </div>
-        <div className="rounded-2xl border border-border/60 p-4">
-          <p className="mb-3 text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Links</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] font-medium leading-relaxed text-amber-700 dark:text-amber-300">
+            Auto DRAFT on start (ACTIVE) and on finish (COMPLETED) — also manual via Finance tab
+          </p>
+          {f.billingType === "RECURRING" && effectiveNextBilling && (
+            <p className="mt-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-[11.5px] font-semibold text-primary">
+              Next billing will be {formatDate(effectiveNextBilling)} (auto from start date + interval)
+            </p>
+          )}
+        </section>
+
+        {/* Links — Project Overview */}
+        <section className="rounded-2xl border border-border/60 p-4">
+          <SectionTitle title="Links — Project Overview" subtitle="External URLs and social" />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Project Link">
+              <div className="relative">
+                <Globe className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={f.projectLink} onChange={(e) => setF({ ...f, projectLink: e.target.value })} placeholder="https://live.example.com" className="pl-9" />
+              </div>
+            </Field>
+            <Field label="Website URL">
+              <div className="relative">
+                <Link2 className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={f.websiteUrl} onChange={(e) => setF({ ...f, websiteUrl: e.target.value })} placeholder="https://client.com" className="pl-9" />
+              </div>
+            </Field>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Facebook">
+              <div className="relative">
+                <Facebook className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={f.socialLinks.facebook} onChange={(e) => setF({ ...f, socialLinks: { ...f.socialLinks, facebook: e.target.value } })} placeholder="https://facebook.com/..." className="pl-9" />
+              </div>
+            </Field>
+            <Field label="LinkedIn">
+              <div className="relative">
+                <Linkedin className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={f.socialLinks.linkedin} onChange={(e) => setF({ ...f, socialLinks: { ...f.socialLinks, linkedin: e.target.value } })} placeholder="https://linkedin.com/..." className="pl-9" />
+              </div>
+            </Field>
+            <Field label="Instagram">
+              <div className="relative">
+                <Instagram className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={f.socialLinks.instagram} onChange={(e) => setF({ ...f, socialLinks: { ...f.socialLinks, instagram: e.target.value } })} placeholder="https://instagram.com/..." className="pl-9" />
+              </div>
+            </Field>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Brief link">
               <Input value={f.briefLink} onChange={(e) => setF({ ...f, briefLink: e.target.value })} placeholder="https://…" />
             </Field>
@@ -306,30 +447,96 @@ function ProjectModal({
               <Input value={f.researchLink} onChange={(e) => setF({ ...f, researchLink: e.target.value })} placeholder="https://…" />
             </Field>
           </div>
-        </div>
-        <Field label={`Team (${f.team.length})`}>
-          <div className="flex flex-wrap gap-1.5">
-            {(employees ?? []).map((emp) => {
-              const on = f.team.includes(emp.name);
-              return (
-                <button
-                  key={emp.id}
-                  type="button"
-                  onClick={() => toggleTeam(emp.name)}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors",
-                    on ? "border-primary/40 bg-primary/15 text-primary" : "border-border bg-muted/40 text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {on && <CheckCircle2 className="size-3" />}
-                  {emp.name}
-                </button>
-              );
-            })}
+        </section>
+
+        {/* Team */}
+        <section className="rounded-2xl border border-border/60 p-4">
+          <SectionTitle title="Team" subtitle="Assignees and manager" />
+          <Field label={`Team members (${f.team.length})`}>
+            <div className="flex flex-wrap gap-1.5">
+              {(employees ?? []).map((emp) => {
+                const on = f.team.includes(emp.name);
+                return (
+                  <button
+                    key={emp.id}
+                    type="button"
+                    onClick={() => toggleTeam(emp.name)}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                      on ? "border-primary/40 bg-primary/15 text-primary" : "border-border bg-muted/40 text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {on && <CheckCircle2 className="size-3" />}
+                    {emp.name}
+                  </button>
+                );
+              })}
+              {(!employees || employees.length === 0) && <span className="text-[11px] text-muted-foreground">No employees found</span>}
+            </div>
+          </Field>
+          <div className="mt-4">
+            <Field label="Project manager">
+              <Select value={f.assignedPmId} onChange={(e) => setF({ ...f, assignedPmId: e.target.value })}>
+                <option value="">Unassigned</option>
+                {(managers ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </Select>
+            </Field>
           </div>
-        </Field>
+        </section>
+
+        {/* References preview if editing */}
+        {editing && (
+          <section className="rounded-2xl border border-border/60 p-4">
+            <SectionTitle title="References (preview)" subtitle={refs ? `${refs.length} linked references` : "Loading references…"} />
+            {refs && refs.length > 0 && (
+              <div className="mb-3 max-h-40 overflow-auto rounded-xl border border-border/60">
+                <table className="w-full text-left text-[11px]">
+                  <thead className="sticky top-0 bg-muted/50 text-[10px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-3 py-2">Title</th><th className="px-3 py-2">Type</th><th className="px-3 py-2">Link / File</th></tr></thead>
+                  <tbody>
+                    {refs.map((r: any) => (
+                      <tr key={r.id} className="border-t border-border/40">
+                        <td className="px-3 py-1.5 font-medium">{r.title}</td>
+                        <td className="px-3 py-1.5"><span className="rounded-full border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-bold uppercase">{r.type}</span></td>
+                        <td className="px-3 py-1.5 truncate text-primary">{r.url ? <a href={r.url} target="_blank" rel="noreferrer" className="hover:underline">{r.url.slice(0, 40)}</a> : r.fileUrl ? <a href={r.fileUrl} target="_blank" rel="noreferrer" className="hover:underline">file</a> : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {refs && refs.length === 0 && <p className="mb-3 text-[11px] text-muted-foreground">No references yet — add a drive link or upload a file.</p>}
+            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <Field label="Reference title">
+                <Input value={refTitle} onChange={(e) => setRefTitle(e.target.value)} placeholder="Drive — brand assets" />
+              </Field>
+              <Field label="URL">
+                <Input value={refUrl} onChange={(e) => setRefUrl(e.target.value)} placeholder="https://drive.google.com/..." />
+              </Field>
+              <div className="flex gap-2">
+                <Select value={refType} onChange={(e) => setRefType(e.target.value)} className="!w-28">
+                  {["DRIVE", "NOTION", "FIGMA", "OTHER"].map((t) => <option key={t} value={t}>{t}</option>)}
+                </Select>
+                <Btn variant="outline" onClick={addReferenceLink} className={refBusy ? "opacity-50" : ""}><Link2 className="size-3.5" /> Add</Btn>
+              </div>
+            </div>
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDropRef}
+              onClick={() => refFileInput.current?.click()}
+              className={cn("flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors", dragOver ? "border-primary/60 bg-primary/5" : "border-border hover:border-primary/30 hover:bg-muted/30")}
+            >
+              <UploadCloud className="mb-1.5 size-5 text-muted-foreground" />
+              <p className="text-[11.5px] font-semibold">Drop file or click to upload reference</p>
+              <p className="text-[10.5px] text-muted-foreground">PDF, image, or any file — will be linked to this project</p>
+              <input ref={refFileInput} type="file" className="hidden" onChange={onRefFileChange} />
+            </div>
+            {refBusy && <p className="mt-2 text-[11px] text-muted-foreground">Uploading…</p>}
+          </section>
+        )}
+
         {templates && templates.length > 0 && !editing && (
-          <Field label="Template" hint="Applies the template description">
+          <Field label="Template" hint="Applies the template type and default status">
             <Select value="" onChange={(e) => {
               const t = templates?.find((x) => x.id === e.target.value);
               if (t) setF((p) => ({ ...p, type: t.projectType ?? p.type, status: t.defaultStatus ?? p.status }));
