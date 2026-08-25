@@ -3,13 +3,16 @@ import { HealthStatus, ProjectStatus, ProjectType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { CacheService } from "../cache/cache.service";
+import { CapitalService } from "../capital/capital.service";
+import { CreateReferenceDto } from "./dto/create-reference.dto";
 
 @Injectable()
 export class FlowService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly capital: CapitalService
   ) {}
 
   async overview() {
@@ -127,16 +130,27 @@ export class FlowService {
 
   async create(body: any) {
     const uid = await this.nextUid();
+    // amount sync — keep budgetAmount for compat
+    let amount = body.amount;
+    let budgetAmount = body.budgetAmount;
+    if (amount !== undefined && amount !== null) {
+      budgetAmount = amount;
+    } else if (budgetAmount !== undefined && budgetAmount !== null) {
+      amount = budgetAmount;
+    }
     const project = await this.prisma.project.create({
       data: {
         uid,
         clientId: body.clientId,
         name: body.name,
+        description: body.description ?? undefined,
         type: body.type ?? "FIXED",
         templateId: body.templateId,
         assignedPmId: body.assignedPmId,
-        budgetAmount: body.budgetAmount ?? undefined,
+        amount: amount ?? undefined,
+        budgetAmount: budgetAmount ?? undefined,
         spentAmount: body.spentAmount ?? undefined,
+        currency: body.currency ?? undefined,
         category: body.category ?? "",
         priority: body.priority ?? "MEDIUM",
         progress: body.progress ?? 0,
@@ -147,11 +161,18 @@ export class FlowService {
         monthlyRate: body.monthlyRate ?? undefined,
         totalBilled: body.totalBilled ?? 0,
         paymentStatus: body.paymentStatus ?? "PENDING",
+        projectLink: body.projectLink,
+        websiteUrl: body.websiteUrl,
+        socialLinks: body.socialLinks,
         briefLink: body.briefLink,
         driveLink: body.driveLink,
         researchLink: body.researchLink,
         startDate: body.startDate ? new Date(body.startDate) : new Date(),
         targetEndDate: body.targetEndDate ? new Date(body.targetEndDate) : undefined,
+        status: body.status ?? undefined,
+        healthStatus: body.healthStatus ?? undefined,
+        riskScore: body.riskScore ?? undefined,
+        riskDriver: body.riskDriver ?? undefined,
       },
     });
     await this.notifications.broadcast(
@@ -176,7 +197,19 @@ export class FlowService {
     ]) {
       if (body[field] !== undefined) data[field] = body[field];
     }
-    if (body.budgetAmount !== undefined) data.budgetAmount = body.budgetAmount;
+    // amount ↔ budgetAmount sync
+    if (body.amount !== undefined) {
+      data.amount = body.amount;
+      data.budgetAmount = body.amount;
+    } else if (body.budgetAmount !== undefined) {
+      data.budgetAmount = body.budgetAmount;
+      data.amount = body.budgetAmount;
+    }
+    if (body.currency !== undefined) data.currency = body.currency;
+    if (body.description !== undefined) data.description = body.description;
+    if (body.projectLink !== undefined) data.projectLink = body.projectLink;
+    if (body.websiteUrl !== undefined) data.websiteUrl = body.websiteUrl;
+    if (body.socialLinks !== undefined) data.socialLinks = body.socialLinks;
     if (body.spentAmount !== undefined) data.spentAmount = body.spentAmount;
     if (body.startDate !== undefined) data.startDate = new Date(body.startDate);
     if (body.targetEndDate !== undefined) data.targetEndDate = body.targetEndDate ? new Date(body.targetEndDate) : null;
@@ -185,8 +218,60 @@ export class FlowService {
       data.nextBillingDate = body.recurringInterval === null ? null : this.nextBillingDate(body.startDate ?? existing.startDate.toISOString(), body.recurringInterval);
     }
     const result = await this.prisma.project.update({ where: { id }, data });
+    // auto invoice hooks
+    try {
+      await this.handleAutoInvoice(existing as any, result as any);
+    } catch {
+      // do not fail status transition if invoice creation fails
+    }
     await this.invalidateProjects();
     return result;
+  }
+
+  private async handleAutoInvoice(prev: any, next: any) {
+    const dueDate = new Date(Date.now() + 14 * 86400000);
+    // PLANNING|PAUSED → ACTIVE (start) — only if totalBilled == 0 and amount>0, DRAFT
+    const isStart = (prev.status === "PLANNING" || prev.status === "PAUSED") && next.status === "ACTIVE";
+    if (isStart) {
+      const totalBilled = Number(next.totalBilled ?? 0);
+      if (totalBilled === 0) {
+        const rawAmount = next.amount ?? next.budgetAmount ?? next.monthlyRate;
+        const amount = Number(rawAmount ?? 0);
+        if (amount > 0) {
+          const invoiceType = next.billingType === "RECURRING" ? "RECURRING" : "ONE_TIME";
+          const description = next.billingType === "RECURRING" ? `Recurring retainer — ${next.name}` : `Project — ${next.name}`;
+          await this.capital.createInvoice({
+            clientId: next.clientId,
+            projectId: next.id,
+            invoiceType,
+            status: "DRAFT",
+            dueDate,
+            currency: next.currency ?? "BDT",
+            lines: [{ description, quantity: 1, unitPrice: amount, amount, revenueTag: "AGENCY_REVENUE" }],
+          });
+        }
+      }
+    }
+    // * → COMPLETED (finish) — remaining >0 and not PAID, DRAFT
+    const isFinish = prev.status !== "COMPLETED" && next.status === "COMPLETED";
+    if (isFinish) {
+      if (next.paymentStatus !== "PAID") {
+        const total = Number(next.amount ?? next.budgetAmount ?? 0);
+        const billed = Number(next.totalBilled ?? 0);
+        const remaining = Math.round((total - billed) * 100) / 100;
+        if (remaining > 0) {
+          await this.capital.createInvoice({
+            clientId: next.clientId,
+            projectId: next.id,
+            invoiceType: "ONE_TIME",
+            status: "DRAFT",
+            dueDate,
+            currency: next.currency ?? "BDT",
+            lines: [{ description: `Final invoice — ${next.name}`, quantity: 1, unitPrice: remaining, amount: remaining, revenueTag: "AGENCY_REVENUE" }],
+          });
+        }
+      }
+    }
   }
 
   async remove(id: string) {
@@ -195,6 +280,67 @@ export class FlowService {
     });
     await this.invalidateProjects();
     return { ok: true };
+  }
+
+  // ── ProjectReference CRUD + bulk task ─────────────────────────────────
+  private async ensureProject(projectId: string) {
+    const p = await this.prisma.project.findUnique({ where: { id: projectId }, select: { id: true } });
+    if (!p) throw new NotFoundException("Project not found");
+    return p;
+  }
+
+  async createReference(projectId: string, dto: CreateReferenceDto, userId?: string) {
+    await this.ensureProject(projectId);
+    return this.prisma.projectReference.create({
+      data: {
+        projectId,
+        title: dto.title,
+        url: dto.url,
+        type: (dto.type as any) ?? "OTHER",
+        fileUrl: dto.fileUrl,
+        uploadedById: userId,
+      },
+      include: { uploadedBy: { select: { id: true, name: true } } },
+    });
+  }
+
+  async listReferences(projectId: string) {
+    await this.ensureProject(projectId);
+    return this.prisma.projectReference.findMany({
+      where: { projectId },
+      include: { uploadedBy: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async updateReference(id: string, dto: Partial<CreateReferenceDto>) {
+    const data: any = {};
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.url !== undefined) data.url = dto.url;
+    if (dto.type !== undefined) data.type = dto.type;
+    if (dto.fileUrl !== undefined) data.fileUrl = dto.fileUrl;
+    return this.prisma.projectReference.update({ where: { id }, data }).catch(() => {
+      throw new NotFoundException("Reference not found");
+    });
+  }
+
+  async deleteReference(id: string) {
+    await this.prisma.projectReference.delete({ where: { id } }).catch(() => {
+      throw new NotFoundException("Reference not found");
+    });
+    return { ok: true };
+  }
+
+  async bulkAssignTasks(projectId: string, taskIds: string[]) {
+    await this.ensureProject(projectId);
+    if (!taskIds?.length) return { count: 0 };
+    const res = await this.prisma.task.updateMany({
+      where: { id: { in: taskIds } },
+      data: { projectId },
+    });
+    await this.cache.delPattern("tasks:list:*");
+    await this.cache.del("tasks:stats");
+    return res;
   }
 
   private async invalidateProjects() {
