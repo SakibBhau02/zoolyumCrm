@@ -292,16 +292,34 @@ export interface AccountsOverview {
   churnFlagged: number;
 }
 
+export interface ProjectReference {
+  id: string;
+  projectId: string;
+  title: string;
+  url?: string | null;
+  type: string;
+  fileUrl?: string | null;
+  uploadedBy?: { name: string } | null;
+  uploadedById?: string | null;
+  createdAt: string;
+}
+
 export interface Project {
   id: string;
   name: string;
+  description?: string | null;
   type: string;
   status: string;
   healthStatus: string;
   riskScore: number | null;
   riskDriver: string | null;
   budgetAmount: number | null;
+  amount?: number | null;
   targetEndDate: string | null;
+  projectLink?: string | null;
+  websiteUrl?: string | null;
+  socialLinks?: { facebook?: string; linkedin?: string; instagram?: string } | null;
+  references?: ProjectReference[];
   client: { id: string; companyName: string };
   assignedPm: { id: string; name: string } | null;
   sourceLead?: {
