@@ -1,21 +1,28 @@
 import type { Metadata } from "next";
-import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
-import { Space_Grotesk, Hind_Siliguri } from "next/font/google";
+import { Inter, Outfit, Noto_Sans_Bengali } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { QueryProvider } from "@/lib/query-provider";
 import { BrandingProvider } from "@/lib/branding-context";
 
-const spaceGrotesk = Space_Grotesk({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-display",
+  variable: "--font-inter",
+  display: "swap",
 });
 
-const hindSiliguri = Hind_Siliguri({
+const outfit = Outfit({
   subsets: ["latin"],
+  variable: "--font-display",
+  display: "swap",
+});
+
+const notoBengali = Noto_Sans_Bengali({
+  subsets: ["bengali"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-bangla",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -38,7 +45,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${GeistSans.variable} ${GeistMono.variable} ${spaceGrotesk.variable} ${hindSiliguri.variable} font-sans`}
+        className={`${inter.variable} ${GeistMono.variable} ${outfit.variable} ${notoBengali.variable} font-sans`}
       >
         <QueryProvider>
           <BrandingProvider>

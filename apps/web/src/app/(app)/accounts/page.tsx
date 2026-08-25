@@ -26,6 +26,7 @@ import {
   Table as TableIcon,
   Trash2,
   UserPlus,
+  UserRound,
   Users,
   Wallet,
 } from "lucide-react";
@@ -113,6 +114,7 @@ function getTierForClient(
 interface ClientFormState {
   companyName: string;
   industryVertical: string;
+  category: string;
   accountOwnerId: string;
   billingCycleType: string;
   currencyPreference: string;
@@ -127,16 +129,19 @@ function ClientFormModal({
   users,
   initial,
   onSaved,
+  projects,
 }: {
   open: boolean;
   onClose: () => void;
   users: UserLite[];
   initial?: Client | null;
   onSaved: () => void;
+  projects?: { id: string; name: string; status: string; healthStatus?: string }[];
 }) {
   const [f, setF] = useState<ClientFormState>({
     companyName: "",
     industryVertical: "OTHER",
+    category: "ACTIVE",
     accountOwnerId: "",
     billingCycleType: "PROJECT_BASED",
     currencyPreference: "BDT",
@@ -156,6 +161,7 @@ function ClientFormModal({
         ? {
             companyName: initial.companyName,
             industryVertical: initial.industryVertical,
+            category: (initial as any).category ?? "ACTIVE",
             accountOwnerId: initial.accountOwner?.id ?? "",
             billingCycleType: initial.billingCycleType,
             currencyPreference: initial.currencyPreference ?? "BDT",
@@ -166,6 +172,7 @@ function ClientFormModal({
         : {
             companyName: "",
             industryVertical: "OTHER",
+            category: "ACTIVE",
             accountOwnerId: "",
             billingCycleType: "PROJECT_BASED",
             currencyPreference: "BDT",
@@ -188,6 +195,7 @@ function ClientFormModal({
       const body = {
         companyName: f.companyName.trim(),
         industryVertical: f.industryVertical,
+        category: f.category,
         accountOwnerId: f.accountOwnerId || undefined,
         billingCycleType: f.billingCycleType,
         currencyPreference: f.currencyPreference,
@@ -210,59 +218,104 @@ function ClientFormModal({
 
   return (
     <Modal open={open} onClose={onClose} title={editing ? "Edit client" : "Add client"} size="lg">
-      <form onSubmit={save} className="flex flex-col gap-4">
-        <Field label="Company name">
-          <Input
-            value={f.companyName}
-            onChange={(e) => setF({ ...f, companyName: e.target.value })}
-            placeholder="Acme Ltd."
-            autoFocus
-          />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Industry vertical">
-            <Select value={f.industryVertical} onChange={(e) => setF({ ...f, industryVertical: e.target.value })}>
-              {VERTICALS.map((v) => (
-                <option key={v} value={v}>{label(v)}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Account owner">
-            <Select value={f.accountOwnerId} onChange={(e) => setF({ ...f, accountOwnerId: e.target.value })}>
-              <option value="">Unassigned</option>
-              {(users ?? []).map((u: UserLite) => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Billing cycle">
-            <Select value={f.billingCycleType} onChange={(e) => setF({ ...f, billingCycleType: e.target.value })}>
-              {BILLING_CYCLES.map((b) => (
-                <option key={b} value={b}>{label(b)}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Currency">
-            <Select value={f.currencyPreference} onChange={(e) => setF({ ...f, currencyPreference: e.target.value })}>
-              <option value="BDT">BDT</option>
-              <option value="USD">USD</option>
-              <option value="SAR">SAR</option>
-              <option value="AED">AED</option>
-            </Select>
-          </Field>
-          <Field label="Contract start">
-            <Input type="date" value={f.contractStartDate} onChange={(e) => setF({ ...f, contractStartDate: e.target.value })} />
-          </Field>
-          <Field label="Renewal date">
-            <Input type="date" value={f.renewalDate} onChange={(e) => setF({ ...f, renewalDate: e.target.value })} />
-          </Field>
+      <form onSubmit={save} className="flex flex-col gap-5">
+        <div className="flex items-center gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
+          <Avatar name={f.companyName || "New Client"} />
+          <div className="min-w-0 flex-1">
+            <p className="font-heading text-[15px] font-semibold truncate">{editing ? initial.companyName : "New Client"}</p>
+            <p className="text-[11px] text-muted-foreground">{editing ? "Update client details and integrations" : "Add a new client — projects & billing will be linked automatically"}</p>
+          </div>
+          {editing && (
+            <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-bold", categoryTone(f.category))}>
+              {label(f.category)}
+            </span>
+          )}
         </div>
+
+        <div>
+          <SectionTitle icon={<Building2 className="size-3.5" />} title="Company Information" />
+          <p className="mb-3 text-[11px] text-muted-foreground">Identity and business category</p>
+          <div className="mt-3 flex flex-col gap-4">
+            <Field label="Company name *">
+              <Input value={f.companyName} onChange={(e) => setF({ ...f, companyName: e.target.value })} placeholder="Acme Ltd." autoFocus />
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Industry vertical">
+                <Select value={f.industryVertical} onChange={(e) => setF({ ...f, industryVertical: e.target.value })}>
+                  {VERTICALS.map((v) => (
+                    <option key={v} value={v}>{label(v)}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Business category">
+                <Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>
+                  {CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{label(c)}</option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <SectionTitle icon={<UserRound className="size-3.5" />} title="Ownership & Billing" />
+          <p className="mb-3 text-[11px] text-muted-foreground">Account owner and contract terms</p>
+          <div className="mt-3 grid grid-cols-2 gap-4">
+            <Field label="Account owner">
+              <Select value={f.accountOwnerId} onChange={(e) => setF({ ...f, accountOwnerId: e.target.value })}>
+                <option value="">Unassigned</option>
+                {(users ?? []).map((u: UserLite) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Billing cycle">
+              <Select value={f.billingCycleType} onChange={(e) => setF({ ...f, billingCycleType: e.target.value })}>
+                {BILLING_CYCLES.map((b) => (
+                  <option key={b} value={b}>{label(b)}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Currency">
+              <Select value={f.currencyPreference} onChange={(e) => setF({ ...f, currencyPreference: e.target.value })}>
+                <option value="BDT">BDT</option>
+                <option value="USD">USD</option>
+                <option value="SAR">SAR</option>
+                <option value="AED">AED</option>
+              </Select>
+            </Field>
+            <Field label="Contract start">
+              <Input type="date" value={f.contractStartDate} onChange={(e) => setF({ ...f, contractStartDate: e.target.value })} />
+            </Field>
+            <Field label="Renewal date">
+              <Input type="date" value={f.renewalDate} onChange={(e) => setF({ ...f, renewalDate: e.target.value })} />
+            </Field>
+          </div>
+        </div>
+
+        {editing && projects && projects.length > 0 && (
+          <div className="rounded-xl border border-border/60 bg-card p-3">
+            <SectionTitle icon={<Layers className="size-3.5" />} title={`Running Projects (${projects.length})`} />
+            <p className="mb-3 text-[11px] text-muted-foreground">Integrated with Flow — click to view in Projects</p>
+            <div className="mt-3 flex max-h-[160px] flex-col gap-2 overflow-y-auto pr-1">
+              {projects.map((p) => (
+                <div key={p.id} className="flex items-center justify-between rounded-lg border border-border/40 bg-muted/20 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-[12.5px] font-semibold">{p.name}</p>
+                    <p className="text-[10.5px] text-muted-foreground">{label(p.status)} · {p.healthStatus ? label(p.healthStatus) : "—"}</p>
+                  </div>
+                  <a href={`/flow?clientId=${initial?.id}`} className="shrink-0 rounded-full bg-primary px-2.5 py-1 text-[11px] font-bold text-primary-foreground hover:bg-primary/90">
+                    View
+                  </a>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <Field label="Notes">
-          <Textarea
-            value={f.notes}
-            onChange={(e) => setF({ ...f, notes: e.target.value })}
-            placeholder="Context, commitments, payment terms…"
-          />
+          <Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Context, commitments, payment terms…" />
         </Field>
         {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Create client"} />
@@ -796,19 +849,19 @@ export default function AccountsPage() {
                 transition={{ duration: 0.2 }}
               >
                 <FadeIn>
-                  <TableShell noScroll footer={<span className="text-[11.5px] text-muted-foreground">{filtered.length} clients</span>}>
-                    <table className="w-full">
+                  <TableShell hideScrollbar footer={<span className="text-[11.5px] text-muted-foreground">{filtered.length} clients</span>}>
+                    <table className="w-full min-w-[960px]">
                       <THead>
                         <Th>Company</Th>
-                        <Th className="hidden lg:table-cell">Vertical</Th>
+                        <Th>Vertical</Th>
                         <Th>Health</Th>
                         <Th>Category</Th>
-                        <Th className="hidden md:table-cell">Paid</Th>
+                        <Th>Paid</Th>
                         <Th>Due</Th>
-                        <Th className="hidden xl:table-cell">Billing</Th>
-                        <Th className="hidden lg:table-cell">Owner</Th>
-                        <Th className="hidden md:table-cell">Renewal</Th>
-                        <Th className="hidden sm:table-cell">Projects</Th>
+                        <Th>Billing</Th>
+                        <Th>Owner</Th>
+                        <Th>Renewal</Th>
+                        <Th>Projects</Th>
                       </THead>
                       <tbody>
                         {filtered.map((c, i) => {
@@ -842,7 +895,7 @@ export default function AccountsPage() {
                                   </div>
                                 </div>
                               </Td>
-                              <Td className="hidden lg:table-cell text-muted-foreground">{c.industryVertical}</Td>
+                              <Td className="text-muted-foreground">{c.industryVertical}</Td>
                               <Td>
                                 <div className="flex items-center gap-2">
                                   <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", healthTone(c.healthLevel))}>
@@ -863,7 +916,7 @@ export default function AccountsPage() {
                                   ))}
                                 </Select>
                               </Td>
-                              <Td className="hidden md:table-cell"><span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(c.totalPaid ?? 0)}</span></Td>
+                              <Td className=""><span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(c.totalPaid ?? 0)}</span></Td>
                               <Td>
                                 {(c.totalDue ?? 0) > 0 ? (
                                   <span className="inline-flex items-center gap-1.5">
@@ -874,9 +927,9 @@ export default function AccountsPage() {
                                   <span className="text-[11.5px] tabular-nums text-muted-foreground">—</span>
                                 )}
                               </Td>
-                              <Td className="hidden xl:table-cell text-muted-foreground">{label(c.billingCycleType)}</Td>
-                              <Td className="hidden lg:table-cell text-muted-foreground">{c.accountOwner?.name ?? "—"}</Td>
-                              <Td className="hidden md:table-cell">
+                              <Td className="text-muted-foreground">{label(c.billingCycleType)}</Td>
+                              <Td className="text-muted-foreground">{c.accountOwner?.name ?? "—"}</Td>
+                              <Td className="">
                                 {days != null && days <= 30 ? (
                                   <span className={cn(
                                     "rounded-full border px-2 py-0.5 text-[10px] font-bold",
@@ -890,7 +943,7 @@ export default function AccountsPage() {
                                   <span className="text-[11.5px] text-muted-foreground">{formatDate(c.renewalDate)}</span>
                                 )}
                               </Td>
-                              <Td className="hidden sm:table-cell font-semibold tabular-nums">{c._count?.projects ?? 0}</Td>
+                              <Td className="font-semibold tabular-nums">{c._count?.projects ?? 0}</Td>
                             </Tr>
                           );
                         })}
@@ -1570,6 +1623,7 @@ export default function AccountsPage() {
         onClose={() => setEditClient(null)}
         users={users ?? []}
         initial={editClient}
+        projects={(detail as any)?.projects ?? (editClient as any)?.projects}
         onSaved={() => {
           setEditClient(null);
           reload();

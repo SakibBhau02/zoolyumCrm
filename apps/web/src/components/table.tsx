@@ -5,10 +5,10 @@ import { cn } from "./shared";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
-export function TableShell({ children, footer, noScroll }: { children: React.ReactNode; footer?: React.ReactNode; noScroll?: boolean }) {
+export function TableShell({ children, footer, noScroll, hideScrollbar }: { children: React.ReactNode; footer?: React.ReactNode; noScroll?: boolean; hideScrollbar?: boolean }) {
   return (
     <div className="card-lift overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
-      <div className={noScroll ? "overflow-hidden" : "overflow-x-auto"}>{children}</div>
+      <div className={noScroll ? "overflow-hidden" : hideScrollbar ? "overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden" : "overflow-x-auto"}>{children}</div>
       {footer && (
         <div className="flex items-center justify-between border-t border-border/60 px-5 py-3">
           {footer}
