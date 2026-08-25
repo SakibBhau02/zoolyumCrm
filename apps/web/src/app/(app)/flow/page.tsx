@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle, Banknote, Calendar, CheckCircle2, ChevronRight, CircleDollarSign, Download, Eye, Facebook, FileArchive,
   FileSpreadsheet, FileText, Globe, HandCoins, Image, Instagram, LayoutGrid, Linkedin, Link2, List, Pencil, Plus, ReceiptText, RefreshCw,
@@ -741,6 +741,7 @@ function ProjectExpenseModal({ open, project, bankAccounts, onClose, onSaved }: 
 
 export default function FlowPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: overview } = useApi<any>("/flow/overview");
   const { data: clients } = useApi<any[]>("/accounts/clients");
   const { data: templates } = useApi<any[]>("/flow/templates");
@@ -748,7 +749,47 @@ export default function FlowPage() {
   const { data: employees } = useApi<any[]>("/people/employees");
   const { data: bankAccounts } = useApi<any[]>("/capital/bank-accounts");
   const [tab, setTab] = useState<"projects" | "capacity">("projects");
-  const [view, setView] = useState<"grid" | "list" | "kanban">("grid");
+  const [view, setView] = useState<"table" | "grid" | "kanban">("table");
+  // persist view to localStorage + searchParams ?view=table|grid|kanban (migrate legacy "list" -> "table")
+  useEffect(() => {
+    const sp = searchParams.get("view");
+    if (sp === "table" || sp === "grid" || sp === "kanban") {
+      if (sp !== view) setView(sp as any);
+      return;
+    }
+    if (sp === "list" && view !== "table") {
+      setView("table");
+      return;
+    }
+    try {
+      const ls = localStorage.getItem("flow-view");
+      if (ls === "table" || ls === "grid" || ls === "kanban") {
+        if (ls !== view) setView(ls as any);
+      } else if (ls === "list" && view !== "table") {
+        setView("table");
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("flow-view", view);
+    } catch {}
+  }, [view]);
+
+  const setViewWithUrl = useCallback(
+    (v: "table" | "grid" | "kanban") => {
+      setView(v);
+      try {
+        localStorage.setItem("flow-view", v);
+      } catch {}
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("view", v);
+      router.push(`?${p.toString()}`, { scroll: false });
+    },
+    [router, searchParams]
+  );
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [healthFilter, setHealthFilter] = useState("");
@@ -1315,12 +1356,12 @@ export default function FlowPage() {
               )}
               <Segmented
                 options={[
+                  { value: "table", label: <List className="size-3.5" /> },
                   { value: "grid", label: <LayoutGrid className="size-3.5" /> },
-                  { value: "list", label: <List className="size-3.5" /> },
                   { value: "kanban", label: <SquareKanban className="size-3.5" /> },
                 ]}
                 value={view}
-                onChange={(v) => setView(v as any)}
+                onChange={(v) => setViewWithUrl(v as any)}
               />
             </div>
             {loading ? (
@@ -1336,7 +1377,7 @@ export default function FlowPage() {
                     {filtered.map((p) => <ProjectCard key={p.id} p={p} />)}
                   </div>
                 )}
-                {view === "list" && (
+                {view === "table" && (
                   <TableShell
                     footer={
                       <>
@@ -1370,7 +1411,15 @@ export default function FlowPage() {
                                 </div>
                               </div>
                             </Td>
-                            <Td><StatusBadge status={p.status} /></Td>
+                            <Td onClick={(e) => e.stopPropagation()}>
+                              <Select value={p.status} onChange={(e) => patchStatus(p, e.target.value)} className="!min-w-[132px] !py-1 text-[11px]">
+                                {PROJECT_STATUSES.map((s) => (
+                                  <option key={s} value={s}>
+                                    {label(s)}
+                                  </option>
+                                ))}
+                              </Select>
+                            </Td>
                             <Td>{badge(PRIORITY_STYLE[p.priority ?? "MEDIUM"] ?? PRIORITY_STYLE.MEDIUM, p.priority ?? "MEDIUM")}</Td>
                             <Td className="font-semibold tabular-nums">{p.progress != null ? `${p.progress}%` : "—"}</Td>
                             <Td>{budgetBar(p)}</Td>
