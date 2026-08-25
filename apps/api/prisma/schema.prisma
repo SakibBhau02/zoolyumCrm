@@ -35,6 +35,18 @@ enum HealthLevel {
   RED
 }
 
+enum BillingCycle {
+  ONE_TIME
+  RECURRING
+}
+
+enum ReferenceType {
+  DRIVE
+  NOTION
+  FIGMA
+  OTHER
+}
+
 enum ClientCategory {
   ACTIVE
   ON_HOLD
@@ -113,6 +125,7 @@ model User {
   clientComments               ClientComment[]
   notifications                Notification[]
   notificationPreferences      NotificationPreference[]
+  projectReferences            ProjectReference[]
 }
 
 model Integration {
@@ -585,43 +598,48 @@ model ProjectTemplate {
 }
 
 model Project {
-  id                String           @id @default(cuid())
-  uid               String?          @unique
-  client            Client           @relation(fields: [clientId], references: [id])
+  id                String             @id @default(cuid())
+  uid               String?            @unique
+  client            Client             @relation(fields: [clientId], references: [id])
   clientId          String
   name              String
-  type              ProjectType      @default(FIXED)
-  template          ProjectTemplate? @relation(fields: [templateId], references: [id])
+  description       String?            @db.Text
+  type              ProjectType        @default(FIXED)
+  template          ProjectTemplate?   @relation(fields: [templateId], references: [id])
   templateId        String?
-  sourceLead        Lead?            @relation("ProjectSourceLead", fields: [sourceLeadId], references: [id], onDelete: SetNull)
+  sourceLead        Lead?              @relation("ProjectSourceLead", fields: [sourceLeadId], references: [id], onDelete: SetNull)
   sourceLeadId      String?
-  sourceProposal    Proposal?        @relation("ProjectSourceProposal", fields: [sourceProposalId], references: [id], onDelete: SetNull)
-  sourceProposalId  String?          @unique
+  sourceProposal    Proposal?          @relation("ProjectSourceProposal", fields: [sourceProposalId], references: [id], onDelete: SetNull)
+  sourceProposalId  String?            @unique
   startDate         DateTime
   targetEndDate     DateTime?
-  status            ProjectStatus    @default(ACTIVE)
-  healthStatus      HealthStatus     @default(ON_TRACK)
-  riskScore         Int?             @default(0) // 0-100 calculated
+  status            ProjectStatus      @default(ACTIVE)
+  healthStatus      HealthStatus       @default(ON_TRACK)
+  riskScore         Int?               @default(0) // 0-100 calculated
   riskDriver        String?
-  category          String?          @default("")
-  priority          String?          @default("MEDIUM")
-  progress          Int              @default(0)
-  budgetAmount      Decimal?         @db.Decimal(14, 2)
-  spentAmount       Decimal?         @db.Decimal(14, 2)
-  currency          String           @default("BDT")
-  team              String[]         @default([])
-  billingType       String           @default("ONE_TIME")
+  category          String?            @default("")
+  priority          String?            @default("MEDIUM")
+  progress          Int                @default(0)
+  budgetAmount      Decimal?           @db.Decimal(14, 2)
+  amount            Decimal?           @db.Decimal(14, 2)
+  spentAmount       Decimal?           @db.Decimal(14, 2)
+  currency          String             @default("BDT")
+  team              String[]           @default([])
+  billingType       BillingCycle       @default(ONE_TIME)
   recurringInterval String?
   nextBillingDate   DateTime?
-  monthlyRate       Decimal?         @db.Decimal(14, 2)
-  totalBilled       Decimal?         @db.Decimal(14, 2)
-  paymentStatus     String           @default("PENDING")
+  monthlyRate       Decimal?           @db.Decimal(14, 2)
+  totalBilled       Decimal?           @db.Decimal(14, 2)
+  paymentStatus     String             @default("PENDING")
+  projectLink       String?
+  websiteUrl        String?
+  socialLinks       Json?
   briefLink         String?
   driveLink         String?
   researchLink      String?
-  assignedPm        User?            @relation(fields: [assignedPmId], references: [id])
+  assignedPm        User?              @relation(fields: [assignedPmId], references: [id])
   assignedPmId      String?
-  createdAt         DateTime         @default(now())
+  createdAt         DateTime           @default(now())
   milestones        Milestone[]
   files             ProjectFile[]
   riskLogs          ProjectRiskLog[]
@@ -632,9 +650,25 @@ model Project {
   expenses          Expense[]
   contentPosts      ContentPost[]
   calendarEvents    CalendarEvent[]
+  references        ProjectReference[]
 
   @@index([clientId])
   @@index([assignedPmId])
+}
+
+model ProjectReference {
+  id           String        @id @default(cuid())
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String
+  title        String
+  url          String?
+  type         ReferenceType @default(OTHER)
+  fileUrl      String?
+  uploadedBy   User?         @relation(fields: [uploadedById], references: [id])
+  uploadedById String?
+  createdAt    DateTime      @default(now())
+
+  @@index([projectId])
 }
 
 model Milestone {
@@ -846,58 +880,58 @@ enum PayrollStatus {
 }
 
 model Employee {
-  id                 String                @id @default(cuid())
-  name               String
-  roleTitle          String
-  department         String?
-  email              String?
-  phone              String?
-  workLocation       String                @default("Remote")
-  employmentType     String                @default("full-time")
-  salary             Decimal?              @db.Decimal(14, 2)
-  payFrequency       String                @default("monthly")
-  documents          Json?                 @default("[]") // [{id,name,type,url,uploadedAt}]
-  careerHistory      Json?                 @default("[]") // [{event,title,date}]
-  joinDate           DateTime
-  reportingManager   Employee?             @relation("reportsTo", fields: [reportingManagerId], references: [id])
-  reportingManagerId String?
-  reports            Employee[]            @relation("reportsTo")
-  employmentStatus   EmploymentStatus      @default(ACTIVE)
-  costRate           Decimal?              @db.Decimal(14, 2) // restricted to Owner/HR/Finance
-  skillTags          String[]              @default([])
-  deviceId           String?               @unique // fingerprint device PIN / user ID
-  weeklyOffDays      String[]              @default([]) // per-employee override, empty = follow policy
-  shiftStart         String?               @default("10:00") // HH:mm override
-  shiftEnd           String?               @default("18:00")
-  graceMinutes       Int?                  // override
-  user               User?
-  attendance         Attendance[]
-  leaveRequests      LeaveRequest[]
-  leaveBalances      LeaveBalance[]
-  payrollRecords     PayrollRecord[]
-  performanceReviews PerformanceReview[]
-  utilizationLogs    UtilizationLog[]
-  attritionFlags     AttritionRiskFlag[]
-  tasks              Task[]
-  reportedTasks      Task[]                @relation("taskReporter")
-  timeLogs           TimeLog[]
-  estimateLogs       EstimateAccuracyLog[]
-  okrs               Okr[]
-  enrollments        TrainingEnrollment[]
-  punches            PunchLog[]
+  id                    String                 @id @default(cuid())
+  name                  String
+  roleTitle             String
+  department            String?
+  email                 String?
+  phone                 String?
+  workLocation          String                 @default("Remote")
+  employmentType        String                 @default("full-time")
+  salary                Decimal?               @db.Decimal(14, 2)
+  payFrequency          String                 @default("monthly")
+  documents             Json?                  @default("[]") // [{id,name,type,url,uploadedAt}]
+  careerHistory         Json?                  @default("[]") // [{event,title,date}]
+  joinDate              DateTime
+  reportingManager      Employee?              @relation("reportsTo", fields: [reportingManagerId], references: [id])
+  reportingManagerId    String?
+  reports               Employee[]             @relation("reportsTo")
+  employmentStatus      EmploymentStatus       @default(ACTIVE)
+  costRate              Decimal?               @db.Decimal(14, 2) // restricted to Owner/HR/Finance
+  skillTags             String[]               @default([])
+  deviceId              String?                @unique // fingerprint device PIN / user ID
+  weeklyOffDays         String[]               @default([]) // per-employee override, empty = follow policy
+  shiftStart            String?                @default("10:00") // HH:mm override
+  shiftEnd              String?                @default("18:00")
+  graceMinutes          Int? // override
+  user                  User?
+  attendance            Attendance[]
+  leaveRequests         LeaveRequest[]
+  leaveBalances         LeaveBalance[]
+  payrollRecords        PayrollRecord[]
+  performanceReviews    PerformanceReview[]
+  utilizationLogs       UtilizationLog[]
+  attritionFlags        AttritionRiskFlag[]
+  tasks                 Task[]
+  reportedTasks         Task[]                 @relation("taskReporter")
+  timeLogs              TimeLog[]
+  estimateLogs          EstimateAccuracyLog[]
+  okrs                  Okr[]
+  enrollments           TrainingEnrollment[]
+  punches               PunchLog[]
   attendanceCorrections AttendanceCorrection[]
 }
 
 model Attendance {
-  id                  String           @id @default(cuid())
-  employee            Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id                  String                 @id @default(cuid())
+  employee            Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   employeeId          String
-  date                DateTime         @db.Date
+  date                DateTime               @db.Date
   checkInTime         DateTime?
   checkOutTime        DateTime?
-  status              AttendanceStatus @default(PRESENT)
-  isManuallyCorrected Boolean          @default(false)
-  correctedBy         User?            @relation(fields: [correctedById], references: [id])
+  status              AttendanceStatus       @default(PRESENT)
+  isManuallyCorrected Boolean                @default(false)
+  correctedBy         User?                  @relation(fields: [correctedById], references: [id])
   correctedById       String?
   corrections         AttendanceCorrection[]
 
@@ -1048,26 +1082,26 @@ model Candidate {
 }
 
 model Holiday {
-  id          String   @id @default(cuid())
-  date        String   @unique // YYYY-MM-DD
-  name        String
-  description String?
-  tentative   Boolean  @default(false) // e.g. lunar Eid dates — confirm before payroll month
-  isGovernment Boolean @default(true)
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  date         String   @unique // YYYY-MM-DD
+  name         String
+  description  String?
+  tentative    Boolean  @default(false) // e.g. lunar Eid dates — confirm before payroll month
+  isGovernment Boolean  @default(true)
+  createdAt    DateTime @default(now())
 }
 
 model AttendancePolicy {
-  id              String   @id @default("default")
-  weeklyOffDays   String[] @default(["FRIDAY", "SATURDAY"])
-  graceMinutes    Int      @default(15)
-  shiftStart      String   @default("10:00")
-  shiftEnd        String   @default("18:00")
-  halfDayCutoff   String   @default("12:00")
-  lateLadder      Json     @default("[{\"lates\":3,\"days\":1},{\"lates\":6,\"days\":2},{\"lates\":9,\"days\":3}]")
-  dailyRateDivisor Int     @default(26) // 0 = auto (actual working days in month)
-  proRataEnabled  Boolean  @default(false)
-  updatedAt       DateTime @default(now()) @updatedAt
+  id               String   @id @default("default")
+  weeklyOffDays    String[] @default(["FRIDAY", "SATURDAY"])
+  graceMinutes     Int      @default(15)
+  shiftStart       String   @default("10:00")
+  shiftEnd         String   @default("18:00")
+  halfDayCutoff    String   @default("12:00")
+  lateLadder       Json     @default("[{\"lates\":3,\"days\":1},{\"lates\":6,\"days\":2},{\"lates\":9,\"days\":3}]")
+  dailyRateDivisor Int      @default(26) // 0 = auto (actual working days in month)
+  proRataEnabled   Boolean  @default(false)
+  updatedAt        DateTime @default(now()) @updatedAt
 }
 
 model PunchLog {
@@ -1119,29 +1153,29 @@ enum AccountCategory {
 }
 
 model Account {
-  id                 String              @id @default(cuid())
-  code               String?
-  name               String
-  category           AccountCategory
-  isActive           Boolean             @default(true)
-  expenses           Expense[]
-  journalLines       JournalEntryLine[]
-  categoryDefs       ExpenseCategoryDef[]
+  id           String               @id @default(cuid())
+  code         String?
+  name         String
+  category     AccountCategory
+  isActive     Boolean              @default(true)
+  expenses     Expense[]
+  journalLines JournalEntryLine[]
+  categoryDefs ExpenseCategoryDef[]
 }
 
 model Vendor {
-  id          String    @id @default(cuid())
-  name        String
-  contactInfo String?
-  category    String?
-  email       String?
-  phone       String?
-  address     String?
+  id           String    @id @default(cuid())
+  name         String
+  contactInfo  String?
+  category     String?
+  email        String?
+  phone        String?
+  address      String?
   paymentTerms String?
-  bankDetails String?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  expenses    Expense[]
+  bankDetails  String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  expenses     Expense[]
 }
 
 enum ApprovalStatus {
@@ -1317,35 +1351,35 @@ model Payment {
 }
 
 model Installment {
-  id         String   @id @default(cuid())
-  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  invoice    Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   invoiceId  String
   sequence   Int
-  amount     Decimal  @db.Decimal(14, 2)
-  dueDate    DateTime @db.Date
-  status     String   @default("PENDING") // PENDING | PARTIAL | PAID
-  paidAmount Decimal  @default(0) @db.Decimal(14, 2)
+  amount     Decimal   @db.Decimal(14, 2)
+  dueDate    DateTime  @db.Date
+  status     String    @default("PENDING") // PENDING | PARTIAL | PAID
+  paidAmount Decimal   @default(0) @db.Decimal(14, 2)
   payments   Payment[]
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([invoiceId])
 }
 
 model ManualIncome {
-  id              String        @id @default(cuid())
-  description     String
-  amount          Decimal       @db.Decimal(14, 2)
-  currency        String        @default("BDT")
-  exchangeRate    Decimal?      @default(1) @db.Decimal(10, 4)
-  category        String        @default("OTHER_INCOME")
-  date            DateTime      @db.Date
-  paymentMethod   PaymentMethod @default(CASH)
-  bankAccount     BankAccount?  @relation(fields: [bankAccountId], references: [id])
-  bankAccountId   String?
-  notes           String?
-  recordedBy      User?         @relation(fields: [recordedById], references: [id])
-  recordedById    String?
-  createdAt       DateTime      @default(now())
+  id            String        @id @default(cuid())
+  description   String
+  amount        Decimal       @db.Decimal(14, 2)
+  currency      String        @default("BDT")
+  exchangeRate  Decimal?      @default(1) @db.Decimal(10, 4)
+  category      String        @default("OTHER_INCOME")
+  date          DateTime      @db.Date
+  paymentMethod PaymentMethod @default(CASH)
+  bankAccount   BankAccount?  @relation(fields: [bankAccountId], references: [id])
+  bankAccountId String?
+  notes         String?
+  recordedBy    User?         @relation(fields: [recordedById], references: [id])
+  recordedById  String?
+  createdAt     DateTime      @default(now())
 
   @@index([date])
 }
@@ -1381,19 +1415,19 @@ model CreditNote {
 }
 
 model JournalEntry {
-  id              String              @id @default(cuid())
-  entryType       String              // INVOICE | PAYMENT | EXPENSE | CREDIT_NOTE | REFUND | WRITE_OFF | MANUAL
+  id              String             @id @default(cuid())
+  entryType       String // INVOICE | PAYMENT | EXPENSE | CREDIT_NOTE | REFUND | WRITE_OFF | MANUAL
   reference       String
-  entryDate       DateTime            @db.Date
+  entryDate       DateTime           @db.Date
   sourceId        String?
   notes           String?
-  reversedEntry   JournalEntry?       @relation("EntryReversal", fields: [reversedEntryId], references: [id])
-  reversedEntryId String?             @unique
-  reversedEntries JournalEntry[]      @relation("EntryReversal")
-  createdBy       User?               @relation(fields: [createdById], references: [id])
+  reversedEntry   JournalEntry?      @relation("EntryReversal", fields: [reversedEntryId], references: [id])
+  reversedEntryId String?            @unique
+  reversedEntries JournalEntry[]     @relation("EntryReversal")
+  createdBy       User?              @relation(fields: [createdById], references: [id])
   createdById     String?
   lines           JournalEntryLine[]
-  createdAt       DateTime            @default(now())
+  createdAt       DateTime           @default(now())
 
   @@index([entryType])
   @@index([entryDate])
