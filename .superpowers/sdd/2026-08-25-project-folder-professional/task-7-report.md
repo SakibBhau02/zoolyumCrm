@@ -8,7 +8,7 @@
 
 **Spec:** docs/superpowers/specs/2026-08-25-project-folder-professional-design.md sections 6, 7, 8
 
-**Commit:** 6ef3dc5
+**Commit:** 393737e
 
 ## Summary
 Implemented Task 7 exactly as specified: upgraded `flow/page.tsx` detail modal (`!!selectedId` size `xl`) to 7 tabs via `Segmented` — `Overview | Milestones | Files | Discussions | Tasks | Finance | References & Research` — with Overview pills for `projectLink`/`websiteUrl`/`socialLinks` + `description` + `amount` vs `budgetAmount` + `socialLinks` (keeping 4 stats + risk + facts), new `References & Research` tab supporting both `Upload File` (`POST /flow/upload` → `POST /flow/projects/:id/references {title, fileUrl}`) and `Add Drive Link` (`title* + url* + type → POST`) with table `title | url | type badge | fileUrl download | uploadedBy | delete`, `Tasks` tab `Bulk assign` → `POST /flow/projects/:id/tasks/bulk`, and `Finance` tab `ProjectFinancePanel` plus budget burn bar `spent/budget %`. All `npx tsc --noEmit` (web+api) and `npm run build` (web) pass, no portal sync needed.
