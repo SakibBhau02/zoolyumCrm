@@ -802,7 +802,7 @@ export default function FlowPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailTab, setDetailTab] = useState<"overview" | "milestones" | "files" | "discussions" | "tasks" | "finance">("overview");
+  const [detailTab, setDetailTab] = useState<"overview" | "milestones" | "files" | "discussions" | "tasks" | "finance" | "references">("overview");
   const [finance, setFinance] = useState<any | null>(null);
   const [finLoading, setFinLoading] = useState(false);
   const [finInvOpen, setFinInvOpen] = useState(false);
@@ -832,6 +832,21 @@ export default function FlowPage() {
   const [dragId, setDragId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  // references & research
+  const [references, setReferences] = useState<any[] | null>(null);
+  const [refsLoading, setRefsLoading] = useState(false);
+  const [refTitle, setRefTitle] = useState("");
+  const [refUrl, setRefUrl] = useState("");
+  const [refType, setRefType] = useState("OTHER");
+  const [refBusy, setRefBusy] = useState(false);
+  const [refUploading, setRefUploading] = useState(false);
+  const refFileRef = useRef<HTMLInputElement>(null);
+  // bulk task assign
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkTasks, setBulkTasks] = useState<any[] | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const reload = useCallback(() => setRefresh((r) => r + 1), []);
   const notify = (m: string) => {
@@ -893,6 +908,33 @@ export default function FlowPage() {
       .finally(() => !cancelled && setFinLoading(false));
     return () => { cancelled = true; };
   }, [selectedId, refresh]);
+
+  useEffect(() => {
+    if (!selectedId) { setReferences(null); return; }
+    let cancelled = false;
+    setRefsLoading(true);
+    apiFetch<any[]>(`/flow/projects/${selectedId}/references`)
+      .then((d) => !cancelled && setReferences(d))
+      .catch(() => !cancelled && setReferences([]))
+      .finally(() => !cancelled && setRefsLoading(false));
+    return () => { cancelled = true; };
+  }, [selectedId, refresh]);
+
+  // fetch bulk tasks when bulk modal opens
+  useEffect(() => {
+    if (!bulkOpen || !detail) return;
+    let cancelled = false;
+    setBulkLoading(true);
+    apiFetch<any>("/tasks")
+      .then((d: any) => {
+        if (cancelled) return;
+        const list = Array.isArray(d) ? d : d?.items ?? d?.data ?? [];
+        setBulkTasks(list);
+      })
+      .catch(() => !cancelled && setBulkTasks([]))
+      .finally(() => !cancelled && setBulkLoading(false));
+    return () => { cancelled = true; };
+  }, [bulkOpen, detail]);
 
   useEffect(() => {
     if (!detail) return;
@@ -1152,6 +1194,81 @@ export default function FlowPage() {
     }
   };
 
+  // ── References & Research handlers ────────────────────────────────
+  const reloadReferences = async () => {
+    if (!detail) return;
+    try {
+      const data = await apiFetch<any[]>(`/flow/projects/${detail.id}/references`);
+      setReferences(data);
+    } catch {}
+  };
+
+  const addReferenceLink = async () => {
+    if (!detail) return;
+    if (!refTitle.trim() || !refUrl.trim()) { notify("Title and URL are required"); return; }
+    setRefBusy(true);
+    try {
+      await apiFetch(`/flow/projects/${detail.id}/references`, { method: "POST", body: JSON.stringify({ title: refTitle.trim(), url: refUrl.trim(), type: refType }) });
+      setRefTitle(""); setRefUrl("");
+      await reloadReferences(); reload();
+      notify("Reference added");
+    } catch (e: any) { notify(e.message ?? "Add reference failed"); } finally { setRefBusy(false); }
+  };
+
+  const handleRefFile = async (file: File) => {
+    if (!detail) return;
+    setRefUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const token = getToken();
+      const res = await fetch(`${API_URL}/flow/upload`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.fileUrl) throw new Error(body?.message ?? "Upload failed");
+      const title = body.originalName ?? file.name;
+      await apiFetch(`/flow/projects/${detail.id}/references`, { method: "POST", body: JSON.stringify({ title, fileUrl: body.fileUrl, type: refType ?? "OTHER" }) });
+      await reloadReferences(); reload();
+      notify("Reference file uploaded");
+    } catch (e: any) { notify(e.message ?? "Upload failed"); } finally { setRefUploading(false); }
+  };
+
+  const onPickRefFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) await handleRefFile(file);
+  };
+
+  const deleteReference = async (id: string) => {
+    try {
+      await apiFetch(`/flow/references/${id}`, { method: "DELETE" });
+      setReferences((prev) => (prev ? prev.filter((r) => r.id !== id) : prev));
+      notify("Reference removed");
+      reload();
+    } catch (e: any) { notify(e.message ?? "Delete failed"); }
+  };
+
+  // ── Bulk task assign handlers ────────────────────────────────────
+  const toggleBulkSelected = (id: string) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const doBulkAssign = async () => {
+    if (!detail || bulkSelected.size === 0) return;
+    setBulkBusy(true);
+    try {
+      await apiFetch(`/flow/projects/${detail.id}/tasks/bulk`, { method: "POST", body: JSON.stringify({ taskIds: Array.from(bulkSelected) }) });
+      notify(`${bulkSelected.size} task(s) assigned to ${detail.name}`);
+      setBulkOpen(false);
+      setBulkSelected(new Set());
+      reload();
+    } catch (e: any) { notify(e.message ?? "Bulk assign failed"); } finally { setBulkBusy(false); }
+  };
+
   const riskBar = (score: number | null) => {
     const s = score ?? 0;
     return (
@@ -1165,8 +1282,9 @@ export default function FlowPage() {
   };
 
   const budgetPct = (p: ProjectRow) => {
-    if (!p.budgetAmount) return 0;
-    return Math.min(100, Math.round(((p.spentAmount ?? p.budgetSpent ?? 0) / p.budgetAmount) * 100));
+    const budget = (p as any).amount ?? p.budgetAmount;
+    if (!budget) return 0;
+    return Math.min(100, Math.round(((p.spentAmount ?? (p as any).budgetSpent ?? 0) / budget) * 100));
   };
 
   const budgetBar = (p: ProjectRow) => {
@@ -1176,7 +1294,7 @@ export default function FlowPage() {
         <div className="h-1.5 w-10 overflow-hidden rounded-full bg-muted">
           <div className={`h-full rounded-full ${pct >= 90 ? "bg-rose-500" : pct >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} />
         </div>
-        <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{formatBDT(p.spentAmount ?? p.budgetSpent ?? 0)} / {formatBDT(p.budgetAmount)}</span>
+        <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{formatBDT(p.spentAmount ?? (p as any).budgetSpent ?? 0)} / {formatBDT((p as any).amount ?? p.budgetAmount)}</span>
       </div>
     );
   };
@@ -1593,6 +1711,31 @@ export default function FlowPage() {
                 <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-[10.5px] font-semibold text-muted-foreground">{detail.category}</span>
               )}
               {detail.paymentStatus && <StatusBadge status={detail.paymentStatus} />}
+              {(detail as any).projectLink && (
+                <a href={(detail as any).projectLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10.5px] font-bold text-primary transition-colors hover:bg-primary/20">
+                  <Globe className="size-3" /> live
+                </a>
+              )}
+              {(detail as any).websiteUrl && (
+                <a href={(detail as any).websiteUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[10.5px] font-bold text-sky-400 transition-colors hover:bg-sky-500/20">
+                  <Link2 className="size-3" /> website
+                </a>
+              )}
+              {(detail as any).socialLinks?.facebook && (
+                <a href={(detail as any).socialLinks.facebook} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[10.5px] font-bold text-sky-500 transition-colors hover:bg-sky-500/20">
+                  <Facebook className="size-3" /> fb
+                </a>
+              )}
+              {(detail as any).socialLinks?.linkedin && (
+                <a href={(detail as any).socialLinks.linkedin} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-600/30 bg-sky-600/10 px-2.5 py-1 text-[10.5px] font-bold text-sky-600 transition-colors hover:bg-sky-600/20">
+                  <Linkedin className="size-3" /> in
+                </a>
+              )}
+              {(detail as any).socialLinks?.instagram && (
+                <a href={(detail as any).socialLinks.instagram} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-1 text-[10.5px] font-bold text-pink-500 transition-colors hover:bg-pink-500/20">
+                  <Instagram className="size-3" /> ig
+                </a>
+              )}
               {(detail.briefLink || detail.driveLink || detail.researchLink) && (
                 <div className="flex items-center gap-1.5">
                   {detail.briefLink && (
@@ -1616,11 +1759,11 @@ export default function FlowPage() {
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <div className="rounded-2xl border border-border/60 p-3.5">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Budget</p>
-                <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{detail.budgetAmount != null ? formatBDT(detail.budgetAmount) : "—"}</p>
+                <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{(detail as any).amount != null || detail.budgetAmount != null ? formatBDT((detail as any).amount ?? detail.budgetAmount) : "—"}</p>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                   <div className={`h-full rounded-full ${budgetPct(detail) >= 90 ? "bg-rose-500" : budgetPct(detail) >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, budgetPct(detail))}%` }} />
                 </div>
-                <p className="mt-1 text-[10px] text-muted-foreground">{formatBDT(detail.spentAmount ?? detail.budgetSpent ?? 0)} spent � {budgetPct(detail)}%</p>
+                <p className="mt-1 text-[10px] text-muted-foreground">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent � {budgetPct(detail)}%</p>
               </div>
               <div className="rounded-2xl border border-border/60 p-3.5">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Progress</p>
@@ -1666,8 +1809,9 @@ export default function FlowPage() {
               <Fact label="Client" value={detail.client.companyName} />
               <Fact label="Start" value={formatDate(detail.startDate)} />
               <Fact label="Target" value={formatDate(detail.targetEndDate)} />
-              <Fact label="Budget" value={formatBDT(detail.budgetAmount)} />
-              <Fact label="Spent" value={formatBDT(detail.spentAmount ?? detail.budgetSpent ?? 0)} />
+              <Fact label="Budget" value={formatBDT((detail as any).amount ?? detail.budgetAmount)} />
+              <Fact label="Amount" value={formatBDT((detail as any).amount ?? detail.budgetAmount)} />
+              <Fact label="Spent" value={formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} />
               <Fact label="Progress" value={detail.progress != null ? `${detail.progress}%` : "—"} />
               <Fact label="PM" value={detail.assignedPm?.name ?? "—"} />
               <Fact label="Tasks" value={`${detail.tasksCompleted ?? detail.tasks.length}/${detail.tasksTotal ?? detail.tasks.length}`} />
@@ -1677,7 +1821,19 @@ export default function FlowPage() {
               <Fact label="Next billing" value={detail.nextBillingDate ? formatDate(detail.nextBillingDate) : "—"} />
               <Fact label="Payment" value={detail.paymentStatus ? label(detail.paymentStatus) : "—"} />
               <Fact label="Total billed" value={formatBDT(detail.totalBilled)} />
+              <Fact label="Project Link" value={(detail as any).projectLink ?? "—"} />
+              <Fact label="Website" value={(detail as any).websiteUrl ?? "—"} />
+              <Fact label="Social" value={(detail as any).socialLinks ? [ (detail as any).socialLinks.facebook, (detail as any).socialLinks.linkedin, (detail as any).socialLinks.instagram ].filter(Boolean).join(" � ") || "—" : "—"} />
             </div>
+            {((detail as any).projectLink || (detail as any).websiteUrl || (detail as any).socialLinks) && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 p-3">
+                {(detail as any).projectLink && <a href={(detail as any).projectLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11.5px] font-bold text-primary hover:bg-primary/20"><Globe className="size-3.5" /> {(detail as any).projectLink}</a>}
+                {(detail as any).websiteUrl && <a href={(detail as any).websiteUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-[11.5px] font-bold text-sky-500 hover:bg-sky-500/20"><Link2 className="size-3.5" /> {(detail as any).websiteUrl}</a>}
+                {(detail as any).socialLinks?.facebook && <a href={(detail as any).socialLinks.facebook} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[11px] font-bold text-blue-500"><Facebook className="size-3.5" /> Facebook</a>}
+                {(detail as any).socialLinks?.linkedin && <a href={(detail as any).socialLinks.linkedin} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-600/30 bg-sky-600/10 px-2.5 py-1 text-[11px] font-bold text-sky-600"><Linkedin className="size-3.5" /> LinkedIn</a>}
+                {(detail as any).socialLinks?.instagram && <a href={(detail as any).socialLinks.instagram} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-1 text-[11px] font-bold text-pink-500"><Instagram className="size-3.5" /> Instagram</a>}
+              </div>
+            )}
             <Segmented
               options={[
                 { value: "overview", label: "Overview" },
@@ -1686,12 +1842,64 @@ export default function FlowPage() {
                 { value: "discussions", label: "Discussions" },
                 { value: "tasks", label: `Tasks (${detail.tasks.length})` },
                 { value: "finance", label: `Finance (${finance?.invoices?.length ?? 0})` },
+                { value: "references", label: `References & Research` },
               ]}
-              value={detailTab}
-              onChange={setDetailTab}
+              value={detailTab as any}
+              onChange={setDetailTab as any}
             />
             {detailTab === "overview" && (
               <div className="flex flex-col gap-5">
+                {/* description */}
+                {(detail as any).description && (
+                  <section className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                    <h4 className="mb-1.5 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase"><FileText className="size-3.5" /> Description</h4>
+                    <p className="text-[12.5px] leading-relaxed text-muted-foreground whitespace-pre-wrap">{(detail as any).description}</p>
+                  </section>
+                )}
+                {/* project overview links pills */}
+                {((detail as any).projectLink || (detail as any).websiteUrl || (detail as any).socialLinks?.facebook || (detail as any).socialLinks?.linkedin || (detail as any).socialLinks?.instagram) && (
+                  <section className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 p-3">
+                    {(detail as any).projectLink && <a href={(detail as any).projectLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11.5px] font-bold text-primary hover:bg-primary/20"><Globe className="size-3.5" /> Project Live</a>}
+                    {(detail as any).websiteUrl && <a href={(detail as any).websiteUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-[11.5px] font-bold text-sky-500 hover:bg-sky-500/20"><Link2 className="size-3.5" /> Website</a>}
+                    {(detail as any).socialLinks?.facebook && <a href={(detail as any).socialLinks.facebook} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[11px] font-bold text-blue-500"><Facebook className="size-3.5" /> Facebook</a>}
+                    {(detail as any).socialLinks?.linkedin && <a href={(detail as any).socialLinks.linkedin} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-600/30 bg-sky-600/10 px-2.5 py-1 text-[11px] font-bold text-sky-600"><Linkedin className="size-3.5" /> LinkedIn</a>}
+                    {(detail as any).socialLinks?.instagram && <a href={(detail as any).socialLinks.instagram} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-1 text-[11px] font-bold text-pink-500"><Instagram className="size-3.5" /> Instagram</a>}
+                  </section>
+                )}
+                {/* amount vs budgetAmount */}
+                {((detail as any).amount != null || detail.budgetAmount != null) && (
+                  <section className="rounded-2xl border border-border/60 p-3">
+                    <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase"><CircleDollarSign className="size-3.5" /> Amount vs Budget</h4>
+                    <div className="flex items-center justify-between text-[12px]">
+                      <span className="font-semibold tabular-nums">{formatBDT((detail as any).amount ?? detail.budgetAmount)} — amount</span>
+                      <span className="text-muted-foreground tabular-nums">budget {formatBDT(detail.budgetAmount)}</span>
+                      <span className="font-bold tabular-nums">{budgetPct(detail)}% spent</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                      <div className={`h-full rounded-full ${budgetPct(detail) >= 90 ? "bg-rose-500" : budgetPct(detail) >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${budgetPct(detail)}%` }} />
+                    </div>
+                    <p className="mt-1.5 text-[10.5px] text-muted-foreground">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent � {formatBDT((detail as any).amount ?? detail.budgetAmount)} total</p>
+                  </section>
+                )}
+                {/* Gantt-like milestone bars */}
+                {detail.milestones && detail.milestones.length > 0 && (
+                  <section className="rounded-2xl border border-border/60 p-3">
+                    <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase"><Calendar className="size-3.5" /> Timeline (Gantt)</h4>
+                    <div className="flex flex-col gap-1.5">
+                      {detail.milestones.slice(0, 6).map((m) => {
+                        const done = m.status === "COMPLETED";
+                        const prog = m.status === "IN_PROGRESS" ? 55 : done ? 100 : 10;
+                        return (
+                          <div key={m.id} className="flex items-center gap-2">
+                            <span className="w-28 truncate text-[11px] font-medium">{m.name}</span>
+                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${done ? "bg-emerald-500" : prog > 10 ? "bg-primary" : "bg-muted-foreground/30"}`} style={{ width: `${prog}%` }} /></div>
+                            <span className="text-[10px] text-muted-foreground">{formatDate(m.dueDate)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
                 {detail.sourceLead && (
                   <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
                     <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-primary uppercase">
@@ -1748,15 +1956,15 @@ export default function FlowPage() {
                     </div>
                   </section>
                 )}
-                {detail.budgetAmount ? (
+                {((detail as any).amount ?? detail.budgetAmount) ? (
                   <section>
                     <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
                       <Wallet className="size-3.5" /> Budget
                     </h4>
                     <div className="rounded-xl border border-border/60 p-3">
                       <div className="flex items-center justify-between text-[12px]">
-                        <span className="font-semibold tabular-nums">{formatBDT(detail.spentAmount ?? detail.budgetSpent ?? 0)} spent</span>
-                        <span className="text-muted-foreground tabular-nums">of {formatBDT(detail.budgetAmount)}</span>
+                        <span className="font-semibold tabular-nums">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent</span>
+                        <span className="text-muted-foreground tabular-nums">of {formatBDT((detail as any).amount ?? detail.budgetAmount)}</span>
                         <span className="font-bold tabular-nums">{budgetPct(detail)}%</span>
                       </div>
                       <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
@@ -1886,9 +2094,14 @@ export default function FlowPage() {
               <div className="flex flex-col gap-2">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-[11.5px] text-muted-foreground">{detail.tasks.length} linked tasks</span>
-                  <Btn variant="primary" onClick={() => setTaskOpen(true)}>
-                    <Plus className="size-3.5" /> New task
-                  </Btn>
+                  <div className="flex items-center gap-2">
+                    <Btn variant="outline" onClick={() => setBulkOpen(true)}>
+                      <Users className="size-3.5" /> Bulk assign
+                    </Btn>
+                    <Btn variant="primary" onClick={() => setTaskOpen(true)}>
+                      <Plus className="size-3.5" /> New task
+                    </Btn>
+                  </div>
                 </div>
                 {!detail.tasks.length ? (
                   <p className="text-[11.5px] text-muted-foreground">No tasks linked to this project</p>
@@ -1914,15 +2127,91 @@ export default function FlowPage() {
               (finLoading && !finance ? (
                 <div className="flex flex-col gap-2">{[...Array(5)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}</div>
               ) : finance ? (
-                <ProjectFinancePanel
-                  finance={finance}
-                  loading={finLoading}
-                  onInvoice={() => setFinInvOpen(true)}
-                  onExpense={() => setFinExpOpen(true)}
-                />
+                <div className="flex flex-col gap-4">
+                  <div className="rounded-xl border border-border/60 p-3">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase"><Wallet className="size-3.5" /> Budget burn</p>
+                    <div className="flex items-center justify-between text-[11.5px]">
+                      <span className="font-semibold tabular-nums">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent</span>
+                      <span className="text-muted-foreground tabular-nums">of {formatBDT((detail as any).amount ?? detail.budgetAmount ?? finance?.project?.budgetAmount)}</span>
+                      <span className="font-bold tabular-nums">{budgetPct(detail)}%</span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                      <div className={`h-full rounded-full ${budgetPct(detail) >= 90 ? "bg-rose-500" : budgetPct(detail) >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${budgetPct(detail)}%` }} />
+                    </div>
+                  </div>
+                  <ProjectFinancePanel
+                    finance={finance}
+                    loading={finLoading}
+                    onInvoice={() => setFinInvOpen(true)}
+                    onExpense={() => setFinExpOpen(true)}
+                  />
+                </div>
               ) : (
                 <EmptyState title="Finance data unavailable" hint="Could not load project finance." />
               ))}
+            {detailTab === "references" && (
+              <div className="flex flex-col gap-4">
+                {/* top bar: Upload File + Add Drive Link */}
+                <div className="flex flex-col gap-3 rounded-2xl border border-border/60 p-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Upload File</p>
+                    <div className="flex items-center gap-2">
+                      <Btn variant="outline" onClick={() => refFileRef.current?.click()} className={refUploading ? "opacity-50" : ""}>
+                        <UploadCloud className="size-3.5" /> {refUploading ? "Uploading…" : "Upload File"}
+                      </Btn>
+                      <input ref={refFileRef} type="file" className="hidden" onChange={onPickRefFile} />
+                      <span className="text-[11px] text-muted-foreground">→ creates reference with fileUrl</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-1 flex-col gap-2 sm:ml-6">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Add Drive Link</p>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                      <Field label="Title *"><Input value={refTitle} onChange={(e) => setRefTitle(e.target.value)} placeholder="Brand assets" className="!w-36" /></Field>
+                      <Field label="URL *"><Input value={refUrl} onChange={(e) => setRefUrl(e.target.value)} placeholder="https://drive.google.com/..." className="!w-64" /></Field>
+                      <Field label="Type"><Select value={refType} onChange={(e) => setRefType(e.target.value)} className="!w-28">{["DRIVE","NOTION","FIGMA","OTHER"].map((t)=><option key={t} value={t}>{t}</option>)}</Select></Field>
+                      <Btn variant="primary" onClick={addReferenceLink} className={refBusy ? "opacity-50" : ""}><Link2 className="size-3.5" /> Add</Btn>
+                    </div>
+                  </div>
+                </div>
+                {refsLoading ? (
+                  <div className="flex flex-col gap-2">{[...Array(4)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}</div>
+                ) : !references || references.length === 0 ? (
+                  <EmptyState title="No references yet" hint="Upload a file or add a drive link (Drive, Notion, Figma, or Other — tribal / national / drive links supported as url with type)." />
+                ) : (
+                  <div className="overflow-auto rounded-xl border border-border/60">
+                    <table className="w-full text-left">
+                      <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 font-bold">Title</th>
+                          <th className="px-3 py-2 font-bold">URL</th>
+                          <th className="px-3 py-2 font-bold">Type</th>
+                          <th className="px-3 py-2 font-bold">File</th>
+                          <th className="px-3 py-2 font-bold">Uploaded By</th>
+                          <th className="px-3 py-2 font-bold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {references.map((r: any) => (
+                          <tr key={r.id} className="border-t border-border/40 hover:bg-muted/30">
+                            <td className="px-3 py-2 text-[12.5px] font-semibold">{r.title}</td>
+                            <td className="max-w-[180px] truncate px-3 py-2 text-[11.5px]">{r.url ? <a href={r.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">{r.url.slice(0, 48)}</a> : <span className="text-muted-foreground">—</span>}</td>
+                            <td className="px-3 py-2"><span className="inline-flex rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[10px] font-bold uppercase">{r.type ?? "OTHER"}</span></td>
+                            <td className="px-3 py-2 text-[11.5px]">{r.fileUrl ? <a href={r.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary hover:underline"><Download className="size-3.5" /> file</a> : <span className="text-muted-foreground">—</span>}</td>
+                            <td className="px-3 py-2 text-[11.5px] text-muted-foreground">{r.uploadedBy?.name ?? r.uploadedBy?.id ?? "—"}</td>
+                            <td className="px-3 py-2 text-right">
+                              <button onClick={() => deleteReference(r.id)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400" title="Delete reference">
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <p className="text-[10.5px] text-muted-foreground">References support both <span className="font-semibold">Upload File</span> (via <code className="rounded bg-muted px-1">POST /flow/upload</code> → <code className="rounded bg-muted px-1">POST /flow/projects/:id/references {"{title, fileUrl}"}</code>) and <span className="font-semibold">Add Drive Link</span> (<code className="rounded bg-muted px-1">title* + url* + type → POST</code>). Tribal, national, drive links all stored as url with type.</p>
+              </div>
+            )}
             <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 flex items-center justify-between gap-2 border-t border-border/60 bg-card px-6 py-3.5">
               <span className="text-[11.5px] text-muted-foreground">{detail.milestones.length} milestones � {detail.files.length} files � {detail.tasks.length} tasks</span>
               <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1965,6 +2254,47 @@ export default function FlowPage() {
         projectId={detail?.id}
         onSaved={() => { setTaskOpen(false); notify("Task created"); reload(); }}
       />
+      {/* Bulk assign tasks modal */}
+      <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title={`Bulk assign tasks — ${detail?.name ?? ""}`} size="lg">
+        <div className="flex flex-col gap-4">
+          <p className="text-[11.5px] text-muted-foreground">Select tasks from backlog (or any project) to assign to <span className="font-semibold text-foreground">{detail?.name}</span>. This will call <code className="rounded bg-muted px-1">POST /flow/projects/:id/tasks/bulk</code>.</p>
+          {bulkLoading ? (
+            <div className="flex flex-col gap-2">{[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-10" />)}</div>
+          ) : !bulkTasks || bulkTasks.length === 0 ? (
+            <EmptyState title="No tasks found" hint="Create tasks in Tasks module first." />
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-muted-foreground">{bulkTasks.length} tasks • {bulkSelected.size} selected</span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setBulkSelected(new Set(bulkTasks.map((t:any)=>t.id)))} className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold hover:bg-muted">Select all</button>
+                  <button onClick={() => setBulkSelected(new Set())} className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold hover:bg-muted">Clear</button>
+                </div>
+              </div>
+              <div className="max-h-[360px] overflow-auto rounded-xl border border-border/60">
+                {(bulkTasks as any[]).map((t:any) => {
+                  const checked = bulkSelected.has(t.id);
+                  const isAlready = t.projectId === detail?.id;
+                  return (
+                    <label key={t.id} className={`flex cursor-pointer items-center gap-3 border-b border-border/40 px-3 py-2 hover:bg-muted/30 ${checked ? "bg-primary/5" : ""} ${isAlready ? "opacity-60" : ""}`}>
+                      <input type="checkbox" checked={checked} onChange={() => toggleBulkSelected(t.id)} className="size-3.5 accent-primary" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[12.5px] font-semibold">{t.title}</p>
+                        <p className="text-[10.5px] text-muted-foreground">{t.status ?? "BACKLOG"} • {t.project?.name ?? (t.projectId ? t.projectId.slice(0,6) : "no project")} {isAlready ? "• already linked" : ""}</p>
+                      </div>
+                      <StatusBadge status={t.status ?? "BACKLOG"} />
+                    </label>
+                  );
+                })}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setBulkOpen(false)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground hover:bg-muted">Cancel</button>
+                <button onClick={doBulkAssign} disabled={bulkBusy || bulkSelected.size===0} className="rounded-xl bg-primary px-4 py-2 text-[12.5px] font-bold text-primary-foreground disabled:opacity-60 hover:bg-primary/90">{bulkBusy ? "Assigning…" : `Assign ${bulkSelected.size} task(s)`}</button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
       <ProjectModal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
