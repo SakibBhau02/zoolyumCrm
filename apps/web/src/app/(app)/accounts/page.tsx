@@ -1,20 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
+import { useRouter, useSearchParams } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
   Building2,
   CalendarClock,
+  ChevronDown,
+  ChevronUp,
+  Columns,
+  ExternalLink,
   FileText,
   Gauge,
   HeartPulse,
+  Layers,
+  LayoutGrid,
   Pencil,
   Phone,
   Plus,
+  Receipt,
   RefreshCw,
   Search,
   ShieldAlert,
+  Table as TableIcon,
   Trash2,
   UserPlus,
   Users,
@@ -26,6 +35,7 @@ import { formatBDT, formatDate, timeAgo } from "@/lib/format";
 import type {
   AccountsOverview,
   Client,
+  ClientCategory,
   ClientContact,
   ClientDetail,
   UserLite,
@@ -47,6 +57,7 @@ import {
   Input,
   Modal,
   ScoreBar,
+  Segmented,
   Select,
   Textarea,
 } from "@/components/ui";
@@ -54,6 +65,7 @@ import {
 const VERTICALS = ["EDUCATION", "HEALTHCARE", "D2C", "OTHER"];
 const BILLING_CYCLES = ["PROJECT_BASED", "MONTHLY_RETAINER", "QUARTERLY_RETAINER", "ONE_TIME"];
 const DOC_TYPES = ["MOU", "PROPOSAL", "BRAND_ASSET", "CREDENTIAL"];
+const CATEGORIES = ["ACTIVE", "ON_HOLD", "ARCHIVED"] as const;
 
 const label = (v: string) => v.replace(/_/g, " ").toLowerCase();
 
@@ -69,6 +81,33 @@ const healthTone = (level: string) =>
     : level === "YELLOW"
       ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
       : "border-rose-500/30 bg-rose-500/10 text-rose-400";
+
+const categoryTone = (cat: string) =>
+  cat === "ACTIVE"
+    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+    : cat === "ON_HOLD"
+      ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+      : "border-zinc-400/30 bg-zinc-400/10 text-zinc-500 dark:text-zinc-400";
+
+// ── tier helper ────────────────────────────────────────────────────────────
+function getTierForClient(
+  totalInvoiced: number | undefined | null,
+  tiers: { name: string; minValue: number; color: string }[] | undefined
+): { name: string; color: string } | null {
+  const v = totalInvoiced ?? 0;
+  if (tiers && tiers.length) {
+    const sorted = [...tiers].sort((a, b) => b.minValue - a.minValue);
+    for (const t of sorted) {
+      if (v >= t.minValue) return { name: t.name, color: t.color };
+    }
+    return sorted[sorted.length - 1] ? { name: sorted[sorted.length - 1].name, color: sorted[sorted.length - 1].color } : null;
+  }
+  // fallback to control defaults
+  if (v >= 100000) return { name: "Enterprise", color: "#f59e0b" };
+  if (v >= 25000) return { name: "Professional", color: "#3b82f6" };
+  if (v >= 0) return { name: "Starter", color: "#64748b" };
+  return null;
+}
 
 // ── Client form modal (create / edit) ────────────────────────────────────
 interface ClientFormState {
@@ -395,11 +434,15 @@ function DocumentFormModal({
 export default function AccountsPage() {
   const { data: overview } = useApi<AccountsOverview>("/accounts/overview");
   const { data: users } = useApi<UserLite[]>("/users");
+  const { data: settings } = useApi<any>("/control/settings");
 
-  const [q, setQ] = useState("");
-  const [health, setHealth] = useState("");
-  const [vertical, setVertical] = useState("");
-  const [ownerId, setOwnerId] = useState("");
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [q, setQ] = useState(searchParams.get("q") ?? "");
+  const [health, setHealth] = useState(searchParams.get("health") ?? "");
+  const [vertical, setVertical] = useState(searchParams.get("vertical") ?? "");
+  const [ownerId, setOwnerId] = useState(searchParams.get("ownerId") ?? "");
   const [refresh, setRefresh] = useState(0);
   const [clients, setClients] = useState<Client[] | null>(null);
   const [clientsErr, setClientsErr] = useState<string | null>(null);
@@ -409,6 +452,17 @@ export default function AccountsPage() {
   const [detail, setDetail] = useState<ClientDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [detailTab, setDetailTab] = useState<"overview" | "projects" | "invoices">("overview");
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string | null>(null);
+  const [projectStatusFilter, setProjectStatusFilter] = useState<string | null>(null);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDetailTab("overview");
+    setInvoiceStatusFilter(null);
+    setProjectStatusFilter(null);
+    setExpandedInvoiceId(null);
+  }, [selectedId]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editClient, setEditClient] = useState<Client | null>(null);
@@ -417,11 +471,74 @@ export default function AccountsPage() {
   const [deleteTarget, setDeleteTarget] = useState<"client" | ClientContact | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
 
+  const [view, setView] = useState<"table" | "grid" | "kanban">(
+    (searchParams.get("view") as any) ?? "table"
+  );
+  const [category, setCategory] = useState(searchParams.get("category") ?? "");
+
   const reload = useCallback(() => setRefresh((r) => r + 1), []);
   const notify = (msg: string) => {
     setFlash(msg);
     setTimeout(() => setFlash(null), 3000);
   };
+
+  // sync view/category from URL (back/forward, direct link)
+  useEffect(() => {
+    const v = searchParams.get("view");
+    if (v === "table" || v === "grid" || v === "kanban") setView(v as any);
+    const c = searchParams.get("category");
+    setCategory(c ?? "");
+    const qp = searchParams.get("q");
+    if (qp !== null) setQ(qp);
+    const hp = searchParams.get("health");
+    if (hp !== null) setHealth(hp);
+    const vp = searchParams.get("vertical");
+    if (vp !== null) setVertical(vp);
+    const op = searchParams.get("ownerId");
+    if (op !== null) setOwnerId(op);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const setViewWithUrl = useCallback(
+    (v: "table" | "grid" | "kanban") => {
+      setView(v);
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("view", v);
+      if (category) p.set("category", category);
+      if (q) p.set("q", q);
+      else p.delete("q");
+      if (health) p.set("health", health);
+      else p.delete("health");
+      if (vertical) p.set("vertical", vertical);
+      else p.delete("vertical");
+      if (ownerId) p.set("ownerId", ownerId);
+      else p.delete("ownerId");
+      if (category) p.set("category", category);
+      else p.delete("category");
+      router.push(`?${p.toString()}`, { scroll: false });
+    },
+    [router, searchParams, category, q, health, vertical, ownerId]
+  );
+
+  const setCategoryWithUrl = useCallback(
+    (c: string) => {
+      setCategory(c);
+      const p = new URLSearchParams(searchParams.toString());
+      if (c) p.set("category", c);
+      else p.delete("category");
+      if (view) p.set("view", view);
+      if (q) p.set("q", q);
+      else p.delete("q");
+      if (health) p.set("health", health);
+      else p.delete("health");
+      if (vertical) p.set("vertical", vertical);
+      else p.delete("vertical");
+      if (ownerId) p.set("ownerId", ownerId);
+      else p.delete("ownerId");
+      router.push(`?${p.toString()}`, { scroll: false });
+    },
+    [router, searchParams, view, q, health, vertical, ownerId]
+  );
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -429,8 +546,9 @@ export default function AccountsPage() {
     if (health) p.set("health", health);
     if (vertical) p.set("vertical", vertical);
     if (ownerId) p.set("ownerId", ownerId);
+    if (category) p.set("category", category);
     return p.toString();
-  }, [q, health, vertical, ownerId]);
+  }, [q, health, vertical, ownerId, category]);
 
   useEffect(() => {
     let cancelled = false;
@@ -477,6 +595,33 @@ export default function AccountsPage() {
     }
   };
 
+  const moveCategory = async (client: Client, newCategory: ClientCategory) => {
+    if (client.category === newCategory) return;
+    try {
+      await apiFetch(`/accounts/clients/${client.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ category: newCategory }),
+      });
+      notify(`Moved ${client.companyName} → ${label(newCategory)}`);
+      reload();
+    } catch (e: any) {
+      notify(e.message ?? "Move failed");
+    }
+  };
+
+  const handleInlineCategoryChange = async (client: Client, newCat: string) => {
+    try {
+      await apiFetch(`/accounts/clients/${client.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ category: newCat }),
+      });
+      notify(`${client.companyName} → ${label(newCat)}`);
+      reload();
+    } catch (e: any) {
+      notify(e.message ?? "Update failed");
+    }
+  };
+
   const removeContact = async (contactId: string) => {
     if (!selectedId) return;
     try {
@@ -514,8 +659,22 @@ export default function AccountsPage() {
   };
 
   const filtered = (clients ?? []).filter(
-    (c) => !q || c.companyName.toLowerCase().includes(q.toLowerCase())
+    (c) =>
+      (!q || c.companyName.toLowerCase().includes(q.toLowerCase())) &&
+      (!category || (c.category ?? "ACTIVE") === category)
   );
+
+  const clientTiers: { name: string; minValue: number; color: string }[] | undefined = (settings as any)?.clientTiers;
+
+  const kanbanGroups = useMemo(() => {
+    const groups: Record<string, Client[]> = { ACTIVE: [], ON_HOLD: [], ARCHIVED: [] };
+    for (const c of filtered) {
+      const cat = (c.category ?? "ACTIVE") as ClientCategory;
+      if (groups[cat]) groups[cat].push(c);
+      else groups["ACTIVE"].push(c);
+    }
+    return groups;
+  }, [filtered]);
 
   return (
     <div>
@@ -585,6 +744,12 @@ export default function AccountsPage() {
             <option value="YELLOW">YELLOW</option>
             <option value="RED">RED</option>
           </Select>
+          <Select value={category} onChange={(e) => setCategoryWithUrl(e.target.value)} className="!w-36">
+            <option value="">All categories</option>
+            {CATEGORIES.map((c) => (
+              <option key={c} value={c}>{label(c)}</option>
+            ))}
+          </Select>
           <Select value={vertical} onChange={(e) => setVertical(e.target.value)} className="!w-32">
             <option value="">All verticals</option>
             {VERTICALS.map((v) => (
@@ -599,6 +764,19 @@ export default function AccountsPage() {
           </Select>
         </div>
 
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <Segmented
+            value={view}
+            onChange={setViewWithUrl as any}
+            options={[
+              { value: "table", label: <span className="flex items-center gap-1.5"><TableIcon className="size-3.5" /> Table</span> },
+              { value: "grid", label: <span className="flex items-center gap-1.5"><LayoutGrid className="size-3.5" /> Grid</span> },
+              { value: "kanban", label: <span className="flex items-center gap-1.5"><Columns className="size-3.5" /> Kanban</span> },
+            ]}
+          />
+          <span className="text-[11.5px] text-muted-foreground">{filtered.length} clients{category ? ` · ${label(category)}` : ""}</span>
+        </div>
+
         {loading ? (
           <div className="flex flex-col gap-2">
             {[...Array(5)].map((_, i) => (
@@ -608,85 +786,278 @@ export default function AccountsPage() {
         ) : clientsErr ? (
           <EmptyState title={clientsErr} />
         ) : filtered.length ? (
-          <FadeIn>
-            <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{filtered.length} clients</span>}>
-              <table className="w-full">
-                <THead>
-                  <Th>Company</Th>
-                  <Th>Vertical</Th>
-                  <Th>Health</Th>
-                  <Th>Paid</Th>
-                  <Th>Due</Th>
-                  <Th>Billing</Th>
-                  <Th>Owner</Th>
-                  <Th>Renewal</Th>
-                  <Th>Projects</Th>
-                </THead>
-                <tbody>
-                  {filtered.map((c, i) => {
-                    const days = daysUntil(c.renewalDate);
+          <AnimatePresence mode="wait">
+            {view === "table" && (
+              <motion.div
+                key="table"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+              >
+                <FadeIn>
+                  <TableShell noScroll footer={<span className="text-[11.5px] text-muted-foreground">{filtered.length} clients</span>}>
+                    <table className="w-full">
+                      <THead>
+                        <Th>Company</Th>
+                        <Th className="hidden lg:table-cell">Vertical</Th>
+                        <Th>Health</Th>
+                        <Th>Category</Th>
+                        <Th className="hidden md:table-cell">Paid</Th>
+                        <Th>Due</Th>
+                        <Th className="hidden xl:table-cell">Billing</Th>
+                        <Th className="hidden lg:table-cell">Owner</Th>
+                        <Th className="hidden md:table-cell">Renewal</Th>
+                        <Th className="hidden sm:table-cell">Projects</Th>
+                      </THead>
+                      <tbody>
+                        {filtered.map((c, i) => {
+                          const days = daysUntil(c.renewalDate);
+                          const tier = getTierForClient(c.totalInvoiced, clientTiers);
+                          return (
+                            <Tr
+                              key={c.id}
+                              index={i}
+                              onClick={() => setSelectedId(c.id)}
+                              className="cursor-pointer"
+                            >
+                              <Td>
+                                <div className="flex items-center gap-2.5">
+                                  <Avatar name={c.companyName} />
+                                  <div>
+                                    <p className="flex items-center gap-1.5 font-medium">
+                                      {c.companyName}
+                                      {tier && (
+                                        <span
+                                          className="rounded-full border px-1.5 py-0.5 text-[9px] font-bold"
+                                          style={{ borderColor: `${tier.color}40`, background: `${tier.color}15`, color: tier.color }}
+                                        >
+                                          {tier.name}
+                                        </span>
+                                      )}
+                                    </p>
+                                    <p className="max-w-[200px] truncate text-[11px] text-muted-foreground">
+                                      {c.healthDriver ?? "No active flags"}
+                                    </p>
+                                  </div>
+                                </div>
+                              </Td>
+                              <Td className="hidden lg:table-cell text-muted-foreground">{c.industryVertical}</Td>
+                              <Td>
+                                <div className="flex items-center gap-2">
+                                  <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", healthTone(c.healthLevel))}>
+                                    {c.healthLevel}
+                                  </span>
+                                  <ScoreBar score={c.healthScore} />
+                                </div>
+                              </Td>
+                              <Td onClick={(e) => e.stopPropagation()}>
+                                <Select
+                                  value={(c.category ?? "ACTIVE") as string}
+                                  onChange={(e) => handleInlineCategoryChange(c, e.target.value)}
+                                  className="!w-28 !py-1 text-[11px]"
+                                  onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                >
+                                  {CATEGORIES.map((cat) => (
+                                    <option key={cat} value={cat}>{label(cat)}</option>
+                                  ))}
+                                </Select>
+                              </Td>
+                              <Td className="hidden md:table-cell"><span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(c.totalPaid ?? 0)}</span></Td>
+                              <Td>
+                                {(c.totalDue ?? 0) > 0 ? (
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="font-bold tabular-nums text-rose-500 dark:text-rose-400">{formatBDT(c.totalDue ?? 0)}</span>
+                                    <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-400">due</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-[11.5px] tabular-nums text-muted-foreground">—</span>
+                                )}
+                              </Td>
+                              <Td className="hidden xl:table-cell text-muted-foreground">{label(c.billingCycleType)}</Td>
+                              <Td className="hidden lg:table-cell text-muted-foreground">{c.accountOwner?.name ?? "—"}</Td>
+                              <Td className="hidden md:table-cell">
+                                {days != null && days <= 30 ? (
+                                  <span className={cn(
+                                    "rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                                    days <= 14
+                                      ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                                      : "border-sky-500/30 bg-sky-500/10 text-sky-400"
+                                  )}>
+                                    {days <= 0 ? "due" : `in ${days}d`}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11.5px] text-muted-foreground">{formatDate(c.renewalDate)}</span>
+                                )}
+                              </Td>
+                              <Td className="hidden sm:table-cell font-semibold tabular-nums">{c._count?.projects ?? 0}</Td>
+                            </Tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </TableShell>
+                </FadeIn>
+              </motion.div>
+            )}
+
+            {view === "grid" && (
+              <motion.div
+                key="grid"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+              >
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  {filtered.map((c) => {
+                    const tier = getTierForClient(c.totalInvoiced, clientTiers);
+                    const cat = (c.category ?? "ACTIVE") as string;
                     return (
-                      <Tr
+                      <div
                         key={c.id}
-                        index={i}
                         onClick={() => setSelectedId(c.id)}
-                        className="cursor-pointer"
+                        className="group cursor-pointer rounded-2xl border bg-card p-4 transition-all hover:-translate-y-1 hover:shadow-lg"
                       >
-                        <Td>
-                          <div className="flex items-center gap-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
                             <Avatar name={c.companyName} />
-                            <div>
-                              <p className="font-medium">{c.companyName}</p>
-                              <p className="max-w-[240px] truncate text-[11px] text-muted-foreground">
-                                {c.healthDriver ?? "No active flags"}
-                              </p>
+                            <div className="min-w-0">
+                              <p className="truncate text-[13px] font-semibold">{c.companyName}</p>
+                              <p className="truncate text-[11px] text-muted-foreground">{label(c.industryVertical)}</p>
                             </div>
                           </div>
-                        </Td>
-                        <Td className="text-muted-foreground">{c.industryVertical}</Td>
-                        <Td>
-                          <div className="flex items-center gap-2">
-                            <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", healthTone(c.healthLevel))}>
-                              {c.healthLevel}
+                          <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold", healthTone(c.healthLevel))}>
+                            {c.healthLevel}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                          <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold capitalize", categoryTone(cat))}>
+                            {label(cat)}
+                          </span>
+                          {tier && (
+                            <span
+                              className="rounded-full border px-2 py-0.5 text-[10px] font-bold"
+                              style={{ borderColor: `${tier.color}30`, background: `${tier.color}12`, color: tier.color }}
+                            >
+                              {tier.name}
                             </span>
-                            <ScoreBar score={c.healthScore} />
-                          </div>
-                        </Td>
-                        <Td><span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(c.totalPaid ?? 0)}</span></Td>
-                        <Td>
-                          {(c.totalDue ?? 0) > 0 ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="font-bold tabular-nums text-rose-500 dark:text-rose-400">{formatBDT(c.totalDue ?? 0)}</span>
-                              <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-rose-400">due</span>
-                            </span>
-                          ) : (
-                            <span className="text-[11.5px] tabular-nums text-muted-foreground">—</span>
                           )}
-                        </Td>
-                        <Td className="text-muted-foreground">{label(c.billingCycleType)}</Td>
-                        <Td className="text-muted-foreground">{c.accountOwner?.name ?? "—"}</Td>
-                        <Td>
-                          {days != null && days <= 30 ? (
-                            <span className={cn(
-                              "rounded-full border px-2 py-0.5 text-[10px] font-bold",
-                              days <= 14
-                                ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
-                                : "border-sky-500/30 bg-sky-500/10 text-sky-400"
-                            )}>
-                              {days <= 0 ? "due" : `in ${days}d`}
-                            </span>
-                          ) : (
-                            <span className="text-[11.5px] text-muted-foreground">{formatDate(c.renewalDate)}</span>
-                          )}
-                        </Td>
-                        <Td className="font-semibold tabular-nums">{c._count?.projects ?? 0}</Td>
-                      </Tr>
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <ScoreBar score={c.healthScore} />
+                          <span className="ml-auto text-[11px] font-semibold tabular-nums">
+                            {(c.totalDue ?? 0) > 0 ? (
+                              <span className="text-rose-500 dark:text-rose-400">{formatBDT(c.totalDue ?? 0)} due</span>
+                            ) : (
+                              <span className="text-emerald-600 dark:text-emerald-400">settled</span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-muted-foreground">{label(c.billingCycleType)}</span>
+                          <span className="text-[11px] font-medium text-muted-foreground">{formatBDT(c.totalPaid ?? 0)} paid</span>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+                          <span className="font-semibold tabular-nums">{c._count?.projects ?? 0} projects</span>
+                          <span className="truncate">{c.accountOwner?.name ?? "Unassigned"}</span>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </TableShell>
-          </FadeIn>
+                </div>
+              </motion.div>
+            )}
+
+            {view === "kanban" && (
+              <motion.div
+                key="kanban"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2 }}
+              >
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                  {CATEGORIES.map((cat) => {
+                    const list = kanbanGroups[cat] ?? [];
+                    const sumDue = list.reduce((s, c) => s + (c.totalDue ?? 0), 0);
+                    const headerTone =
+                      cat === "ACTIVE"
+                        ? "border-emerald-500/20 bg-emerald-500/5"
+                        : cat === "ON_HOLD"
+                          ? "border-amber-500/20 bg-amber-500/5"
+                          : "border-zinc-400/20 bg-zinc-400/5";
+                    return (
+                      <div key={cat} className={cn("rounded-2xl border p-3", headerTone)}>
+                        <div className="mb-3 flex items-center justify-between">
+                          <h3 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest">
+                            <span className={cn("rounded-full border px-2 py-0.5 text-[10px]", categoryTone(cat))}>{label(cat)}</span>
+                            <span className="text-muted-foreground">{list.length}</span>
+                          </h3>
+                          <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{formatBDT(sumDue)} due</span>
+                        </div>
+                        <div className="flex flex-col gap-2.5">
+                          {list.length === 0 && (
+                            <p className="rounded-xl border border-dashed border-border bg-card/60 py-8 text-center text-[11.5px] text-muted-foreground">No clients</p>
+                          )}
+                          {list.map((c) => {
+                            const tier = getTierForClient(c.totalInvoiced, clientTiers);
+                            return (
+                              <div
+                                key={c.id}
+                                onClick={() => setSelectedId(c.id)}
+                                className="group cursor-pointer rounded-xl border bg-card p-3 transition-all hover:shadow-md"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Avatar name={c.companyName} size="size-7" />
+                                    <div className="min-w-0">
+                                      <p className="truncate text-[12.5px] font-semibold">{c.companyName}</p>
+                                      <p className="truncate text-[10.5px] text-muted-foreground">{label(c.industryVertical)}</p>
+                                    </div>
+                                  </div>
+                                  <span className={cn("shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold", healthTone(c.healthLevel))}>
+                                    {c.healthLevel}
+                                  </span>
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                  {tier && (
+                                    <span
+                                      className="rounded-full border px-1.5 py-0.5 text-[9px] font-bold"
+                                      style={{ borderColor: `${tier.color}30`, background: `${tier.color}12`, color: tier.color }}
+                                    >
+                                      {tier.name}
+                                    </span>
+                                  )}
+                                  <span className="text-[10.5px] tabular-nums text-muted-foreground">{formatBDT(c.totalDue ?? 0)} due · {c._count?.projects ?? 0} projects</span>
+                                </div>
+                                <div className="mt-2">
+                                  <ScoreBar score={c.healthScore} />
+                                </div>
+                                <div className="mt-2 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                  <span className="text-[10px] font-semibold text-muted-foreground">Move:</span>
+                                  <Select
+                                    value={(c.category ?? "ACTIVE") as string}
+                                    onChange={(e) => moveCategory(c, e.target.value as ClientCategory)}
+                                    className="!w-auto !py-1 text-[11px]"
+                                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                  >
+                                    {CATEGORIES.map((opt) => (
+                                      <option key={opt} value={opt}>{label(opt)}</option>
+                                    ))}
+                                  </Select>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         ) : (
           <EmptyState title="No clients found" />
         )}
@@ -718,27 +1089,75 @@ export default function AccountsPage() {
           </div>
         ) : !detail ? null : (() => {
           const paidPct = detail.totalInvoiced ? Math.round(((detail.totalPaid ?? 0) / detail.totalInvoiced) * 100) : 0;
+          const tier = getTierForClient(detail.totalInvoiced, clientTiers);
+          const aging = detail.aging ?? { current: 0, d30: 0, d60: 0, d90: 0, d90p: 0 };
+          const maxAging = Math.max(aging.current, aging.d30, aging.d60, aging.d90, aging.d90p, 1);
+          const invStatusCounts: Record<string, number> = detail.invoices.reduce((acc: Record<string, number>, inv) => {
+            acc[inv.status] = (acc[inv.status] ?? 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+          const projStatusCounts: Record<string, number> = detail.projects.reduce((acc: Record<string, number>, pr) => {
+            acc[pr.status] = (acc[pr.status] ?? 0) + 1;
+            return acc;
+          }, {} as Record<string, number>);
+          const filteredInvoices = invoiceStatusFilter ? detail.invoices.filter((inv) => inv.status === invoiceStatusFilter) : detail.invoices;
+          const filteredProjects = projectStatusFilter ? detail.projects.filter((pr) => pr.status === projectStatusFilter) : detail.projects;
+          const handleDetailCategoryChange = async (next: string) => {
+            if (next === detail.category) return;
+            try {
+              await apiFetch("/accounts/clients/" + detail.id, { method: "PATCH", body: JSON.stringify({ category: next }) });
+              notify("Category \u2192 " + label(next));
+              reload();
+              setDetail((prev) => (prev ? { ...prev, category: next as ClientCategory } : prev));
+            } catch (e: any) {
+              notify(e.message ?? "Update failed");
+            }
+          };
           return (
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-4">
+            {/* top bar: category + tier + health */}
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
+              <span className="text-[10.5px] font-bold uppercase tracking-widest text-muted-foreground">Category</span>
+              <Select value={detail.category} onChange={(e) => handleDetailCategoryChange(e.target.value)} className="!w-32 !py-1 text-[11px]">
+                {CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{label(c)}</option>
+                ))}
+              </Select>
+              <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-bold capitalize", categoryTone(detail.category))}>
+                {label(detail.category)}
+              </span>
+              <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-bold", healthTone(detail.healthLevel))}>
+                {detail.healthLevel} {detail.healthScore != null ? "\u00B7 " + detail.healthScore : ""}
+              </span>
+              {tier && (
+                <span className="rounded-full border px-2.5 py-1 text-[10px] font-bold" style={{ borderColor: tier.color + "40", background: tier.color + "15", color: tier.color }}>
+                  {tier.name}
+                </span>
+              )}
+              <span className="ml-auto hidden items-center gap-1 text-[11px] text-muted-foreground sm:flex">
+                <CalendarClock className="size-3" /> Renewal {formatDate(detail.renewalDate)}
+              </span>
+            </div>
+
             {/* financial summary strip */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-border/60 bg-card p-4">
                 <p className="text-[10.5px] font-bold uppercase tracking-widest text-muted-foreground">Total invoiced</p>
-                <p className="mt-1.5 text-2xl font-black tabular-nums">{formatBDT(detail.totalInvoiced ?? 0)}</p>
+                <p className="mt-1.5 text-xl font-black tabular-nums sm:text-2xl">{formatBDT(detail.totalInvoiced ?? 0)}</p>
                 <p className="mt-0.5 text-[10.5px] text-muted-foreground">
                   {detail.invoices.length} invoice{detail.invoices.length === 1 ? "" : "s"}
                 </p>
               </div>
               <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4">
                 <p className="text-[10.5px] font-bold uppercase tracking-widest text-emerald-400">Paid</p>
-                <p className="mt-1.5 text-2xl font-black tabular-nums text-emerald-600 dark:text-emerald-300">{formatBDT(detail.totalPaid ?? 0)}</p>
+                <p className="mt-1.5 text-xl font-black tabular-nums text-emerald-600 dark:text-emerald-300 sm:text-2xl">{formatBDT(detail.totalPaid ?? 0)}</p>
                 <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-emerald-500/20">
-                  <div className="h-full rounded-full bg-emerald-500" style={{ width: `${paidPct}%` }} />
+                  <div className="h-full rounded-full bg-emerald-500" style={{ width: paidPct + "%" }} />
                 </div>
               </div>
               <div className={cn("rounded-2xl border p-4", (detail.totalDue ?? 0) > 0 ? "border-rose-500/25 bg-rose-500/10" : "border-border/60 bg-card")}>
                 <p className={cn("text-[10.5px] font-bold uppercase tracking-widest", (detail.totalDue ?? 0) > 0 ? "text-rose-400" : "text-muted-foreground")}>Due</p>
-                <p className={cn("mt-1.5 text-2xl font-black tabular-nums", (detail.totalDue ?? 0) > 0 && "text-rose-500 dark:text-rose-300")}>{formatBDT(detail.totalDue ?? 0)}</p>
+                <p className={cn("mt-1.5 text-xl font-black tabular-nums sm:text-2xl", (detail.totalDue ?? 0) > 0 && "text-rose-500 dark:text-rose-300")}>{formatBDT(detail.totalDue ?? 0)}</p>
                 <p className={cn("mt-0.5 text-[10.5px]", (detail.totalDue ?? 0) > 0 ? "font-semibold text-rose-400/80" : "text-muted-foreground")}>
                   {(detail.totalDue ?? 0) > 0 ? "outstanding balance" : "all settled"}
                 </p>
@@ -748,7 +1167,7 @@ export default function AccountsPage() {
             {/* health banner */}
             <div className={cn("rounded-2xl border p-4", healthTone(detail.healthLevel))}>
               <div className="flex items-center justify-between">
-                <p className="text-[11px] font-bold tracking-wide uppercase">Health Score</p>
+                <p className="text-[11px] font-bold uppercase tracking-wide">Health Score</p>
                 <span className="text-lg font-black tabular-nums">{detail.healthScore}</span>
               </div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/20">
@@ -757,231 +1176,360 @@ export default function AccountsPage() {
                     "h-full rounded-full",
                     (detail.healthScore ?? 0) >= 70 ? "bg-emerald-400" : (detail.healthScore ?? 0) >= 40 ? "bg-amber-400" : "bg-rose-400"
                   )}
-                  style={{ width: `${detail.healthScore ?? 0}%` }}
+                  style={{ width: (detail.healthScore ?? 0) + "%" }}
                 />
               </div>
               <p className="mt-2 text-[11.5px] font-medium">
-                {detail.healthDriver ?? "Healthy — no active drivers"}
+                {detail.healthDriver ?? "Healthy \u2014 no active drivers"}
               </p>
               {detail.churnFlags.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {detail.churnFlags.map((f) => (
                     <span key={f.id} className="rounded-full bg-black/15 px-2 py-0.5 text-[10px] font-semibold">
-                      ⚑ {label(f.matchedPattern ?? f.riskLevel)}
+                      \u2691 {label(f.matchedPattern ?? f.riskLevel)}
                     </span>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* main grid */}
-            <div className="grid gap-5 lg:grid-cols-2">
+            {/* segmented tabs */}
+            <Segmented
+              value={detailTab}
+              onChange={(v) => setDetailTab(v)}
+              options={[
+                { value: "overview", label: <span className="flex items-center gap-1.5"><Layers className="size-3.5" /> Overview</span> },
+                { value: "projects", label: <span className="flex items-center gap-1.5"><Building2 className="size-3.5" /> Projects ({detail.projects.length})</span> },
+                { value: "invoices", label: <span className="flex items-center gap-1.5"><Receipt className="size-3.5" /> Invoices & Billing ({detail.invoices.length})</span> },
+              ]}
+            />
+
+            {/* OVERVIEW TAB */}
+            {detailTab === "overview" && (
               <div className="flex flex-col gap-5">
-                {/* projects */}
-                <section>
-                  <SectionTitle icon={<Building2 className="size-3.5" />} title={`Projects (${detail.projects.length})`} />
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    {detail.projects.length === 0 && <p className="text-[11.5px] text-muted-foreground">No projects</p>}
-                    {detail.projects.map((p) => (
-                      <div key={p.id} className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[12.5px] font-semibold">{p.name}</p>
-                          <p className="text-[10.5px] text-muted-foreground">
-                            {p.budgetAmount ? formatBDT(p.budgetAmount) : "No budget"}
-                            {p.targetEndDate ? ` · ends ${formatDate(p.targetEndDate)}` : ""}
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <div className="flex flex-col gap-5">
+                    <section>
+                      <SectionTitle icon={<CalendarClock className="size-3.5" />} title="Client details" />
+                      <div className="mt-2 grid grid-cols-2 gap-3">
+                        <Fact label="Vertical" value={label(detail.industryVertical)} />
+                        <Fact label="Billing cycle" value={label(detail.billingCycleType)} />
+                        <Fact label="Currency" value={detail.currencyPreference ?? "BDT"} />
+                        <Fact label="Owner" value={detail.accountOwner?.name ?? "Unassigned"} />
+                        <Fact label="Contract start" value={formatDate(detail.contractStartDate)} />
+                        <Fact label="Renewal" value={formatDate(detail.renewalDate)} />
+                        <Fact label="Created" value={formatDate(detail.createdAt ?? null)} />
+                        <Fact label="Category" value={label(detail.category)} />
+                      </div>
+                      {detail.notes && (
+                        <div className="mt-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Notes</p>
+                          <p className="mt-1.5 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+                            {detail.notes}
                           </p>
                         </div>
-                        <StatusBadge status={p.status} />
-                        <StatusBadge status={p.healthStatus} />
+                      )}
+                    </section>
+                    <section>
+                      <SectionTitle icon={<Gauge className="size-3.5" />} title="Health history" />
+                      <div className="mt-2 flex max-h-[260px] flex-col gap-1.5 overflow-y-auto pr-1">
+                        {detail.healthLogs.length === 0 && <p className="text-[11.5px] text-muted-foreground">No history yet</p>}
+                        {detail.healthLogs.slice(0, 8).map((h, i) => (
+                          <div key={h.id} className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-1.5 text-[11.5px]">
+                            <span
+                              className={cn(
+                                "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                                h.score >= 70 ? "bg-emerald-500/15 text-emerald-400" : h.score >= 40 ? "bg-amber-500/15 text-amber-400" : "bg-rose-500/15 text-rose-400"
+                              )}
+                            >
+                              {h.score}
+                            </span>
+                            <span className="flex-1 truncate text-muted-foreground">{h.driverSummary ?? "healthy"}</span>
+                            <span className="shrink-0 text-[10px] text-muted-foreground/60">{timeAgo(h.recordedAt)}</span>
+                            {i === 0 && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9.5px] font-bold text-primary">now</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                  <div className="flex flex-col gap-5">
+                    <section>
+                      <SectionTitle
+                        icon={<Users className="size-3.5" />}
+                        title={"Contacts (" + detail.contacts.length + ")"}
+                        action={
+                          <button onClick={() => setContactModal({ open: true })} className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:text-primary">
+                            <UserPlus className="size-3" /> Add
+                          </button>
+                        }
+                      />
+                      <div className="mt-2 flex max-h-[260px] flex-col gap-1.5 overflow-y-auto pr-1">
+                        {detail.contacts.length === 0 && <p className="text-[11.5px] text-muted-foreground">No contacts \u2014 add one</p>}
+                        {detail.contacts.map((c) => (
+                          <div key={c.id} className="group flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
+                            <Avatar name={c.name} size="size-7" />
+                            <div className="min-w-0 flex-1">
+                              <p className="flex flex-wrap items-center gap-1.5 truncate text-[12.5px] font-semibold">
+                                <span className="truncate">{c.name}</span>
+                                {c.isPrimary && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold text-primary">PRIMARY</span>}
+                                {c.portalAccessEnabled && <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-500">PORTAL</span>}
+                              </p>
+                              <p className="truncate text-[10.5px] text-muted-foreground">
+                                {[c.roleTitle, c.email, c.phone].filter(Boolean).join(" \u00B7 ") || "No details"}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                              <Btn variant="ghost" onClick={() => setContactModal({ open: true, initial: c })}>
+                                <Pencil className="size-3" />
+                              </Btn>
+                              <Btn variant="ghost" className="text-rose-400 hover:bg-rose-500/10 hover:text-rose-400" onClick={() => setDeleteTarget(c)}>
+                                <Trash2 className="size-3" />
+                              </Btn>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                    <section>
+                      <SectionTitle
+                        icon={<FileText className="size-3.5" />}
+                        title={"Documents (" + detail.documents.length + ")"}
+                        action={
+                          <button onClick={() => setDocModalOpen(true)} className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:text-primary">
+                            <Plus className="size-3" /> Attach
+                          </button>
+                        }
+                      />
+                      <div className="mt-2 flex max-h-[220px] flex-col gap-1.5 overflow-y-auto pr-1">
+                        {detail.documents.length === 0 && <p className="text-[11.5px] text-muted-foreground">No documents</p>}
+                        {detail.documents.map((d) => (
+                          <div key={d.id} className="group flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
+                            <FileText className="size-4 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-[12.5px] font-semibold">{label(d.type)}</p>
+                              <p className="truncate text-[10.5px] text-muted-foreground">
+                                {d.fileUrl} \u00B7 {d.uploadedBy?.name ?? "unknown"} \u00B7 {timeAgo(d.uploadedAt)}
+                              </p>
+                            </div>
+                            <a href={d.fileUrl} target="_blank" rel="noreferrer" className="shrink-0 text-[11px] font-bold text-primary hover:text-primary">
+                              open
+                            </a>
+                            <button onClick={() => removeDocument(d.id)} className="shrink-0 rounded-lg p-1 text-muted-foreground opacity-0 transition-all hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100">
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* PROJECTS TAB */}
+            {detailTab === "projects" && (
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Filter:</span>
+                  <button
+                    onClick={() => setProjectStatusFilter(null)}
+                    className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors", !projectStatusFilter ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border/60 text-muted-foreground hover:text-foreground")}
+                  >
+                    All ({detail.projects.length})
+                  </button>
+                  {Object.entries(projStatusCounts).map(([st, cnt]) => (
+                    <button
+                      key={st}
+                      onClick={() => setProjectStatusFilter((prev) => (prev === st ? null : st))}
+                      className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold capitalize transition-colors", projectStatusFilter === st ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border/60 text-muted-foreground hover:text-foreground")}
+                    >
+                      {label(st)} ({cnt})
+                    </button>
+                  ))}
+                  <span className="ml-auto hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
+                    <span className="size-2 rounded-full bg-emerald-500" /> {projStatusCounts["ON_TRACK"] ?? 0} on-track
+                    <span className="ml-2 size-2 rounded-full bg-amber-500" /> {projStatusCounts["AT_RISK"] ?? 0} at-risk
+                    <span className="ml-2 size-2 rounded-full bg-rose-500" /> {projStatusCounts["DELAYED"] ?? 0} delayed
+                  </span>
+                </div>
+                {filteredProjects.length === 0 ? (
+                  <EmptyState title="No projects" hint={projectStatusFilter ? "No projects match this filter." : "This client has no projects yet."} />
+                ) : (
+                  <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
+                    {filteredProjects.map((p) => (
+                      <div key={p.id} className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-semibold">{p.name}</p>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                            {p.budgetAmount ? <span className="font-semibold tabular-nums text-foreground">{formatBDT(p.budgetAmount)}</span> : <span>No budget</span>}
+                            {p.targetEndDate ? <span>· ends {formatDate(p.targetEndDate)}</span> : null}
+                            {p.riskScore != null ? <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold">risk {p.riskScore}</span> : null}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <StatusBadge status={p.status} />
+                          <StatusBadge status={p.healthStatus} />
+                          <a
+                            href={"/flow?clientId=" + detail.id}
+                            onClick={(e) => { e.preventDefault(); router.push("/flow?clientId=" + detail.id); }}
+                            className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-bold text-primary transition-colors hover:bg-muted"
+                          >
+                            Flow <ExternalLink className="size-3" />
+                          </a>
+                        </div>
                       </div>
                     ))}
                   </div>
-                </section>
+                )}
+                <a href={"/flow?clientId=" + detail.id} onClick={(e) => { e.preventDefault(); router.push("/flow?clientId=" + detail.id); }} className="inline-flex items-center gap-1 self-start text-[11.5px] font-bold text-primary hover:underline">
+                  View all in Flow <ExternalLink className="size-3.5" />
+                </a>
+              </div>
+            )}
 
-                {/* invoices */}
-                <section>
-                  <SectionTitle icon={<FileText className="size-3.5" />} title={`Invoices (${detail.invoices.length})`} />
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    {detail.invoices.length === 0 && <p className="text-[11.5px] text-muted-foreground">No invoices</p>}
-                    {detail.invoices.map((inv) => {
-                      const total = inv.total ?? inv.lineItems.reduce((s, li) => s + Number(li.amount), 0);
-                      const paid = inv.paid ?? 0;
-                      const pct = total > 0 ? Math.round((paid / total) * 100) : 0;
+            {/* INVOICES / BILLING TAB */}
+            {detailTab === "invoices" && (
+              <div className="flex flex-col gap-5">
+                {/* aging buckets */}
+                <div>
+                  <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <Wallet className="size-3.5" /> Aging buckets
+                  </h4>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                    {[
+                      { key: "current", label: "Current", value: aging.current, tone: "emerald" },
+                      { key: "d30", label: "0\u201330d", value: aging.d30, tone: "amber" },
+                      { key: "d60", label: "30\u201360d", value: aging.d60, tone: "amber" },
+                      { key: "d90", label: "60\u201390d", value: aging.d90, tone: "orange" },
+                      { key: "d90p", label: "90d+", value: aging.d90p, tone: "rose" },
+                    ].map((b) => {
+                      const pct = maxAging > 0 ? Math.round((b.value / maxAging) * 100) : 0;
+                      const barTone = b.tone === "emerald" ? "bg-emerald-500" : b.tone === "amber" ? "bg-amber-500" : b.tone === "orange" ? "bg-orange-500" : "bg-rose-500";
+                      const borderTone = b.tone === "emerald" ? "border-emerald-500/25 bg-emerald-500/5" : b.tone === "rose" ? "border-rose-500/25 bg-rose-500/5" : b.tone === "orange" ? "border-orange-500/25 bg-orange-500/5" : "border-amber-500/25 bg-amber-500/5";
                       return (
-                        <div key={inv.id} className="rounded-xl border border-border/60 px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-[12.5px] font-semibold">{inv.invoiceNumber}</p>
-                              <p className="text-[10.5px] text-muted-foreground">
-                                {formatDate(inv.issueDate)}
-                                {inv.dueDate ? ` · due ${formatDate(inv.dueDate)}` : ""}
-                              </p>
-                            </div>
-                            <span className="text-[12px] font-bold tabular-nums">{formatBDT(total)}</span>
-                            <StatusBadge status={inv.status} />
-                          </div>
-                          <div className="mt-1.5 flex items-center gap-2">
-                            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-                              <div className={cn("h-full rounded-full", pct >= 100 ? "bg-emerald-500" : "bg-amber-500")} style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{formatBDT(paid)} / {formatBDT(total)}</span>
+                        <div key={b.key} className={cn("rounded-xl border p-3", borderTone)}>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{b.label}</p>
+                          <p className="mt-1 truncate text-[13px] font-black tabular-nums">{formatBDT(b.value)}</p>
+                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div className={cn("h-full rounded-full", barTone)} style={{ width: pct + "%" }} />
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                </section>
+                </div>
 
-                {/* health history */}
-                <section>
-                  <SectionTitle icon={<Gauge className="size-3.5" />} title="Health history" />
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    {detail.healthLogs.length === 0 && <p className="text-[11.5px] text-muted-foreground">No history yet</p>}
-                    {detail.healthLogs.slice(0, 5).map((h, i) => (
-                      <div key={h.id} className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-1.5 text-[11.5px]">
-                        <span
-                          className={cn(
-                            "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
-                            h.score >= 70 ? "bg-emerald-500/15 text-emerald-400" : h.score >= 40 ? "bg-amber-500/15 text-amber-400" : "bg-rose-500/15 text-rose-400"
-                          )}
-                        >
-                          {h.score}
-                        </span>
-                        <span className="flex-1 truncate text-muted-foreground">{h.driverSummary ?? "healthy"}</span>
-                        <span className="shrink-0 text-[10px] text-muted-foreground/60">{timeAgo(h.recordedAt)}</span>
-                        {i === 0 && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9.5px] font-bold text-primary">now</span>}
-                      </div>
+                {/* invoice status breakdown */}
+                <div>
+                  <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <FileText className="size-3.5" /> Invoice status
+                  </h4>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <button onClick={() => setInvoiceStatusFilter(null)} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors", !invoiceStatusFilter ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border/60 text-muted-foreground hover:text-foreground")}>
+                      All ({detail.invoices.length})
+                    </button>
+                    {Object.entries(invStatusCounts).map(([st, cnt]) => (
+                      <button key={st} onClick={() => setInvoiceStatusFilter((prev) => (prev === st ? null : st))} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold capitalize transition-colors", invoiceStatusFilter === st ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border/60 text-muted-foreground hover:text-foreground")}>
+                        {label(st)} ({cnt})
+                      </button>
                     ))}
                   </div>
-                </section>
-              </div>
+                </div>
 
-            <div className="flex flex-col gap-5">
-                {/* key facts */}
-                <section>
-                  <SectionTitle icon={<CalendarClock className="size-3.5" />} title="Client details" />
-                  <div className="mt-2 grid grid-cols-2 gap-3">
-                    <Fact label="Billing cycle" value={label(detail.billingCycleType)} />
-                    <Fact label="Currency" value={detail.currencyPreference ?? "BDT"} />
-                    <Fact label="Contract start" value={formatDate(detail.contractStartDate)} />
-                    <Fact label="Renewal" value={formatDate(detail.renewalDate)} />
-                    <Fact label="Owner" value={detail.accountOwner?.name ?? "Unassigned"} />
-                    <Fact label="Created" value={formatDate(detail.createdAt ?? null)} />
-                  </div>
-                </section>
+                {/* invoice list */}
+                <div>
+                  <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <Receipt className="size-3.5" /> Invoices ({filteredInvoices.length}{invoiceStatusFilter ? " filtered" : ""})
+                  </h4>
+                  {filteredInvoices.length === 0 ? (
+                    <div className="mt-2"><EmptyState title="No invoices" hint={invoiceStatusFilter ? "No invoices match this filter." : "No invoices for this client yet."} /></div>
+                  ) : (
+                    <div className="mt-2 flex max-h-[360px] flex-col gap-2 overflow-y-auto pr-1">
+                      {filteredInvoices.map((inv) => {
+                        const total = inv.total ?? inv.lineItems.reduce((s, li) => s + Number(li.amount), 0);
+                        const paid = inv.paid ?? 0;
+                        const due = Math.max(0, total - paid);
+                        const pct = total > 0 ? Math.round((paid / total) * 100) : 0;
+                        const isExpanded = expandedInvoiceId === inv.id;
+                        const revenueTag = inv.lineItems.map((li) => li.revenueTag).filter(Boolean).join(", ") || "\u2014";
+                        return (
+                          <div key={inv.id} className="overflow-hidden rounded-xl border border-border/60 bg-card">
+                            <button onClick={() => setExpandedInvoiceId((prev) => (prev === inv.id ? null : inv.id))} className="flex w-full items-center gap-3 px-3 py-3 text-left">
+                              <div className="min-w-0 flex-1">
+                                <p className="flex flex-wrap items-center gap-1.5 truncate text-[12.5px] font-semibold">
+                                  <span className="truncate">{inv.invoiceNumber}</span>
+                                  <span className="hidden text-[10px] font-normal text-muted-foreground sm:inline">\u00B7 {formatDate(inv.issueDate)}{inv.dueDate ? " \u2192 " + formatDate(inv.dueDate) : ""}</span>
+                                </p>
+                                <p className="mt-0.5 text-[10.5px] text-muted-foreground sm:hidden">{formatDate(inv.issueDate)}{inv.dueDate ? " \u00B7 due " + formatDate(inv.dueDate) : ""}</p>
+                                <div className="mt-1.5 flex items-center gap-2">
+                                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                                    <div className={cn("h-full rounded-full", pct >= 100 ? "bg-emerald-500" : pct > 0 ? "bg-amber-500" : "bg-rose-500")} style={{ width: pct + "%" }} />
+                                  </div>
+                                  <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{formatBDT(paid)} / {formatBDT(total)}</span>
+                                </div>
+                                <p className="mt-1 text-[10.5px] text-muted-foreground">Due {formatBDT(due)} \u00B7 {revenueTag}</p>
+                              </div>
+                              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                <StatusBadge status={inv.status} />
+                                <span className="text-[12px] font-bold tabular-nums">{formatBDT(total)}</span>
+                                <span className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+                                  {isExpanded ? <><ChevronUp className="size-3" /> Hide</> : <><ChevronDown className="size-3" /> Details</>}
+                                </span>
+                              </div>
+                            </button>
+                            {isExpanded && (
+                              <div className="border-t border-border/60 bg-muted/20 px-3 py-2">
+                                <p className="text-[10.5px] font-bold uppercase tracking-widest text-muted-foreground">Line items</p>
+                                <div className="mt-1.5 flex flex-col gap-1">
+                                  {inv.lineItems.length === 0 ? <p className="text-[11px] text-muted-foreground">No line items</p> : inv.lineItems.map((li, idx) => (
+                                    <div key={idx} className="flex items-center justify-between rounded-lg border border-border/40 bg-card px-2.5 py-1.5 text-[11.5px]">
+                                      <span className="truncate font-medium">{li.revenueTag}</span>
+                                      <span className="shrink-0 font-bold tabular-nums">{formatBDT(Number(li.amount))}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+                                  <span className="rounded-lg bg-card px-2 py-1 text-center"><span className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Total</span><span className="font-bold tabular-nums">{formatBDT(total)}</span></span>
+                                  <span className="rounded-lg bg-emerald-500/10 px-2 py-1 text-center"><span className="block text-[10px] font-bold uppercase tracking-widest text-emerald-600">Paid</span><span className="font-bold tabular-nums text-emerald-600">{formatBDT(paid)}</span></span>
+                                  <span className="rounded-lg bg-rose-500/10 px-2 py-1 text-center"><span className="block text-[10px] font-bold uppercase tracking-widest text-rose-500">Due</span><span className="font-bold tabular-nums text-rose-500">{formatBDT(due)}</span></span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <a href={"/capital?clientId=" + detail.id} onClick={(e) => { e.preventDefault(); router.push("/capital?clientId=" + detail.id); }} className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-bold text-primary hover:underline">
+                    Full billing in Capital <ExternalLink className="size-3.5" />
+                  </a>
+                </div>
 
                 {/* recent payments */}
-                <section>
-                  <SectionTitle icon={<Wallet className="size-3.5" />} title="Recent payments" />
+                <div>
+                  <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <Wallet className="size-3.5" /> Recent payments
+                  </h4>
                   <div className="mt-2 flex flex-col gap-1.5">
                     {!detail.payments?.length && <p className="text-[11.5px] text-muted-foreground">No payments recorded</p>}
-                    {detail.payments?.map((p) => (
+                    {detail.payments?.slice(0, 5).map((p) => (
                       <div key={p.id} className="flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
                         <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-400">{label(p.paymentMethod)}</span>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[12.5px] font-semibold">{p.invoice.invoiceNumber}</p>
-                          <p className="text-[10.5px] text-muted-foreground">{formatDate(p.paymentDate)}</p>
+                          <p className="text-[10.5px] text-muted-foreground">{formatDate(p.paymentDate)}{p.referenceId ? " \u00B7 " + p.referenceId : ""}</p>
                         </div>
-                        <span className="text-[12.5px] font-bold tabular-nums text-emerald-600 dark:text-emerald-300">+{formatBDT(Number(p.amount))}</span>
+                        <span className="shrink-0 text-[12.5px] font-bold tabular-nums text-emerald-600 dark:text-emerald-300">+{formatBDT(Number(p.amount))}</span>
                       </div>
                     ))}
                   </div>
-                </section>
-
-                {/* contacts */}
-                <section>
-                  <SectionTitle
-                    icon={<Users className="size-3.5" />}
-                    title={`Contacts (${detail.contacts.length})`}
-                    action={
-                      <button onClick={() => setContactModal({ open: true })} className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:text-primary">
-                        <UserPlus className="size-3" /> Add
-                      </button>
-                    }
-                  />
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    {detail.contacts.length === 0 && <p className="text-[11.5px] text-muted-foreground">No contacts — add one</p>}
-                    {detail.contacts.map((c) => (
-                      <div key={c.id} className="group flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
-                        <Avatar name={c.name} size="size-7" />
-                        <div className="min-w-0 flex-1">
-                          <p className="flex items-center gap-1.5 truncate text-[12.5px] font-semibold">
-                            {c.name}
-                            {c.isPrimary && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold text-primary">PRIMARY</span>}
-                          </p>
-                          <p className="truncate text-[10.5px] text-muted-foreground">
-                            {[c.roleTitle, c.email, c.phone].filter(Boolean).join(" · ") || "No details"}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          <Btn variant="ghost" onClick={() => setContactModal({ open: true, initial: c })}>
-                            <Pencil className="size-3" />
-                          </Btn>
-                          <Btn variant="ghost" className="text-rose-400 hover:bg-rose-500/10 hover:text-rose-400" onClick={() => setDeleteTarget(c)}>
-                            <Trash2 className="size-3" />
-                          </Btn>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                {/* documents */}
-                <section>
-                  <SectionTitle
-                    icon={<FileText className="size-3.5" />}
-                    title={`Documents (${detail.documents.length})`}
-                    action={
-                      <button onClick={() => setDocModalOpen(true)} className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:text-primary">
-                        <Plus className="size-3" /> Attach
-                      </button>
-                    }
-                  />
-                  <div className="mt-2 flex flex-col gap-1.5">
-                    {detail.documents.length === 0 && <p className="text-[11.5px] text-muted-foreground">No documents</p>}
-                    {detail.documents.map((d) => (
-                      <div key={d.id} className="group flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
-                        <FileText className="size-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[12.5px] font-semibold">{label(d.type)}</p>
-                          <p className="truncate text-[10.5px] text-muted-foreground">
-                            {d.fileUrl} · {d.uploadedBy?.name ?? "unknown"} · {timeAgo(d.uploadedAt)}
-                          </p>
-                        </div>
-                        <a
-                          href={d.fileUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] font-bold text-primary transition-colors hover:text-primary"
-                        >
-                          open
-                        </a>
-                        <button
-                          onClick={() => removeDocument(d.id)}
-                          className="rounded-lg p-1 text-muted-foreground opacity-0 transition-all hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
+                </div>
               </div>
-            </div>
-
-            {/* notes */}
-            {detail.notes && (
-              <section>
-                <SectionTitle icon={<ShieldAlert className="size-3.5" />} title="Notes" />
-                <p className="mt-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
-                  {detail.notes}
-                </p>
-              </section>
             )}
 
             {/* footer actions */}
-            <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 flex items-center justify-between gap-2 border-t border-border/60 bg-card px-6 py-3.5">
-              <div className="flex items-center gap-2">
+            <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 bg-card px-6 py-3.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <Btn variant="ghost" onClick={() => setEditClient(detail)}>
                   <Pencil className="size-3.5" /> Edit
                 </Btn>
@@ -1003,6 +1551,7 @@ export default function AccountsPage() {
           </div>
           );
         })()}
+
       </Modal>
 
       {/* modals */}

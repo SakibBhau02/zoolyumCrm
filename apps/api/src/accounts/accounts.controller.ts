@@ -21,7 +21,7 @@ export class AccountsController {
   }
 
   @Get("clients")
-  list(@Query() query: { q?: string; health?: string; vertical?: string; ownerId?: string }) {
+  list(@Query() query: { q?: string; health?: string; vertical?: string; ownerId?: string; category?: string }) {
     return this.accounts.list(query);
   }
 

@@ -35,6 +35,12 @@ enum HealthLevel {
   RED
 }
 
+enum ClientCategory {
+  ACTIVE
+  ON_HOLD
+  ARCHIVED
+}
+
 // ══════════════════════════════════════════════════════════════════════
 // Module 9 — Control (Admin & Settings, RBAC)
 // ══════════════════════════════════════════════════════════════════════
@@ -474,6 +480,7 @@ model Client {
   currencyPreference String            @default("BDT")
   contractStartDate  DateTime?
   renewalDate        DateTime?
+  category           ClientCategory    @default(ACTIVE)
   notes              String?
   lead               Lead?             @relation("ClientFromLead")
   createdAt          DateTime          @default(now())
@@ -489,6 +496,7 @@ model Client {
   calendarEvents     CalendarEvent[]
 
   @@index([accountOwnerId])
+  @@index([category])
 }
 
 model ClientContact {

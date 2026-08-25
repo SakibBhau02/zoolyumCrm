@@ -197,10 +197,13 @@ export interface UserLite {
   isActive: boolean;
 }
 
+export type ClientCategory = "ACTIVE" | "ON_HOLD" | "ARCHIVED";
+
 export interface Client {
   id: string;
   companyName: string;
   industryVertical: string;
+  category: ClientCategory;
   healthScore: number | null;
   healthLevel: string;
   healthDriver: string | null;
@@ -276,6 +279,7 @@ export interface ClientDetail extends Client {
   totalInvoiced: number;
   totalPaid: number;
   totalDue: number;
+  aging?: { current: number; d30: number; d60: number; d90: number; d90p: number };
 }
 
 export interface AccountsOverview {

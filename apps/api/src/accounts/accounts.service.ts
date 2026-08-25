@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { BillingCycleType, HealthLevel, Vertical } from "@prisma/client";
+import { BillingCycleType, ClientCategory, HealthLevel, Vertical } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 
@@ -10,6 +10,7 @@ function clamp(n: number, lo: number, hi: number) {
 export interface ClientUpdateBody {
   companyName?: string;
   industryVertical?: Vertical;
+  category?: ClientCategory;
   accountOwnerId?: string;
   billingCycleType?: BillingCycleType;
   currencyPreference?: string;
@@ -176,7 +177,7 @@ export class AccountsService {
   }
 
   // ── CRUD ────────────────────────────────────────────────────────────────
-  async list(query: { q?: string; health?: string; vertical?: string; ownerId?: string }) {
+  async list(query: { q?: string; health?: string; vertical?: string; ownerId?: string; category?: string }) {
     const clients = await this.cache.wrapQuery("accounts:list", query, 30, () =>
       this.prisma.client.findMany({
         where: {
@@ -184,6 +185,7 @@ export class AccountsService {
           ...(query.health ? { healthLevel: query.health as any } : {}),
           ...(query.vertical ? { industryVertical: query.vertical as any } : {}),
           ...(query.ownerId ? { accountOwnerId: query.ownerId } : {}),
+          ...(query.category ? { category: query.category as any } : {}),
         },
         include: {
           accountOwner: { select: { id: true, name: true } },
@@ -246,6 +248,24 @@ export class AccountsService {
       take: 5,
     });
 
+    const now = new Date();
+    const aging = { current: 0, d30: 0, d60: 0, d90: 0, d90p: 0 };
+    for (const inv of client.invoices) {
+      if (["PAID", "CANCELLED", "VOID"].includes(inv.status)) continue;
+      const total = inv.lineItems.reduce((s, li) => s + Number(li.amount), 0);
+      const paid = inv.payments.reduce((s, p) => s + (p.type === "REFUND" ? -Number(p.amount) : Number(p.amount)), 0);
+      const due = Math.max(0, total - paid);
+      if (due <= 0) continue;
+      if (!inv.dueDate || new Date(inv.dueDate) >= now) aging.current += due;
+      else {
+        const days = Math.floor((now.getTime() - new Date(inv.dueDate).getTime()) / 86400000);
+        if (days <= 30) aging.d30 += due;
+        else if (days <= 60) aging.d60 += due;
+        else if (days <= 90) aging.d90 += due;
+        else aging.d90p += due;
+      }
+    }
+
     return {
       ...client,
       invoices,
@@ -253,6 +273,7 @@ export class AccountsService {
       totalInvoiced,
       totalPaid,
       totalDue: Math.max(0, totalInvoiced - totalPaid),
+      aging,
     };
   }
 
@@ -261,6 +282,7 @@ export class AccountsService {
       data: {
         companyName: body.companyName,
         industryVertical: body.industryVertical ?? "OTHER",
+        category: (body.category as any) ?? "ACTIVE",
         accountOwnerId: body.accountOwnerId || undefined,
         billingCycleType: body.billingCycleType ?? "PROJECT_BASED",
         currencyPreference: body.currencyPreference ?? "BDT",
@@ -285,6 +307,7 @@ export class AccountsService {
       data: {
         companyName: body.companyName,
         industryVertical: body.industryVertical,
+        category: body.category as any,
         accountOwnerId: body.accountOwnerId || undefined,
         billingCycleType: body.billingCycleType,
         currencyPreference: body.currencyPreference,
