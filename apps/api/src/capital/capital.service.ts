@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { Cron } from "@nestjs/schedule";
 import { InvoiceStatus, RevenueTag } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -318,6 +319,11 @@ export class CapitalService {
   }
 
   // ── Recurring billing ────────────────────────────────────────────────
+  @Cron("0 2 * * *")
+  async handleRecurring() {
+    await this.runRecurringBilling();
+  }
+
   async runRecurringBilling() {
     const projects = await this.prisma.project.findMany({
       where: { billingType: "RECURRING", nextBillingDate: { lte: new Date() } },

@@ -17,8 +17,11 @@ import { randomUUID } from "crypto";
 import { extname, join } from "path";
 import { ProjectType } from "@prisma/client";
 import { FlowService } from "./flow.service";
-import { CurrentUser } from "../common/decorators/current-user.decorator";
+import { CurrentUser, AuthUser } from "../common/decorators/current-user.decorator";
 import { Public } from "../common/decorators/public.decorator";
+import { Roles } from "../common/decorators/roles.decorator";
+import { CreateProjectDto } from "./dto/create-project.dto";
+import { CreateReferenceDto } from "./dto/create-reference.dto";
 
 const UPLOAD_DIR = join(process.cwd(), "uploads");
 
@@ -42,18 +45,52 @@ export class FlowController {
   }
 
   @Post("projects")
-  create(@Body() body: any) {
-    return this.flow.create(body);
+  create(@Body() dto: CreateProjectDto) {
+    return this.flow.create(dto);
   }
 
   @Patch("projects/:id")
-  update(@Param("id") id: string, @Body() body: any) {
-    return this.flow.update(id, body);
+  update(@Param("id") id: string, @Body() dto: CreateProjectDto) {
+    return this.flow.update(id, dto);
   }
 
   @Delete("projects/:id")
   remove(@Param("id") id: string) {
     return this.flow.remove(id);
+  }
+
+  // ── References & Research ──────────────────────────────────────────
+  @Post("projects/:id/references")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  createReference(
+    @Param("id") id: string,
+    @Body() dto: CreateReferenceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.flow.createReference(id, dto, user.sub);
+  }
+
+  @Get("projects/:id/references")
+  listReferences(@Param("id") id: string) {
+    return this.flow.listReferences(id);
+  }
+
+  @Patch("references/:id")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  updateReference(@Param("id") id: string, @Body() dto: CreateReferenceDto) {
+    return this.flow.updateReference(id, dto);
+  }
+
+  @Delete("references/:id")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  deleteReference(@Param("id") id: string) {
+    return this.flow.deleteReference(id);
+  }
+
+  @Post("projects/:id/tasks/bulk")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  bulkTasks(@Param("id") id: string, @Body() body: { taskIds: string[] }) {
+    return this.flow.bulkAssignTasks(id, body.taskIds);
   }
 
   @Get("projects/:id/discussions")
