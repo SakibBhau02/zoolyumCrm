@@ -23,6 +23,7 @@ import { CurrentUser, AuthUser } from "../common/decorators/current-user.decorat
 import { Public } from "../common/decorators/public.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { CreateProjectDto } from "./dto/create-project.dto";
+import { UpdateProjectDto } from "./dto/update-project.dto";
 import { CreateReferenceDto } from "./dto/create-reference.dto";
 
 const UPLOAD_DIR = join(process.cwd(), "uploads");
@@ -52,7 +53,7 @@ export class FlowController {
   }
 
   @Patch("projects/:id")
-  update(@Param("id") id: string, @Body() dto: CreateProjectDto) {
+  update(@Param("id") id: string, @Body() dto: UpdateProjectDto) {
     return this.flow.update(id, dto);
   }
 
