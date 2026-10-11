@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ArrowRight, Info } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/components/shared";
 import { Field, FormActions, Input, Modal, Select, Textarea } from "@/components/ui";
+import { ProjectContextPanel } from "@/components/tasks/project-context";
 
 export type TaskRow = {
   id: string;
@@ -35,8 +37,14 @@ export type TaskRow = {
   createdAt?: string;
   project?: { id: string; name: string } | null;
   assignedTo?: { id: string; name: string } | null;
+  assignedBy?: { id: string; name: string; roleTitle?: string } | null;
+  assignedAt?: string | null;
+  deliverable?: { id: string; title: string; status: string } | null;
+  sprint?: { id: string; name: string; status: string } | null;
   reporter?: { id: string; name: string } | null;
-  _count?: { timeLogs?: number; comments?: number };
+  checklist?: { id: string; content: string; done: boolean }[];
+  _permissions?: { canView: boolean; canEditFull: boolean; canEditProgress: boolean };
+  _count?: { timeLogs?: number; comments?: number; checklist?: number };
 };
 
 export type UserLite = { id: string; name: string; roleTitle?: string };
@@ -61,13 +69,21 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
 }) {
   const [f, setF] = useState({
     title: "", description: "", projectId: "", priority: "MEDIUM", status: "TODO", taskType: "general",
-    assignedToId: "", reporterId: "", extraAssignees: [] as string[], dueDate: "", startDate: "",
+    assignedToId: "", extraAssignees: [] as string[], dueDate: "", startDate: "",
     estimatedHours: "", tags: "", parentTaskId: "", isClientVisible: false, isRecurring: false, recurrenceSchedule: "weekly",
     referenceLinks: [] as { id: string; title: string; url: string }[],
     customFields: [] as { id: string; key: string; value: string }[],
     attachments: [] as { id: string; name: string; url: string; size: string; type: string }[],
   });
   const [busy, setBusy] = useState(false);
+  const [me, setMe] = useState<{ id: string; name: string } | null>(null);
+
+  useEffect(() => {
+    // used only for the "X assigns this to Y" preview line
+    if (open && !me) {
+      apiFetch<{ id: string; name: string }>("/auth/me").then(setMe).catch(() => {});
+    }
+  }, [open, me]);
   const [err, setErr] = useState<string | null>(null);
   const editing = !!initial;
   useEffect(() => {
@@ -77,7 +93,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
       ? {
         title: initial.title, description: initial.description ?? "", projectId: initial.projectId ?? "",
         priority: initial.priority || "MEDIUM", status: initial.status, taskType: initial.taskType ?? "general",
-        assignedToId: initial.assignedToId ?? "", reporterId: initial.reporterId ?? "",
+        assignedToId: initial.assignedToId ?? "",
         extraAssignees: (initial.assignees ?? []).map((a: any) => a.id),
         dueDate: initial.dueDate?.slice(0, 10) ?? "", startDate: initial.startDate?.slice(0, 10) ?? "",
         estimatedHours: initial.estimatedHours != null ? String(initial.estimatedHours) : "",
@@ -90,7 +106,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
       }
       : {
         title: "", description: "", projectId: projectId ?? "", priority: "MEDIUM", status: "TODO", taskType: "general",
-        assignedToId: "", reporterId: "", extraAssignees: [], dueDate: "", startDate: "",
+        assignedToId: "", extraAssignees: [], dueDate: "", startDate: "",
         estimatedHours: "", tags: "", parentTaskId: "", isClientVisible: false, isRecurring: false, recurrenceSchedule: "weekly",
         referenceLinks: [], customFields: [], attachments: [],
       });
@@ -98,6 +114,9 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!f.title.trim()) { setErr("Title is required"); return; }
+    // Handing work to someone without a brief is how tasks come back wrong.
+    // Enforced on create only so pre-existing thin tasks stay editable.
+    if (!editing && !f.description.trim()) { setErr("Description is required so the assignee knows what to do"); return; }
     setBusy(true);
     setErr(null);
     try {
@@ -106,7 +125,8 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
         body: JSON.stringify({
           title: f.title.trim(), description: f.description.trim() || undefined,
           projectId: f.projectId || undefined, assignedToId: f.assignedToId || undefined,
-          reporterId: f.reporterId || undefined, priority: f.priority, taskType: f.taskType,
+          // reporterId is no longer sent — the server sets it from the caller
+          priority: f.priority, taskType: f.taskType,
           dueDate: f.dueDate || null, startDate: f.startDate || null,
           estimatedHours: f.estimatedHours ? Number(f.estimatedHours) : undefined,
           parentTaskId: f.parentTaskId || undefined,
@@ -128,14 +148,38 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
     <Modal open={open} onClose={onClose} title={editing ? "Edit task" : "New task"} size="lg">
       <form onSubmit={save} className="flex flex-col gap-4">
         <Field label="Title *"><Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Ship the onboarding flow" autoFocus /></Field>
-        <Field label="Description"><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="What needs to happen…" /></Field>
+        <Field label="Description *" hint={editing ? undefined : "The assignee needs to know what done looks like"}>
+          <Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="What needs to happen, and what does done look like?" />
+        </Field>
+
+        {/*
+          Hand-off line: who is giving this task, and to whom. Reporter is set
+          server-side from the logged-in user, so this is a preview, not a picker.
+        */}
+        {f.assignedToId && (
+          <div className="flex items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2.5">
+            <Info className="size-3.5 shrink-0 text-primary" />
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-[11.5px]">
+              <span className="font-bold text-primary">{me?.name ?? "You"}</span>
+              <span className="text-muted-foreground">assign this to</span>
+              <span className="font-bold">{users.find((u) => u.id === f.assignedToId)?.name ?? "—"}</span>
+              <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+              <span className="text-muted-foreground">
+                only {(users.find((u) => u.id === f.assignedToId)?.name ?? "the assignee")} can change status; you and the PM can edit the brief
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Project context: the brief, research and files behind this work */}
+        <ProjectContextPanel projectId={f.projectId || null} compact />
+
         <div className="grid grid-cols-2 gap-4">
           <Field label="Project"><Select value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })} disabled={!!projectId}><option value="">No project</option>{projects.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</Select></Field>
           <Field label="Status"><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>{STATUS_OPTS.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}</Select></Field>
           <Field label="Priority"><Select value={f.priority} onChange={(e) => setF({ ...f, priority: e.target.value })}>{PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}</Select></Field>
           <Field label="Type"><Select value={f.taskType} onChange={(e) => setF({ ...f, taskType: e.target.value })}>{TASK_TYPES.map((t) => (<option key={t} value={t}>{t}</option>))}</Select></Field>
           <Field label="Assignee"><Select value={f.assignedToId} onChange={(e) => setF({ ...f, assignedToId: e.target.value })}><option value="">Unassigned</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
-          <Field label="Reporter"><Select value={f.reporterId} onChange={(e) => setF({ ...f, reporterId: e.target.value })}><option value="">None</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
           <Field label="Start date"><Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} /></Field>
           <Field label="Due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
           <Field label="Estimated hours"><Input type="number" min={0} step={0.5} value={f.estimatedHours} onChange={(e) => setF({ ...f, estimatedHours: e.target.value })} placeholder="4" /></Field>

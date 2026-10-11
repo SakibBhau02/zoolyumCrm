@@ -26,6 +26,15 @@ export class TasksService {
   ) {}
 
   // ── Permission helpers (enterprise field-level) ──────────────────────────
+  //
+  // Three levels, from narrowest to widest:
+  //   canViewTask      — see the task at all
+  //   canWorkOnTask    — assignee-side actions: status, checklist, timer, comments
+  //   canEditFull      — change content: title, description, project, assignee...
+  //
+  // The assignee deliberately does NOT get canEditFull: once someone hands you
+  // a task you execute it, you do not rewrite its brief. Only the assigner
+  // (reporter) and PM/Admin can change what the task says.
   private isAdmin(role?: string) {
     return role === "Owner" || role === "HR/Admin" || role === "Admin";
   }
@@ -37,34 +46,43 @@ export class TasksService {
     const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { employeeId: true } });
     return (u as any)?.employeeId ?? null;
   }
+  private isAssignee(task: any, empId: string | null) {
+    if (!empId) return false;
+    if (task.assignedToId === empId) return true;
+    const assignees = (task.assignees ?? []) as any[];
+    return assignees.some((a: any) => a.id === empId);
+  }
   private async canViewTask(task: any, user?: { sub?: string; role?: string }): Promise<boolean> {
     if (!user?.sub) return false; // unauthenticated handled by guard, but safe
     if (this.isAdmin(user.role) || this.isPM(user.role)) return true;
     const empId = await this.getEmployeeIdByUserId(user.sub);
     if (!empId) return false;
-    if (task.assignedToId === empId || task.reporterId === empId) return true;
-    // also check assignees JSON array
-    const assignees = (task.assignees ?? []) as any[];
-    if (assignees.some((a: any) => a.id === empId)) return true;
+    if (this.isAssignee(task, empId)) return true;
+    if (task.reporterId === empId || task.assignedById === empId) return true;
     return false;
   }
+  /** Content edits (title/description/project/assignee/dates/links). */
   private async canEditFull(task: any, user?: { sub?: string; role?: string }): Promise<boolean> {
     if (!user?.sub) return false;
     if (this.isAdmin(user.role) || this.isPM(user.role)) return true;
     const empId = await this.getEmployeeIdByUserId(user.sub);
     if (!empId) return false;
-    if (task.reporterId === empId) return true; // creator (reporter) owns task
-    return false;
+    // the person who raised it, and the person who assigned it, own the brief
+    return task.reporterId === empId || task.assignedById === empId;
   }
-  private async canEditProgress(task: any, user?: { sub?: string; role?: string }): Promise<boolean> {
+  /**
+   * Assignee-side actions. An assignee may drive their own work forward
+   * (status, checklist, timer, time logs) but may not rewrite the brief.
+   */
+  private async canWorkOnTask(task: any, user?: { sub?: string; role?: string }): Promise<boolean> {
     if (await this.canEditFull(task, user)) return true;
     if (!user?.sub) return false;
     const empId = await this.getEmployeeIdByUserId(user.sub);
-    if (!empId) return false;
-    if (task.assignedToId === empId) return true;
-    const assignees = (task.assignees ?? []) as any[];
-    if (assignees.some((a: any) => a.id === empId)) return true;
-    return false;
+    return this.isAssignee(task, empId);
+  }
+  /** @deprecated alias — kept so existing call sites read clearly as "progress" */
+  private canEditProgress(task: any, user?: { sub?: string; role?: string }) {
+    return this.canWorkOnTask(task, user);
   }
 
   async stats() {
@@ -400,6 +418,83 @@ export class TasksService {
   }
 
   /**
+   * Everything an assignee needs to actually start work, in one call:
+   * the project brief, its research/reference links and its files.
+   *
+   * Exists so the task form and detail drawer can show project context without
+   * pulling the whole Flow module — and so it can be permission-checked against
+   * the task rather than assuming the caller can read every project.
+   */
+  async projectContextForTask(taskId: string, user?: any) {
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      select: { id: true, projectId: true, deliverableId: true, assignedToId: true, reporterId: true, assignedById: true, assignees: true },
+    });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canViewTask(task, user))) {
+      throw new ForbiddenException("You don't have permission to view this task");
+    }
+    if (!task.projectId) return { project: null, references: [], files: [], deliverables: [], reports: [] };
+    return this.projectContext(task.projectId, task.deliverableId);
+  }
+
+  /** Project brief + research + files, shaped for the task UI. */
+  async projectContext(projectId: string, deliverableId?: string | null) {
+    const [project, references, files, deliverables, reports] = await Promise.all([
+      this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: {
+          id: true, name: true, description: true, status: true, healthStatus: true,
+          category: true, priority: true, progress: true,
+          startDate: true, targetEndDate: true,
+          projectLink: true, websiteUrl: true, briefLink: true, driveLink: true, researchLink: true,
+          socialLinks: true,
+          client: { select: { id: true, companyName: true } },
+          assignedPm: { select: { id: true, name: true } },
+          _count: { select: { tasks: true } },
+        },
+      }),
+      this.prisma.projectReference.findMany({
+        where: { projectId },
+        include: { uploadedBy: { select: { id: true, name: true } } },
+        orderBy: { createdAt: "desc" },
+      }),
+      this.prisma.projectFile.findMany({
+        where: { projectId },
+        include: { uploadedBy: { select: { id: true, name: true } } },
+        orderBy: { uploadedAt: "desc" },
+        take: 50,
+      }),
+      this.prisma.projectDeliverable.findMany({
+        where: { projectId },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      }),
+      this.prisma.projectReport.findMany({
+        where: { projectId },
+        orderBy: { periodEnd: "desc" },
+        take: 10,
+      }),
+    ]);
+    if (!project) throw new NotFoundException("Project not found");
+    return {
+      project,
+      // the project's own brief links, flattened so the UI can list them
+      briefLinks: [
+        { label: "Brief", url: project.briefLink },
+        { label: "Drive", url: project.driveLink },
+        { label: "Research", url: project.researchLink },
+        { label: "Project link", url: project.projectLink },
+        { label: "Website", url: project.websiteUrl },
+      ].filter((l) => !!l.url),
+      references,
+      files,
+      deliverables,
+      reports,
+      focusedDeliverableId: deliverableId ?? null,
+    };
+  }
+
+  /**
    * Burndown from daily snapshots.
    *
    * Snapshots are the source of truth for days already recorded; for any day
@@ -703,6 +798,7 @@ export class TasksService {
           project: { select: { id: true, name: true, healthStatus: true } },
           sprint: { select: { id: true, name: true, status: true } },
           assignedTo: { select: { id: true, name: true } },
+          assignedBy: { select: { id: true, name: true } },
           reporter: { select: { id: true, name: true } },
           _count: { select: { timeLogs: true, comments: true, checklist: true } },
         },
@@ -720,8 +816,12 @@ export class TasksService {
       where: { id },
       include: {
         project: { select: { id: true, name: true, client: { select: { id: true, companyName: true } } } },
-        assignedTo: { select: { id: true, name: true } },
-        reporter: { select: { id: true, name: true } },
+        deliverable: { select: { id: true, title: true, status: true } },
+        sprint: { select: { id: true, name: true, status: true, startDate: true, endDate: true } },
+        assignedTo: { select: { id: true, name: true, roleTitle: true, department: true } },
+        reporter: { select: { id: true, name: true, roleTitle: true } },
+        assignedBy: { select: { id: true, name: true, roleTitle: true } },
+        checklist: { include: { doneBy: { select: { id: true, name: true } } }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] },
         timeLogs: { include: { employee: { select: { id: true, name: true } } }, orderBy: { date: "desc" } },
         comments: {
           include: { author: { select: { id: true, name: true } }, replies: { include: { author: { select: { id: true, name: true } } }, orderBy: { createdAt: "asc" } } },
@@ -771,6 +871,7 @@ export class TasksService {
     recurrenceSchedule?: string;
     createdById?: string;
     createdByName?: string;
+    assignedToName?: string;
   }) {
     const status = body.status ?? "TODO";
     let sortOrder = 0;
@@ -778,11 +879,17 @@ export class TasksService {
       const siblings = await this.prisma.task.findMany({ where: { parentTaskId: body.parentTaskId }, select: { sortOrder: true } });
       sortOrder = siblings.reduce((m, s) => Math.max(m, s.sortOrder), 0) + 1;
     }
-    // enterprise: auto-set reporter to creator's employee if not provided
+    // Reporter is never client-supplied: whoever creates the task raises it.
+    // (A PM may later reassign the reporter via an explicit update.)
     let reporterId = body.reporterId as string | undefined;
     if (!reporterId && body.createdById) {
       reporterId = (await this.getEmployeeIdByUserId(body.createdById)) ?? undefined;
     }
+    // Assigner = whoever is doing the handing out. If the creator assigned it
+    // to someone else, they are the assigner; if the creator kept it, there is
+    // no separate assigner (they assigned it to themselves).
+    const creatorEmpId = body.createdById ? await this.getEmployeeIdByUserId(body.createdById) : null;
+    const assignedById = body.assignedToId && body.assignedToId !== creatorEmpId ? creatorEmpId ?? undefined : undefined;
     const activityLog = [
       {
         action: "created",
@@ -792,6 +899,16 @@ export class TasksService {
         at: new Date().toISOString(),
         by: body.createdByName ?? "System",
       },
+      ...(body.assignedToId
+        ? [{
+            action: "assigned",
+            field: "assignedTo",
+            from: null,
+            to: body.assignedToName ?? body.assignedToId,
+            at: new Date().toISOString(),
+            by: body.createdByName ?? "System",
+          }]
+        : []),
     ];
     const task = await this.prisma.task.create({
       data: {
@@ -800,6 +917,8 @@ export class TasksService {
         projectId: body.projectId,
         sprintId: (body as any).sprintId,
         assignedToId: body.assignedToId,
+        assignedById,
+        assignedAt: body.assignedToId ? new Date() : null,
         reporterId: reporterId as string | undefined,
         priority: body.priority ?? "MEDIUM",
         dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
@@ -857,6 +976,13 @@ export class TasksService {
     if (body.priority !== undefined) push("priority", existing.priority, body.priority), (data.priority = body.priority);
     if (body.taskType !== undefined) push("taskType", existing.taskType, body.taskType), (data.taskType = body.taskType);
     if (body.assignedToId !== undefined) push("assignee", existing.assignedToId, body.assignedToId), (data.assignedToId = body.assignedToId);
+    // Reassignment records who handed it over, so "assigned by X" survives the
+    // hand-off instead of silently pointing at the original creator.
+    if (body.assignedToId !== undefined && body.assignedToId !== existing.assignedToId) {
+      const actorEmpId = await this.empId(actorUser.sub);
+      data.assignedById = actorEmpId ?? null;
+      data.assignedAt = body.assignedToId ? new Date() : null;
+    }
     if (body.reporterId !== undefined) push("reporter", existing.reporterId, body.reporterId), (data.reporterId = body.reporterId);
     if (body.dueDate !== undefined) push("dueDate", existing.dueDate?.toISOString().slice(0, 10), body.dueDate), (data.dueDate = body.dueDate ? new Date(body.dueDate) : null);
     if (body.startDate !== undefined) push("startDate", existing.startDate?.toISOString().slice(0, 10), body.startDate), (data.startDate = body.startDate ? new Date(body.startDate) : null);

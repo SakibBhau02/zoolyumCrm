@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  AlarmClock, Archive, ArrowUp, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  AlarmClock, Archive, ArrowRight, ArrowUp, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   Copy, ExternalLink, FileText, Flame, FolderKanban, GitBranch, Link2, ListTodo, MessageSquare, Minus, MoreHorizontal, Paperclip, Play,
   Plus, RefreshCw, Search, ShieldAlert, Smile, Timer, Trash2, Upload, UserRound, X, Zap,
 } from "lucide-react";
@@ -15,6 +15,7 @@ import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { Drawer, Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
 import { TaskFormModal } from "@/components/tasks/task-form-modal";
 import { ChecklistTab, TaskTimerButton, TimerPill } from "@/components/tasks/task-ops";
+import { ProjectContextPanel } from "@/components/tasks/project-context";
 import { SprintBurndownCard, SprintPicker, type Sprint } from "@/components/tasks/sprint";
 import { SavedViewBar, type SavedView } from "@/components/tasks/saved-views";
 import { EstimationPanel } from "@/components/tasks/estimation";
@@ -63,6 +64,12 @@ type TaskDetail = TaskRow & {
   timeLogs?: { id: string; date: string; hours: number; description?: string | null; loggedVia?: string; isBillable?: boolean; employee?: { id: string; name: string } | null }[];
   dependencies?: { id: string; type?: string; dependsOnTask: { id: string; title: string; status: string } }[];
   dependents?: { id: string; type?: string; task: { id: string; title: string; status: string } }[];
+  assignedBy?: { id: string; name: string; roleTitle?: string } | null;
+  assignedAt?: string | null;
+  deliverable?: { id: string; title: string; status: string } | null;
+  sprint?: { id: string; name: string; status: string; startDate: string; endDate: string } | null;
+  checklist?: { id: string; content: string; done: boolean }[];
+  _permissions?: { canView: boolean; canEditFull: boolean; canEditProgress: boolean };
 };
 type Stats = { total?: number; open?: number; done?: number; inProgress?: number; overdue?: number; dueToday?: number; highPriority?: number; review?: number; blocked?: number; hoursThisWeek?: number };
 type UserLite = { id: string; name: string; roleTitle?: string };
@@ -472,7 +479,7 @@ export default function TasksPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"overview" | "checklist" | "subtasks" | "comments" | "time" | "deps" | "files">("overview");
+  const [tab, setTab] = useState<"project" | "overview" | "checklist" | "subtasks" | "comments" | "time" | "deps" | "files">("project");
   useEffect(() => {
     if (!selectedId) { setDetail(null); setDetailError(null); setTab("overview"); return; }
     let cancelled = false;
@@ -1515,6 +1522,28 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                   <TaskTimerButton taskId={detail.id} onChanged={reload} />
                 </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">Created {timeAgo(detail.createdAt)} {detail.reporter?.name ? `· by ${detail.reporter.name}` : ""} {detail.dueDate ? `· Due ${formatDate(detail.dueDate)}` : ""}</p>
+                {/*
+                  Hand-off line, kept next to the title: who gave this task and
+                  to whom. Both names matter — the assigner owns the brief, the
+                  assignee owns the execution.
+                */}
+                {(detail.assignedTo || detail.assignedBy) && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className="rounded-full border border-border/60 bg-card px-2 py-0.5 font-bold">
+                      {detail.assignedBy?.name ?? detail.reporter?.name ?? "—"}
+                    </span>
+                    <ArrowRight className="size-3 text-muted-foreground" />
+                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-bold text-primary">
+                      {detail.assignedTo?.name ?? "Unassigned"}
+                    </span>
+                    {detail.assignedAt && <span className="text-muted-foreground">· {timeAgo(detail.assignedAt)}</span>}
+                    {detail._permissions && !detail._permissions.canEditFull && (
+                      <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-500">
+                        You're the assignee — status, checklist and timer only
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             ) : null
         }
@@ -1602,10 +1631,14 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
             </div>
 
             <div className="flex flex-wrap gap-1.5">
-              {([{ key: "overview", label: `Activity (${detail.activityLog?.length ?? 0})` }, { key: "checklist", label: "Checklist" }, { key: "subtasks", label: `Subtasks (${detail.subtasks?.length ?? 0})` }, { key: "comments", label: `Comments (${detail.comments?.length ?? 0})` }, { key: "time", label: `Time Log (${detail.timeLogs?.length ?? 0})` }, { key: "deps", label: `Dependencies (${detail.dependencies?.length ?? 0})` }, { key: "files", label: `Files & Links (${(detail.attachments?.length ?? 0) + (detail.referenceLinks?.length ?? 0)})` }] as const).map((t) => (
+              {([{ key: "project", label: "Project" }, { key: "overview", label: `Activity (${detail.activityLog?.length ?? 0})` }, { key: "checklist", label: `Checklist (${detail.checklist?.length ?? 0})` }, { key: "subtasks", label: `Subtasks (${detail.subtasks?.length ?? 0})` }, { key: "comments", label: `Comments (${detail.comments?.length ?? 0})` }, { key: "time", label: `Time Log (${detail.timeLogs?.length ?? 0})` }, { key: "deps", label: `Dependencies (${detail.dependencies?.length ?? 0})` }, { key: "files", label: `Files & Links (${(detail.attachments?.length ?? 0) + (detail.referenceLinks?.length ?? 0)})` }] as const).map((t) => (
                 <button key={t.key} onClick={() => setTab(t.key)} className={cn("rounded-xl px-3 py-1.5 text-[11.5px] font-bold transition-all", tab === t.key ? "bg-brand-gradient text-white" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground")}>{t.label}</button>
               ))}
             </div>
+
+            {tab === "project" && (
+              <ProjectContextPanel taskId={detail.id} collapsible={false} />
+            )}
 
             {tab === "overview" && (
               <div className="flex flex-col gap-1.5">

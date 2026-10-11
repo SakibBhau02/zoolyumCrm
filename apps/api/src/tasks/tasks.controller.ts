@@ -159,7 +159,9 @@ export class TasksController {
 
   @Post()
   create(@Body() body: any, @CurrentUser() user: any) {
-    return this.tasks.create({ ...body, createdById: user?.sub, createdByName: user?.name });
+    // reporter is derived server-side from the caller; strip any client claim
+    const { reporterId: _ignored, ...rest } = body ?? {};
+    return this.tasks.create({ ...rest, createdById: user?.sub, createdByName: user?.name });
   }
 
   @Patch(":id")
@@ -183,6 +185,12 @@ export class TasksController {
   }
 
   // ── Checklist ────────────────────────────────────────────────────────
+  // ── Project context (files / research for the project this task belongs to) ──
+  @Get(":id/project-context")
+  projectContext(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.tasks.projectContextForTask(id, user);
+  }
+
   @Get(":id/checklist")
   listChecklist(@Param("id") id: string) {
     return this.tasks.listChecklist(id);

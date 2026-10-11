@@ -901,6 +901,12 @@ model Task {
   description         String?
   assignedTo          Employee?           @relation(fields: [assignedToId], references: [id])
   assignedToId        String?
+  // Who handed the task to `assignedTo`. Distinct from `reporter` (who raised
+  // the work) — a PM can assign a task that someone else reported, and this is
+  // what the "assigned by" line in the UI reads.
+  assignedBy          Employee?           @relation("taskAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+  assignedById        String?
+  assignedAt          DateTime? // when the current assignee was set
   reporter            Employee?           @relation("taskReporter", fields: [reporterId], references: [id], onDelete: SetNull)
   reporterId          String?
   priority            Priority            @default(MEDIUM)
@@ -1171,6 +1177,7 @@ model Employee {
   attritionFlags           AttritionRiskFlag[]
   tasks                    Task[]
   reportedTasks            Task[]                 @relation("taskReporter")
+  assignedTasks            Task[]                 @relation("taskAssigner")
   timeLogs                 TimeLog[]
   checklistItems           TaskChecklistItem[]
   timers                   TaskTimer[]
