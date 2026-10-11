@@ -685,6 +685,7 @@ async function main() {
   const acctRevenue = await prisma.account.create({ data: { code: "4000", name: "Agency Revenue", category: "REVENUE" } });
   await prisma.account.create({ data: { code: "4100", name: "Management Fees", category: "REVENUE" } });
   await prisma.account.create({ data: { code: "4200", name: "Other Income", category: "REVENUE" } });
+  await prisma.account.create({ data: { code: "4300", name: "Discounts Allowed", category: "REVENUE" } });
   const acctAdSpend = await prisma.account.create({ data: { code: "5000", name: "Ad Spend", category: "DIRECT_COST" } });
   const acctFreelancer = await prisma.account.create({ data: { code: "5010", name: "Freelancer Payments", category: "DIRECT_COST" } });
   const acctProduction = await prisma.account.create({ data: { code: "5020", name: "Production Costs", category: "DIRECT_COST" } });
