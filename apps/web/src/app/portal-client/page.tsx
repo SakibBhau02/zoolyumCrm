@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Activity,
+  BadgeCheck,
   CalendarClock,
   CheckCircle2,
   Circle,
   ClipboardList,
+  Download,
   ExternalLink,
   FileDown,
   FileText,
@@ -27,7 +29,8 @@ import {
 } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { formatBDT, formatDate, timeAgo } from "@/lib/format";
-import { buildInvoicePdf, buildInvoicePdfAsync } from "@/lib/invoice-pdf";
+import { buildInvoicePdf, buildInvoicePdfAsync, buildReceiptPdf, resolveBrandingImages } from "@/lib/invoice-pdf";
+import { invoiceTotals, numberToWords, paymentSerial } from "@/lib/invoice-utils";
 import { Btn, TableShell, Td, Th, THead, Tr } from "@/components/table";
 import { Avatar, CardShell, cn, EmptyState, PageHeader, SkeletonBlock, StatCard, StatusBadge } from "@/components/shared";
 import { Field, Input, Modal } from "@/components/ui";
@@ -72,7 +75,8 @@ type Project = {
   _count: { tasks: number; comments: number };
 };
 type InvoiceLine = { id: string; description: string; quantity: number; unitPrice: number; amount: number };
-type InvoicePayment = { id: string; amount: number; paymentMethod: string; referenceId: string | null; paymentDate: string };
+type InvoicePayment = { id: string; amount: number; paymentMethod: string; referenceId: string | null; receiptNo: string; serial?: number; paymentDate: string };
+type InvoiceInstallment = { sequence: number; amount: number; paidAmount: number; dueDate: string; status: string };
 type Invoice = {
   id: string;
   invoiceNumber: string;
@@ -81,14 +85,20 @@ type Invoice = {
   status: string;
   amount: number;
   paid: number;
+  balance: number;
   currency: string;
   taxApplicable: boolean;
   taxRate: number;
+  discountRate: number;
+  shippingFee: number;
+  templateStyle: string;
+  terms: string | null;
   notes: string | null;
   project: { id: string; name: string } | null;
   client: { companyName: string; contacts: { name: string; email: string | null; phone: string | null; roleTitle: string | null }[] };
   lines: InvoiceLine[];
   payments: InvoicePayment[];
+  installments: InvoiceInstallment[];
 };
 type InvoiceSummary = { totalInvoiced: number; totalCollected: number; totalOutstanding: number };
 type ActivityItem = { id: string; action: string; relatedEntityType: string | null; relatedEntityId: string | null; timestamp: string };
@@ -369,10 +379,30 @@ export default function PortalClientPage() {
     setPdfBusy(true);
     setPdfError(null);
     try {
-      let pdfBranding: { primaryColor?: string; logoDarkUrl?: string; appName?: string } | undefined;
+      let pdfBranding: any = undefined;
       try {
         const b = await pfetch("/portal-client/branding").catch(() => null);
-        if (b) pdfBranding = { primaryColor: b.primaryColor ?? undefined, logoDarkUrl: b.logoDarkUrl ?? undefined, appName: b.appName ?? undefined };
+        if (b) {
+          pdfBranding = await resolveBrandingImages({
+            primaryColor: b.primaryColor ?? undefined,
+            logoDarkUrl: b.logoDarkUrl ?? undefined,
+            appName: b.appName ?? undefined,
+            tagline: b.tagline ?? undefined,
+            email: b.email ?? undefined,
+            phone: b.phone ?? undefined,
+            address: b.address ?? undefined,
+            city: b.city ?? undefined,
+            country: b.country ?? undefined,
+            taxId: b.taxId ?? undefined,
+            website: b.website ?? undefined,
+            authorizedSignerName: b.authorizedSignerName ?? undefined,
+            authorizedSignerTitle: b.authorizedSignerTitle ?? undefined,
+            signatureImageUrl: b.signatureImageUrl ?? undefined,
+            defaultPaymentDetails: b.defaultPaymentDetails ?? undefined,
+            defaultTerms: b.defaultTerms ?? undefined,
+            defaultNotes: b.defaultNotes ?? undefined,
+          });
+        }
       } catch {
         pdfBranding = undefined;
       }
@@ -384,16 +414,60 @@ export default function PortalClientPage() {
         currency: openInvoice.currency,
         taxApplicable: openInvoice.taxApplicable,
         taxRate: openInvoice.taxRate,
+        discountRate: openInvoice.discountRate,
+        shippingFee: openInvoice.shippingFee,
+        templateStyle: openInvoice.templateStyle,
+        terms: openInvoice.terms,
         notes: openInvoice.notes,
         client: openInvoice.client,
         project: openInvoice.project,
         lineItems: openInvoice.lines,
         payments: openInvoice.payments,
       };
-      const doc = pdfBranding?.logoDarkUrl ? await buildInvoicePdfAsync(payload, pdfBranding) : buildInvoicePdf(payload, pdfBranding);
+      const doc = await buildInvoicePdfAsync(payload, pdfBranding);
       doc.save(`${openInvoice.invoiceNumber}.pdf`);
     } catch {
       setPdfError("Could not generate the PDF. Please try again.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const doReceiptPdf = async (p: InvoicePayment, idx: number) => {
+    if (!openInvoice || pdfBusy) return;
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      let pdfBranding: any = undefined;
+      try {
+        const b = await pfetch("/portal-client/branding").catch(() => null);
+        if (b) pdfBranding = await resolveBrandingImages({ ...b });
+      } catch {
+        pdfBranding = undefined;
+      }
+      const { ensurePdfFonts } = await import("@/lib/invoice-pdf");
+      await ensurePdfFonts();
+      const payload = {
+        invoiceNumber: openInvoice.invoiceNumber,
+        issueDate: openInvoice.issueDate,
+        dueDate: openInvoice.dueDate,
+        status: openInvoice.status,
+        currency: openInvoice.currency,
+        taxApplicable: openInvoice.taxApplicable,
+        taxRate: openInvoice.taxRate,
+        discountRate: openInvoice.discountRate,
+        shippingFee: openInvoice.shippingFee,
+        templateStyle: openInvoice.templateStyle,
+        notes: openInvoice.notes,
+        client: openInvoice.client,
+        project: openInvoice.project,
+        lineItems: openInvoice.lines,
+        payments: openInvoice.payments,
+      };
+      const doc = buildReceiptPdf(payload, { ...p, index: (p.serial ?? paymentSerial(openInvoice.payments, p.id) ?? 1) - 1 }, pdfBranding);
+      doc.save(`${p.receiptNo}.pdf`);
+    } catch {
+      setPdfError("Could not generate the receipt. Please try again.");
     } finally {
       setPdfBusy(false);
     }
@@ -1118,6 +1192,12 @@ export default function PortalClientPage() {
       <Modal open={!!openInvoice} onClose={() => setOpenInvoice(null)} title={openInvoice?.invoiceNumber ?? ""} size="lg">
         {openInvoice && (
           <div className="flex flex-col gap-5">
+            {openInvoice.status === "PAID" && (
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5">
+                <BadgeCheck className="size-4 shrink-0 text-emerald-500" />
+                <p className="text-[12.5px] font-bold text-emerald-600 dark:text-emerald-300">PAID IN FULL — thank you! Receipts for every payment are listed below.</p>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <StatusBadge status={openInvoice.status} />
               {openInvoice.project && (
@@ -1159,29 +1239,79 @@ export default function PortalClientPage() {
             </div>
 
             <div>
-              <p className="mb-2 text-[12.5px] font-semibold">Payments ({openInvoice.payments.length})</p>
+              <p className="mb-2 text-[12.5px] font-semibold">Payments & receipts ({openInvoice.payments.length})</p>
               {openInvoice.payments.length === 0 ? (
                 <p className="text-[12px] text-muted-foreground">No payments received yet.</p>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {openInvoice.payments.map((p) => (
+                  {openInvoice.payments.map((p, idx) => (
                     <div key={p.id} className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
                       <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
-                      <p className="flex-1 text-[12.5px] font-medium tabular-nums">{formatBDT(p.amount)}</p>
-                      <span className="text-[11px] text-muted-foreground">{label(p.paymentMethod)}</span>
-                      {p.referenceId && <span className="text-[11px] text-muted-foreground">{p.referenceId}</span>}
-                      <span className="text-[11px] tabular-nums text-muted-foreground">{formatDate(p.paymentDate)}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[12.5px] font-medium tabular-nums">
+                          {formatBDT(p.amount)} <span className="font-mono text-[10.5px] font-normal text-muted-foreground">#{p.receiptNo}</span>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">{label(p.paymentMethod)} · {formatDate(p.paymentDate)}</p>
+                      </div>
+                      <button
+                        onClick={() => void doReceiptPdf(p, idx)}
+                        disabled={pdfBusy}
+                        className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-bold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+                        title="Download payment receipt"
+                      >
+                        <Download className="size-3.5" /> Receipt
+                      </button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="flex items-center justify-between rounded-xl bg-muted/40 px-4 py-3">
-              <p className="text-[12.5px] font-semibold text-muted-foreground">Balance due</p>
-              <p className={cn("font-heading text-[16px] font-bold tabular-nums", openInvoice.amount - openInvoice.paid > 0 ? "text-amber-500" : "text-emerald-500")}>
-                {formatBDT(openInvoice.amount - openInvoice.paid)}
-              </p>
+            {openInvoice.installments.length > 0 && (
+              <div>
+                <p className="mb-2 text-[12.5px] font-semibold">Payment plan ({openInvoice.installments.length})</p>
+                <div className="flex flex-col gap-2">
+                  {openInvoice.installments.map((s) => (
+                    <div key={s.sequence} className={cn("flex items-center justify-between gap-2 rounded-xl border px-3 py-2", s.status === "PAID" ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/60")}>
+                      <div className="flex items-center gap-2.5">
+                        <span className={cn("flex size-6 items-center justify-center rounded-full text-[10px] font-bold", s.status === "PAID" ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground")}>{s.sequence}</span>
+                        <p className="text-[12px] font-medium">Due {formatDate(s.dueDate)} <span className="text-[10.5px] font-normal text-muted-foreground">· {s.status} · {formatBDT(s.paidAmount)} paid</span></p>
+                      </div>
+                      <p className="text-[12.5px] font-bold tabular-nums">{formatBDT(s.amount)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5 rounded-xl bg-muted/40 px-4 py-3 text-[12.5px]">
+              {(() => {
+                const t = invoiceTotals({
+                  lineItems: openInvoice.lines,
+                  taxApplicable: openInvoice.taxApplicable,
+                  taxRate: openInvoice.taxRate,
+                  discountRate: openInvoice.discountRate,
+                  shippingFee: openInvoice.shippingFee,
+                  payments: openInvoice.payments,
+                });
+                return (
+                  <>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-medium tabular-nums">{formatBDT(t.subtotal)}</span></div>
+                    {t.tax > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Tax ({openInvoice.taxRate}%)</span><span className="font-medium tabular-nums">{formatBDT(t.tax)}</span></div>}
+                    {t.discount > 0 && <div className="flex justify-between"><span className="text-emerald-600 dark:text-emerald-400">Discount ({openInvoice.discountRate}%)</span><span className="font-medium tabular-nums">− {formatBDT(t.discount)}</span></div>}
+                    {t.shipping > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Shipping</span><span className="font-medium tabular-nums">{formatBDT(t.shipping)}</span></div>}
+                    <div className="flex justify-between border-t border-border/60 pt-1.5"><span className="font-semibold">Total</span><span className="font-semibold tabular-nums">{formatBDT(t.grand)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="font-medium tabular-nums text-emerald-500">{formatBDT(t.paid)}</span></div>
+                    <div className="flex items-center justify-between">
+                      <p className="font-semibold text-muted-foreground">Balance due</p>
+                      <p className={cn("font-heading text-[16px] font-bold tabular-nums", t.balance > 0 ? "text-amber-500" : "text-emerald-500")}>
+                        {formatBDT(t.balance)}
+                      </p>
+                    </div>
+                    <p className="text-[11px] italic leading-relaxed text-muted-foreground">In words: {numberToWords(t.grand, openInvoice.currency)}</p>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}

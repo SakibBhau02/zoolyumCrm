@@ -6,6 +6,7 @@ import { PortalController } from "./portal.controller";
 import { PortalClientService } from "./portal-client.service";
 import { PortalClientController } from "./portal-client.controller";
 import { PortalAuthGuard } from "./portal-auth.guard";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { PortalAuthGuard } from "./portal-auth.guard";
         signOptions: { expiresIn: "7d" as any },
       }),
     }),
+    NotificationsModule,
   ],
   controllers: [PortalController, PortalClientController],
   providers: [PortalService, PortalClientService, PortalAuthGuard],

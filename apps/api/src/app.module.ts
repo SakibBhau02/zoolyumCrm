@@ -19,6 +19,7 @@ import { PortalModule } from "./portal/portal.module";
 import { ControlModule } from "./control/control.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { CalendarModule } from "./calendar/calendar.module";
+import { WhatsappModule } from "./whatsapp/whatsapp.module";
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { CalendarModule } from "./calendar/calendar.module";
     ControlModule,
     NotificationsModule,
     CalendarModule,
+    WhatsappModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

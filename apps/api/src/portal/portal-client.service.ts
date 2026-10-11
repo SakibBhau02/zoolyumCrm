@@ -3,19 +3,29 @@ import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 @Injectable()
 export class PortalClientService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly notifications: NotificationsService
   ) {}
 
   private async invalidatePortal() {
     await this.cache.del("portal:comments");
     await this.cache.del("portal:approvals");
     await this.cache.del("portal:activity");
+  }
+
+  /** Public-safe company branding for portal invoice / receipt PDFs. */
+  async branding() {
+    const b = await this.prisma.brandingConfig.findFirst();
+    if (!b) return null;
+    const { id, updatedAt, ...rest } = b as any;
+    return rest;
   }
 
   async login(email: string, password: string) {
@@ -195,14 +205,14 @@ export class PortalClientService {
     });
   }
 
-  async invoices(portalUserId: string) {
-    const pu = await this.prisma.portalUser.findUnique({ where: { id: portalUserId }, include: { clientContact: true } });
+  async invoices(portalUserId: string) {    const pu = await this.prisma.portalUser.findUnique({ where: { id: portalUserId }, include: { clientContact: true } });
     if (!pu) throw new UnauthorizedException();
     const invoices = await this.prisma.invoice.findMany({
       where: { clientId: pu.clientContact.clientId },
       include: {
         lineItems: true,
-        payments: true,
+        payments: { orderBy: { paymentDate: "desc" } },
+        installments: { orderBy: { sequence: "asc" } },
         project: { select: { id: true, name: true } },
         client: {
           select: {
@@ -213,7 +223,16 @@ export class PortalClientService {
       },
       orderBy: { issueDate: "desc" },
     });
-    const sumLines = (i: any) => i.lineItems.reduce((s: number, l: any) => s + Number(l.amount), 0);
+    const totalsOf = (i: any) => {
+      const subtotal = i.lineItems.reduce((s: number, l: any) => s + Number(l.amount), 0);
+      const tax = i.taxApplicable && i.taxRate ? (subtotal * Number(i.taxRate)) / 100 : 0;
+      const discount = i.discountRate ? (subtotal * Number(i.discountRate)) / 100 : 0;
+      const shipping = Number(i.shippingFee ?? 0);
+      const grand = Math.max(0, subtotal + tax - discount + shipping);
+      const paid = i.payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+      return { subtotal, tax, discount, shipping, grand, paid, balance: Math.max(grand - paid, 0) };
+    };
+    const sumLines = (i: any) => totalsOf(i).grand;
     const paidOf = (i: any) => i.payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
     const totalInvoiced = invoices.reduce((s, i) => s + sumLines(i), 0);
     const totalCollected = invoices.reduce((s, i) => s + paidOf(i), 0);
@@ -229,11 +248,16 @@ export class PortalClientService {
         issueDate: i.issueDate,
         dueDate: i.dueDate,
         status: i.status,
-        amount: Math.round(sumLines(i) * 100) / 100,
+        amount: Math.round(totalsOf(i).grand * 100) / 100,
         paid: Math.round(paidOf(i) * 100) / 100,
+        balance: Math.round(totalsOf(i).balance * 100) / 100,
         currency: i.currency,
         taxApplicable: i.taxApplicable,
         taxRate: Number(i.taxRate ?? 0),
+        discountRate: Number((i as any).discountRate ?? 0),
+        shippingFee: Number((i as any).shippingFee ?? 0),
+        templateStyle: (i as any).templateStyle ?? "modern-orange",
+        terms: (i as any).terms ?? null,
         notes: i.notes,
         project: i.project ? { id: i.project.id, name: i.project.name } : null,
         client: {
@@ -247,12 +271,31 @@ export class PortalClientService {
           unitPrice: Number(l.unitPrice),
           amount: Number(l.amount),
         })),
-        payments: i.payments.map((p) => ({
-          id: p.id,
-          amount: Number(p.amount),
-          paymentMethod: p.paymentMethod,
-          referenceId: p.referenceId,
-          paymentDate: p.paymentDate,
+        payments: (() => {
+          // chronological serials (earliest = 1, stable ties) — matches staff app + PDFs
+          const chrono = [...i.payments].sort((a: any, b: any) =>
+            +new Date(a.paymentDate) - +new Date(b.paymentDate) ||
+            +new Date(a.createdAt ?? 0) - +new Date(b.createdAt ?? 0) ||
+            String(a.id).localeCompare(String(b.id)));
+          return i.payments.map((p) => {
+            const serial = chrono.findIndex((x: any) => x.id === p.id) + 1;
+            return {
+              id: p.id,
+              amount: Number(p.amount),
+              paymentMethod: p.paymentMethod,
+              referenceId: p.referenceId,
+              serial,
+              receiptNo: p.referenceId ?? `${i.invoiceNumber}-P${serial}`,
+              paymentDate: p.paymentDate,
+            };
+          });
+        })(),
+        installments: i.installments.map((s) => ({
+          sequence: s.sequence,
+          amount: Number(s.amount),
+          paidAmount: Number(s.paidAmount),
+          dueDate: s.dueDate,
+          status: s.status,
         })),
       })),
     };
@@ -303,6 +346,21 @@ export class PortalClientService {
     await this.prisma.portalActivityLog.create({
       data: { portalUserId, action: "COMMENTED", relatedEntityType: "Project", relatedEntityId: projectId },
     });
+    try {
+      const project = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { name: true, assignedPmId: true },
+      });
+      if (project?.assignedPmId) {
+        await this.notifications.create(
+          project.assignedPmId,
+          "CLIENT_MESSAGE",
+          "New client message",
+          `${comment.portalUser?.clientContact?.name ?? "Client"} commented on "${project.name}".`,
+          "/flow"
+        );
+      }
+    } catch {}
     await this.invalidatePortal();
     return comment;
   }
@@ -325,6 +383,21 @@ export class PortalClientService {
     await this.prisma.portalActivityLog.create({
       data: { portalUserId, action: "APPROVED_DELIVERABLE", relatedEntityType: "ProjectFile", relatedEntityId: fileId },
     });
+    try {
+      const proj = await this.prisma.project.findUnique({
+        where: { id: file.projectId },
+        select: { name: true, assignedPmId: true },
+      });
+      if (proj?.assignedPmId) {
+        await this.notifications.create(
+          proj.assignedPmId,
+          "CLIENT_MESSAGE",
+          decision === "APPROVED" ? "Client approved a file" : "Client requested revision",
+          `${pu.clientContact?.name ?? "Client"} ${decision === "APPROVED" ? "approved" : "requested changes on"} a file in "${proj.name}".`,
+          "/flow"
+        );
+      }
+    } catch {}
     await this.invalidatePortal();
     return approval;
   }

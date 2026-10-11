@@ -38,6 +38,12 @@ export class PortalClientController {
   }
 
   @UseGuards(PortalAuthGuard)
+  @Get("branding")
+  branding() {
+    return this.portal.branding();
+  }
+
+  @UseGuards(PortalAuthGuard)
   @Get("activity")
   activity(@Req() req: any) {
     return this.portal.activity(req.portalUser.sub);

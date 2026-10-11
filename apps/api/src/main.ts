@@ -5,7 +5,8 @@ import express from "express";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody gives webhook handlers the exact bytes Meta signed (HMAC check).
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   app.setGlobalPrefix("api");
   app.use(compression());
   // The ZKTeco fingerprint device pushes ATTLOG data as raw text (text/plain
@@ -20,7 +21,7 @@ async function bootstrap() {
     })
   );
   app.enableCors({
-    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    origin: ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"],
     credentials: true,
   });
   app.useGlobalPipes(
