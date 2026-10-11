@@ -19,7 +19,7 @@ import {
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
 
-type Tab = "settings" | "users" | "roles" | "integrations" | "data";
+type Tab = "settings" | "users" | "roles" | "integrations" | "whatsapp" | "data";
 
 const SECTIONS = [
   { id: "companyProfile", label: "Company Profile", icon: Building2 },
@@ -993,6 +993,155 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
   );
 }
 
+function InvoiceCompanyProfileSection({ notify }: { notify: (msg: string) => void }) {
+  const { branding, refresh } = useBranding();
+  const queryClient = useQueryClient();
+  const [f, setF] = useState({
+    tagline: "", email: "", phone: "", address: "", city: "", country: "",
+    taxId: "", website: "", authorizedSignerName: "", authorizedSignerTitle: "",
+    signatureImageUrl: "", defaultCurrency: "BDT", defaultNotes: "", defaultTerms: "",
+    payMethod: "BANK_TRANSFER", payBankName: "", payAccountName: "", payAccountNumber: "",
+    payBranch: "", payRoutingNumber: "", payMobileWalletNumber: "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const sigInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!branding) return;
+    const pay: any = branding.defaultPaymentDetails ?? {};
+    setF({
+      tagline: branding.tagline ?? "", email: branding.email ?? "", phone: branding.phone ?? "",
+      address: branding.address ?? "", city: branding.city ?? "", country: branding.country ?? "",
+      taxId: branding.taxId ?? "", website: branding.website ?? "",
+      authorizedSignerName: branding.authorizedSignerName ?? "", authorizedSignerTitle: branding.authorizedSignerTitle ?? "",
+      signatureImageUrl: branding.signatureImageUrl ?? "", defaultCurrency: branding.defaultCurrency ?? "BDT",
+      defaultNotes: branding.defaultNotes ?? "", defaultTerms: branding.defaultTerms ?? "",
+      payMethod: pay.method ?? "BANK_TRANSFER", payBankName: pay.bankName ?? "", payAccountName: pay.accountName ?? "",
+      payAccountNumber: pay.accountNumber ?? "", payBranch: pay.branch ?? "", payRoutingNumber: pay.routingNumber ?? "",
+      payMobileWalletNumber: pay.mobileWalletNumber ?? "",
+    });
+  }, [branding]);
+
+  const set = (k: string, v: string) => setF((prev) => ({ ...prev, [k]: v }));
+
+  const handleSigFile = async (file: File) => {
+    const allowed = ["image/png", "image/jpeg", "image/webp"];
+    if (!allowed.includes(file.type)) return notify("Only png, jpeg, webp images are allowed");
+    if (file.size > 5 * 1024 * 1024) return notify("File too large — 5MB limit");
+    const fd = new FormData();
+    fd.append("file", file);
+    setUploading(true);
+    try {
+      const res = await apiFetchFormData<{ url: string }>("/control/branding/upload", fd);
+      set("signatureImageUrl", res.url);
+      notify("Signature uploaded");
+    } catch (e: any) {
+      notify(e.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const trim = (v: string) => v.trim() || null;
+      const pay: Record<string, string> = {};
+      if (f.payMethod.trim()) pay.method = f.payMethod.trim();
+      if (f.payBankName.trim()) pay.bankName = f.payBankName.trim();
+      if (f.payAccountName.trim()) pay.accountName = f.payAccountName.trim();
+      if (f.payAccountNumber.trim()) pay.accountNumber = f.payAccountNumber.trim();
+      if (f.payBranch.trim()) pay.branch = f.payBranch.trim();
+      if (f.payRoutingNumber.trim()) pay.routingNumber = f.payRoutingNumber.trim();
+      if (f.payMobileWalletNumber.trim()) pay.mobileWalletNumber = f.payMobileWalletNumber.trim();
+      await apiFetch("/control/branding", {
+        method: "PATCH",
+        body: JSON.stringify({
+          tagline: trim(f.tagline), email: trim(f.email), phone: trim(f.phone),
+          address: trim(f.address), city: trim(f.city), country: trim(f.country),
+          taxId: trim(f.taxId), website: trim(f.website),
+          authorizedSignerName: trim(f.authorizedSignerName), authorizedSignerTitle: trim(f.authorizedSignerTitle),
+          signatureImageUrl: trim(f.signatureImageUrl), defaultCurrency: trim(f.defaultCurrency),
+          defaultNotes: trim(f.defaultNotes), defaultTerms: trim(f.defaultTerms),
+          defaultPaymentDetails: Object.keys(pay).length ? pay : null,
+        }),
+      });
+      notify("Invoice company profile saved");
+      await queryClient.invalidateQueries({ queryKey: ["branding"] });
+      await refresh();
+    } catch (e2: any) {
+      notify(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sigPreview = resolveBrandingImgUrl(f.signatureImageUrl || null);
+
+  return (
+    <CardShell className="mt-4">
+      <form onSubmit={onSave}>
+        <SectionTitle title="Invoice company profile" subtitle="Printed on every invoice PDF — contact block, authorized signature, default payment instructions, notes & terms" />
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Tagline"><Input value={f.tagline} onChange={(e) => set("tagline", e.target.value)} placeholder="Engineering Scalable Next-Gen Digital Products" /></Field>
+            <Field label="Website"><Input value={f.website} onChange={(e) => set("website", e.target.value)} placeholder="https://zoolyum.com" /></Field>
+            <Field label="Email"><Input value={f.email} onChange={(e) => set("email", e.target.value)} placeholder="billing@zoolyum.com" /></Field>
+            <Field label="Phone"><Input value={f.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+880 1700 000000" /></Field>
+            <Field label="Address"><Input value={f.address} onChange={(e) => set("address", e.target.value)} placeholder="Level 6, Silicon Tower, Gulshan-2" /></Field>
+            <Field label="City"><Input value={f.city} onChange={(e) => set("city", e.target.value)} placeholder="Dhaka - 1212" /></Field>
+            <Field label="Country"><Input value={f.country} onChange={(e) => set("country", e.target.value)} placeholder="Bangladesh" /></Field>
+            <Field label="Tax ID (BIN/VAT)"><Input value={f.taxId} onChange={(e) => set("taxId", e.target.value)} placeholder="BIN-9920194812" /></Field>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Authorized signer name"><Input value={f.authorizedSignerName} onChange={(e) => set("authorizedSignerName", e.target.value)} placeholder="Sakib Hasan" /></Field>
+            <Field label="Signer title"><Input value={f.authorizedSignerTitle} onChange={(e) => set("authorizedSignerTitle", e.target.value)} placeholder="Managing Director" /></Field>
+          </div>
+          <div className="flex flex-col gap-2">
+            <p className="text-[12px] font-semibold">Signature image</p>
+            <div className="flex items-center gap-3">
+              <div className="flex h-20 w-56 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-card">
+                {sigPreview ? <img src={sigPreview} alt="Signature preview" className="max-h-full object-contain" /> : <span className="text-[11px] text-muted-foreground">No signature — cursive fallback prints</span>}
+              </div>
+              <div className="flex flex-col gap-2">
+                <input ref={sigInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleSigFile(file); e.target.value = ""; }} />
+                <Btn type="button" variant="outline" className="w-fit" onClick={() => sigInputRef.current?.click()}>{uploading ? "Uploading…" : sigPreview ? "Replace signature" : "Upload signature"}</Btn>
+                {sigPreview && <Btn type="button" variant="ghost" className="w-fit" onClick={() => set("signatureImageUrl", "")}>Remove</Btn>}
+              </div>
+            </div>
+          </div>
+
+          <p className="text-[12px] font-semibold">Default payment instructions</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Method">
+              <Select value={f.payMethod} onChange={(e) => set("payMethod", e.target.value)}>
+                {["BANK_TRANSFER", "BKASH", "NAGAD", "CASH", "CARD"].map((m) => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
+              </Select>
+            </Field>
+            <Field label="Mobile wallet no"><Input value={f.payMobileWalletNumber} onChange={(e) => set("payMobileWalletNumber", e.target.value)} placeholder="01XXXXXXXXX" /></Field>
+            <Field label="Bank name"><Input value={f.payBankName} onChange={(e) => set("payBankName", e.target.value)} placeholder="City Bank PLC" /></Field>
+            <Field label="Account name"><Input value={f.payAccountName} onChange={(e) => set("payAccountName", e.target.value)} placeholder="Zoolyum Agency" /></Field>
+            <Field label="Account number"><Input value={f.payAccountNumber} onChange={(e) => set("payAccountNumber", e.target.value)} placeholder="1102938481901" /></Field>
+            <Field label="Branch"><Input value={f.payBranch} onChange={(e) => set("payBranch", e.target.value)} placeholder="Gulshan Branch" /></Field>
+            <Field label="Routing number"><Input value={f.payRoutingNumber} onChange={(e) => set("payRoutingNumber", e.target.value)} placeholder="225271891" /></Field>
+            <Field label="Default currency">
+              <Select value={f.defaultCurrency} onChange={(e) => set("defaultCurrency", e.target.value)}>
+                <option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option>
+              </Select>
+            </Field>
+          </div>
+          <Field label="Default notes"><Textarea value={f.defaultNotes} onChange={(e) => set("defaultNotes", e.target.value)} placeholder="Notes prefilled on every new invoice…" /></Field>
+          <Field label="Default terms"><Textarea value={f.defaultTerms} onChange={(e) => set("defaultTerms", e.target.value)} placeholder="Payment is due within 15 days of invoice date." /></Field>
+        </div>
+        <FormActions busy={busy} cancel={() => {}} submitLabel="Save company profile" />
+      </form>
+    </CardShell>
+  );
+}
+
 function AppearanceSection({ settings, busy, onSave }: any) {
   const [draft, setDraft] = useDraft(settings?.appearance);
   if (!settings) return <SkeletonBlock className="h-64" />;
@@ -1057,7 +1206,12 @@ function SettingsTab({ settings, settingsLoading, settingsError, saving, onSave,
       {active.id === "notifications" && <NotificationsSection settings={settings} busy={!!saving} onSave={onSave} />}
       {active.id === "emailTemplates" && <EmailTemplatesSection settings={settings} busy={!!saving} onSave={onSave} notify={notify} />}
       {active.id === "appearance" && <AppearanceSection settings={settings} busy={!!saving} onSave={onSave} />}
-      {active.id === "branding" && <BrandingSection notify={notify} />}
+      {active.id === "branding" && (
+        <>
+          <BrandingSection notify={notify} />
+          <InvoiceCompanyProfileSection notify={notify} />
+        </>
+      )}
     </>
   );
   return (
@@ -1459,8 +1613,270 @@ function IntegrationsTab({ integrations, loading, error, onRefresh, notify }: an
   );
 }
 
-function DataTab({ audit, auditLoading, onRefresh, notify }: any) {
-  const [exporting, setExporting] = useState(false);
+function WhatsappTab({ notify }: { notify: (m: string) => void }) {
+  const [cfg, setCfg] = useState<any | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [secrets, setSecrets] = useState({ accessToken: "", appSecret: "", verifyToken: "" });
+  const [sendTo, setSendTo] = useState("");
+  const [sendTpl, setSendTpl] = useState("invoice_ready");
+  const [sendParams, setSendParams] = useState("");
+  const [sending, setSending] = useState(false);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const c = await apiFetch<any>("/control/whatsapp/config");
+      setCfg(c);
+    } catch (e: any) {
+      notify(e.message ?? "Failed to load WhatsApp config");
+    } finally {
+      setLoading(false);
+    }
+  }, [notify]);
+  const loadLogs = useCallback(async () => {
+    setLogsLoading(true);
+    try {
+      setLogs(await apiFetch<any[]>("/control/whatsapp/logs?take=30"));
+    } catch {
+      setLogs([]);
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    load();
+    loadLogs();
+  }, [load, loadLogs]);
+
+  const save = async () => {
+    if (!cfg) return;
+    setSaving(true);
+    try {
+      const payload = { ...cfg, ...secrets };
+      const updated = await apiFetch<any>("/control/whatsapp/config", { method: "PATCH", body: JSON.stringify(payload) });
+      setCfg(updated);
+      setSecrets({ accessToken: "", appSecret: "", verifyToken: "" });
+      notify("WhatsApp settings saved");
+    } catch (e: any) {
+      notify(e.message ?? "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const testConn = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await apiFetch<any>("/control/whatsapp/test-connection", { method: "POST" });
+      setTestResult(r.ok ? `Connected — ${r.detail}` : `Failed — ${r.detail}`);
+    } catch (e: any) {
+      setTestResult(`Failed — ${e.message ?? "error"}`);
+    } finally {
+      setTesting(false);
+    }
+  };
+  const testSend = async () => {
+    if (!sendTo.trim()) return notify("Enter a recipient phone number");
+    setSending(true);
+    try {
+      const params = sendParams.split(",").map((s) => s.trim()).filter(Boolean);
+      const r = await apiFetch<any>("/control/whatsapp/test-send", {
+        method: "POST",
+        body: JSON.stringify({ to: sendTo.trim(), templateName: sendTpl, params }),
+      });
+      notify(r.ok ? (r.mocked ? `Mock sent (wamid ${r.wamid})` : `Sent (wamid ${r.wamid})`) : `Failed — ${r.error}`);
+      loadLogs();
+    } catch (e: any) {
+      notify(e.message ?? "Send failed");
+    } finally {
+      setSending(false);
+    }
+  };
+  const simulate = async (wamid: string, status: "delivered" | "read" | "failed") => {
+    try {
+      await apiFetch("/control/whatsapp/simulate", { method: "POST", body: JSON.stringify({ wamid, status }) });
+      notify(`Marked ${status}`);
+      loadLogs();
+    } catch (e: any) {
+      notify(e.message ?? "Simulate failed");
+    }
+  };
+  const runSweep = async () => {
+    try {
+      const r = await apiFetch<any>("/control/whatsapp/sweep", { method: "POST" });
+      notify(r.ran ? `${r.sent ?? 0} reminder(s) sent` : "Sweep skipped (disabled)");
+      loadLogs();
+    } catch (e: any) {
+      notify(e.message ?? "Sweep failed");
+    }
+  };
+  const toggleTpl = async (t: any) => {
+    try {
+      await apiFetch(`/control/whatsapp/templates/${t.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !t.isActive }) });
+      setCfg((c: any) => c && ({ ...c, templates: c.templates.map((x: any) => (x.id === t.id ? { ...x, isActive: !x.isActive } : x)) }));
+    } catch (e: any) {
+      notify(e.message ?? "Toggle failed");
+    }
+  };
+  const setAuto = (k: string, v: boolean) =>
+    setCfg((c: any) => c && ({ ...c, auto: { ...c.auto, [k]: v } }));
+
+  if (loading || !cfg) {
+    return (
+      <div className="flex flex-col gap-2">
+        {[...Array(3)].map((_, i) => <SkeletonBlock key={i} className="h-24" />)}
+      </div>
+    );
+  }
+  const AUTO_LABELS: [string, string][] = [
+    ["invoiceSent", "Invoice issued → send invoice + link"],
+    ["paymentReceived", "Payment recorded → send receipt"],
+    ["dueToday", "Daily 9AM → due-today reminders"],
+    ["overdue", "Daily 9AM → overdue nudges (1/2/final)"],
+    ["taskAssigned", "Task assigned → notify team member"],
+    ["taskClientUpdate", "Visible task done → notify client"],
+  ];
+  return (
+    <div className="flex flex-col gap-4">
+      <CardShell>
+        <SectionTitle title="WhatsApp Cloud API" subtitle="Meta direct connection — credentials live here, never in code or env files" />
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Status">
+            <Select value={cfg.enabled ? "on" : "off"} onChange={(e) => setCfg({ ...cfg, enabled: e.target.value === "on" })}>
+              <option value="on">Enabled</option>
+              <option value="off">Disabled</option>
+            </Select>
+          </Field>
+          <Field label="Mode">
+            <Select value={cfg.mode} onChange={(e) => setCfg({ ...cfg, mode: e.target.value })}>
+              <option value="mock">Mock (log only — for testing)</option>
+              <option value="live">Live (Meta Cloud API)</option>
+            </Select>
+          </Field>
+          <Field label="Display number"><Input value={cfg.displayNumber ?? ""} onChange={(e) => setCfg({ ...cfg, displayNumber: e.target.value })} placeholder="+8801XXXXXXXXX" /></Field>
+          <Field label="Default language">
+            <Select value={cfg.defaultLanguage ?? "en"} onChange={(e) => setCfg({ ...cfg, defaultLanguage: e.target.value })}>
+              <option value="en">English (en)</option>
+              <option value="bn">Bangla (bn)</option>
+            </Select>
+          </Field>
+          <Field label="Phone number ID"><Input value={cfg.phoneNumberId ?? ""} onChange={(e) => setCfg({ ...cfg, phoneNumberId: e.target.value })} placeholder="123456789012345" className="font-mono" /></Field>
+          <Field label="WABA ID"><Input value={cfg.wabaId ?? ""} onChange={(e) => setCfg({ ...cfg, wabaId: e.target.value })} placeholder="987654321098765" className="font-mono" /></Field>
+          <Field label={`Access token ${cfg.accessTokenSet ? "(set — leave blank to keep)" : "(permanent system-user token)"}`}>
+            <Input type="password" value={secrets.accessToken} onChange={(e) => setSecrets({ ...secrets, accessToken: e.target.value })} placeholder={cfg.accessTokenSet ? "•••••••• (stored encrypted)" : "EAA…"} className="font-mono" />
+          </Field>
+          <Field label={`App secret ${cfg.appSecretSet ? "(set)" : "(for webhook signature)"}`}>
+            <Input type="password" value={secrets.appSecret} onChange={(e) => setSecrets({ ...secrets, appSecret: e.target.value })} placeholder={cfg.appSecretSet ? "••••••••" : "Meta app secret"} className="font-mono" />
+          </Field>
+          <Field label={`Verify token ${cfg.verifyTokenSet ? "(set)" : "(you invent this)"}`}>
+            <Input value={secrets.verifyToken} onChange={(e) => setSecrets({ ...secrets, verifyToken: e.target.value })} placeholder={cfg.verifyTokenSet ? "••••••••" : "any-random-string"} className="font-mono" />
+          </Field>
+          <Field label="Webhook URL (paste into Meta)">
+            <Input value={`${typeof window !== "undefined" ? window.location.origin.replace(":3000", ":4000") : ""}/api/whatsapp/webhook`} readOnly className="font-mono" />
+          </Field>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <Btn variant="primary" onClick={save} className={saving ? "opacity-50" : ""}>{saving ? "Saving…" : "Save settings"}</Btn>
+          <Btn variant="outline" onClick={testConn} className={testing ? "opacity-50" : ""}><Plug className="size-3.5" /> {testing ? "Testing…" : "Test connection"}</Btn>
+          <Btn variant="outline" onClick={runSweep}>Run due sweep now</Btn>
+          {testResult && <p className="w-full text-[12px] text-muted-foreground">{testResult}</p>}
+        </div>
+      </CardShell>
+
+      <CardShell>
+        <SectionTitle title="Automation triggers" subtitle="Which events send WhatsApp automatically (dedupe + audit built in)" />
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {AUTO_LABELS.map(([k, lbl]) => (
+            <label key={k} className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2.5 text-[12.5px]">
+              <input type="checkbox" checked={!!cfg.auto?.[k]} onChange={(e) => setAuto(k, e.target.checked)} className="size-3.5 accent-primary" />
+              {lbl}
+            </label>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">Remember to press Save settings after changing triggers.</p>
+      </CardShell>
+
+      <CardShell>
+        <SectionTitle title="Message templates" subtitle="Utility templates — same content must be approved on Meta before live mode" />
+        <div className="flex flex-col gap-2">
+          {(cfg.templates ?? []).map((t: any) => (
+            <div key={t.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 px-3 py-2">
+              <div className="min-w-0">
+                <p className="font-mono text-[12px] font-bold">{t.name} <span className="text-muted-foreground">· {t.language} · {t.category}</span></p>
+                <p className="truncate text-[11px] text-muted-foreground">{t.bodyPreview}</p>
+                <p className="text-[10.5px] text-muted-foreground">vars: {(t.variables ?? []).join(", ") || "—"}{t.metaStatus ? ` · Meta: ${t.metaStatus}` : ""}</p>
+              </div>
+              <button type="button" onClick={() => toggleTpl(t)} className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold ${t.isActive ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
+                {t.isActive ? "ON" : "OFF"}
+              </button>
+            </div>
+          ))}
+        </div>
+      </CardShell>
+
+      <CardShell>
+        <SectionTitle title="Test send (mock-friendly)" subtitle="Sends through the same pipeline — mock mode logs instead of calling Meta" />
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="To (phone)"><Input value={sendTo} onChange={(e) => setSendTo(e.target.value)} placeholder="01XXXXXXXXX" className="font-mono" /></Field>
+          <Field label="Template">
+            <Select value={sendTpl} onChange={(e) => setSendTpl(e.target.value)}>
+              {(cfg.templates ?? []).filter((t: any) => t.isActive).map((t: any) => <option key={t.id} value={t.name}>{t.name} ({t.language})</option>)}
+            </Select>
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Field label="Params (comma-separated, in order)">
+            <Input value={sendParams} onChange={(e) => setSendParams(e.target.value)} placeholder="Karim, ZLM-2026-0058, Bhau web, 225000, 2026-10-22, https://…" className="font-mono" />
+          </Field>
+        </div>
+        <div className="mt-4">
+          <Btn variant="primary" onClick={testSend} className={sending ? "opacity-50" : ""}>{sending ? "Sending…" : "Send test message"}</Btn>
+        </div>
+      </CardShell>
+
+      <CardShell>
+        <SectionTitle title="Message log" subtitle="Every send + delivery/read receipt lands here" />
+        {logsLoading ? (
+          <SkeletonBlock className="h-32" />
+        ) : logs.length === 0 ? (
+          <EmptyState title="No messages yet" hint="Test sends and automations will appear here." />
+        ) : (
+          <TableShell>
+            <table className="w-full">
+              <THead><Th>Time</Th><Th>To</Th><Th>Template</Th><Th>Status</Th><Th>wamid</Th><Th /></THead>
+              <tbody>
+                {logs.map((l: any) => (
+                  <Tr key={l.id} index={0}>
+                    <Td className="whitespace-nowrap text-muted-foreground">{timeAgo(l.createdAt)}</Td>
+                    <Td className="font-mono">{l.to}</Td>
+                    <Td className="font-mono">{l.templateName ?? l.messageType}</Td>
+                    <Td><StatusBadge status={l.status} /></Td>
+                    <Td className="max-w-[140px] truncate font-mono text-[10.5px] text-muted-foreground">{l.wamid ?? "—"}</Td>
+                    <Td>
+                      {cfg.mode === "mock" && l.wamid && ["sent", "queued"].includes(l.status) && (
+                        <div className="flex gap-1">
+                          <button type="button" onClick={() => simulate(l.wamid, "delivered")} className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-bold hover:bg-muted/70">Delivered</button>
+                          <button type="button" onClick={() => simulate(l.wamid, "read")} className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-bold hover:bg-muted/70">Read</button>
+                        </div>
+                      )}
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </table>
+          </TableShell>
+        )}
+      </CardShell>
+    </div>
+  );
+}
+
+function DataTab({ audit, auditLoading, onRefresh, notify }: any) {  const [exporting, setExporting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirm, setConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -1635,6 +2051,7 @@ export default function ControlPage() {
               { value: "users", label: "Users" },
               { value: "roles", label: "Roles" },
               { value: "integrations", label: "Integrations" },
+              { value: "whatsapp", label: "WhatsApp" },
               { value: "data", label: "Data" },
             ]}
             value={tab}
@@ -1660,6 +2077,7 @@ export default function ControlPage() {
       {tab === "users" && <UsersTab users={users ?? []} loading={usersLoading} error={usersError} roles={roles ?? []} onRefresh={() => setUsersRefresh((r) => r + 1)} notify={notify} />}
       {tab === "roles" && <RolesTab roles={roles} loading={rolesLoading} error={rolesError} onRetry={() => setRolesRefresh((r) => r + 1)} />}
       {tab === "integrations" && <IntegrationsTab integrations={integrations ?? []} loading={integLoading} error={integError} onRefresh={() => setIntegRefresh((r) => r + 1)} notify={notify} />}
+      {tab === "whatsapp" && <WhatsappTab notify={notify} />}
       {tab === "data" && <DataTab audit={audit ?? []} auditLoading={auditLoading} onRefresh={reloadAll} notify={notify} />}
     </div>
   );

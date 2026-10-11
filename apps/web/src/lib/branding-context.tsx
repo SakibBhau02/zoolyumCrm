@@ -13,6 +13,22 @@ export type Branding = {
   primaryColor?: string | null;
   secondaryColor?: string | null;
   invoiceNumberingFormat?: string;
+  // Company profile for invoices (mirrors Finance_System CompanyProfile)
+  tagline?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  city?: string | null;
+  country?: string | null;
+  taxId?: string | null;
+  website?: string | null;
+  authorizedSignerName?: string | null;
+  authorizedSignerTitle?: string | null;
+  signatureImageUrl?: string | null;
+  defaultPaymentDetails?: Record<string, any> | null;
+  defaultCurrency?: string | null;
+  defaultNotes?: string | null;
+  defaultTerms?: string | null;
   updatedAt?: string;
 };
 

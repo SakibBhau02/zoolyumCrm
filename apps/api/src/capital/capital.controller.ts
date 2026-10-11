@@ -16,9 +16,19 @@ export class CapitalController {
     return this.capital.invoices(query);
   }
 
+  @Get("invoices/next-number")
+  nextInvoiceNumber() {
+    return this.capital.nextInvoiceNumberPreview();
+  }
+
   @Get("invoices/:id")
   invoiceDetail(@Param("id") id: string) {
     return this.capital.invoiceDetail(id);
+  }
+
+  @Get("invoices/:id/project-balance")
+  projectBalance(@Param("id") id: string) {
+    return this.capital.projectBalance(id);
   }
 
   @Post("invoices")
@@ -44,6 +54,46 @@ export class CapitalController {
   @Post("invoices/:id/payment")
   recordPayment(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     return this.capital.recordPayment(id, body, user?.sub);
+  }
+
+  @Get("invoices/:id/reminders")
+  listReminders(@Param("id") id: string) {
+    return this.capital.listReminders(id);
+  }
+
+  @Post("invoices/:id/reminders")
+  logReminder(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+    return this.capital.logReminder(id, body, user?.sub);
+  }
+
+  @Get("invoices/:id/share")
+  shareInfo(@Param("id") id: string) {
+    return this.capital.shareInfo(id);
+  }
+
+  @Post("invoices/:id/share")
+  rotateShare(@Param("id") id: string) {
+    return this.capital.rotateShareToken(id);
+  }
+
+  @Post("invoices/:id/share/ensure")
+  ensureShare(@Param("id") id: string) {
+    return this.capital.ensureShareToken(id);
+  }
+
+  @Delete("invoices/:id/share")
+  revokeShare(@Param("id") id: string) {
+    return this.capital.revokeShareToken(id);
+  }
+
+  @Get("invoices/:id/whatsapp")
+  whatsappLogs(@Param("id") id: string) {
+    return this.capital.whatsappLogs(id);
+  }
+
+  @Post("invoices/:id/whatsapp")
+  sendWhatsapp(@Param("id") id: string, @Body() body: { template?: string; force?: boolean }) {
+    return this.capital.sendInvoiceWhatsapp(id, body?.template, body?.force);
   }
 
   @Get("expenses")
@@ -264,5 +314,10 @@ export class CapitalController {
   @Post("recurring/run")
   runRecurringBilling() {
     return this.capital.runRecurringBilling();
+  }
+
+  @Get("installments/due")
+  installmentsDue() {
+    return this.capital.installmentsDue();
   }
 }

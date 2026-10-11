@@ -7,13 +7,13 @@ async function openFirstInvoice(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/dashboard/);
 
-  await page.goto("/capital?tab=invoices");
+  await page.goto("/capital/invoices");
   await expect(page.locator("tbody tr").first()).toBeVisible();
   await page.locator("tbody tr").first().click();
   await expect(page.getByText("Download PDF", { exact: true })).toBeVisible();
 }
 
-test("staff can download an invoice PDF from the capital drawer", async ({ page }) => {
+test("staff can download an invoice PDF from the capital invoice popup", async ({ page }) => {
   await openFirstInvoice(page);
 
   const downloadPromise = page.waitForEvent("download");

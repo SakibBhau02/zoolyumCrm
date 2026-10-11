@@ -11,9 +11,9 @@ async function login(page: import("@playwright/test").Page) {
 test("branding upload dark/light", async ({ page }) => {
   await login(page);
   await page.goto("/control?section=branding");
-  await expect(page.getByText("Dark Logo")).toBeVisible();
-  await expect(page.getByText("Light Logo")).toBeVisible();
-  await expect(page.getByText("Gradient preview")).toBeVisible();
+  await expect(page.getByText("Dark Logo", { exact: true })).toBeVisible();
+  await expect(page.getByText("Light Logo", { exact: true })).toBeVisible();
+  await expect(page.getByText("Gradient preview", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save branding" })).toBeVisible();
 });
 

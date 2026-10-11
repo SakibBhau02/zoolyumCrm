@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { BillingCycleType, ClientCategory, HealthLevel, Vertical } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
@@ -17,6 +17,20 @@ export interface ClientUpdateBody {
   contractStartDate?: string | null;
   renewalDate?: string | null;
   notes?: string;
+  billingDayOfMonth?: number | null;
+  monthlyAmount?: number | null;
+  monthlyServiceDescription?: string | null;
+  autoGenerateInvoice?: boolean;
+  paymentDueDays?: number | null;
+  retainerInterval?: string | null;
+  nextRetainerDate?: string | null;
+  primaryContact?: {
+    id?: string;
+    name: string;
+    roleTitle?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
 }
 
 export interface CreateClientBody extends ClientUpdateBody {
@@ -278,6 +292,9 @@ export class AccountsService {
   }
 
   async create(body: CreateClientBody) {
+    if (!body.companyName?.trim()) {
+      throw new BadRequestException("companyName is required");
+    }
     const client = await this.prisma.client.create({
       data: {
         companyName: body.companyName,
@@ -289,10 +306,30 @@ export class AccountsService {
         contractStartDate: body.contractStartDate ? new Date(body.contractStartDate) : undefined,
         renewalDate: body.renewalDate ? new Date(body.renewalDate) : undefined,
         notes: body.notes,
+        billingDayOfMonth: body.billingDayOfMonth ?? undefined,
+        monthlyAmount: body.monthlyAmount ?? undefined,
+        monthlyServiceDescription: body.monthlyServiceDescription || undefined,
+        autoGenerateInvoice: body.autoGenerateInvoice ?? true,
+        paymentDueDays: body.paymentDueDays ?? undefined,
+        retainerInterval: body.retainerInterval || undefined,
+        nextRetainerDate: body.nextRetainerDate ? new Date(body.nextRetainerDate) : undefined,
         healthScore: 75,
         healthLevel: "GREEN",
       },
     });
+    const contactName = body.primaryContact?.name?.trim();
+    if (contactName) {
+      await this.prisma.clientContact.create({
+        data: {
+          clientId: client.id,
+          name: contactName,
+          roleTitle: body.primaryContact?.roleTitle?.trim() || undefined,
+          email: body.primaryContact?.email?.trim() || undefined,
+          phone: body.primaryContact?.phone?.trim() || undefined,
+          isPrimary: true,
+        },
+      }).catch(() => {});
+    }
     await this.recomputeHealth(client.id);
     await this.invalidateClients();
     return this.detail(client.id);
@@ -314,8 +351,39 @@ export class AccountsService {
         contractStartDate: body.contractStartDate === null ? null : body.contractStartDate ? new Date(body.contractStartDate) : undefined,
         renewalDate: body.renewalDate === null ? null : body.renewalDate ? new Date(body.renewalDate) : undefined,
         notes: body.notes,
+        billingDayOfMonth: body.billingDayOfMonth === null ? null : body.billingDayOfMonth,
+        monthlyAmount: body.monthlyAmount === null ? null : body.monthlyAmount,
+        monthlyServiceDescription: body.monthlyServiceDescription === null ? null : body.monthlyServiceDescription,
+        autoGenerateInvoice: body.autoGenerateInvoice,
+        paymentDueDays: body.paymentDueDays === null ? null : body.paymentDueDays,
+        retainerInterval: body.retainerInterval === null ? null : body.retainerInterval,
+        nextRetainerDate: body.nextRetainerDate === null ? null : body.nextRetainerDate ? new Date(body.nextRetainerDate) : undefined,
       },
     });
+    // Inline primary-contact edit: update by id, else update existing primary, else create.
+    const pc = body.primaryContact;
+    if (pc !== undefined && pc !== null) {
+      const contactName = pc.name?.trim();
+      if (contactName) {
+        const contactData = {
+          name: contactName,
+          roleTitle: pc.roleTitle?.trim() || null,
+          email: pc.email?.trim() || null,
+          phone: pc.phone?.trim() || null,
+          isPrimary: true,
+        };
+        if (pc.id) {
+          await this.prisma.clientContact.update({ where: { id: pc.id }, data: contactData }).catch(() => {});
+        } else {
+          const existingPrimary = await this.prisma.clientContact.findFirst({ where: { clientId: id, isPrimary: true } }).catch(() => null);
+          if (existingPrimary) {
+            await this.prisma.clientContact.update({ where: { id: existingPrimary.id }, data: contactData }).catch(() => {});
+          } else {
+            await this.prisma.clientContact.create({ data: { clientId: id, ...contactData } }).catch(() => {});
+          }
+        }
+      }
+    }
     await this.recomputeHealth(id);
     await this.invalidateClients();
     return this.detail(id);

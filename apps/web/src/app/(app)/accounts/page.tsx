@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
+  Briefcase,
   Building2,
   CalendarClock,
   ChevronDown,
@@ -64,11 +65,19 @@ import {
 } from "@/components/ui";
 
 const VERTICALS = ["EDUCATION", "HEALTHCARE", "D2C", "OTHER"];
-const BILLING_CYCLES = ["PROJECT_BASED", "MONTHLY_RETAINER", "QUARTERLY_RETAINER", "ONE_TIME"];
+// NOTE: must stay in sync with the Prisma BillingCycleType enum — values outside
+// it 500 on save (QUARTERLY_RETAINER was removed for exactly this reason).
+const BILLING_CYCLES = ["PROJECT_BASED", "MONTHLY_RETAINER", "ONE_TIME"];
 const DOC_TYPES = ["MOU", "PROPOSAL", "BRAND_ASSET", "CREDENTIAL"];
 const CATEGORIES = ["ACTIVE", "ON_HOLD", "ARCHIVED"] as const;
 
-const label = (v: string) => v.replace(/_/g, " ").toLowerCase();
+const LABEL_EXCEPTIONS: Record<string, string> = { D2C: "D2C" };
+const label = (v: string) =>
+  LABEL_EXCEPTIONS[v] ??
+  v
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 
 function daysUntil(d: string | null): number | null {
   if (!d) return null;
@@ -121,6 +130,17 @@ interface ClientFormState {
   contractStartDate: string;
   renewalDate: string;
   notes: string;
+  billingDayOfMonth: string;
+  monthlyAmount: string;
+  monthlyServiceDescription: string;
+  autoGenerateInvoice: boolean;
+  paymentDueDays: string;
+  retainerInterval: string;
+  contactId: string;
+  contactName: string;
+  contactRole: string;
+  contactEmail: string;
+  contactPhone: string;
 }
 
 function ClientFormModal({
@@ -148,14 +168,54 @@ function ClientFormModal({
     contractStartDate: "",
     renewalDate: "",
     notes: "",
+    billingDayOfMonth: "1",
+    monthlyAmount: "",
+    monthlyServiceDescription: "",
+    autoGenerateInvoice: true,
+    paymentDueDays: "15",
+    retainerInterval: "MONTHLY",
+    contactId: "",
+    contactName: "",
+    contactRole: "",
+    contactEmail: "",
+    contactPhone: "",
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [dupHint, setDupHint] = useState<string | null>(null);
+  const [dupChecking, setDupChecking] = useState(false);
   const editing = !!initial;
+
+  const checkDuplicates = async (name: string) => {
+    const q = name.trim();
+    if (q.length < 3) {
+      setDupHint(null);
+      return;
+    }
+    setDupChecking(true);
+    try {
+      const list = await apiFetch<any[]>(`/accounts/clients?q=${encodeURIComponent(q)}`);
+      const others = (list ?? []).filter((c: any) => (!editing || c.id !== initial?.id) && c.companyName?.toLowerCase().includes(q.toLowerCase()));
+      setDupHint(others.length ? `${others.length} similar client${others.length > 1 ? "s" : ""} already exist${others.length > 1 ? "" : "s"} — ${others.slice(0, 2).map((c: any) => c.companyName).join(", ")}` : null);
+    } catch {
+      setDupHint(null);
+    } finally {
+      setDupChecking(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
     setErr(null);
+    setDupHint(null);
+    const primary = ((initial as any)?.contacts ?? []).find((c: any) => c.isPrimary) ?? ((initial as any)?.contacts ?? [])[0];
+    const contactFields = {
+      contactId: primary?.id ?? "",
+      contactName: primary?.name ?? "",
+      contactRole: primary?.roleTitle ?? "",
+      contactEmail: primary?.email ?? "",
+      contactPhone: primary?.phone ?? "",
+    };
     setF(
       initial
         ? {
@@ -168,6 +228,13 @@ function ClientFormModal({
             contractStartDate: initial.contractStartDate?.slice(0, 10) ?? "",
             renewalDate: initial.renewalDate?.slice(0, 10) ?? "",
             notes: initial.notes ?? "",
+            billingDayOfMonth: String((initial as any).billingDayOfMonth ?? 1),
+            monthlyAmount: (initial as any).monthlyAmount != null ? String((initial as any).monthlyAmount) : "",
+            monthlyServiceDescription: (initial as any).monthlyServiceDescription ?? "",
+            autoGenerateInvoice: (initial as any).autoGenerateInvoice !== false,
+            paymentDueDays: String((initial as any).paymentDueDays ?? 15),
+            retainerInterval: (initial as any).retainerInterval ?? "MONTHLY",
+            ...contactFields,
           }
         : {
             companyName: "",
@@ -179,6 +246,13 @@ function ClientFormModal({
             contractStartDate: "",
             renewalDate: "",
             notes: "",
+            billingDayOfMonth: "1",
+            monthlyAmount: "",
+            monthlyServiceDescription: "",
+            autoGenerateInvoice: true,
+            paymentDueDays: "15",
+            retainerInterval: "MONTHLY",
+            ...contactFields,
           }
     );
   }, [open, initial]);
@@ -189,9 +263,18 @@ function ClientFormModal({
       setErr("Company name is required");
       return;
     }
+    if (f.contactEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.contactEmail.trim())) {
+      setErr("Contact email looks invalid");
+      return;
+    }
+    if (f.billingCycleType === "MONTHLY_RETAINER" && !f.monthlyAmount) {
+      setErr("Monthly amount is required for retainer billing");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
+      const contactName = f.contactName.trim();
       const body = {
         companyName: f.companyName.trim(),
         industryVertical: f.industryVertical,
@@ -202,6 +285,21 @@ function ClientFormModal({
         contractStartDate: f.contractStartDate || null,
         renewalDate: f.renewalDate || null,
         notes: f.notes || null,
+        billingDayOfMonth: f.billingCycleType === "MONTHLY_RETAINER" ? Number(f.billingDayOfMonth) || 1 : null,
+        monthlyAmount: f.billingCycleType === "MONTHLY_RETAINER" && f.monthlyAmount ? Number(f.monthlyAmount) : null,
+        monthlyServiceDescription: f.billingCycleType === "MONTHLY_RETAINER" ? f.monthlyServiceDescription.trim() || null : null,
+        autoGenerateInvoice: f.autoGenerateInvoice,
+        paymentDueDays: f.billingCycleType === "MONTHLY_RETAINER" ? Number(f.paymentDueDays) || 15 : null,
+        retainerInterval: f.billingCycleType === "MONTHLY_RETAINER" ? f.retainerInterval : null,
+        primaryContact: contactName
+          ? {
+              ...(editing && f.contactId ? { id: f.contactId } : {}),
+              name: contactName,
+              roleTitle: f.contactRole.trim() || null,
+              email: f.contactEmail.trim() || null,
+              phone: f.contactPhone.trim() || null,
+            }
+          : undefined,
       };
       await apiFetch(editing ? `/accounts/clients/${initial!.id}` : "/accounts/clients", {
         method: editing ? "PATCH" : "POST",
@@ -236,9 +334,19 @@ function ClientFormModal({
           <SectionTitle icon={<Building2 className="size-3.5" />} title="Company Information" />
           <p className="mb-3 text-[11px] text-muted-foreground">Identity and business category</p>
           <div className="mt-3 flex flex-col gap-4">
-            <Field label="Company name *">
-              <Input value={f.companyName} onChange={(e) => setF({ ...f, companyName: e.target.value })} placeholder="Acme Ltd." autoFocus />
-            </Field>
+            <div>
+              <Field label="Company name *">
+                <Input
+                  value={f.companyName}
+                  onChange={(e) => { setF({ ...f, companyName: e.target.value }); if (dupHint) setDupHint(null); }}
+                  onBlur={(e) => void checkDuplicates(e.target.value)}
+                  placeholder="Acme Ltd."
+                  autoFocus
+                />
+              </Field>
+              {dupChecking && <p className="mt-1 text-[11px] text-muted-foreground">Checking for duplicates…</p>}
+              {dupHint && <p className="mt-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">⚠ {dupHint}</p>}
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Industry vertical">
                 <Select value={f.industryVertical} onChange={(e) => setF({ ...f, industryVertical: e.target.value })}>
@@ -259,7 +367,26 @@ function ClientFormModal({
         </div>
 
         <div>
-          <SectionTitle icon={<UserRound className="size-3.5" />} title="Ownership & Billing" />
+          <SectionTitle icon={<UserRound className="size-3.5" />} title="Primary Contact" />
+          <p className="mb-3 text-[11px] text-muted-foreground">Saved with the client — portal access can be granted later from the detail view</p>
+          <div className="mt-3 grid grid-cols-2 gap-4">
+            <Field label="Full name">
+              <Input value={f.contactName} onChange={(e) => setF({ ...f, contactName: e.target.value })} placeholder="Tanvir Ahmed" />
+            </Field>
+            <Field label="Role / title">
+              <Input value={f.contactRole} onChange={(e) => setF({ ...f, contactRole: e.target.value })} placeholder="Operations Head" />
+            </Field>
+            <Field label="Email">
+              <Input type="email" value={f.contactEmail} onChange={(e) => setF({ ...f, contactEmail: e.target.value })} placeholder="tanvir@client.com" />
+            </Field>
+            <Field label="Phone">
+              <Input value={f.contactPhone} onChange={(e) => setF({ ...f, contactPhone: e.target.value })} placeholder="+8801…" />
+            </Field>
+          </div>
+        </div>
+
+        <div>
+          <SectionTitle icon={<Briefcase className="size-3.5" />} title="Ownership & Billing" />
           <p className="mb-3 text-[11px] text-muted-foreground">Account owner and contract terms</p>
           <div className="mt-3 grid grid-cols-2 gap-4">
             <Field label="Account owner">
@@ -281,6 +408,9 @@ function ClientFormModal({
               <Select value={f.currencyPreference} onChange={(e) => setF({ ...f, currencyPreference: e.target.value })}>
                 <option value="BDT">BDT</option>
                 <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+                <option value="INR">INR</option>
                 <option value="SAR">SAR</option>
                 <option value="AED">AED</option>
               </Select>
@@ -292,6 +422,40 @@ function ClientFormModal({
               <Input type="date" value={f.renewalDate} onChange={(e) => setF({ ...f, renewalDate: e.target.value })} />
             </Field>
           </div>
+          {f.billingCycleType === "MONTHLY_RETAINER" && (
+            <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-3">
+              <p className="mb-3 text-[11.5px] font-bold uppercase tracking-wider text-muted-foreground">Monthly retainer auto-billing</p>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Retainer interval">
+                  <Select value={f.retainerInterval} onChange={(e) => setF({ ...f, retainerInterval: e.target.value })}>
+                    <option value="MONTHLY">Monthly</option>
+                    <option value="BIWEEKLY">Every 15 days</option>
+                    <option value="WEEKLY">Every 7 days</option>
+                  </Select>
+                </Field>
+                <Field label="Monthly amount *">
+                  <Input type="number" min={0} step="0.01" value={f.monthlyAmount} onChange={(e) => setF({ ...f, monthlyAmount: e.target.value })} placeholder="85000" />
+                </Field>
+                <Field label="Billing day of month">
+                  <Select value={f.billingDayOfMonth} onChange={(e) => setF({ ...f, billingDayOfMonth: e.target.value })} disabled={f.retainerInterval !== "MONTHLY"}>
+                    {Array.from({ length: 28 }, (_, i) => (
+                      <option key={i + 1} value={String(i + 1)}>Day {i + 1}</option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Service description">
+                  <Input value={f.monthlyServiceDescription} onChange={(e) => setF({ ...f, monthlyServiceDescription: e.target.value })} placeholder="Monthly Retainer Service" />
+                </Field>
+                <Field label="Payment due (days)">
+                  <Input type="number" min={1} max={90} value={f.paymentDueDays} onChange={(e) => setF({ ...f, paymentDueDays: e.target.value })} placeholder="15" />
+                </Field>
+              </div>
+              <label className="mt-3 flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+                <input type="checkbox" checked={f.autoGenerateInvoice} onChange={(e) => setF({ ...f, autoGenerateInvoice: e.target.checked })} className="size-4 rounded accent-primary" />
+                Auto-generate invoice {f.retainerInterval === "WEEKLY" ? "every 7 days" : f.retainerInterval === "BIWEEKLY" ? "every 15 days" : "every month"} (backend cron)
+              </label>
+            </div>
+          )}
         </div>
 
         {editing && projects && projects.length > 0 && (
@@ -1273,6 +1437,15 @@ export default function AccountsPage() {
                         <Fact label="Renewal" value={formatDate(detail.renewalDate)} />
                         <Fact label="Created" value={formatDate(detail.createdAt ?? null)} />
                         <Fact label="Category" value={label(detail.category)} />
+                        {detail.billingCycleType === "MONTHLY_RETAINER" && (
+                          <>
+                            <Fact label="Retainer amount" value={formatBDT((detail as any).monthlyAmount ?? 0)} />
+                            <Fact label="Interval" value={((detail as any).retainerInterval ?? "MONTHLY") === "WEEKLY" ? "Every 7 days" : ((detail as any).retainerInterval ?? "MONTHLY") === "BIWEEKLY" ? "Every 15 days" : "Monthly"} />
+                            <Fact label="Billing day" value={`Day ${(detail as any).billingDayOfMonth ?? 1}`} />
+                            <Fact label="Auto-generate" value={(detail as any).autoGenerateInvoice === false ? "Off" : "On"} />
+                            <Fact label="Last billed cycle" value={(detail as any).lastAutoInvoiceCycle ?? "—"} />
+                          </>
+                        )}
                       </div>
                       {detail.notes && (
                         <div className="mt-3">
@@ -1553,7 +1726,7 @@ export default function AccountsPage() {
                       })}
                     </div>
                   )}
-                  <a href={"/capital?clientId=" + detail.id} onClick={(e) => { e.preventDefault(); router.push("/capital?clientId=" + detail.id); }} className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-bold text-primary hover:underline">
+                  <a href={"/capital/invoices?clientId=" + detail.id} onClick={(e) => { e.preventDefault(); router.push("/capital/invoices?clientId=" + detail.id); }} className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-bold text-primary hover:underline">
                     Full billing in Capital <ExternalLink className="size-3.5" />
                   </a>
                 </div>

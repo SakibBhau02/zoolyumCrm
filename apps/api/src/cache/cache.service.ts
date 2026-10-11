@@ -75,7 +75,12 @@ export class CacheService implements OnModuleDestroy {
   }
 
   async delPattern(pattern: string): Promise<void> {
+    // wrapQuery stores the empty-query list under the BARE prefix (no hash
+    // suffix), which `prefix:*` never matches — so always drop the bare key
+    // too, otherwise unfiltered lists stay stale for the full TTL.
+    const bare = pattern.endsWith(":*") ? pattern.slice(0, -2) : null;
     if (this.ready()) {
+      if (bare) await this.redis!.del(bare).catch(() => {});
       let cursor = "0";
       do {
         const [next, keys] = await this.redis!.scan(cursor, "MATCH", pattern, "COUNT", 100);
@@ -84,6 +89,7 @@ export class CacheService implements OnModuleDestroy {
       } while (cursor !== "0");
       return;
     }
+    if (bare) this.mem.delete(bare);
     const re = new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
     for (const key of this.mem.keys()) if (re.test(key)) this.mem.delete(key);
   }

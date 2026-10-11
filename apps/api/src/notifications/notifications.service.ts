@@ -10,12 +10,20 @@ interface SsePayload {
 
 const DEFAULT_PREF_TYPES = [
   "NEW_LEAD",
+  "LEAD_ASSIGNED",
+  "MEETING_SCHEDULED",
+  "FOLLOWUP_SCHEDULED",
   "TASK_REMINDER",
   "TASK_ASSIGNED",
+  "INVOICE_CREATED",
   "INVOICE_PAID",
   "CLIENT_MESSAGE",
   "OVERDUE_PAYMENT",
   "PROJECT_UPDATE",
+  "PROJECT_ASSIGNED",
+  "LEAVE_REQUEST",
+  "LEAVE_STATUS",
+  "REPORT_READY",
   "WEEKLY_REPORT",
 ];
 const DEFAULT_PREF_CHANNELS = ["EMAIL", "PUSH", "SMS"];
@@ -80,12 +88,42 @@ export class NotificationsService {
   }
 
   async create(userId: string, type: string, title: string, message: string, link?: string) {
+    // preference gate — skip if user muted this type (PUSH channel doubles as in-app gate)
+    const pref = await this.prisma.notificationPreference.findUnique({
+      where: { userId_type_channel: { userId, type, channel: "PUSH" } },
+    });
+    if (pref && !pref.enabled) return null;
     const n = await this.prisma.notification.create({
       data: { userId, type, title, message, link },
     });
     this.push(userId, n);
     await this.invalidateUser(userId);
     return n;
+  }
+
+  /** Targeted notify: all active users whose role name matches (case-insensitive, partial). */
+  async notifyRole(roleMatch: string, type: string, title: string, message: string, link?: string, excludeUserId?: string) {
+    const users = await this.prisma.user.findMany({
+      where: { isActive: true, role: { name: { contains: roleMatch, mode: "insensitive" } } },
+      select: { id: true },
+    });
+    let sent = 0;
+    for (const u of users) {
+      if (u.id === excludeUserId) continue;
+      const n = await this.create(u.id, type, title, message, link);
+      if (n) sent++;
+    }
+    return sent;
+  }
+
+  /** Resolve a User id from an Employee id (tasks/leaves link employees, notifications link users). */
+  async userIdForEmployee(employeeId: string | null | undefined): Promise<string | null> {
+    if (!employeeId) return null;
+    const emp = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      include: { user: { select: { id: true } } },
+    });
+    return emp?.user?.id ?? null;
   }
 
   async broadcast(type: string, title: string, message: string, link?: string, excludeUserId?: string) {

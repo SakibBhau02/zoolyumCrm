@@ -7,7 +7,7 @@ test("staff can view an invoice from the capital Invoices tab", async ({ page })
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/dashboard/);
 
-  await page.goto("/capital?tab=invoices");
+  await page.goto("/capital/invoices");
   await expect(page.locator("tbody tr").first()).toBeVisible();
 
   const firstRow = page.locator("tbody tr").first();

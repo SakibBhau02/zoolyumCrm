@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import * as bcrypt from "bcryptjs";
-import { basename, join } from "path";
+import { basename } from "path";
 import { existsSync, unlinkSync } from "fs";
+import { findUploadedFile, sanitizeFilename } from "../common/file-storage";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 
@@ -127,6 +128,8 @@ export class ControlService {
           primaryColor: "#7C3AED",
           secondaryColor: "#38BDF8",
           invoiceNumberingFormat: "ZLM-{year}-{seq}",
+          defaultCurrency: "BDT",
+          defaultTerms: "Payment is due within 15 days of invoice date.",
         }
       );
     });
@@ -141,9 +144,8 @@ export class ControlService {
       if (oldUrl === newUrl) return;
       if (!oldUrl.includes("uploads/branding")) return;
       try {
-        const filename = basename(oldUrl);
-        const safe = filename.replace(/[^a-zA-Z0-9.\-_]/g, "");
-        const full = join(process.cwd(), "uploads/branding", safe);
+        const safe = sanitizeFilename(basename(oldUrl));
+        const full = findUploadedFile("branding", safe);
         if (existsSync(full)) unlinkSync(full);
       } catch {}
     };
@@ -151,6 +153,7 @@ export class ControlService {
       tryDeleteOld(existing.logoDarkUrl, body.logoDarkUrl);
       tryDeleteOld(existing.logoLightUrl, body.logoLightUrl);
       tryDeleteOld((existing as any).logoUrl, body.logoUrl);
+      tryDeleteOld((existing as any).signatureImageUrl, body.signatureImageUrl);
     }
     const result = existing
       ? await this.prisma.brandingConfig.update({ where: { id: existing.id }, data: body })

@@ -2,15 +2,16 @@ import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post,
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { randomUUID } from "crypto";
-import { basename, join } from "path";
-import { mkdirSync } from "fs";
+import { basename } from "path";
 import { ControlService } from "./control.service";
 import { Public } from "../common/decorators/public.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { UpdateBrandingDto } from "./dto/update-branding.dto";
+import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
 
-// Stored relative to process.cwd() — works in both dev (repo root) and prod (dist) because we mkdirSync recursively on upload
-const BRANDING_UPLOADS_DIR = join(process.cwd(), "uploads/branding");
+// Anchored to the API package dir (see common/file-storage) — independent of
+// the working directory the server was launched from.
+const brandingDir = () => uploadsDir("branding");
 
 @Controller("control")
 export class ControlController {
@@ -43,10 +44,9 @@ export class ControlController {
     FileInterceptor("file", {
       storage: diskStorage({
         destination: (_req, _file, cb) => {
-          mkdirSync(BRANDING_UPLOADS_DIR, { recursive: true });
-          cb(null, BRANDING_UPLOADS_DIR);
+          cb(null, brandingDir());
         },
-        filename: (_req, file, cb) => cb(null, `${randomUUID()}-${file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "")}`),
+        filename: (_req, file, cb) => cb(null, `${randomUUID()}-${sanitizeFilename(file.originalname)}`),
       }),
       limits: { fileSize: 5 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
@@ -65,9 +65,8 @@ export class ControlController {
     if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
       throw new BadRequestException("Invalid filename");
     }
-    const sanitized = filename.replace(/[^a-zA-Z0-9.\-_]/g, "");
-    const safe = basename(sanitized);
-    return res.sendFile(join(BRANDING_UPLOADS_DIR, safe));
+    const safe = basename(sanitizeFilename(filename));
+    return res.sendFile(findUploadedFile("branding", safe));
   }
 
   @Get("audit-logs")

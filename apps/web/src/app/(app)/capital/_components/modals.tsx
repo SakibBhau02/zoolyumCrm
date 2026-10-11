@@ -1,0 +1,1342 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { Pencil, Plus, X } from "lucide-react";
+import { apiFetch } from "@/lib/api";
+import { formatBDT, formatDate } from "@/lib/format";
+import { EmptyState, StatusBadge } from "@/components/shared";
+import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
+import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
+import { useAuth } from "@/lib/auth";
+import { useBranding } from "@/lib/branding-context";
+import { INVOICE_TEMPLATES, accountsForMethod, invoiceTotals, numberToWords } from "@/lib/invoice-utils";
+import { ACCOUNT_CATEGORIES, INVOICE_STATUSES, PAYMENT_METHODS, label, today } from "./constants";
+
+type InvoiceLineDraft = { description: string; unitPrice: string; quantity: string };
+
+type PayDraft = {
+  method: string;
+  bankName: string;
+  accountName: string;
+  accountNumber: string;
+  branch: string;
+  routingNumber: string;
+  mobileWalletNumber: string;
+};
+
+const blankPay = (): PayDraft => ({ method: "BANK_TRANSFER", bankName: "", accountName: "", accountNumber: "", branch: "", routingNumber: "", mobileWalletNumber: "" });
+
+const payFrom = (src: any): PayDraft => ({
+  method: src?.method ?? "BANK_TRANSFER",
+  bankName: src?.bankName ?? "",
+  accountName: src?.accountName ?? "",
+  accountNumber: src?.accountNumber ?? "",
+  branch: src?.branch ?? "",
+  routingNumber: src?.routingNumber ?? "",
+  mobileWalletNumber: src?.mobileWalletNumber ?? "",
+});
+
+const cleanPay = (p: PayDraft) => {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(p)) {
+    const s = (v ?? "").trim();
+    if (s) out[k] = s;
+  }
+  return Object.keys(out).length > 1 || (out as any).method ? out : undefined;
+};
+
+const plusDays = (days: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Bank-account options matching a payment method (bKash → bKash accounts…). */
+function methodAccounts(bankAccounts: any[], method: string) {
+  return accountsForMethod(bankAccounts, method);
+}
+
+/** Switching method clears the account when it no longer matches. */
+function withMethod(f: any, bankAccounts: any[], method: string) {
+  const stillValid = accountsForMethod(bankAccounts, method).some((b: any) => b.id === f.bankAccountId);
+  return { ...f, method, bankAccountId: stillValid ? f.bankAccountId : "" };
+}
+
+function InvoiceTotalsPreview({ lines, taxApplicable, taxRate, discountRate, shippingFee, currency }: {
+  lines: InvoiceLineDraft[]; taxApplicable: boolean; taxRate: string; discountRate: string; shippingFee: string; currency: string;
+}) {
+  const t = invoiceTotals({
+    lineItems: lines.map((l) => ({ amount: (Number(l.unitPrice) || 0) * (Number(l.quantity) || 0) })),
+    taxApplicable,
+    taxRate: Number(taxRate) || 0,
+    discountRate: Number(discountRate) || 0,
+    shippingFee: Number(shippingFee) || 0,
+    payments: [],
+  });
+  return (
+    <div className="flex flex-col gap-1.5 rounded-xl bg-muted/40 px-3 py-2.5 text-[12px]">
+      <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-medium tabular-nums">{formatBDT(t.subtotal)}</span></div>
+      {t.tax > 0 && <div className="flex justify-between"><span className="text-muted-foreground">VAT / Tax ({Number(taxRate) || 0}%)</span><span className="font-medium tabular-nums">+ {formatBDT(t.tax)}</span></div>}
+      {t.discount > 0 && <div className="flex justify-between"><span className="text-emerald-600 dark:text-emerald-400">Discount ({Number(discountRate) || 0}%)</span><span className="font-medium tabular-nums">− {formatBDT(t.discount)}</span></div>}
+      {t.shipping > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Shipping / Delivery</span><span className="font-medium tabular-nums">+ {formatBDT(t.shipping)}</span></div>}
+      <div className="flex justify-between border-t border-border/60 pt-1.5"><span className="font-bold">Grand Total</span><span className="font-bold tabular-nums">{formatBDT(t.grand)}</span></div>
+      <p className="text-[10.5px] italic leading-relaxed text-muted-foreground">In words: {numberToWords(t.grand, currency)}</p>
+    </div>
+  );
+}
+
+const TEMPLATE_SWATCH: Record<string, string> = {
+  "modern-orange": "bg-[#ea580c]",
+  "zoolyum-dark": "bg-zinc-900",
+  "minimal-clean": "bg-zinc-300",
+  "classic-corporate": "bg-[#2563eb]",
+};
+
+function TemplatePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {INVOICE_TEMPLATES.map((t) => (
+        <button
+          key={t.value}
+          type="button"
+          onClick={() => onChange(t.value)}
+          className={`flex flex-col gap-1.5 rounded-xl border p-2 text-left transition-all ${value === t.value ? "border-primary ring-2 ring-primary/20" : "border-border/60 hover:border-primary/40"}`}
+        >
+          <span className={`h-6 w-full rounded-md ${TEMPLATE_SWATCH[t.value] ?? "bg-muted"}`} />
+          <span className="text-[11px] font-semibold">{t.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PaymentDetailsFields({ value, onChange }: { value: PayDraft; onChange: (v: PayDraft) => void }) {
+  const set = (k: keyof PayDraft, v: string) => onChange({ ...value, [k]: v });
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <Field label="Method">
+        <Select value={value.method} onChange={(e) => set("method", e.target.value)}>
+          {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}
+        </Select>
+      </Field>
+      <Field label="Mobile wallet no"><Input value={value.mobileWalletNumber} onChange={(e) => set("mobileWalletNumber", e.target.value)} placeholder="01XXXXXXXXX" /></Field>
+      <Field label="Bank name"><Input value={value.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder="City Bank PLC" /></Field>
+      <Field label="Account name"><Input value={value.accountName} onChange={(e) => set("accountName", e.target.value)} placeholder="Zoolyum Agency" /></Field>
+      <Field label="Account number"><Input value={value.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} placeholder="1102938481901" /></Field>
+      <Field label="Branch"><Input value={value.branch} onChange={(e) => set("branch", e.target.value)} placeholder="Gulshan Branch" /></Field>
+      <Field label="Routing number"><Input value={value.routingNumber} onChange={(e) => set("routingNumber", e.target.value)} placeholder="225271891" /></Field>
+    </div>
+  );
+}
+
+type InvoiceFormState = {
+  invoiceNumber: string;
+  clientId: string;
+  projectId: string;
+  advancePct: string;
+  issueDate: string;
+  dueDate: string;
+  status: string;
+  invoiceType: string;
+  taxApplicable: boolean;
+  taxRate: string;
+  discountRate: string;
+  shippingFee: string;
+  currency: string;
+  exchangeRate: string;
+  notes: string;
+  terms: string;
+  templateStyle: string;
+  pay: PayDraft;
+  lines: InvoiceLineDraft[];
+};
+
+const blankForm = (): InvoiceFormState => ({
+  invoiceNumber: "",
+  clientId: "",
+  projectId: "",
+  advancePct: "",
+  issueDate: today(),
+  dueDate: plusDays(15),
+  status: "DRAFT",
+  invoiceType: "ONE_TIME",
+  taxApplicable: true,
+  taxRate: "5",
+  discountRate: "0",
+  shippingFee: "0",
+  currency: "BDT",
+  exchangeRate: "",
+  notes: "",
+  terms: "",
+  templateStyle: "modern-orange",
+  pay: blankPay(),
+  lines: [{ description: "", unitPrice: "", quantity: "1" }],
+});
+
+function InvoiceFormBody({ f, setF, clients, projects, showNumber }: {
+  f: InvoiceFormState;
+  setF: (v: InvoiceFormState) => void;
+  clients: any[];
+  projects: any[];
+  showNumber: boolean;
+}) {
+  const updateLine = (i: number, key: keyof InvoiceLineDraft, v: string) =>
+    setF({ ...f, lines: f.lines.map((l, idx) => (idx === i ? { ...l, [key]: v } : l)) });
+
+  // Projects belonging to a client (project rows carry clientId from /flow/projects)
+  const projectsFor = (clientId: string) =>
+    clientId ? (projects ?? []).filter((p: any) => p.clientId === clientId) : (projects ?? []);
+  const visibleProjects = projectsFor(f.clientId);
+  const selectedProject = (projects ?? []).find((p: any) => p.id === f.projectId) ?? null;
+  const linesPristine = (lines: InvoiceLineDraft[]) =>
+    lines.length === 1 && !lines[0].description.trim() && !Number(lines[0].unitPrice || 0);
+  const INVOICE_CURRENCIES = ["BDT", "USD", "EUR", "GBP", "INR"];
+
+  // live billing status of the selected project (value / billed / paid / remaining)
+  const [projFin, setProjFin] = useState<any | null>(null);
+  const [projFinLoading, setProjFinLoading] = useState(false);
+  const autoFilledFor = useRef<string | null>(null);
+  // signature of the last SYSTEM-written line items — lets % entry overwrite
+  // our own auto-fill while never clobbering anything the user typed
+  const autoLineSig = useRef<string | null>(null);
+  const systemLines = (lines: InvoiceLineDraft[]) =>
+    linesPristine(lines) || (autoLineSig.current != null && autoLineSig.current === JSON.stringify(lines));
+  const projectValue = (proj: any, fin: any) =>
+    Number(proj?.amount ?? proj?.budgetAmount ?? fin?.project?.budgetAmount ?? 0);
+  const projectRemaining = (proj: any, fin: any) =>
+    Math.max(Math.round((projectValue(proj, fin) - (fin?.totalInvoiced ?? 0)) * 100) / 100, 0);
+
+  useEffect(() => {
+    if (!f.projectId) {
+      setProjFin(null);
+      autoFilledFor.current = null;
+      return;
+    }
+    let cancelled = false;
+    setProjFinLoading(true);
+    apiFetch<any>(`/capital/projects/${f.projectId}/finance`)
+      .then((fin) => { if (!cancelled) setProjFin(fin); })
+      .catch(() => { if (!cancelled) setProjFin(null); })
+      .finally(() => { if (!cancelled) setProjFinLoading(false); });
+    return () => { cancelled = true; };
+  }, [f.projectId]);
+
+  // auto-fill the REMAINING project balance — only when line items are still untouched
+  useEffect(() => {
+    if (!f.projectId || !projFin || autoFilledFor.current === f.projectId) return;
+    autoFilledFor.current = f.projectId;
+    if (!linesPristine(f.lines)) return;
+    if ((selectedProject?.billingType ?? "ONE_TIME") !== "ONE_TIME") return;
+    const remaining = projectRemaining(selectedProject, projFin);
+    if (remaining <= 0) return;
+    const next = { ...f, lines: [{ description: selectedProject?.name ?? "Project balance", unitPrice: String(remaining), quantity: "1" }] };
+    if (selectedProject?.currency && INVOICE_CURRENCIES.includes(selectedProject.currency)) next.currency = selectedProject.currency;
+    autoLineSig.current = JSON.stringify(next.lines);
+    setF(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projFin]);
+
+  const onClientChange = (clientId: string) => {
+    // drop the selected project if it doesn't belong to the new client
+    const keepProject = f.projectId && projectsFor(clientId).some((p: any) => p.id === f.projectId);
+    setF({ ...f, clientId, projectId: keepProject ? f.projectId : "" });
+  };
+
+  const onProjectChange = (projectId: string) => {
+    const next = { ...f, projectId, advancePct: "" };
+    const proj = (projects ?? []).find((p: any) => p.id === projectId);
+    if (proj) {
+      // invoice belongs to the project's client
+      if (!next.clientId || next.clientId !== proj.clientId) next.clientId = proj.clientId;
+    }
+    // price auto-fill happens once live billing status arrives (see effect above)
+    autoFilledFor.current = null;
+    autoLineSig.current = null;
+    setProjFin(null);
+    setF(next);
+  };
+
+  // milestone billing: type a % of the project value → line auto-calculated.
+  // only touches system-written lines, never anything the user typed.
+  const applyAdvancePct = (pctStr: string) => {
+    const next = { ...f, advancePct: pctStr };
+    const pct = Number(pctStr);
+    if (!selectedProject || !pctStr || !(pct > 0) || pct > 100) {
+      if (!pctStr && next.invoiceType === "ADVANCE") next.invoiceType = "ONE_TIME";
+      setF(next);
+      return;
+    }
+    const value = projectValue(selectedProject, projFin);
+    if (value > 0 && systemLines(next.lines)) {
+      const amount = Math.round((value * pct) / 100 * 100) / 100;
+      const pctLabel = String(Number(pctStr));
+      next.lines = [{ description: `${pctLabel}% Advance — ${selectedProject.name}`, unitPrice: String(amount), quantity: "1" }];
+      autoLineSig.current = JSON.stringify(next.lines);
+      if (next.invoiceType === "ONE_TIME") next.invoiceType = "ADVANCE";
+      if (selectedProject?.currency && INVOICE_CURRENCIES.includes(selectedProject.currency)) next.currency = selectedProject.currency;
+    }
+    setF(next);
+  };
+  const advancePreview = (() => {
+    const pct = Number(f.advancePct);
+    if (!selectedProject || !(pct > 0) || pct > 100) return null;
+    const value = projectValue(selectedProject, projFin);
+    if (!(value > 0)) return null;
+    return formatBDT(Math.round((value * pct) / 100 * 100) / 100);
+  })();
+  const showAdvanceInput = !!selectedProject && (selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME";
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-4">
+        {showNumber && <Field label="Invoice number *"><Input value={f.invoiceNumber} onChange={(e) => setF({ ...f, invoiceNumber: e.target.value })} placeholder="ZLM-2026-0001" className="font-mono" /></Field>}
+        <Field label="Client *"><Select value={f.clientId} onChange={(e) => onClientChange(e.target.value)}><option value="">Select client…</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
+        <Field label="Project">
+          <Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)}>
+            <option value="">No project</option>
+            {visibleProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </Select>
+          {f.clientId && visibleProjects.length === 0 && (
+            <p className="mt-1 text-[11px] text-muted-foreground">No projects under this client yet.</p>
+          )}
+          {showAdvanceInput && (
+            <div className="mt-2 flex items-center gap-2">
+              <div className="relative w-28">
+                <Input type="number" min={0} max={100} step="any" value={f.advancePct} onChange={(e) => applyAdvancePct(e.target.value)} placeholder="50" className="pr-7" />
+                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] font-bold text-muted-foreground">%</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                {advancePreview ? <span>Advance <span className="font-bold tabular-nums text-foreground">{advancePreview}</span> of {formatBDT(projectValue(selectedProject, projFin))}</span> : "Milestone % of project value"}
+              </p>
+            </div>
+          )}
+          {showAdvanceInput && Number(f.advancePct) > 0 && Number(f.advancePct) <= 100 && !systemLines(f.lines) && (
+            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Line edited by hand — clear it to apply the % again.</p>
+          )}
+          {showAdvanceInput && projFin && Number(f.advancePct) > 0 && Number(f.advancePct) <= 100 &&
+            Math.round((projectValue(selectedProject, projFin) * Number(f.advancePct)) / 100 * 100) / 100 > projectRemaining(selectedProject, projFin) && (
+            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+              {String(Number(f.advancePct))}% of full value ({formatBDT(projectValue(selectedProject, projFin))}) exceeds the remaining {formatBDT(projectRemaining(selectedProject, projFin))} — {formatBDT(projFin.totalInvoiced ?? 0)} already billed.
+            </p>
+          )}
+          {projFinLoading && f.projectId && (
+            <p className="mt-1 text-[11px] text-muted-foreground">Loading billing status…</p>
+          )}
+          {!projFinLoading && projFin && f.projectId && selectedProject && (
+            <div className="mt-2 rounded-xl bg-muted/40 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Project billing</p>
+                {projFin.project?.paymentStatus && <StatusBadge status={projFin.project.paymentStatus} />}
+              </div>
+              <div className="mt-1.5 grid grid-cols-4 gap-2">
+                <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Value</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT(projectValue(selectedProject, projFin))}</p></div>
+                <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Billed</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT(projFin.totalInvoiced ?? 0)}</p></div>
+                <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Paid</p><p className="text-[12.5px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(projFin.collected ?? 0)}</p></div>
+                <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">{(selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? "Remaining" : "Outstanding"}</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT((selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? projectRemaining(selectedProject, projFin) : (projFin.outstanding ?? 0))}</p></div>
+              </div>
+              {(projFin.invoices ?? []).length > 0 && (
+                <div className="mt-2 flex flex-col gap-1 border-t border-border/60 pt-2">
+                  {(projFin.invoices ?? []).slice(0, 5).map((inv: any) => (
+                    <div key={inv.id} className="flex items-center justify-between gap-2 text-[11.5px]">
+                      <span className="min-w-0">
+                        <span className="font-medium tabular-nums">{inv.invoiceNumber}</span>
+                        {inv.title && <span className="block truncate text-[10.5px] text-muted-foreground">{inv.title}</span>}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {inv.invoiceType === "ADVANCE" && (
+                          <span className="rounded-full bg-amber-500/15 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Adv</span>
+                        )}
+                        <StatusBadge status={inv.status} />
+                        <span className="tabular-nums text-muted-foreground">bal {formatBDT(inv.balance ?? 0)}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </Field>
+        <Field label="Issue date"><Input type="date" value={f.issueDate} onChange={(e) => setF({ ...f, issueDate: e.target.value })} /></Field>
+        <Field label="Due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
+        <Field label="Status"><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select></Field>
+        <Field label="Type"><Select value={f.invoiceType} onChange={(e) => setF({ ...f, invoiceType: e.target.value })}>{["ONE_TIME", "RECURRING", "ADVANCE", "COMBINED"].map((t) => <option key={t} value={t}>{label(t)}</option>)}</Select></Field>
+        <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
+        <Field label="Tax (VAT %)">
+          <div className="flex items-center gap-2">
+            <label className="flex cursor-pointer items-center gap-1.5 text-[12px]">
+              <input type="checkbox" checked={f.taxApplicable} onChange={(e) => setF({ ...f, taxApplicable: e.target.checked })} className="size-3.5 accent-primary" />
+              Apply
+            </label>
+            <Input type="number" min={0} max={100} step="0.01" value={f.taxRate} onChange={(e) => setF({ ...f, taxRate: e.target.value })} placeholder="5" className="!w-20" disabled={!f.taxApplicable} />
+          </div>
+        </Field>
+        <Field label="Discount %"><Input type="number" min={0} max={100} step="0.01" value={f.discountRate} onChange={(e) => setF({ ...f, discountRate: e.target.value })} placeholder="0" /></Field>
+        <Field label="Shipping / Delivery"><Input type="number" min={0} step="0.01" value={f.shippingFee} onChange={(e) => setF({ ...f, shippingFee: e.target.value })} placeholder="0" /></Field>
+        {f.currency !== "BDT" && <Field label={`Rate (1 ${f.currency} → BDT) *`}><Input type="number" min={0} step="0.01" value={f.exchangeRate} onChange={(e) => setF({ ...f, exchangeRate: e.target.value })} placeholder="e.g. 120" /></Field>}
+      </div>
+      <Field label="Line items">
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-[1fr_90px_70px_84px_32px] items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span>Description</span><span className="text-right">Rate</span><span className="text-right">Qty</span><span className="text-right">Amount</span><span />
+          </div>
+          {f.lines.map((l, i) => (
+            <div key={i} className="grid grid-cols-[1fr_90px_70px_84px_32px] items-center gap-2">
+              <Input value={l.description} onChange={(e) => updateLine(i, "description", e.target.value)} placeholder="Design retainer…" />
+              <Input type="number" min={0} step="0.01" value={l.unitPrice} onChange={(e) => updateLine(i, "unitPrice", e.target.value)} placeholder="Rate" />
+              <Input type="number" min={0} step="0.01" value={l.quantity} onChange={(e) => updateLine(i, "quantity", e.target.value)} placeholder="Qty" />
+              <span className="text-right text-[12px] font-semibold tabular-nums">{formatBDT((Number(l.unitPrice) || 0) * (Number(l.quantity) || 0))}</span>
+              <button type="button" onClick={() => setF({ ...f, lines: f.lines.filter((_, idx) => idx !== i) })} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="size-3.5" /></button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setF({ ...f, lines: [...f.lines, { description: "", unitPrice: "", quantity: "1" }] })} className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3" /> Add line item</button>
+          <InvoiceTotalsPreview lines={f.lines} taxApplicable={f.taxApplicable} taxRate={f.taxRate} discountRate={f.discountRate} shippingFee={f.shippingFee} currency={f.currency} />
+        </div>
+      </Field>
+      <Field label="PDF template"><TemplatePicker value={f.templateStyle} onChange={(v) => setF({ ...f, templateStyle: v })} /></Field>
+      <Field label="Payment instructions (printed on invoice)"><PaymentDetailsFields value={f.pay} onChange={(pay) => setF({ ...f, pay })} /></Field>
+      <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Payment terms, references…" /></Field>
+      <Field label="Terms & conditions"><Textarea value={f.terms} onChange={(e) => setF({ ...f, terms: e.target.value })} placeholder="Payment is due within 15 days…" /></Field>
+    </div>
+  );
+}
+
+function formPayload(f: InvoiceFormState) {
+  return {
+    invoiceNumber: f.invoiceNumber.trim() || undefined,
+    clientId: f.clientId,
+    projectId: f.projectId || undefined,
+    issueDate: f.issueDate || undefined,
+    dueDate: f.dueDate || undefined,
+    status: f.status,
+    invoiceType: f.invoiceType,
+    taxApplicable: f.taxApplicable,
+    taxRate: f.taxApplicable ? Number(f.taxRate) || 0 : 0,
+    discountRate: Number(f.discountRate) || 0,
+    shippingFee: Number(f.shippingFee) || 0,
+    templateStyle: f.templateStyle,
+    currency: f.currency,
+    exchangeRate: f.currency === "BDT" ? 1 : Number(f.exchangeRate) || undefined,
+    notes: f.notes.trim() || undefined,
+    terms: f.terms.trim() || undefined,
+    paymentDetails: cleanPay(f.pay),
+    lines: f.lines.filter((l) => l.description.trim()).map((l) => ({ description: l.description.trim(), unitPrice: Number(l.unitPrice) || 0, quantity: Number(l.quantity) || 1 })),
+  };
+}
+
+export function InvoiceFormModal({ open, onClose, clients, projects, onSaved, initial }: { open: boolean; onClose: () => void; clients: any[]; projects: any[]; onSaved: () => void; initial?: { clientId?: string; projectId?: string; amount?: number; description?: string } | null }) {
+  const { branding } = useBranding();
+  const [f, setF] = useState<InvoiceFormState>(blankForm());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const blank = blankForm();
+    blank.notes = branding?.defaultNotes ?? "";
+    blank.terms = branding?.defaultTerms ?? "";
+    blank.pay = payFrom(branding?.defaultPaymentDetails);
+    if (branding?.defaultCurrency) blank.currency = branding.defaultCurrency;
+    if (initial?.clientId) blank.clientId = initial.clientId;
+    if (initial?.projectId) blank.projectId = initial.projectId;
+    if (initial?.amount != null && initial.amount > 0) {
+      blank.lines = [{ description: initial.description ?? "Project balance", unitPrice: String(initial.amount), quantity: "1" }];
+    }
+    setF(blank);
+    apiFetch<{ invoiceNumber: string }>("/capital/invoices/next-number")
+      .then((r) => r?.invoiceNumber && setF((prev) => ({ ...prev, invoiceNumber: prev.invoiceNumber || r.invoiceNumber })))
+      .catch(() => {});
+  }, [open]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.clientId) return setErr("Client is required");
+    if (!f.lines.some((l) => l.description.trim())) return setErr("Add at least one line item");
+    if (f.currency !== "BDT" && !f.exchangeRate) return setErr("Exchange rate required for foreign currency");
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch("/capital/invoices", { method: "POST", body: JSON.stringify(formPayload(f)) });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="New invoice" size="xl">
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <InvoiceFormBody f={f} setF={setF} clients={clients} projects={projects} showNumber />
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel="Create invoice" />
+      </form>
+    </Modal>
+  );
+}
+
+export function EditInvoiceModal({ invoice, onClose, clients, projects, onSaved }: { invoice: any; onClose: () => void; clients: any[]; projects: any[]; onSaved: () => void }) {
+  const { branding } = useBranding();
+  const [f, setF] = useState<InvoiceFormState>(blankForm());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!invoice) return;
+    const blank = blankForm();
+    setF({
+      ...blank,
+      clientId: invoice.clientId ?? "",
+      projectId: invoice.projectId ?? "",
+      issueDate: (invoice.issueDate ?? "").slice(0, 10),
+      dueDate: (invoice.dueDate ?? "").slice(0, 10),
+      status: invoice.status ?? "DRAFT",
+      invoiceType: invoice.invoiceType ?? "ONE_TIME",
+      taxApplicable: invoice.taxApplicable ?? Number(invoice.taxRate) > 0,
+      taxRate: String(Number(invoice.taxRate) || 0),
+      discountRate: String(Number(invoice.discountRate) || 0),
+      shippingFee: String(Number(invoice.shippingFee) || 0),
+      currency: invoice.currency ?? "BDT",
+      notes: invoice.notes ?? "",
+      terms: invoice.terms ?? "",
+      templateStyle: invoice.templateStyle ?? "modern-orange",
+      pay: payFrom(invoice.paymentDetails ?? branding?.defaultPaymentDetails),
+      lines: (invoice.lineItems ?? []).map((l: any) => ({ description: l.description, unitPrice: String(l.unitPrice), quantity: String(l.quantity) })),
+    });
+  }, [invoice]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.clientId) return setErr("Client is required");
+    if (!f.lines.some((l) => l.description.trim())) return setErr("Add at least one line item");
+    setBusy(true);
+    setErr(null);
+    try {
+      const { invoiceNumber: _drop, ...payload } = formPayload(f);
+      await apiFetch(`/capital/invoices/${invoice.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={!!invoice} onClose={onClose} title={`Edit invoice — ${invoice?.invoiceNumber ?? ""}`} size="xl">
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <InvoiceFormBody f={f} setF={setF} clients={clients} projects={projects} showNumber={false} />
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel="Save changes" />
+      </form>
+    </Modal>
+  );
+}
+
+
+
+export function CreditNoteModal({ invoice, open, onClose, onSaved }: { invoice: any; open: boolean; onClose: () => void; onSaved: () => void }) {
+  const total = (invoice?.lineItems ?? []).reduce((s: number, l: any) => s + Number(l.amount ?? 0), 0);
+  const paid = (invoice?.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0);
+  const [f, setF] = useState({ type: "CREDIT_NOTE", amount: String(Math.min(total, paid)), reason: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setF({ type: "CREDIT_NOTE", amount: String(Math.min(total, paid)), reason: "" });
+  }, [open, invoice]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.amount || Number(f.amount) <= 0) return setErr("Amount is required");
+    if (f.type === "REFUND" && Number(f.amount) > paid) return setErr(`Cannot refund more than collected ${formatBDT(paid)}`);
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch("/capital/credit-notes", {
+        method: "POST",
+        body: JSON.stringify({ invoiceId: invoice.id, clientId: invoice.clientId, type: f.type, amount: Number(f.amount), reason: f.reason.trim() || undefined }),
+      });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`${label(f.type)} — ${invoice?.invoiceNumber ?? ""}`}>
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-[11.5px]">
+          <span className="text-muted-foreground">Total</span>
+          <span className="text-right font-bold tabular-nums">{formatBDT(total)}</span>
+          <span className="text-muted-foreground">Collected</span>
+          <span className="text-right font-bold tabular-nums">{formatBDT(paid)}</span>
+        </div>
+        <Field label="Type"><Select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}><option value="CREDIT_NOTE">Credit note (client balance)</option><option value="REFUND">Refund (money back)</option><option value="WRITE_OFF">Write-off (bad debt)</option></Select></Field>
+        <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
+        <Field label="Reason"><Textarea value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="Discount, service dispute, client credit…" /></Field>
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel={`Create ${label(f.type)}`} />
+      </form>
+    </Modal>
+  );
+}
+
+export function InstallmentModal({ invoice, open, onClose, onSaved }: { invoice: any; open: boolean; onClose: () => void; onSaved: () => void }) {
+  const planGrand = invoiceTotals({
+    lineItems: invoice?.lineItems,
+    taxApplicable: invoice?.taxApplicable,
+    taxRate: invoice?.taxRate,
+    discountRate: invoice?.discountRate,
+    shippingFee: invoice?.shippingFee,
+    payments: [],
+  }).grand;
+  const total = (invoice?.lineItems ?? []).reduce((s: number, l: any) => s + Number(l.amount ?? 0), 0);
+  const tax = invoice?.taxApplicable ? (total * (Number(invoice.taxRate) || 0)) / 100 : 0;
+  const grand = planGrand;
+  const existing = invoice?.installments ?? [];
+  const hasPayments = existing.some((s: any) => (s.payments?.length ?? 0) > 0 || s.status === "PAID" || Number(s.paidAmount) > 0);
+  const [count, setCount] = useState("2");
+  const [firstDue, setFirstDue] = useState(today());
+  const [rows, setRows] = useState<{ amount: string; dueDate: string }[]>([]);
+  const [custom, setCustom] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setCount("2");
+      setFirstDue(today());
+      setCustom(existing.length > 0 && !hasPayments);
+      setRows(existing.map((s: any) => ({ amount: String(s.amount), dueDate: String(s.dueDate).slice(0, 10) })));
+    }
+  }, [open]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    let installments: { amount: number; dueDate: string }[];
+    if (custom) {
+      if (!rows.length) return setErr("Add at least one installment");
+      const parsed: { amount: number; dueDate: string }[] = [];
+      for (const r of rows) {
+        const amount = Number(r.amount);
+        if (!amount || amount <= 0) return setErr("Every installment needs a positive amount");
+        if (!r.dueDate) return setErr("Every installment needs a due date");
+        parsed.push({ amount, dueDate: r.dueDate });
+      }
+      installments = parsed;
+    } else {
+      const n = Number(count);
+      if (!n || n < 2 || n > 12) return setErr("Choose 2–12 installments");
+      const per = Math.round((grand / n) * 100) / 100;
+      installments = Array.from({ length: n }, (_, i) => {
+        const due = new Date(firstDue);
+        due.setMonth(due.getMonth() + i);
+        return { amount: i === n - 1 ? Math.round((grand - per * (n - 1)) * 100) / 100 : per, dueDate: due.toISOString().slice(0, 10) };
+      });
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch(`/capital/invoices/${invoice.id}`, { method: "PATCH", body: JSON.stringify({ installments }) });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Installment plan — ${invoice?.invoiceNumber ?? ""}`}>
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-[11.5px]">
+          <span className="text-muted-foreground">Invoice total</span>
+          <span className="text-right font-bold tabular-nums">{formatBDT(grand)}</span>
+        </div>
+        {hasPayments ? (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-600 dark:text-amber-400">Payments already exist against this plan — amounts and dates are locked. Use credit notes for adjustments.</p>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Quick plans (amounts auto-split, monthly dues)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { name: "50 / 50", parts: [50, 50] },
+                  { name: "50 / 30 / 20", parts: [50, 30, 20] },
+                  { name: "30 / 40 / 30", parts: [30, 40, 30] },
+                  { name: "25 × 4", parts: [25, 25, 25, 25] },
+                ].map((p) => (
+                  <button
+                    key={p.name}
+                    type="button"
+                    onClick={() => {
+                      const base = new Date(today());
+                      let assigned = 0;
+                      const built = p.parts.map((pct, i) => {
+                        const due = new Date(base);
+                        due.setMonth(due.getMonth() + i);
+                        const amt = i === p.parts.length - 1
+                          ? Math.round((grand - assigned) * 100) / 100
+                          : Math.round(((grand * pct) / 100) * 100) / 100;
+                        assigned += amt;
+                        return { amount: String(amt), dueDate: due.toISOString().slice(0, 10) };
+                      });
+                      setRows(built);
+                      setCustom(true);
+                    }}
+                    className="rounded-full border border-border/60 px-2.5 py-1 text-[11px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+              <input type="checkbox" checked={custom} onChange={(e) => setCustom(e.target.checked)} className="size-4 rounded accent-primary" />
+              Custom amounts & dates
+            </label>
+            {!custom ? (
+              <>
+                <Field label="Number of installments *"><Select value={count} onChange={(e) => setCount(e.target.value)}>{[2, 3, 4, 6, 12].map((n) => <option key={n} value={String(n)}>{n} payments × {formatBDT(Math.round((grand / n) * 100) / 100)}</option>)}</Select></Field>
+                <Field label="First installment due"><Input type="date" value={firstDue} onChange={(e) => setFirstDue(e.target.value)} /></Field>
+                <p className="text-[11.5px] leading-relaxed text-muted-foreground">Subsequent installments fall on the same day each following month.</p>
+              </>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-[1fr_1fr_32px] items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span>Amount</span><span>Due date</span><span />
+                </div>
+                {rows.map((r, i) => (
+                  <div key={i} className="grid grid-cols-[1fr_1fr_32px] items-center gap-2">
+                    <Input type="number" min={0} value={r.amount} onChange={(e) => setRows(rows.map((x, idx) => (idx === i ? { ...x, amount: e.target.value } : x)))} placeholder="60000" />
+                    <Input type="date" value={r.dueDate} onChange={(e) => setRows(rows.map((x, idx) => (idx === i ? { ...x, dueDate: e.target.value } : x)))} />
+                    <button type="button" onClick={() => setRows(rows.filter((_, idx) => idx !== i))} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="size-3.5" /></button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setRows([...rows, { amount: "", dueDate: "" }])} className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3" /> Add installment</button>
+              </div>
+            )}
+          </>
+        )}
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel={hasPayments ? "Close" : "Save plan"} />
+      </form>
+    </Modal>
+  );
+}
+
+export function PaymentModal({ invoice, open, bankAccounts, onClose, onSaved }: { invoice: any; open: boolean; bankAccounts: any[]; onClose: () => void; onSaved: () => void }) {
+  const total = (invoice?.lineItems ?? []).reduce((s: number, l: any) => s + Number(l.amount ?? 0), 0);
+  const balance = Math.max(0, total - (invoice?.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0));
+  const [f, setF] = useState({ amount: String(balance), method: "CASH", date: today(), bankAccountId: "", installmentId: "", referenceId: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setF({ amount: String(balance), method: "CASH", date: today(), bankAccountId: bankAccounts[0]?.id ?? "", installmentId: "", referenceId: "" });
+  }, [open, balance]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.amount || Number(f.amount) <= 0) return setErr("Amount is required");
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch(`/capital/invoices/${invoice.id}/payment`, { method: "POST", body: JSON.stringify({ amount: Number(f.amount), paymentMethod: f.method, paymentDate: f.date || undefined, bankAccountId: f.bankAccountId || undefined, installmentId: f.installmentId || undefined, referenceId: f.referenceId.trim() || undefined }) });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Payment failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Record payment — ${invoice?.invoiceNumber ?? ""}`}>
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-[11.5px]">
+          <span className="text-muted-foreground">Outstanding</span>
+          <span className="text-right font-bold tabular-nums">{formatBDT(balance)}</span>
+        </div>
+        <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
+        <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+        <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
+        <Field label="Payment date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        {(invoice?.installments ?? []).length > 0 && (
+          <Field label="Installment"><Select value={f.installmentId} onChange={(e) => setF({ ...f, installmentId: e.target.value })}><option value="">Auto (next due)</option>{(invoice.installments ?? []).map((s: any) => <option key={s.id} value={s.id}>#{s.sequence} — {formatBDT(s.amount)} ({s.status.toLowerCase()})</option>)}</Select></Field>
+        )}
+        <Field label="Reference (optional)"><Input value={f.referenceId} onChange={(e) => setF({ ...f, referenceId: e.target.value })} placeholder="Client ref / bank slip no" /></Field>
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel="Record payment" />
+      </form>
+    </Modal>
+  );
+}
+
+export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories, vendors, clients, projects }: { open: boolean; onClose: () => void; onSaved: () => void; bankAccounts: any[]; categories: any[]; vendors: any[]; clients: any[]; projects: any[] }) {
+  const { user } = useAuth();
+  const canDirect = ["Owner", "Finance", "Admin", "HR/Admin", "CONTROL"].includes(user?.role ?? "");
+  const [f, setF] = useState({ scope: "COMPANY", clientId: "", projectId: "", description: "", amount: "", category: "AD_SPEND", subcategory: "", date: today(), method: "CASH", billable: false, bankAccountId: "", receiptUrl: "", vendorId: "", isPayable: false, dueDate: "", currency: "BDT", exchangeRate: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const cats = categories ?? [];
+  const currentCat = cats.find((c: any) => c.key === f.category);
+  const subs: string[] = currentCat?.subcategories ?? [];
+
+  // projects of the selected client (same pattern as the invoice form)
+  const projectsFor = (clientId: string) =>
+    clientId ? (projects ?? []).filter((p: any) => p.clientId === clientId) : (projects ?? []);
+
+  useEffect(() => {
+    if (open) setF({ scope: "COMPANY", clientId: "", projectId: "", description: "", amount: "", category: cats[0]?.key ?? "AD_SPEND", subcategory: "", date: today(), method: "CASH", billable: false, bankAccountId: bankAccounts[0]?.id ?? "", receiptUrl: "", vendorId: "", isPayable: false, dueDate: "", currency: "BDT", exchangeRate: "" });
+  }, [open]);
+
+  const onScopeChange = (scope: string) => {
+    setF({ ...f, scope, clientId: scope === "COMPANY" ? "" : f.clientId, projectId: scope === "COMPANY" ? "" : f.projectId, billable: scope === "COMPANY" ? false : f.billable });
+  };
+  const onClientChange = (clientId: string) => {
+    const keepProject = f.projectId && projectsFor(clientId).some((p: any) => p.id === f.projectId);
+    setF({ ...f, clientId, projectId: keepProject ? f.projectId : "" });
+  };
+  const onProjectChange = (projectId: string) => {
+    const proj = (projects ?? []).find((p: any) => p.id === projectId);
+    setF({ ...f, projectId, clientId: proj && (!f.clientId || f.clientId !== proj.clientId) ? proj.clientId : f.clientId });
+  };
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.description.trim() || !f.amount || Number(f.amount) <= 0) return setErr("Description and amount are required");
+    if (f.scope === "PROJECT" && !f.projectId) return setErr("Select the project this expense belongs to");
+    if (f.isPayable && !f.vendorId) return setErr("Select a vendor for payable expenses");
+    if (f.currency !== "BDT" && !f.exchangeRate) return setErr("Exchange rate required for foreign currency");
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch("/capital/expenses", {
+        method: "POST",
+        body: JSON.stringify({ description: f.description.trim(), amount: Number(f.amount), category: f.category, subcategory: f.subcategory || undefined, date: f.date || undefined, paymentMethod: f.method, isClientBillable: f.scope === "PROJECT" && f.billable, clientId: f.scope === "PROJECT" ? f.clientId || undefined : undefined, projectId: f.scope === "PROJECT" ? f.projectId || undefined : undefined, bankAccountId: f.bankAccountId || undefined, receiptUrl: f.receiptUrl.trim() || undefined, vendorId: f.vendorId || undefined, isPayable: f.isPayable, dueDate: f.dueDate || undefined, currency: f.currency, exchangeRate: f.currency === "BDT" ? 1 : Number(f.exchangeRate) || undefined, approvalStatus: canDirect ? "APPROVED" : "PENDING" }),
+      });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Record expense">
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <Segmented options={[{ value: "PROJECT", label: "Project expense" }, { value: "COMPANY", label: "Company overhead" }]} value={f.scope} onChange={onScopeChange} />
+        {f.scope === "PROJECT" ? (
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Client *"><Select value={f.clientId} onChange={(e) => onClientChange(e.target.value)}><option value="">Select client…</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
+            <Field label="Project *"><Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)}><option value="">Select project…</option>{projectsFor(f.clientId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+          </div>
+        ) : (
+          <p className="rounded-xl bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground">Company overhead — salary, rent, software, vendor payments. Not linked to any client or project.</p>
+        )}
+        <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Google Ads — June campaign" autoFocus /></Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="12000" /></Field>
+          <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value, subcategory: "" })}>{(cats.length ? cats : [{ key: "MISC", name: "MISC" }]).map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select></Field>
+          <Field label="Subcategory"><Select value={f.subcategory} onChange={(e) => setF({ ...f, subcategory: e.target.value })}><option value="">—</option>{subs.map((s: string) => <option key={s} value={s}>{s}</option>)}</Select></Field>
+          <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          <Field label="Payment method"><Select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+          <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{(bankAccounts ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
+          <Field label="Vendor"><Select value={f.vendorId} onChange={(e) => setF({ ...f, vendorId: e.target.value })}><option value="">No vendor</option>{(vendors ?? []).map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}</Select></Field>
+          <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
+          {f.currency !== "BDT" && <Field label={`Rate (1 ${f.currency} → BDT) *`}><Input type="number" min={0} step="0.01" value={f.exchangeRate} onChange={(e) => setF({ ...f, exchangeRate: e.target.value })} placeholder="e.g. 120" /></Field>}
+          <Field label="Receipt URL"><Input value={f.receiptUrl} onChange={(e) => setF({ ...f, receiptUrl: e.target.value })} placeholder="https://…" /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          {f.scope === "PROJECT" && (
+            <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+              <input type="checkbox" checked={f.billable} onChange={(e) => setF({ ...f, billable: e.target.checked })} className="size-4 rounded accent-primary" />
+              Client billable (pass-through)
+            </label>
+          )}
+          <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+            <input type="checkbox" checked={f.isPayable} onChange={(e) => setF({ ...f, isPayable: e.target.checked })} className="size-4 rounded accent-amber-500" />
+            Unpaid (accounts payable)
+          </label>
+        </div>
+        {f.isPayable && <Field label="Payable due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>}
+        {canDirect ? (
+          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11.5px] text-emerald-600 dark:text-emerald-400">Posts to {f.bankAccountId ? "the selected bank account" : "the default bank account"} & ledger immediately.</p>
+        ) : (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-600 dark:text-amber-400">Goes to admin for approval first — accounts update on approval.</p>
+        )}
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel="Record expense" />
+      </form>
+    </Modal>
+  );
+}
+
+export function EditExpenseModal({ expense, onClose, onSaved, categories }: { expense: any; onClose: () => void; onSaved: () => void; categories: any[] }) {
+  const [f, setF] = useState({ description: "", amount: "", category: "MISC", date: today(), method: "CASH", notes: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!expense) return;
+    setErr(null);
+    setF({
+      description: expense.description ?? "",
+      amount: expense.amount != null ? String(expense.amount) : "",
+      category: expense.category ?? "MISC",
+      date: String(expense.date ?? "").slice(0, 10),
+      method: expense.paymentMethod ?? "CASH",
+      notes: "",
+    });
+  }, [expense]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.description.trim() || !f.amount || Number(f.amount) <= 0) return setErr("Description and amount are required");
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch(`/capital/expenses/${expense.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          description: f.description.trim(),
+          amount: Number(f.amount),
+          category: f.category,
+          date: f.date || undefined,
+          paymentMethod: f.method,
+        }),
+      });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={!!expense} onClose={onClose} title={`Edit expense`}>
+      <form onSubmit={save} className="flex flex-col gap-4">
+        {expense?.payrollRecordId && (
+          <p className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11.5px] text-sky-600 dark:text-sky-300">
+            Posted from payroll — saving here syncs the linked payroll record, ledger and bank automatically.
+          </p>
+        )}
+        <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} autoFocus /></Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Amount *"><Input type="number" min={0} step="0.01" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
+          <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{(categories?.length ? categories : [{ key: "MISC", name: "Misc" }]).map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select></Field>
+          <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          <Field label="Method"><Select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+        </div>
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel="Save changes" />
+      </form>
+    </Modal>
+  );
+}
+
+export function VendorModal({ open, onClose, onSaved, editing }: { open: boolean; onClose: () => void; onSaved: () => void; editing: any | null }) {
+  const [f, setF] = useState({ name: "", contactInfo: "", email: "", phone: "", paymentTerms: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setF({ name: editing?.name ?? "", contactInfo: editing?.contactInfo ?? "", email: editing?.email ?? "", phone: editing?.phone ?? "", paymentTerms: editing?.paymentTerms ?? "" });
+  }, [open, editing]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.name.trim()) return setErr("Vendor name is required");
+    setBusy(true);
+    setErr(null);
+    try {
+      const body = JSON.stringify({ name: f.name.trim(), contactInfo: f.contactInfo.trim() || undefined, email: f.email.trim() || undefined, phone: f.phone.trim() || undefined, paymentTerms: f.paymentTerms.trim() || undefined });
+      if (editing) await apiFetch(`/capital/vendors/${editing.id}`, { method: "PATCH", body });
+      else await apiFetch("/capital/vendors", { method: "POST", body });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={editing ? "Edit vendor" : "Add vendor"}>
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <Field label="Vendor name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Freelance designer" autoFocus /></Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Email"><Input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="vendor@company.com" /></Field>
+          <Field label="Phone"><Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="+880 1X-XXXXXXX" /></Field>
+        </div>
+        <Field label="Payment terms"><Input value={f.paymentTerms} onChange={(e) => setF({ ...f, paymentTerms: e.target.value })} placeholder="Net 30" /></Field>
+        <Field label="Contact info"><Input value={f.contactInfo} onChange={(e) => setF({ ...f, contactInfo: e.target.value })} placeholder="Address, bank details, notes…" /></Field>
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Add vendor"} />
+      </form>
+    </Modal>
+  );
+}
+
+export function ConfirmModal({ open, onClose, title, message, busy, onConfirm }: { open: boolean; onClose: () => void; title: string; message: string; busy: boolean; onConfirm: () => void }) {
+  return (
+    <Modal open={open} onClose={onClose} title={title}>
+      <form onSubmit={(e) => { e.preventDefault(); onConfirm(); }} className="flex flex-col gap-4">
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground">{message}</p>
+        <FormActions busy={busy} cancel={onClose} submitLabel="Delete" danger />
+      </form>
+    </Modal>
+  );
+}
+
+export function PayExpenseModal({ expense, open, bankAccounts, onClose, onSaved }: { expense: any; open: boolean; bankAccounts: any[]; onClose: () => void; onSaved: () => void }) {
+  const due = Math.max(0, Number(expense?.amount ?? 0) - Number(expense?.paidAmount ?? 0));
+  const [f, setF] = useState({ amount: String(due), method: "CASH", date: today(), bankAccountId: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setF({ amount: String(due), method: "CASH", date: today(), bankAccountId: bankAccounts[0]?.id ?? "" });
+  }, [open, expense]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.amount || Number(f.amount) <= 0) return setErr("Amount is required");
+    if (Number(f.amount) > due) return setErr(`Cannot exceed outstanding ${formatBDT(due)}`);
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch(`/capital/expenses/${expense.id}/payment`, { method: "POST", body: JSON.stringify({ amount: Number(f.amount), paymentMethod: f.method, paymentDate: f.date || undefined, bankAccountId: f.bankAccountId || undefined }) });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Payment failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Pay expense — ${expense?.description ?? ""}`}>
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-[11.5px]">
+          <span className="text-muted-foreground">Outstanding</span>
+          <span className="text-right font-bold tabular-nums">{formatBDT(due)}</span>
+        </div>
+        <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+          <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
+        </div>
+        <Field label="Payment date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel="Record payment" />
+      </form>
+    </Modal>
+  );
+}
+
+export function CategoriesModal({ open, categories, accounts, onClose, onSaved }: { open: boolean; categories: any[]; accounts: any[]; onClose: () => void; onSaved: () => void }) {
+  const [editing, setEditing] = useState<any | null>(null);
+  const [f, setF] = useState({ key: "", name: "", subcategories: "", accountId: "", isActive: true });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setEditing(null);
+      setF({ key: "", name: "", subcategories: "", accountId: "", isActive: true });
+    }
+  }, [open]);
+
+  const startEdit = (c: any) => {
+    setEditing(c);
+    setF({ key: c.key, name: c.name, subcategories: (c.subcategories ?? []).join(", "), accountId: c.accountId ?? "", isActive: c.isActive });
+  };
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.name.trim() || (!editing && !f.key.trim())) return setErr("Name and key are required");
+    setBusy(true);
+    setErr(null);
+    try {
+      const subs = f.subcategories.split(",").map((s) => s.trim()).filter(Boolean);
+      const body = JSON.stringify({ key: f.key.trim().toUpperCase().replace(/\s+/g, "_"), name: f.name.trim(), subcategories: subs, accountId: f.accountId || undefined, isActive: f.isActive });
+      if (editing) await apiFetch(`/capital/expense-categories/${editing.id}`, { method: "PATCH", body });
+      else await apiFetch("/capital/expense-categories", { method: "POST", body });
+      onSaved();
+      setEditing(null);
+      setF({ key: "", name: "", subcategories: "", accountId: "", isActive: true });
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Expense categories" size="lg">
+      <div className="flex flex-col gap-4">
+        <form onSubmit={save} className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/30 p-3">
+          <p className="text-[11.5px] font-bold uppercase tracking-wider text-muted-foreground">{editing ? `Edit ${editing.name}` : "New category"}</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Insurance" /></Field>
+            <Field label="Key (slug, e.g. INSURANCE)"><Input value={f.key} onChange={(e) => setF({ ...f, key: e.target.value })} disabled={!!editing} placeholder="INSURANCE" /></Field>
+          </div>
+          <Field label="Subcategories (comma-separated)"><Input value={f.subcategories} onChange={(e) => setF({ ...f, subcategories: e.target.value })} placeholder="Fire, Health, Vehicle" /></Field>
+          <div className="flex items-center gap-3">
+            <Field label="GL account"><Select value={f.accountId} onChange={(e) => setF({ ...f, accountId: e.target.value })}><option value="">No account</option>{(accounts ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.code ? `${a.code} — ` : ""}{a.name}</option>)}</Select></Field>
+            {editing && (
+              <label className="flex cursor-pointer items-center gap-2 pt-4 text-[12.5px] font-medium">
+                <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-4 rounded accent-primary" />
+                Active
+              </label>
+            )}
+          </div>
+          {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+          <div className="flex items-center gap-2">
+            <Btn variant="primary" type="submit" className={busy ? "opacity-60" : ""}>{busy ? "Saving…" : editing ? "Save changes" : "Add category"}</Btn>
+            {editing && <Btn variant="ghost" onClick={() => { setEditing(null); setF({ key: "", name: "", subcategories: "", accountId: "", isActive: true }); }}>Cancel edit</Btn>}
+          </div>
+        </form>
+
+        <TableShell>
+          <table className="w-full">
+            <THead><Th>Name</Th><Th>Key</Th><Th>Subcategories</Th><Th>GL account</Th><Th>Status</Th><Th /></THead>
+            <tbody>
+              {categories.length === 0 && <tr><td colSpan={6} className="px-5 py-8"><EmptyState title="No categories" /></td></tr>}
+              {categories.map((c, i) => (
+                <Tr key={c.id} index={i}>
+                  <Td className="font-medium">{c.name}</Td>
+                  <Td className="font-mono text-[11px] text-muted-foreground">{c.key}</Td>
+                  <Td className="text-[11.5px] text-muted-foreground">{(c.subcategories ?? []).slice(0, 3).join(", ")}{(c.subcategories ?? []).length > 3 ? ` +${c.subcategories.length - 3}` : ""}</Td>
+                  <Td className="text-[11.5px]">{c.account ? `${c.account.code} — ${c.account.name}` : "—"}</Td>
+                  <Td><StatusBadge status={c.isActive ? "Active" : "Inactive"} /></Td>
+                  <Td><button onClick={() => startEdit(c)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="Edit"><Pencil className="size-3.5" /></button></Td>
+                </Tr>
+              ))}
+            </tbody>
+          </table>
+        </TableShell>
+      </div>
+    </Modal>
+  );
+}
+
+export function AddIncomeModal({ open, bankAccounts, onClose, onSaved }: { open: boolean; bankAccounts: any[]; onClose: () => void; onSaved: () => void }) {
+  const [f, setF] = useState({ description: "", amount: "", category: "OTHER_INCOME", date: today(), method: "CASH", bankAccountId: "", referenceId: "", currency: "BDT", exchangeRate: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setF({ description: "", amount: "", category: "OTHER_INCOME", date: today(), method: "CASH", bankAccountId: bankAccounts[0]?.id ?? "", referenceId: "", currency: "BDT", exchangeRate: "" });
+  }, [open]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.description.trim() || !f.amount || Number(f.amount) <= 0) return setErr("Description and amount are required");
+    if (f.currency !== "BDT" && !f.exchangeRate) return setErr("Exchange rate required for foreign currency");
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch("/capital/income", {
+        method: "POST",
+        body: JSON.stringify({ description: f.description.trim(), amount: Number(f.amount), category: f.category, paymentDate: f.date || undefined, paymentMethod: f.method, bankAccountId: f.bankAccountId || undefined, referenceId: f.referenceId.trim() || undefined, currency: f.currency, exchangeRate: f.currency === "BDT" ? 1 : Number(f.exchangeRate) || undefined }),
+      });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Record income (manual)">
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Bank interest, forex gain, workshop fee…" autoFocus /></Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="5000" /></Field>
+          <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{["OTHER_INCOME", "COMMISSION", "REFERRAL", "SALE", "INTEREST"].map((c) => <option key={c} value={c}>{label(c)}</option>)}</Select></Field>
+          <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+          <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
+          <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
+          {f.currency !== "BDT" && <Field label={`Rate (1 ${f.currency} → BDT) *`}><Input type="number" min={0} step="0.01" value={f.exchangeRate} onChange={(e) => setF({ ...f, exchangeRate: e.target.value })} placeholder="e.g. 120" /></Field>}
+          <Field label="Reference"><Input value={f.referenceId} onChange={(e) => setF({ ...f, referenceId: e.target.value })} placeholder="Transaction ref" /></Field>
+        </div>
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel="Record income" />
+      </form>
+    </Modal>
+  );
+}
+
+export function BudgetModal({ open, onClose, onSaved, editing, projects, categories }: { open: boolean; onClose: () => void; onSaved: () => void; editing: any | null; projects: any[]; categories: any[] }) {
+  const [f, setF] = useState({ scopeType: "PROJECT", projectId: "", category: "", budgetAmount: "", currency: "BDT", periodStart: "", periodEnd: "" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setF({
+      scopeType: editing?.scopeType ?? "PROJECT",
+      projectId: editing?.projectId ?? "",
+      category: editing?.category ?? "",
+      budgetAmount: String(editing?.budgetAmount ?? ""),
+      currency: editing?.currency ?? "BDT",
+      periodStart: editing?.periodStart ? String(editing.periodStart).slice(0, 10) : "",
+      periodEnd: editing?.periodEnd ? String(editing.periodEnd).slice(0, 10) : "",
+    });
+  }, [open, editing]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.budgetAmount || Number(f.budgetAmount) <= 0) return setErr("Budget amount is required");
+    if (f.scopeType === "PROJECT" && !f.projectId) return setErr("Select a project");
+    if (f.scopeType === "DEPARTMENT" && !f.category) return setErr("Select a category");
+    setBusy(true);
+    setErr(null);
+    try {
+      const body = JSON.stringify({ scopeType: f.scopeType, projectId: f.scopeType === "PROJECT" ? f.projectId : undefined, category: f.scopeType === "DEPARTMENT" ? f.category : undefined, budgetAmount: Number(f.budgetAmount), currency: f.currency, periodStart: f.periodStart || undefined, periodEnd: f.periodEnd || undefined });
+      if (editing) await apiFetch(`/capital/budgets/${editing.id}`, { method: "PATCH", body });
+      else await apiFetch("/capital/budgets", { method: "POST", body });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={editing ? "Edit budget" : "New budget"}>
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <Field label="Scope"><Select value={f.scopeType} onChange={(e) => setF({ ...f, scopeType: e.target.value })}><option value="PROJECT">Project</option><option value="DEPARTMENT">Category (department)</option></Select></Field>
+        {f.scopeType === "PROJECT" ? (
+          <Field label="Project *"><Select value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })}><option value="">Select project…</option>{(projects ?? []).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+        ) : (
+          <Field label="Category *"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}><option value="">Select category…</option>{(categories ?? []).map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select></Field>
+        )}
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Budget amount *"><Input type="number" min={0} value={f.budgetAmount} onChange={(e) => setF({ ...f, budgetAmount: e.target.value })} placeholder="500000" /></Field>
+          <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option></Select></Field>
+          <Field label="Period start"><Input type="date" value={f.periodStart} onChange={(e) => setF({ ...f, periodStart: e.target.value })} /></Field>
+          <Field label="Period end"><Input type="date" value={f.periodEnd} onChange={(e) => setF({ ...f, periodEnd: e.target.value })} /></Field>
+        </div>
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Create budget"} />
+      </form>
+    </Modal>
+  );
+}
+
+export function ReconcileModal({ open, bankAccounts, txns, onClose, onSaved }: { open: boolean; bankAccounts: any[]; txns: any[]; onClose: () => void; onSaved: () => void }) {
+  const [f, setF] = useState({ bankAccountId: "", statementDate: today(), statementAmount: "", statementReference: "", matchedPaymentId: "", matchStatus: "UNMATCHED" });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setF({ bankAccountId: bankAccounts[0]?.id ?? "", statementDate: today(), statementAmount: "", statementReference: "", matchedPaymentId: "", matchStatus: "UNMATCHED" });
+  }, [open]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.bankAccountId || !f.statementAmount) return setErr("Account and statement amount are required");
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch("/capital/reconciliation", {
+        method: "POST",
+        body: JSON.stringify({ bankAccountId: f.bankAccountId, statementDate: f.statementDate || undefined, statementAmount: Number(f.statementAmount), statementReference: f.statementReference.trim() || undefined, matchedPaymentId: f.matchedPaymentId || undefined, matchStatus: f.matchedPaymentId ? "MATCHED" : f.matchStatus }),
+      });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Add statement entry">
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <Field label="Bank account *"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}>{(bankAccounts ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Statement date"><Input type="date" value={f.statementDate} onChange={(e) => setF({ ...f, statementDate: e.target.value })} /></Field>
+          <Field label="Statement amount *"><Input type="number" step="0.01" value={f.statementAmount} onChange={(e) => setF({ ...f, statementAmount: e.target.value })} placeholder="0.00" /></Field>
+        </div>
+        <Field label="Match with ledger transaction"><Select value={f.matchedPaymentId} onChange={(e) => setF({ ...f, matchedPaymentId: e.target.value })}><option value="">No match</option>{(txns ?? []).map((t: any) => <option key={t.id} value={t.id}>{formatDate(t.date)} · {t.ref} · {formatBDT(t.amount)}</option>)}</Select></Field>
+        <Field label="Statement reference"><Input value={f.statementReference} onChange={(e) => setF({ ...f, statementReference: e.target.value })} placeholder="Bank statement line ref" /></Field>
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel="Save entry" />
+      </form>
+    </Modal>
+  );
+}
+
+export function AccountModal({ open, onClose, onSaved, editing }: { open: boolean; onClose: () => void; onSaved: () => void; editing: any | null }) {
+  const [f, setF] = useState({ code: "", name: "", category: "OPEX", isActive: true });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setF({ code: editing?.code ?? "", name: editing?.name ?? "", category: editing?.category ?? "OPEX", isActive: editing?.isActive ?? true });
+  }, [open, editing]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!f.name.trim()) return setErr("Account name is required");
+    setBusy(true);
+    setErr(null);
+    try {
+      const body = JSON.stringify({ name: f.name.trim(), code: f.code.trim() || undefined, category: f.category, isActive: f.isActive });
+      if (editing) await apiFetch(`/capital/accounts/${editing.id}`, { method: "PATCH", body });
+      else await apiFetch("/capital/accounts", { method: "POST", body });
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={editing ? "Edit account" : "Add account"}>
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Code"><Input value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} placeholder="e.g. 6100" /></Field>
+          <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{ACCOUNT_CATEGORIES.map((c) => <option key={c} value={c}>{label(c)}</option>)}</Select></Field>
+        </div>
+        <Field label="Account name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Insurance" autoFocus /></Field>
+        {editing && (
+          <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+            <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-4 rounded accent-primary" />
+            Active (usable for new entries)
+          </label>
+        )}
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Add account"} />
+      </form>
+    </Modal>
+  );
+}
+
