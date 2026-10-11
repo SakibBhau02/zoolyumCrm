@@ -29,13 +29,13 @@ export class PeopleController {
   }
 
   @Get("employees")
-  employees() {
-    return this.directory.employees();
+  employees(@CurrentUser() user: any) {
+    return this.directory.employees(user);
   }
 
   @Get("employees/:id")
-  employeeDetail(@Param("id") id: string) {
-    return this.directory.employeeDetail(id);
+  employeeDetail(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.directory.employeeDetail(id, user);
   }
 
   @Post("employees")
@@ -68,14 +68,25 @@ export class PeopleController {
     return this.attendance.attendanceSummary(month);
   }
 
+  @Get("attendance/today")
+  attendanceToday(@CurrentUser() user: any) {
+    return this.attendance.todayStatus(user);
+  }
+
+  @Get("attendance/employee/:id")
+  employeeAttendance(@Param("id") id: string, @Query("month") month?: string) {
+    const m = month && /^\d{4}-\d{2}$/.test(month) ? month : new Date().toISOString().slice(0, 7);
+    return this.attendance.employeeAttendance(id, m);
+  }
+
   @Post("attendance")
   recordAttendance(@Body() body: any) {
     return this.attendance.recordAttendance(body);
   }
 
   @Post("attendance/kiosk")
-  kioskPunch(@Body() body: { action?: string }, @CurrentUser() user: any) {
-    return this.attendance.kioskPunch(user, body.action === "out" ? "out" : "in");
+  kioskPunch(@Body() body: { action?: string; mode?: string }, @CurrentUser() user: any) {
+    return this.attendance.kioskPunch(user, body.action === "out" ? "out" : "in", body.mode === "self" ? "self" : "kiosk");
   }
 
   @Post("attendance/recompute")
@@ -96,6 +107,24 @@ export class PeopleController {
   @Get("attendance/late-list")
   lateList(@Query("month") month: string) {
     return this.attendance.lateList(month);
+  }
+
+  @Get("attendance/devices")
+  @Roles(...HR_ROLES)
+  attendanceDevices() {
+    return this.attendance.listDevices();
+  }
+
+  @Patch("attendance/devices/:id")
+  @Roles(...HR_ROLES)
+  updateAttendanceDevice(@Param("id") id: string, @Body() body: { name?: string | null; location?: string | null; isActive?: boolean }) {
+    return this.attendance.updateDevice(id, body);
+  }
+
+  @Delete("attendance/devices/:id")
+  @Roles(...HR_ROLES)
+  deleteAttendanceDevice(@Param("id") id: string) {
+    return this.attendance.deleteDevice(id);
   }
 
   @Get("attendance-policy")
@@ -123,6 +152,12 @@ export class PeopleController {
   @Patch("punches/:id/map")
   mapPunch(@Param("id") id: string, @Body() body: { employeeId: string }) {
     return this.attendance.mapPunch(id, body.employeeId);
+  }
+
+  @Delete("punches/:id")
+  @Roles(...HR_ROLES)
+  deletePunch(@Param("id") id: string) {
+    return this.attendance.deletePunch(id);
   }
 
   @Get("leave-requests")
@@ -158,8 +193,23 @@ export class PeopleController {
 
   @Patch("payroll/:id")
   @Roles(...HR_ROLES)
-  updatePayrollStatus(@Param("id") id: string, @Body() body: { status: string }) {
-    return this.payrollService.updatePayrollStatus(id, body.status as any);
+  updatePayroll(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+    if (body.status !== undefined && Object.keys(body).every((k) => k === "status")) {
+      return this.payrollService.updatePayrollStatus(id, body.status as any, user?.sub);
+    }
+    return this.payrollService.updatePayrollRecord(id, body, user?.sub);
+  }
+
+  @Post("payroll/:id/recompute")
+  @Roles(...HR_ROLES)
+  recomputePayroll(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.payrollService.recomputePayrollRecord(id, user?.sub);
+  }
+
+  @Delete("payroll/:id")
+  @Roles(...HR_ROLES)
+  deletePayroll(@Param("id") id: string) {
+    return this.payrollService.deletePayrollRecord(id);
   }
 
   @Get("payroll/:id/payslip")

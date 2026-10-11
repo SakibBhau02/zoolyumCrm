@@ -1,8 +1,15 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
-import { invalidatePeopleCache } from "./people-utils";
+import { dateStrDhaka, invalidatePeopleCache } from "./people-utils";
 
+/** UTC-midnight labelled with today's Dhaka date — matches `attendance.date`. */
+const todayColumn = () => new Date(`${dateStrDhaka(new Date())}T00:00:00.000Z`);
+
+/** Compensation is only visible to Owner / HR — enforced on read, not just in the UI. */
+const canSeePay = (user: any) => ["Owner", "HR/Admin"].includes(user?.role);
+const stripPay = <T extends { salary?: any; costRate?: any }>(e: T, user: any): T =>
+  canSeePay(user) ? e : { ...e, salary: null, costRate: null };
 @Injectable()
 export class DirectoryService {
   constructor(
@@ -10,10 +17,8 @@ export class DirectoryService {
     private readonly cache: CacheService
   ) {}
 
-  async overview() {
-    return this.cache.wrap("people:overview", 30, async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+  async overview() {    return this.cache.wrap("people:overview", 30, async () => {
+      const today = todayColumn();
       const [employees, attendance, leaves, utilLogs] = await Promise.all([
         this.prisma.employee.findMany({
           select: { id: true, name: true, roleTitle: true, employmentStatus: true, department: true },
@@ -44,15 +49,15 @@ export class DirectoryService {
     });
   }
 
-  async employees() {
-    return this.cache.wrap("people:employees", 30, async () => {
+  async employees(user?: any) {
+    // NOTE: cache key is role-split — compensation is stripped for non-HR.
+    return this.cache.wrap(canSeePay(user) ? "people:employees" : "people:employees:masked", 30, async () => {
       const utilLogs = await this.prisma.utilizationLog.groupBy({ by: ["employeeId"], _max: { weekStartDate: true } });
       const latestLogs = await this.prisma.utilizationLog.findMany({
         where: { OR: utilLogs.map((u) => ({ employeeId: u.employeeId, weekStartDate: u._max.weekStartDate! })) },
         select: { employeeId: true, utilizationRate: true, billableHours: true },
       });
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const today = todayColumn();
       const attendance = await this.prisma.attendance.findMany({ where: { date: today } });
       const employees = await this.prisma.employee.findMany({
         include: {
@@ -65,22 +70,23 @@ export class DirectoryService {
       return employees.map((e) => {
         const util = latestLogs.find((l) => l.employeeId === e.id);
         const att = attendance.find((a) => a.employeeId === e.id);
-        return {
+        return stripPay({
           ...e,
           utilizationRate: util?.utilizationRate ?? null,
           billableHours: util ? Number(util.billableHours) : null,
           todayStatus: att?.status ?? "NOT_LOGGED",
-        };
+        }, user);
       });
     });
   }
 
-  async employeeDetail(id: string) {
-    return this.prisma.employee.findUnique({
+  async employeeDetail(id: string, user?: any) {
+    const detail = await this.prisma.employee.findUnique({
       where: { id },
       include: {
         user: { select: { email: true } },
-        reportingManager: { select: { id: true, name: true } },
+        reportingManager: { select: { id: true, name: true, roleTitle: true } },
+        reports: { select: { id: true, name: true, roleTitle: true }, orderBy: { name: "asc" } },
         attendance: { orderBy: { date: "desc" }, take: 30 },
         leaveRequests: { orderBy: { appliedAt: "desc" }, take: 10 },
         leaveBalances: true,
@@ -92,9 +98,17 @@ export class DirectoryService {
         enrollments: { include: { course: true } },
       },
     });
+    if (!detail) throw new NotFoundException("Employee not found");
+    const payrollRecords = canSeePay(user)
+      ? detail.payrollRecords
+      : detail.payrollRecords.map((p: any) => ({ ...p, basicSalary: null, netPay: null, allowances: null, bonus: null, deductions: null, lateDeduction: null, halfDayDeduction: null, absentDeduction: null, unpaidLeaveDeduction: null }));
+    return stripPay({ ...detail, payrollRecords }, user);
   }
 
   async createEmployee(body: any, user?: any) {
+    if (!body.name?.trim()) {
+      throw new BadRequestException("Employee name is required");
+    }
     if (body.salary !== undefined && !["Owner", "HR/Admin"].includes(user?.role)) {
       throw new ForbiddenException("Only Owner or HR/Admin can set salary");
     }
@@ -111,6 +125,10 @@ export class DirectoryService {
         payFrequency: body.payFrequency ?? "monthly",
         documents: body.documents ?? [],
         careerHistory: body.careerHistory ?? [],
+        education: body.education ?? null,
+        emergencyContactName: body.emergencyContactName ?? null,
+        emergencyContactPhone: body.emergencyContactPhone ?? null,
+        emergencyContactRelation: body.emergencyContactRelation ?? null,
         joinDate: body.joinDate ? new Date(body.joinDate) : new Date(),
         reportingManagerId: body.reportingManagerId ?? null,
         employmentStatus: body.employmentStatus ?? "ACTIVE",
@@ -135,7 +153,7 @@ export class DirectoryService {
       throw new ForbiddenException("Only Owner or HR/Admin can change salary, device mapping or schedule");
     }
     const data: any = {};
-    for (const f of ["name", "roleTitle", "department", "email", "phone", "workLocation", "employmentType", "employmentStatus", "reportingManagerId", "skillTags", "documents", "careerHistory", "costRate", "deviceId", "weeklyOffDays", "shiftStart", "shiftEnd", "graceMinutes"]) {
+    for (const f of ["name", "roleTitle", "department", "email", "phone", "workLocation", "employmentType", "employmentStatus", "reportingManagerId", "skillTags", "documents", "careerHistory", "education", "emergencyContactName", "emergencyContactPhone", "emergencyContactRelation", "costRate", "deviceId", "weeklyOffDays", "shiftStart", "shiftEnd", "graceMinutes"]) {
       if (body[f] !== undefined) data[f] = body[f];
     }
     if (body.salary !== undefined) data.salary = body.salary;

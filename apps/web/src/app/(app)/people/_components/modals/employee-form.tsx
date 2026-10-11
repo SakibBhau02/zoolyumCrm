@@ -5,17 +5,17 @@ import { EMPLOYMENT_TYPES, label } from "../constants";
 import { Field, FormActions, Input, Modal, Select } from "@/components/ui";
 
 export function EmployeeModal({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState({ name: "", email: "", phone: "", roleTitle: "", department: "", workLocation: "", employmentType: "full-time", salary: "", joinedDate: "", deviceId: "" });
+  const [f, setF] = useState({ name: "", email: "", phone: "", roleTitle: "", department: "", workLocation: "", employmentType: "full-time", salary: "", joinedDate: "", deviceId: "", education: "", emergencyContactName: "", emergencyContactPhone: "", emergencyContactRelation: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    if (open) { setErr(null); setF({ name: "", email: "", phone: "", roleTitle: "", department: "", workLocation: "", employmentType: "full-time", salary: "", joinedDate: "", deviceId: "" }); }
+    if (open) { setErr(null); setF({ name: "", email: "", phone: "", roleTitle: "", department: "", workLocation: "", employmentType: "full-time", salary: "", joinedDate: "", deviceId: "", education: "", emergencyContactName: "", emergencyContactPhone: "", emergencyContactRelation: "" }); }
   }, [open]);
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!f.name.trim() || !f.roleTitle.trim()) { setErr("Name and role are required"); return; }
     setBusy(true); setErr(null);
-    try { await apiFetch("/people/employees", { method: "POST", body: JSON.stringify({ name: f.name.trim(), email: f.email.trim() || undefined, phone: f.phone.trim() || undefined, roleTitle: f.roleTitle.trim(), department: f.department.trim() || undefined, workLocation: f.workLocation.trim() || undefined, employmentType: f.employmentType, salary: f.salary ? Number(f.salary) : undefined, joinedDate: f.joinedDate || undefined, joinDate: f.joinedDate || undefined, deviceId: f.deviceId.trim() || undefined }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
+    try { await apiFetch("/people/employees", { method: "POST", body: JSON.stringify({ name: f.name.trim(), email: f.email.trim() || undefined, phone: f.phone.trim() || undefined, roleTitle: f.roleTitle.trim(), department: f.department.trim() || undefined, workLocation: f.workLocation.trim() || undefined, employmentType: f.employmentType, salary: f.salary ? Number(f.salary) : undefined, joinedDate: f.joinedDate || undefined, joinDate: f.joinedDate || undefined, deviceId: f.deviceId.trim() || undefined, education: f.education.trim() || undefined, emergencyContactName: f.emergencyContactName.trim() || undefined, emergencyContactPhone: f.emergencyContactPhone.trim() || undefined, emergencyContactRelation: f.emergencyContactRelation.trim() || undefined }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
     <Modal open={open} onClose={onClose} title="Add employee" size="lg">
@@ -31,6 +31,10 @@ export function EmployeeModal({ open, onClose, onSaved }: { open: boolean; onClo
           <Field label="Monthly salary (BDT)"><Input type="number" min={0} value={f.salary} onChange={(e) => setF({ ...f, salary: e.target.value })} placeholder="95000" /></Field>
           <Field label="Device ID (fingerprint)"><Input value={f.deviceId} onChange={(e) => setF({ ...f, deviceId: e.target.value })} placeholder="e.g. 101" /></Field>
           <Field label="Joined date"><Input type="date" value={f.joinedDate} onChange={(e) => setF({ ...f, joinedDate: e.target.value })} /></Field>
+          <Field label="Education"><Input value={f.education} onChange={(e) => setF({ ...f, education: e.target.value })} placeholder="BBA, NSU (2019)" /></Field>
+          <Field label="Emergency contact"><Input value={f.emergencyContactName} onChange={(e) => setF({ ...f, emergencyContactName: e.target.value })} placeholder="Full name" /></Field>
+          <Field label="Emergency phone"><Input value={f.emergencyContactPhone} onChange={(e) => setF({ ...f, emergencyContactPhone: e.target.value })} placeholder="+8801…" /></Field>
+          <Field label="Emergency relation"><Input value={f.emergencyContactRelation} onChange={(e) => setF({ ...f, emergencyContactRelation: e.target.value })} placeholder="Spouse / Parent" /></Field>
         </div>
         {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add employee" />

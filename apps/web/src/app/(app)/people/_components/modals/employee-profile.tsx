@@ -14,6 +14,7 @@ export default function EmployeeProfileModal({
   loading,
   onSave,
   onDelete,
+  initialEditing,
 }: {
   open: boolean;
   onClose: () => void;
@@ -21,23 +22,28 @@ export default function EmployeeProfileModal({
   loading: boolean;
   onSave: (payload: any) => Promise<void>;
   onDelete: () => Promise<void>;
+  initialEditing?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [editF, setEditF] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (open) { setEditing(false); setEditF(null); }
-  }, [open]);
+    if (open) { setEditing(!!initialEditing); setEditF(null); }
+  }, [open, initialEditing]);
   const openEdit = () => {
     if (!detail) return;
-    setEditF({ name: detail.name, email: detail.email ?? "", phone: detail.phone ?? "", roleTitle: detail.roleTitle, department: detail.department ?? "", workLocation: detail.workLocation ?? "", employmentType: detail.employmentType, employmentStatus: detail.employmentStatus, salary: detail.salary != null ? String(detail.salary) : "", joinedDate: detail.joinDate ? String(detail.joinDate).slice(0, 10) : "", deviceId: detail.deviceId ?? "", weeklyOffDays: detail.weeklyOffDays ?? [], shiftStart: detail.shiftStart ?? "", shiftEnd: detail.shiftEnd ?? "", graceMinutes: detail.graceMinutes != null ? String(detail.graceMinutes) : "" });
+    setEditF({ name: detail.name, email: detail.email ?? "", phone: detail.phone ?? "", roleTitle: detail.roleTitle, department: detail.department ?? "", workLocation: detail.workLocation ?? "", employmentType: detail.employmentType, employmentStatus: detail.employmentStatus, salary: detail.salary != null ? String(detail.salary) : "", joinedDate: detail.joinDate ? String(detail.joinDate).slice(0, 10) : "", deviceId: detail.deviceId ?? "", weeklyOffDays: detail.weeklyOffDays ?? [], shiftStart: detail.shiftStart ?? "", shiftEnd: detail.shiftEnd ?? "", graceMinutes: detail.graceMinutes != null ? String(detail.graceMinutes) : "", education: detail.education ?? "", emergencyContactName: detail.emergencyContactName ?? "", emergencyContactPhone: detail.emergencyContactPhone ?? "", emergencyContactRelation: detail.emergencyContactRelation ?? "", careerHistory: Array.isArray(detail.careerHistory) ? detail.careerHistory : [] });
     setEditing(true);
   };
+  useEffect(() => {
+    if (open && initialEditing && detail && !editF) openEdit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialEditing, detail]);
   const saveEdit = async () => {
     if (!detail || !editF) return;
     setBusy(true);
     try {
-      await onSave({ name: editF.name.trim(), email: editF.email.trim() || undefined, phone: editF.phone.trim() || undefined, roleTitle: editF.roleTitle.trim(), department: editF.department.trim() || undefined, workLocation: editF.workLocation.trim() || undefined, employmentType: editF.employmentType, employmentStatus: editF.employmentStatus, salary: editF.salary ? Number(editF.salary) : undefined, joinedDate: editF.joinedDate || undefined, joinDate: editF.joinedDate || undefined, deviceId: editF.deviceId.trim() || undefined, weeklyOffDays: editF.weeklyOffDays, shiftStart: editF.shiftStart || undefined, shiftEnd: editF.shiftEnd || undefined, graceMinutes: editF.graceMinutes ? Number(editF.graceMinutes) : undefined });
+      await onSave({ name: editF.name.trim(), email: editF.email.trim() || undefined, phone: editF.phone.trim() || undefined, roleTitle: editF.roleTitle.trim(), department: editF.department.trim() || undefined, workLocation: editF.workLocation.trim() || undefined, employmentType: editF.employmentType, employmentStatus: editF.employmentStatus, salary: editF.salary ? Number(editF.salary) : undefined, joinedDate: editF.joinedDate || undefined, joinDate: editF.joinedDate || undefined, deviceId: editF.deviceId.trim() || undefined, weeklyOffDays: editF.weeklyOffDays, shiftStart: editF.shiftStart || undefined, shiftEnd: editF.shiftEnd || undefined, graceMinutes: editF.graceMinutes ? Number(editF.graceMinutes) : undefined, education: editF.education.trim() || undefined, emergencyContactName: editF.emergencyContactName.trim() || undefined, emergencyContactPhone: editF.emergencyContactPhone.trim() || undefined, emergencyContactRelation: editF.emergencyContactRelation.trim() || undefined, careerHistory: (editF.careerHistory ?? []).filter((c: any) => (c.title ?? "").trim() || (c.company ?? "").trim()) });
       setEditing(false);
       setEditF(null);
     } catch { /* the page's onSave owns error notifications */ } finally { setBusy(false); }
@@ -85,6 +91,32 @@ export default function EmployeeProfileModal({
             <Field label="Monthly salary (BDT)"><Input type="number" min={0} value={editF.salary} onChange={(e) => setEditF({ ...editF, salary: e.target.value })} /></Field>
             <Field label="Device ID (fingerprint)"><Input value={editF.deviceId} onChange={(e) => setEditF({ ...editF, deviceId: e.target.value })} placeholder="e.g. 101" /></Field>
             <Field label="Joined date"><Input type="date" value={editF.joinedDate} onChange={(e) => setEditF({ ...editF, joinedDate: e.target.value })} /></Field>
+            <Field label="Education"><Input value={editF.education} onChange={(e) => setEditF({ ...editF, education: e.target.value })} placeholder="BBA, NSU (2019)" /></Field>
+          </div>
+          <div>
+            <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Emergency contact</p>
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="Name"><Input value={editF.emergencyContactName} onChange={(e) => setEditF({ ...editF, emergencyContactName: e.target.value })} placeholder="Full name" /></Field>
+              <Field label="Phone"><Input value={editF.emergencyContactPhone} onChange={(e) => setEditF({ ...editF, emergencyContactPhone: e.target.value })} placeholder="+8801…" /></Field>
+              <Field label="Relation"><Input value={editF.emergencyContactRelation} onChange={(e) => setEditF({ ...editF, emergencyContactRelation: e.target.value })} placeholder="Spouse / Parent" /></Field>
+            </div>
+          </div>
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Career history</p>
+              <button type="button" onClick={() => setEditF({ ...editF, careerHistory: [...(editF.careerHistory ?? []), { title: "", company: "", period: "" }] })} className="text-[11px] font-bold text-primary hover:underline">+ Add entry</button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {(editF.careerHistory ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No entries yet.</p>}
+              {(editF.careerHistory ?? []).map((c: any, i: number) => (
+                <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2">
+                  <Field label="Title"><Input value={c.title ?? ""} onChange={(e) => setEditF({ ...editF, careerHistory: editF.careerHistory.map((x: any, j: number) => (j === i ? { ...x, title: e.target.value } : x)) })} placeholder="Senior Designer" /></Field>
+                  <Field label="Company"><Input value={c.company ?? ""} onChange={(e) => setEditF({ ...editF, careerHistory: editF.careerHistory.map((x: any, j: number) => (j === i ? { ...x, company: e.target.value } : x)) })} placeholder="Acme Ltd." /></Field>
+                  <Field label="Period"><Input value={c.period ?? ""} onChange={(e) => setEditF({ ...editF, careerHistory: editF.careerHistory.map((x: any, j: number) => (j === i ? { ...x, period: e.target.value } : x)) })} placeholder="2021 — 2024" /></Field>
+                  <button type="button" onClick={() => setEditF({ ...editF, careerHistory: editF.careerHistory.filter((_: any, j: number) => j !== i) })} className="mb-0.5 rounded-lg p-2 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500" title="Remove entry"><Trash2 className="size-3.5" /></button>
+                </div>
+              ))}
+            </div>
           </div>
           <div>
             <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Schedule (defaults to company policy when blank)</p>

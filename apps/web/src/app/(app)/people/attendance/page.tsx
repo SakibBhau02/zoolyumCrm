@@ -1,14 +1,112 @@
 "use client";
-import { useCallback, useState } from "react";
-import { Download, Fingerprint, Plus, RotateCcw, Upload } from "lucide-react";
-import { apiFetch } from "@/lib/api";
-import { formatBDT, formatDate } from "@/lib/format";
-import { Avatar, SectionTitle, StatusBadge, cn } from "@/components/shared";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { Cpu, Download, Fingerprint, Plus, RotateCcw, Upload } from "lucide-react";
+import { API_URL, apiFetch } from "@/lib/api";
+import { formatBDT, formatDate, timeAgo } from "@/lib/format";
+import { Avatar, CardShell, SectionTitle, StatusBadge, cn } from "@/components/shared";
 import { Btn, Td, Tr } from "@/components/table";
-import { Input, Select } from "@/components/ui";
+import { Field, Input, Select } from "@/components/ui";
 import { downloadCsv, fmtTime, monthNow } from "../_components/constants";
 import { DataTable, Toast, useList, useToast } from "../_components/hooks";
 import { AttendanceModal, ImportPunchModal } from "../_components/modals/attendance-modals";
+
+function DevicesCard({ employees, notify, refreshKey }: { employees: any[]; notify: (m: string) => void; refreshKey: number }) {
+  const { data: devices } = useList<any[]>("/people/attendance/devices", refreshKey);
+  const [drafts, setDrafts] = useState<Record<string, { name: string; location: string; isActive: boolean }>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [showGuide, setShowGuide] = useState(false);
+
+  useEffect(() => {
+    const d: Record<string, { name: string; location: string; isActive: boolean }> = {};
+    for (const dev of devices ?? []) d[dev.id] = { name: dev.name ?? "", location: dev.location ?? "", isActive: dev.isActive !== false };
+    setDrafts(d);
+  }, [devices]);
+
+  const save = async (id: string) => {
+    const d = drafts[id];
+    if (!d) return;
+    setSavingId(id);
+    try {
+      await apiFetch(`/people/attendance/devices/${id}`, { method: "PATCH", body: JSON.stringify(d) });
+      notify("Device updated");
+    } catch (e: any) {
+      notify(e.message ?? "Save failed");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const unmapped = (employees ?? []).filter((e: any) => !e.deviceId);
+  const serverBase = API_URL.replace(/\/api\/?$/, "");
+
+  return (
+    <CardShell className="mb-4">
+      <SectionTitle
+        title="Fingerprint devices"
+        subtitle="ZKTeco push (ADMS) terminals — auto-registered on first heartbeat"
+        action={<Btn variant="ghost" onClick={() => setShowGuide((v) => !v)}>{showGuide ? "Hide setup" : "Setup guide"}</Btn>}
+      />
+      {showGuide && (
+        <div className="mb-3 rounded-xl border border-border/60 bg-muted/30 p-3 text-[12px] leading-relaxed text-muted-foreground">
+          <p className="font-semibold text-foreground">On the device: Menu → COMM → Cloud Server / ADMS</p>
+          <ol className="mt-1.5 list-decimal space-y-1 pl-5">
+            <li>Server address: <span className="font-mono font-semibold text-foreground">{serverBase}</span> (device must reach this over LAN/VPN)</li>
+            <li>Enable ADMS / push mode. The terminal then polls <span className="font-mono text-[11px]">/iclock/getrequest</span> and pushes punches to <span className="font-mono text-[11px]">/iclock/cdata</span>.</li>
+            <li>Enroll staff on the device with numeric PINs, then enter the same PIN as <span className="font-semibold text-foreground">Device ID</span> on each employee (Directory → profile).</li>
+            <li>Unknown PINs land below as unmatched punches — map them once, or set the Device ID first.</li>
+          </ol>
+        </div>
+      )}
+      {(devices ?? []).length === 0 && (
+        <p className="text-[12px] text-muted-foreground">No device has checked in yet. Punches can still be imported manually below.</p>
+      )}
+      <div className="flex flex-col gap-2">
+        {(devices ?? []).map((dev: any) => (
+          <div key={dev.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 px-3 py-2.5">
+            <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", dev.isActive ? "bg-emerald-500/10 text-emerald-500" : "bg-muted text-muted-foreground")}>
+              <Cpu className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1 basis-48">
+              <Input
+                value={drafts[dev.id]?.name ?? ""}
+                onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), name: e.target.value } })}
+                placeholder="Device name — e.g. Main Entrance"
+                className="!py-1.5 text-[12.5px] font-semibold"
+              />
+              <p className="mt-0.5 font-mono text-[10.5px] text-muted-foreground">
+                SN {dev.serialNumber} · {dev.punchCount ?? 0} punches{(dev.unmatchedCount ?? 0) > 0 && ` · ${dev.unmatchedCount} unmatched`} · seen {dev.lastSeenAt ? timeAgo(dev.lastSeenAt) : "never"}
+              </p>
+            </div>
+            <Input
+              value={drafts[dev.id]?.location ?? ""}
+              onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), location: e.target.value } })}
+              placeholder="Location"
+              className="!w-36 !py-1.5 text-[12px]"
+            />
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={drafts[dev.id]?.isActive ?? true}
+                onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), isActive: e.target.checked } })}
+                className="size-3.5 accent-emerald-500"
+              />
+              Active
+            </label>
+            <Btn variant="outline" onClick={() => void save(dev.id)} disabled={savingId === dev.id} className="!px-3 !py-1.5 text-[11.5px]">
+              {savingId === dev.id ? "Saving…" : "Save"}
+            </Btn>
+          </div>
+        ))}
+      </div>
+      {unmapped.length > 0 && (
+        <p className="mt-3 text-[11.5px] text-muted-foreground">
+          <span className="font-bold text-amber-500">{unmapped.length} employee{unmapped.length === 1 ? "" : "s"}</span> ({unmapped.slice(0, 4).map((e: any) => e.name).join(", ")}{unmapped.length > 4 ? "…" : ""}) {unmapped.length === 1 ? "has" : "have"} no fingerprint ID — set it in Directory so device punches auto-match.
+        </p>
+      )}
+    </CardShell>
+  );
+}
 
 export default function AttendancePage() {
   const [month, setMonth] = useState(monthNow());
@@ -49,6 +147,7 @@ export default function AttendancePage() {
         <Btn variant="outline" onClick={recompute} className={recompBusy ? "opacity-60" : ""}><RotateCcw className="size-3.5" /> Recompute</Btn>
         <Btn variant="primary" onClick={() => { setEdit(null); setOpen(true); }}><Plus className="size-3.5" /> Record Attendance</Btn>
       </div>
+      <DevicesCard employees={employees ?? []} notify={notify} refreshKey={refresh} />
       <div className="mb-4">
         <div className="mb-3 flex items-center justify-between">
           <SectionTitle title="Monthly report" subtitle={`Attendance + deduction preview for ${month}`} />
@@ -63,7 +162,7 @@ export default function AttendancePage() {
           cols={["Employee", "Working", "Present", "Late", "Half", "Absent", "Daily (BDT)", "Late (BDT)", "Half-day (BDT)", "Absent (BDT)", "Total (BDT)"]}
           rows={(report ?? []).map((s: any, i: number) => (
             <Tr key={s.employeeId ?? s.name} index={i}>
-              <Td><div className="flex items-center gap-2.5"><Avatar name={s.name} /><div><p className="font-medium">{s.name}</p><p className="text-[11px] text-muted-foreground">{s.roleTitle}</p></div></div></Td>
+              <Td><div className="flex items-center gap-2.5"><Avatar name={s.name} /><div><p className="font-medium"><Link href={`/people/attendance/${s.employeeId}`} className="hover:text-primary hover:underline">{s.name}</Link></p><p className="text-[11px] text-muted-foreground">{s.roleTitle}</p></div></div></Td>
               <Td className="font-semibold tabular-nums">{s.workingDays}</Td>
               <Td className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{s.present}</Td>
               <Td className="tabular-nums text-amber-500">{s.late}</Td>
@@ -136,7 +235,7 @@ export default function AttendancePage() {
               <Td><span className="font-mono text-[11.5px] font-semibold">{p.deviceId}</span></Td>
               <Td className="tabular-nums text-muted-foreground">{new Date(p.punchTime).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</Td>
               <Td>{p.employee ? <div className="flex items-center gap-2"><Avatar name={p.employee.name} size="size-6" /><span className="text-[12.5px] font-medium">{p.employee.name}</span></div> : <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-300">Unmatched</span>}</Td>
-              <Td><span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", p.source === "DEVICE" ? "bg-sky-500/10 text-sky-600 dark:text-sky-300" : p.source === "KIOSK" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : "bg-primary/10 text-primary dark:text-primary")}>{p.source}</span></Td>
+              <Td><span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", p.source === "DEVICE" ? "bg-sky-500/10 text-sky-600 dark:text-sky-300" : p.source === "KIOSK" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : p.source === "SELF" ? "bg-teal-500/10 text-teal-600 dark:text-teal-300" : "bg-primary/10 text-primary dark:text-primary")}>{p.source}</span></Td>
               <Td>{p.unmatched ? <Select className="!w-40" value="" onChange={(e) => mapPunch(p, e.target.value)}><option value="">Map to…</option>{(employees ?? []).map((emp: any) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}</Select> : <span className="text-[11.5px] text-muted-foreground">Mapped</span>}</Td>
             </Tr>
           ))}

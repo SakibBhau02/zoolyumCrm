@@ -12,6 +12,7 @@ test("attendance: kiosk check-in, punch import + mapping, monthly report", async
   await login(page);
   await page.goto("/people");
   await page.getByRole("link", { name: "Attendance" }).click();
+  await page.waitForURL(/\/people\/attendance/);
   await expect(page.getByText("Monthly report")).toBeVisible({ timeout: 15000 });
 
   await page.getByRole("button", { name: "Check in (kiosk)" }).click();

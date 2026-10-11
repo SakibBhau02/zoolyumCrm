@@ -1,7 +1,9 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { formatBDT } from "@/lib/format";
 import { Avatar, EmptyState, FadeIn, StatusBadge, cn } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
@@ -9,31 +11,23 @@ import { Select } from "@/components/ui";
 import { label, utilBarCls } from "../_components/constants";
 import { LoadOrError, Toast, useList, useToast } from "../_components/hooks";
 import { EmployeeModal } from "../_components/modals/employee-form";
-import EmployeeProfileModal from "../_components/modals/employee-profile";
 
 export default function DirectoryPage() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const canSeePay = /owner|hr|admin/i.test(`${user?.role ?? ""} ${user?.roleName ?? ""}`);
   const [refresh, setRefresh] = useState(0);
   const reload = useCallback(() => setRefresh((r) => r + 1), []);
   const { data: employees, loading, error } = useList<any[]>("/people/employees", refresh);
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("");
   const [addOpen, setAddOpen] = useState(false);
-  const [detailId, setDetailId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<any>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
   const { flash, notify } = useToast();
   const depts = useMemo(() => [...new Set((employees ?? []).map((e: any) => e.department).filter(Boolean))], [employees]);
   const rows = useMemo(() => {
     const term = q.trim().toLowerCase();
     return (employees ?? []).filter((e: any) => (!term || e.name.toLowerCase().includes(term) || e.roleTitle.toLowerCase().includes(term) || (e.email ?? "").toLowerCase().includes(term)) && (!dept || e.department === dept));
   }, [employees, q, dept]);
-  useEffect(() => {
-    if (!detailId) { setDetail(null); return; }
-    let cancelled = false;
-    setDetailLoading(true);
-    apiFetch<any>(`/people/employees/${detailId}`).then((d) => !cancelled && setDetail(d)).catch(() => !cancelled && setDetailId(null)).finally(() => !cancelled && setDetailLoading(false));
-    return () => { cancelled = true; };
-  }, [detailId, refresh]);
   return (
     <div>
       <Toast flash={flash} />
@@ -59,7 +53,7 @@ export default function DirectoryPage() {
               </THead>
               <tbody>
                 {rows.map((e: any, i: number) => (
-                  <Tr key={e.id} index={i} onClick={() => setDetailId(e.id)} className="cursor-pointer">
+                  <Tr key={e.id} index={i} onClick={() => router.push(`/people/directory/${e.id}`)} className="cursor-pointer">
                     <Td><div className="flex items-center gap-2.5"><Avatar name={e.name} /><div><p className="font-medium">{e.name}</p><p className="text-[11px] text-muted-foreground">{e.email ?? "—"}</p></div></div></Td>
                     <Td className="text-muted-foreground">{e.roleTitle}</Td>
                     <Td className="text-muted-foreground">{e.department ?? "—"}</Td>
@@ -67,7 +61,7 @@ export default function DirectoryPage() {
                     <Td className="text-muted-foreground capitalize">{label(e.employmentType ?? "full-time")}</Td>
                     <Td><StatusBadge status={e.employmentStatus} /></Td>
                     <Td><span className={cn("font-mono text-[11.5px] font-semibold", e.deviceId ? "text-foreground" : "text-muted-foreground")}>{e.deviceId ?? "—"}</span></Td>
-                    <Td className="font-semibold tabular-nums">{formatBDT(e.salary != null ? Number(e.salary) : null)}</Td>
+                    <Td className="font-semibold tabular-nums">{canSeePay ? formatBDT(e.salary != null ? Number(e.salary) : null) : "—"}</Td>
                     <Td>
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-14 overflow-hidden rounded-full bg-muted">
@@ -85,25 +79,6 @@ export default function DirectoryPage() {
       )}
       <LoadOrError loading={loading} error={error} onRetry={reload} skeleton={6} />
       <EmployeeModal open={addOpen} onClose={() => setAddOpen(false)} onSaved={() => { notify("Employee added"); reload(); }} />
-      <EmployeeProfileModal
-        open={!!detailId}
-        onClose={() => setDetailId(null)}
-        detail={detail}
-        loading={detailLoading}
-        onSave={async (payload) => {
-          if (!detail) return;
-          await apiFetch(`/people/employees/${detail.id}`, { method: "PATCH", body: JSON.stringify(payload) });
-          notify("Employee updated");
-          reload();
-        }}
-        onDelete={async () => {
-          if (!detail) return;
-          await apiFetch(`/people/employees/${detail.id}`, { method: "DELETE" });
-          notify("Employee deleted");
-          setDetailId(null);
-          reload();
-        }}
-      />
     </div>
   );
 }
