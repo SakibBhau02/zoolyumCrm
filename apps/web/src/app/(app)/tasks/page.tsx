@@ -14,6 +14,10 @@ import { Avatar, CardShell, EmptyState, FadeIn, PageHeader, SectionTitle, Skelet
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { Drawer, Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
 import { TaskFormModal } from "@/components/tasks/task-form-modal";
+import { ChecklistTab, TaskTimerButton, TimerPill } from "@/components/tasks/task-ops";
+import { SprintBurndownCard, SprintPicker, type Sprint } from "@/components/tasks/sprint";
+import { SavedViewBar, type SavedView } from "@/components/tasks/saved-views";
+import { EstimationPanel } from "@/components/tasks/estimation";
 
 type TaskRow = {
   id: string;
@@ -65,7 +69,21 @@ type UserLite = { id: string; name: string; roleTitle?: string };
 type ProjectLite = { id: string; name: string };
 type Template = { id: string; name: string; description?: string | null; category?: string | null; benchmarkDurationDays?: number | null; benchmarkHours?: number | null; defaultTasks?: any[] };
 type Rule = { id: string; name: string; trigger?: string; action?: string; config?: any; enabled?: boolean };
-type WorkloadRow = { id: string; name: string; roleTitle?: string; taskCount?: number; allocated?: number; utilization?: number; overbooked?: boolean; urgent?: number; overdue?: number; tasks?: { title: string; hours: number; priority: string; due: string }[] };
+type WorkloadRow = {
+  id: string;
+  name: string;
+  allocated?: number;
+  capacity?: number;
+  baseCapacity?: number;
+  leaveDaysInWindow?: number;
+  overbookedReason?: string | null;
+  utilization?: number;
+  taskCount?: number;
+  overbooked?: boolean;
+  urgent?: number;
+  overdue?: number;
+  tasks?: { title: string; hours: number; priority: string; due: string | null }[];
+}
 
 const BOARD_COLUMNS = [
   { key: "BACKLOG", label: "Backlog", dot: "bg-muted" },
@@ -404,6 +422,8 @@ export default function TasksPage() {
   const [sort, setSort] = useState("due");
   const [mine, setMine] = useState(false);
   const [myDayOnly, setMyDayOnly] = useState(false);
+  const [fSprint, setFSprint] = useState("");
+  const [activeViewId, setActiveViewId] = useState("");
 
   const { data: stats } = useApi<Stats>("/tasks/stats");
   const { data: employees } = useApi<UserLite[]>("/people/employees");
@@ -413,6 +433,9 @@ export default function TasksPage() {
   const { data: rules, error: rulesErr } = useApi<Rule[]>(`/tasks/automation?v=${aux}`);
   const { data: workload, error: wlErr } = useApi<any>(`/tasks/workload?v=${aux}`);
   const { data: myDay } = useApi<any[]>(`/tasks/my-day?v=${aux}`);
+  const { data: sprints } = useApi<Sprint[]>(`/tasks/sprints?v=${aux}`);
+  const { data: savedViews } = useApi<SavedView[]>(`/tasks/views?v=${aux}`);
+  const activeSprint = (sprints ?? []).find((s) => s.id === fSprint) ?? null;
 
   const [tasks, setTasks] = useState<TaskRow[] | null>(null);
   const [tasksErr, setTasksErr] = useState<string | null>(null);
@@ -424,10 +447,11 @@ export default function TasksPage() {
     if (fPriority) p.set("priority", fPriority);
     if (fType) p.set("taskType", fType);
     if (fProject) p.set("projectId", fProject);
+    if (fSprint) p.set("sprintId", fSprint);
     if (mine) p.set("mine", "true");
     p.set("sort", sort);
     return p.toString();
-  }, [q, fStatus, fPriority, fType, fProject, mine, sort]);
+  }, [q, fStatus, fPriority, fType, fProject, fSprint, mine, sort]);
   useEffect(() => {
     let cancelled = false;
     setTasksErr(null);
@@ -448,7 +472,7 @@ export default function TasksPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"overview" | "subtasks" | "comments" | "time" | "deps" | "files">("overview");
+  const [tab, setTab] = useState<"overview" | "checklist" | "subtasks" | "comments" | "time" | "deps" | "files">("overview");
   useEffect(() => {
     if (!selectedId) { setDetail(null); setDetailError(null); setTab("overview"); return; }
     let cancelled = false;
@@ -690,7 +714,10 @@ export default function TasksPage() {
   // ── Board (lanes + order + DnD) ──────────────────────────────────────
   const laneKeyOf = (t: TaskRow) => swimlane === "project" ? (t.project?.name ?? "No project")
     : swimlane === "assignee" ? (t.assignedTo?.name ?? "Unassigned")
-      : swimlane === "priority" ? (t.priority ?? "MEDIUM") : "all";
+      : swimlane === "priority" ? (t.priority ?? "MEDIUM")
+        : swimlane === "status" ? (t.status ?? "TODO")
+          : swimlane === "tag" ? (t.tags?.[0] ?? "untagged")
+            : "all";
   const [laneOrder, setLaneOrder] = useState<Record<string, string[]>>({});
   useEffect(() => {
     setLaneOrder((prev) => {
@@ -747,20 +774,36 @@ export default function TasksPage() {
   // ── List (bulk + expand) ─────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const toggleExpand = (id: string) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const toggleSelect = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const allSelected = selected.length > 0 && (shownTasks ?? []).length > 0 && selected.length === shownTasks.filter((t) => !t.parentTaskId).length;
-  const bulkPatch = (patch: any, msg: string) => {
+
+  /**
+   * Bulk operations now hit the single /tasks/bulk endpoint so the server can
+   * permission-check each task and report how many were skipped, instead of
+   * firing N parallel PATCHes and failing the whole batch on one 403.
+   */
+  const bulkRun = async (op: string, value: any, msg: string) => {
     if (!selected.length) return;
-    Promise.all(selected.map((id) => apiFetch(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) })))
-      .then(() => { notify(msg); setSelected([]); reload(); })
-      .catch((e: any) => notify(e.message ?? "Bulk action failed"));
+    setBulkBusy(true);
+    try {
+      const res = await apiFetch<{ affected: number; skipped: number }>("/tasks/bulk", {
+        method: "POST",
+        body: JSON.stringify({ ids: selected, op, value }),
+      });
+      notify(res.skipped ? `${msg} — ${res.affected} done, ${res.skipped} skipped (no permission)` : `${msg} (${res.affected})`);
+      setSelected([]);
+      reload();
+    } catch (e: any) {
+      notify(e.message ?? "Bulk action failed");
+    } finally {
+      setBulkBusy(false);
+    }
   };
-  const bulkDelete = () => {
-    if (!selected.length || !window.confirm(`Delete ${selected.length} task(s)?`)) return;
-    Promise.all(selected.map((id) => apiFetch(`/tasks/${id}`, { method: "DELETE" })))
-      .then(() => { notify("Tasks deleted"); setSelected([]); reload(); })
-      .catch((e: any) => notify(e.message ?? "Bulk delete failed"));
+  const bulkDelete = async () => {
+    if (!selected.length || !window.confirm(`Delete ${selected.length} task(s)? This cannot be undone.`)) return;
+    await bulkRun("delete", null, "Tasks deleted");
   };
   const childMap = useMemo(() => {
     const m: Record<string, TaskRow[]> = {};
@@ -994,10 +1037,21 @@ export default function TasksPage() {
       {selected.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2">
           <span className="text-[11.5px] font-bold text-primary">{selected.length} selected</span>
-          <Select value="" onChange={(e) => e.target.value && bulkPatch({ status: e.target.value }, `Moved ${selected.length} task(s)`)} className="!w-36 !py-1.5"><option value="">Move to…</option>{STATUS_OPTS.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}</Select>
-          <Select value="" onChange={(e) => e.target.value && bulkPatch({ priority: e.target.value }, `Priority updated for ${selected.length} task(s)`)} className="!w-32 !py-1.5"><option value="">Priority…</option>{PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}</Select>
-          <Select value="" onChange={(e) => e.target.value && bulkPatch({ assignedToId: e.target.value }, "Assignees updated")} className="!w-40 !py-1.5"><option value="">Assign to…</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select>
-          <Btn variant="ghost" onClick={bulkDelete} className="bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"><Trash2 className="size-3.5" /> Delete</Btn>
+          {bulkBusy && <RefreshCw className="size-3.5 animate-spin text-primary" />}
+          <Select value="" disabled={bulkBusy} onChange={(e) => e.target.value && bulkRun("status", e.target.value, `Moved ${selected.length} task(s)`)} className="!w-36 !py-1.5"><option value="">Move to…</option>{STATUS_OPTS.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}</Select>
+          <Select value="" disabled={bulkBusy} onChange={(e) => e.target.value && bulkRun("priority", e.target.value, `Priority updated`)} className="!w-32 !py-1.5"><option value="">Priority…</option>{PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}</Select>
+          <Select value="" disabled={bulkBusy} onChange={(e) => e.target.value && bulkRun("assign", e.target.value, "Assignees updated")} className="!w-40 !py-1.5"><option value="">Assign to…</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select>
+          <label className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground">
+            Due
+            <input
+              type="date"
+              disabled={bulkBusy}
+              onChange={(e) => e.target.value && bulkRun("dueDate", e.target.value, "Due dates updated")}
+              className="rounded-lg border border-border bg-card px-2 py-1 text-[11px] outline-none focus:border-primary/40"
+            />
+          </label>
+          <Btn variant="outline" disabled={bulkBusy} onClick={() => bulkRun("archive", null, "Archived")} className="!py-1.5">Archive</Btn>
+          <Btn variant="ghost" disabled={bulkBusy} onClick={bulkDelete} className="bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"><Trash2 className="size-3.5" /> Delete</Btn>
           <button onClick={() => setSelected([])} className="flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary"><X className="size-3" /> clear</button>
         </div>
       )}
@@ -1195,12 +1249,20 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
       <PageHeader
         title="Tasks"
         subtitle="Where daily work happens — task execution, time logging, smart prioritization."
-        actions={
-          <>
-            <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }, { value: "calendar", label: "Calendar" }, { value: "gantt", label: "Gantt" }]} />
-            <Btn variant="primary" onClick={() => { setEditTask(null); setFormOpen(true); }}><Plus className="size-3.5" /> New Task</Btn>
-          </>
-        }
+          actions={
+            <>
+              <TimerPill onStopped={reload} />
+              <SprintPicker
+                value={fSprint}
+                onChange={setFSprint}
+                sprints={sprints}
+                onSprintsChanged={() => setAux((a) => a + 1)}
+                projects={(projects ?? []).map((p) => ({ id: p.id, name: p.name }))}
+              />
+              <Segmented value={view} onChange={setView} options={[{ value: "board", label: "Board" }, { value: "list", label: "List" }, { value: "calendar", label: "Calendar" }, { value: "gantt", label: "Gantt" }]} />
+              <Btn variant="primary" onClick={() => { setEditTask(null); setFormOpen(true); }}><Plus className="size-3.5" /> New Task</Btn>
+            </>
+          }
       />
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-6">
@@ -1213,7 +1275,31 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
       </div>
 
       {(view === "board" || view === "list") && (
-        <div className="mt-4 mb-3 flex flex-wrap items-center gap-2">
+        <div className="mt-4 mb-3 flex flex-col gap-2">
+          <SavedViewBar
+            views={savedViews}
+            activeId={activeViewId}
+            employees={users}
+            currentFilters={{ status: fStatus, priority: fPriority, taskType: fType, projectId: fProject, sprintId: fSprint, mine, q }}
+            currentView={view}
+            currentGroupBy={swimlane}
+            onViewsChanged={() => setAux((a) => a + 1)}
+            onApply={(v) => {
+              if (v.id === "__group__") { setSwimlane(v.groupBy); return; }
+              setActiveViewId(v.id);
+              const f = v.filters ?? {};
+              setFStatus(f.status ?? "");
+              setFPriority(f.priority ?? "");
+              setFType(f.taskType ?? "");
+              setFProject(f.projectId ?? "");
+              setFSprint(f.sprintId ?? "");
+              setQ(f.q ?? "");
+              setMine(!!f.mine);
+              if (v.viewMode) setView(v.viewMode as any);
+              if (v.groupBy) setSwimlane(v.groupBy);
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-2">
           <div className="relative max-w-sm flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tasks…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
@@ -1222,6 +1308,16 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
           <Select value={fPriority} onChange={(e) => setFPriority(e.target.value)} className="!w-32"><option value="">All priorities</option>{PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}</Select>
           <Select value={fType} onChange={(e) => setFType(e.target.value)} className="!w-36"><option value="">All types</option>{TASK_TYPES.map((t) => (<option key={t} value={t}>{t}</option>))}</Select>
           <Select value={fProject} onChange={(e) => setFProject(e.target.value)} className="!w-40"><option value="">All projects</option>{(projects ?? []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</Select>
+          {view === "board" && (
+            <Select value={swimlane} onChange={(e) => setSwimlane(e.target.value)} className="!w-36">
+              <option value="none">No swimlanes</option>
+              <option value="project">Lane: project</option>
+              <option value="assignee">Lane: assignee</option>
+              <option value="priority">Lane: priority</option>
+              <option value="status">Lane: status</option>
+              <option value="tag">Lane: tag</option>
+            </Select>
+          )}
           {view === "list" && (
             <Select value={sort} onChange={(e) => setSort(e.target.value)} className="!w-32">
               <option value="due">Sort: due date</option>
@@ -1236,10 +1332,12 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
           </label>
           <Btn variant="outline" onClick={() => setMyDayOnly((v) => !v)}><Zap className="size-3.5" />{myDayOnly ? "My Day on" : "My Day"} ({myDay?.length ?? 0})</Btn>
           {myDayOnly && <button onClick={() => setMyDayOnly(false)} className="flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary"><X className="size-3" /> clear</button>}
+          </div>
         </div>
       )}
 
       <div className="mt-4">{renderView()}</div>
+      {activeSprint && <SprintBurndownCard sprint={activeSprint} onClose={() => setFSprint("")} />}
 
       <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <CardShell>
@@ -1329,7 +1427,8 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                 <tbody>
                   {(workload?.rows ?? []).map((w: WorkloadRow, i: number) => {
                     const pct = Math.round((w.utilization ?? 0) * 100);
-                    const bar = Math.min(100, (w.allocated ?? 0) / 40 * 100);
+                    const cap = w.capacity ?? w.baseCapacity ?? 40;
+                    const bar = Math.min(100, cap ? ((w.allocated ?? 0) / cap) * 100 : 0);
                     const open = wlOpen.has(w.id);
                     return (
                       <Fragment key={w.id}>
@@ -1346,12 +1445,15 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                               <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
                                 <div className={cn("h-full rounded-full transition-all", w.overbooked ? "bg-rose-500" : pct >= 90 ? "bg-amber-400" : "bg-emerald-500")} style={{ width: `${bar}%` }} />
                               </div>
-                              <span className="text-[11px] tabular-nums text-muted-foreground">{w.allocated ?? 0}h / 40h</span>
+                              <span className="text-[11px] tabular-nums text-muted-foreground">
+                                {w.allocated ?? 0}h / {cap}h
+                                {w.leaveDaysInWindow ? <span className="ml-1 text-amber-400" title={`${w.leaveDaysInWindow} leave day(s) reduced capacity`}>· {w.leaveDaysInWindow}d leave</span> : null}
+                              </span>
                             </div>
                           </Td>
                           <Td className="font-bold tabular-nums">{pct}%</Td>
                           <Td>
-                            {w.overbooked ? <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-400">Overbooked</span>
+                            {w.overbooked ? <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-400" title={w.overbookedReason ?? undefined}>Overbooked</span>
                               : pct >= 90 ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-400">Near capacity</span>
                                 : <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-400">OK</span>}
                           </Td>
@@ -1386,6 +1488,11 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
         )}
       </div>
 
+      <div className="mt-6">
+        <SectionTitle title="Estimation Accuracy" subtitle="Estimated vs actual hours — where our estimates drift" />
+        <EstimationPanel refreshKey={aux} employees={users} />
+      </div>
+
       <TaskFormModal open={formOpen} onClose={() => setFormOpen(false)} initial={editTask} tasks={tasks ?? []} users={users} projects={projects ?? []} onSaved={() => { notify(editTask ? "Task updated" : "Task created"); reload(); }} />
       <TemplateModal open={tplOpen} onClose={() => setTplOpen(false)} onSaved={() => { notify("Template created"); setAux((a) => a + 1); }} />
       <AutomationModal open={autoOpen} onClose={() => setAutoOpen(false)} users={users} onSaved={() => { notify("Rule added"); setAux((a) => a + 1); }} />
@@ -1403,7 +1510,10 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                   <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold capitalize", TYPE_TONES[detail.taskType ?? "general"])}>{detail.taskType ?? "general"}</span>
                   <StatusBadge status={detail.status} />
                 </div>
-                <p className="mt-2 font-heading text-[20px] font-bold leading-tight tracking-tight">{detail.title}</p>
+                <div className="mt-2 flex items-start gap-2">
+                  <p className="min-w-0 flex-1 font-heading text-[20px] font-bold leading-tight tracking-tight">{detail.title}</p>
+                  <TaskTimerButton taskId={detail.id} onChanged={reload} />
+                </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">Created {timeAgo(detail.createdAt)} {detail.reporter?.name ? `· by ${detail.reporter.name}` : ""} {detail.dueDate ? `· Due ${formatDate(detail.dueDate)}` : ""}</p>
               </div>
             ) : null
@@ -1492,7 +1602,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
             </div>
 
             <div className="flex flex-wrap gap-1.5">
-              {([{ key: "overview", label: `Activity (${detail.activityLog?.length ?? 0})` }, { key: "subtasks", label: `Subtasks (${detail.subtasks?.length ?? 0})` }, { key: "comments", label: `Comments (${detail.comments?.length ?? 0})` }, { key: "time", label: `Time Log (${detail.timeLogs?.length ?? 0})` }, { key: "deps", label: `Dependencies (${detail.dependencies?.length ?? 0})` }, { key: "files", label: `Files & Links (${(detail.attachments?.length ?? 0) + (detail.referenceLinks?.length ?? 0)})` }] as const).map((t) => (
+              {([{ key: "overview", label: `Activity (${detail.activityLog?.length ?? 0})` }, { key: "checklist", label: "Checklist" }, { key: "subtasks", label: `Subtasks (${detail.subtasks?.length ?? 0})` }, { key: "comments", label: `Comments (${detail.comments?.length ?? 0})` }, { key: "time", label: `Time Log (${detail.timeLogs?.length ?? 0})` }, { key: "deps", label: `Dependencies (${detail.dependencies?.length ?? 0})` }, { key: "files", label: `Files & Links (${(detail.attachments?.length ?? 0) + (detail.referenceLinks?.length ?? 0)})` }] as const).map((t) => (
                 <button key={t.key} onClick={() => setTab(t.key)} className={cn("rounded-xl px-3 py-1.5 text-[11.5px] font-bold transition-all", tab === t.key ? "bg-brand-gradient text-white" : "text-muted-foreground hover:bg-muted/70 hover:text-foreground")}>{t.label}</button>
               ))}
             </div>
@@ -1510,6 +1620,10 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                   </div>
                 ))}
               </div>
+            )}
+
+            {tab === "checklist" && (
+              <ChecklistTab taskId={detail.id} onChanged={() => setRefresh((r) => r + 1)} />
             )}
 
             {tab === "subtasks" && (
