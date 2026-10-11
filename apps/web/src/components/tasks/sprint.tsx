@@ -30,8 +30,9 @@ interface Burndown {
     actualHours: number;
     capacityHours: number | null;
     completionPct: number;
+    snapshotDays?: number;
   };
-  days: { date: string; remaining: number; ideal: number; completed: number }[];
+  days: { date: string; remaining: number; ideal: number; completed: number; source?: "snapshot" | "estimated" }[];
 }
 
 const STATUS_TONES: Record<string, string> = {
@@ -232,15 +233,25 @@ export function SprintBurndown({ sprintId }: { sprintId: string }) {
     const pad = 8;
     const maxY = Math.max(1, ...data.days.map((d) => d.remaining));
     const stepX = (W - pad * 2) / Math.max(1, data.days.length - 1);
-    const toXY = (i: number, v: number) => [pad + i * stepX, H - pad - (v / maxY) * (H - pad * 2)];
+    const toXY = (i: number, v: number): [number, number] => [pad + i * stepX, H - pad - (v / maxY) * (H - pad * 2)];
     const actual = data.days.map((d, i) => toXY(i, d.remaining));
     const ideal = data.days.map((d, i) => toXY(i, d.ideal));
+    // split the line so estimated (reconstructed) segments read as uncertain
+    const snapPts: [number, number][] = [];
+    const estPts: [number, number][] = [];
+    data.days.forEach((d, i) => {
+      (d.source === "estimated" ? estPts : snapPts).push(actual[i]);
+    });
+    const path = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
     return {
       W, H,
-      actualPath: actual.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
-      idealPath: ideal.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" "),
+      actualPath: path(actual),
+      snapPath: snapPts.length > 1 ? path(snapPts) : path(actual),
+      estPath: estPts.length > 1 ? path(estPts) : "",
+      idealPath: path(ideal),
       last: actual[actual.length - 1],
       first: actual[0],
+      hasEstimated: estPts.length > 1,
     };
   }, [data]);
 
@@ -279,13 +290,22 @@ export function SprintBurndown({ sprintId }: { sprintId: string }) {
           <svg viewBox={`0 0 ${geo.W} ${geo.H}`} className="h-36 w-full" preserveAspectRatio="none">
             <path d={geo.idealPath} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="5 4" className="text-muted-foreground/40" />
             <path d={geo.actualPath} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-primary" />
+            {geo.hasEstimated && (
+              <path d={geo.estPath} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="3 3" className="text-primary/50" />
+            )}
             <circle cx={geo.last[0]} cy={geo.last[1]} r="3.5" className="fill-primary" />
           </svg>
           <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
             <span>{data.days[0]?.date}</span>
             <span className="flex items-center gap-3">
               <span className="flex items-center gap-1"><span className="inline-block h-0.5 w-4 rounded bg-primary" /> actual remaining</span>
+              {geo.hasEstimated && (
+                <span className="flex items-center gap-1" title="Reconstructed from task history (no snapshot for these days)">
+                  <span className="inline-block h-0.5 w-4 rounded" style={{ borderTop: "2px dashed" }} /> estimated
+                </span>
+              )}
               <span className="flex items-center gap-1"><span className="inline-block h-0.5 w-4 rounded border-t border-dashed border-muted-foreground/60" /> ideal</span>
+              {summary.snapshotDays != null && <span className="text-muted-foreground/60">{summary.snapshotDays} snapshot days</span>}
             </span>
             <span>{data.days[data.days.length - 1]?.date}</span>
           </div>

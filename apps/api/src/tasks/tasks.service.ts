@@ -400,9 +400,12 @@ export class TasksService {
   }
 
   /**
-   * Burndown: remaining open tasks per calendar day across the sprint window.
-   * Reconstructed from current status + completedAt/createdAt — no daily snapshot
-   * table yet, so this is a best-effort curve (see plan Batch 3 note).
+   * Burndown from daily snapshots.
+   *
+   * Snapshots are the source of truth for days already recorded; for any day
+   * without one (today, or days before snapshots existed) we fall back to the
+   * reconstructed estimate, and mark the point so the UI can show it as less
+   * trustworthy. `source` per point: "snapshot" | "estimated".
    */
   async sprintBurndown(id: string) {
     const sprint = await this.prisma.sprint.findUnique({ where: { id } });
@@ -411,26 +414,64 @@ export class TasksService {
       where: { sprintId: id },
       select: { id: true, status: true, createdAt: true, completedAt: true, estimatedHours: true, actualHours: true, priority: true },
     });
+
+    // capture today's row so the chart always has a live anchor
+    await this.captureSprintSnapshot(id).catch(() => {});
+
+    const snapshots = await this.prisma.sprintDailySnapshot.findMany({
+      where: { sprintId: id },
+      orderBy: { date: "asc" },
+    });
+    const snapByDay = new Map(snapshots.map((s) => [s.date.toISOString().slice(0, 10), s]));
+
     const day = 86400000;
     const start = new Date(sprint.startDate);
     const end = new Date(Math.max(sprint.endDate.getTime(), Date.now()));
-    const days: { date: string; remaining: number; ideal: number; completed: number }[] = [];
     const totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / day));
     const total = tasks.length;
+
+    // reconstructed fallback series
+    const days: {
+      date: string;
+      remaining: number;
+      ideal: number;
+      completed: number;
+      source: "snapshot" | "estimated";
+      estimatedHours?: number;
+      actualHours?: number;
+    }[] = [];
     let cumulativeDone = 0;
     for (let i = 0; i <= totalDays; i++) {
       const d = new Date(start.getTime() + i * day);
       const dEnd = new Date(d.getTime() + day);
+      const key = d.toISOString().slice(0, 10);
+      const ideal = Math.round(((totalDays - i) / totalDays) * total);
+      const snap = snapByDay.get(key);
+      if (snap) {
+        days.push({
+          date: key,
+          remaining: snap.remaining,
+          completed: snap.done,
+          ideal,
+          source: "snapshot",
+          estimatedHours: Number(snap.estimatedHours),
+          actualHours: Number(snap.actualHours),
+        });
+        cumulativeDone = snap.done;
+        continue;
+      }
       const doneByThen = tasks.filter((t) => t.completedAt && t.completedAt >= start && t.completedAt < dEnd && t.status === "DONE").length;
       const createdAfter = tasks.filter((t) => t.createdAt >= dEnd).length;
       cumulativeDone += doneByThen;
       days.push({
-        date: d.toISOString().slice(0, 10),
+        date: key,
         remaining: Math.max(0, total - cumulativeDone - createdAfter),
-        ideal: Math.round(((totalDays - i) / totalDays) * total),
+        ideal,
         completed: cumulativeDone,
+        source: "estimated",
       });
     }
+
     const done = tasks.filter((t) => t.status === "DONE").length;
     const estimated = tasks.reduce((s, t) => s + Number(t.estimatedHours ?? 0), 0);
     const actual = tasks.reduce((s, t) => s + Number(t.actualHours ?? 0), 0);
@@ -444,9 +485,49 @@ export class TasksService {
         actualHours: Math.round(actual * 10) / 10,
         capacityHours: sprint.capacityHours ? Number(sprint.capacityHours) : null,
         completionPct: total ? Math.round((done / total) * 100) : 0,
+        snapshotDays: snapshots.length,
       },
       days,
     };
+  }
+
+  /**
+   * Write (or refresh) today's snapshot row for one sprint.
+   * Idempotent via the [sprintId, date] unique key — safe to call repeatedly.
+   */
+  async captureSprintSnapshot(sprintId: string) {
+    const sprint = await this.prisma.sprint.findUnique({ where: { id: sprintId } });
+    if (!sprint) throw new NotFoundException("Sprint not found");
+    const tasks = await this.prisma.task.findMany({
+      where: { sprintId },
+      select: { status: true, estimatedHours: true, actualHours: true },
+    });
+    const now = new Date();
+    const date = new Date(`${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+    const done = tasks.filter((t) => t.status === "DONE").length;
+    const estimatedHours = tasks.reduce((s, t) => s + Number(t.estimatedHours ?? 0), 0);
+    const actualHours = tasks.reduce((s, t) => s + Number(t.actualHours ?? 0), 0);
+    const payload = {
+      total: tasks.length,
+      done,
+      open: tasks.length - done,
+      remaining: tasks.length - done,
+      estimatedHours: Math.round(estimatedHours * 100) / 100,
+      actualHours: Math.round(actualHours * 100) / 100,
+    };
+    return this.prisma.sprintDailySnapshot.upsert({
+      where: { sprintId_date: { sprintId, date } },
+      create: { sprintId, date, ...payload },
+      update: payload,
+    });
+  }
+
+  /** Nightly: snapshot every non-completed sprint so burndown has history. */
+  @Cron("30 23 * * *")
+  async snapshotActiveSprints() {
+    const sprints = await this.prisma.sprint.findMany({ where: { status: { in: ["PLANNED", "ACTIVE"] } }, select: { id: true } });
+    for (const s of sprints) await this.captureSprintSnapshot(s.id).catch(() => {});
+    return { snapshotted: sprints.length };
   }
 
   // ── Saved views ──────────────────────────────────────────────────────
@@ -979,14 +1060,16 @@ export class TasksService {
 
   /**
    * Daily nudge for overdue + due-within-24h tasks.
-   * Runs 09:00 Asia/Dhaka (server TZ) — skips anything completed or archived.
-   * Dedupe is left to NotificationPreference/user-level muting; each run
-   * re-notifies intentionally (daily cadence, not an event).
+   * Runs 09:30 Asia/Dhaka (server TZ). Deduped per (user, task, day) by
+   * checking Notification rows created since local midnight — so a retried or
+   * manually re-run job cannot spam the same person twice in one day.
    */
-  @Cron("0 9 * * *")
+  @Cron("30 9 * * *")
   async overdueReminders() {
     const now = new Date();
     const in24h = new Date(now.getTime() + 86400000);
+    // local midnight — Notification.createdAt is the dedupe window boundary
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const tasks = await this.prisma.task.findMany({
       where: {
         status: { not: "DONE" },
@@ -997,20 +1080,34 @@ export class TasksService {
       select: { id: true, title: true, dueDate: true, assignedToId: true, priority: true },
     });
     let sent = 0;
+    let skipped = 0;
     for (const t of tasks) {
       const emp = await this.prisma.employee.findUnique({ where: { id: t.assignedToId ?? "__none__" }, include: { user: { select: { id: true } } } });
       if (!emp?.user) continue;
       const overdue = t.dueDate && t.dueDate < now;
+      const type = overdue ? "TASK_OVERDUE" : "TASK_DUE_SOON";
+      const link = `/tasks?task=${t.id}`;
+
+      // per-day dedupe: has this exact nudge already gone out today?
+      const already = await this.prisma.notification.findFirst({
+        where: { userId: emp.user.id, type, link, createdAt: { gte: startOfDay } },
+        select: { id: true },
+      });
+      if (already) {
+        skipped++;
+        continue;
+      }
+
       const n = await this.notifications.create(
         emp.user.id,
-        overdue ? ("TASK_OVERDUE" as any) : ("TASK_DUE_SOON" as any),
+        type as any,
         overdue ? "Task overdue" : "Task due soon",
         overdue ? `"${t.title}" is past its due date.` : `"${t.title}" is due within 24 hours.`,
-        `/tasks?task=${t.id}`
+        link
       ).catch(() => null);
       if (n) sent++;
     }
-    return { sent, scanned: tasks.length };
+    return { sent, skipped, scanned: tasks.length };
   }
 
   /** Timer watchdog: auto-stop timers left running > 12h (forgotten clock). */

@@ -630,12 +630,18 @@ async function main() {
 
   const taskMap = new Map<string, any>();
   for (const t of taskDefs) {
+    const due = t.due >= 0 ? daysFromNow(t.due) : daysAgo(-t.due);
     const created = await prisma.task.create({
       data: {
         title: t.title, description: t.desc, projectId: t.proj ? projects.get(t.proj)?.id ?? null : null,
         assignedToId: t.emp, priority: t.pri, status: t.status,
-        dueDate: t.due >= 0 ? daysFromNow(t.due) : daysAgo(-t.due),
+        dueDate: due,
         estimatedHours: bdt(t.est), isClientVisible: t.clientVis,
+        // A task seeded as DONE must carry a completion stamp, otherwise it is
+        // invisible to burndown/cycle-time (which read completedAt). Seeded
+        // tasks are already past their due date, so dueDate is the closest
+        // honest proxy — and it is a seed-only assumption, not a data migration.
+        completedAt: t.status === "DONE" ? due : null,
       },
     });
     taskMap.set(t.title, created);

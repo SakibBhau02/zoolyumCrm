@@ -979,21 +979,43 @@ enum SprintStatus {
 }
 
 model Sprint {
-  id            String       @id @default(cuid())
+  id            String                @id @default(cuid())
   name          String
   goal          String?
-  project       Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project       Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
   projectId     String?
   startDate     DateTime
   endDate       DateTime
-  status        SprintStatus @default(PLANNED)
-  capacityHours Decimal?     @db.Decimal(8, 2)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  status        SprintStatus          @default(PLANNED)
+  capacityHours Decimal?              @db.Decimal(8, 2)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
   tasks         Task[]
+  snapshots     SprintDailySnapshot[]
 
   @@index([projectId])
   @@index([status])
+}
+
+// ── Sprint daily snapshot: one immutable row per sprint per day ──────────
+// Burndown cannot be reconstructed exactly from current task state (a task
+// deleted or re-opened rewrites history), so the day's numbers are captured
+// as they were. Written by the nightly cron and on-demand for today.
+model SprintDailySnapshot {
+  id             String   @id @default(cuid())
+  sprint         Sprint   @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+  sprintId       String
+  date           DateTime @db.Date
+  total          Int
+  done           Int
+  open           Int
+  remaining      Int // open at end of day (== open, kept explicit for charting)
+  estimatedHours Decimal  @default(0) @db.Decimal(10, 2)
+  actualHours    Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt      DateTime @default(now())
+
+  @@unique([sprintId, date])
+  @@index([sprintId])
 }
 
 // ── Saved task view: named filter preset per user (optionally shared) ────

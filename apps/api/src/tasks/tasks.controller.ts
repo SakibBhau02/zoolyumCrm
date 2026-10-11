@@ -54,6 +54,11 @@ export class TasksController {
     return this.tasks.sprintBurndown(id);
   }
 
+  @Post("sprints/:id/snapshot")
+  captureSnapshot(@Param("id") id: string) {
+    return this.tasks.captureSprintSnapshot(id);
+  }
+
   // ── Saved views ──────────────────────────────────────────────────────
   @Get("views")
   listViews(@CurrentUser() user: any) {
