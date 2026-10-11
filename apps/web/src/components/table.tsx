@@ -59,7 +59,8 @@ export function Tr({
       transition={{ duration: 0.35, delay: index * 0.04, ease: EASE }}
       onClick={onClick}
       className={cn(
-        "border-b border-border/40 transition-colors last:border-0 hover:bg-primary/40 dark:hover:bg-primary/30",
+        "border-b border-border/40 transition-colors last:border-0 hover:bg-muted/60",
+        onClick && "cursor-pointer",
         className
       )}
     >
@@ -82,25 +83,31 @@ export function Btn({
   variant = "ghost",
   className,
   type = "button",
+  disabled,
+  ...rest
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   variant?: "primary" | "ghost" | "outline";
   className?: string;
   type?: "button" | "submit";
+  disabled?: boolean;
+  [key: string]: any;
 }) {
   return (
     <button
       type={type}
+      disabled={disabled}
       onClick={onClick}
+      {...rest}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[12.5px] font-semibold transition-all",
+        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-[12.5px] font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-50",
         variant === "primary" &&
-          "bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-[1.02]",
+          "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80",
         variant === "ghost" &&
           "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
         variant === "outline" &&
-          "border border-border bg-card text-foreground hover:bg-muted/50",
+          "border border-border bg-card text-foreground hover:border-primary/30 hover:bg-muted/50",
         className
       )}
     >

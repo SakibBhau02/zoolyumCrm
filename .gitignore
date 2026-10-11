@@ -6,6 +6,16 @@ out/
 *.tsbuildinfo
 .env
 .env.local
+# runtime uploads + local QA scratch (never commit)
+apps/api/uploads/
+qa-evidence/
+.playwright-mcp/
+*.png
+# one-off QA / probe scripts
+qa-*.js
+probe-*.js
+pu-unit.js
+test-connect.js
 .DS_Store
 npm-debug.log*
 *.log

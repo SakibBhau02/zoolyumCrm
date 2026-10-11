@@ -81,7 +81,10 @@ export function RevenueAreaChart({
           tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
           axisLine={false}
           tickLine={false}
-          tickFormatter={(v: number) => `৳${(v / 1000).toFixed(0)}k`}
+          width={52}
+          tickFormatter={(v: number) =>
+            v >= 100000 ? `৳${parseFloat((v / 100000).toFixed(1))}L` : v >= 1000 ? `৳${parseFloat((v / 1000).toFixed(1))}k` : `৳${v}`
+          }
         />
         <Tooltip content={<ChartTooltip money />} cursor={{ stroke: "var(--chart-1)", strokeOpacity: 0.4 }} />
         <Area
@@ -116,6 +119,14 @@ const METHOD_COLORS: Record<string, [string, string]> = {
   CASH: ["#10B981", "#6EE7B7"],
   BANK_TRANSFER: ["#6366F1", "#A5B4FC"],
   CARD: ["#8B5CF6", "#C4B5FD"],
+};
+
+const METHOD_LABELS: Record<string, string> = {
+  BKASH: "bKash",
+  NAGAD: "Nagad",
+  CASH: "Cash",
+  BANK_TRANSFER: "Bank Transfer",
+  CARD: "Card",
 };
 
 export function PaymentDonut({
@@ -162,8 +173,8 @@ export function PaymentDonut({
         {chartData.map((d) => (
           <div key={d.method} className="flex items-center gap-2">
             <span className="size-2.5 rounded-full" style={{ background: d.fill }} />
-            <span className="w-28 text-[12px] capitalize text-muted-foreground">
-              {d.method.replace(/_/g, " ").toLowerCase()}
+            <span className="w-28 text-[12px] text-muted-foreground">
+              {METHOD_LABELS[d.method] ?? d.method.replace(/_/g, " ")}
             </span>
             <span className="text-[12.5px] font-bold tabular-nums">
               {Math.round((d.amount / total) * 100)}%

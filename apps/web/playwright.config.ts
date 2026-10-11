@@ -6,7 +6,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: "line",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000",
     trace: "retain-on-failure",
   },
 });

@@ -50,13 +50,15 @@ export function Modal({
   onClose,
   title,
   children,
+  footer,
   size = "md",
 }: {
   open: boolean;
   onClose: () => void;
   title: React.ReactNode;
   children: React.ReactNode;
-  size?: "md" | "lg" | "xl";
+  footer?: React.ReactNode;
+  size?: "md" | "lg" | "xl" | "2xl";
 }) {
   useEffect(() => {
     if (!open) return;
@@ -82,22 +84,27 @@ export function Modal({
             transition={{ duration: 0.22, ease: EASE }}
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              "card-lift max-h-[92vh] w-full overflow-y-auto rounded-2xl border border-border/60 bg-card p-6 shadow-2xl shadow-primary/10",
+              "flex max-h-[92vh] w-full flex-col overflow-hidden rounded-2xl border border-border/60 bg-card shadow-2xl shadow-primary/10",
               size === "md" && "max-w-md",
               size === "lg" && "max-w-2xl",
-              size === "xl" && "max-w-4xl"
+              size === "xl" && "max-w-4xl",
+              size === "2xl" && "max-w-5xl"
             )}
           >
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="font-heading text-[17px] font-semibold">{title}</h3>
+            <div className="flex shrink-0 items-center justify-between gap-3 px-6 pt-5">
+              <h3 className="min-w-0 font-heading text-[17px] font-semibold">{title}</h3>
               <button
                 onClick={onClose}
-                className="flex size-8 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                aria-label="Close dialog"
+                className="flex size-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50"
               >
                 <X className="size-4" />
               </button>
             </div>
-            {children}
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
+            {footer && (
+              <div className="shrink-0 border-t border-border/60 bg-card px-6 py-4">{footer}</div>
+            )}
           </motion.div>
         </motion.div>
       )}
@@ -177,6 +184,7 @@ export function Segmented<T extends string>({
       {options.map((o) => (
         <button
           key={o.value}
+          type="button"
           onClick={() => onChange(o.value)}
           className={cn(
             "rounded-lg px-3 py-1.5 text-[11.5px] font-semibold transition-all",
@@ -229,9 +237,9 @@ export function FormActions({
         type="submit"
         disabled={busy}
         className={cn(
-          "rounded-xl px-4 py-2 text-[12.5px] font-bold text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60",
+          "rounded-xl px-4 py-2 text-[12.5px] font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60",
           danger
-            ? "bg-rose-500"
+            ? "bg-rose-500 text-white hover:bg-rose-500/90"
             : "bg-primary text-primary-foreground hover:bg-primary/90"
         )}
       >

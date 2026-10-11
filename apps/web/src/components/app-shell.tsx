@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar />
         <main className="flex-1 overflow-y-auto bg-mesh">
-          <div className="mx-auto max-w-7xl p-6 lg:p-8">{children}</div>
+          <div className="mx-auto max-w-7xl p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8">{children}</div>
         </main>
       </div>
     </div>

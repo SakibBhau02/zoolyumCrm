@@ -73,15 +73,17 @@ export function SectionTitle({
   title,
   subtitle,
   action,
+  icon,
 }: {
   title: string;
   subtitle?: string;
   action?: React.ReactNode;
+  icon?: React.ReactNode;
 }) {
   return (
     <div className="mb-4 flex items-start justify-between">
       <div>
-        <h3 className="text-[15px] font-heading font-semibold">{title}</h3>
+        <h3 className="flex items-center gap-1.5 font-heading text-[15px] font-semibold">{icon}{title}</h3>
         {subtitle && <p className="mt-0.5 text-[12px] text-muted-foreground">{subtitle}</p>}
       </div>
       {action}
@@ -186,12 +188,15 @@ export function DeltaPill({
   );
 }
 
-const ICON_GRADIENTS = [
-  "bg-primary",
-  "bg-primary/80",
-  "bg-emerald-500",
-  "bg-primary",
-];
+const STAT_TONES: Record<string, string> = {
+  primary: "bg-primary/10 text-primary",
+  emerald: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+  amber: "bg-amber-500/10 text-amber-600 dark:text-amber-300",
+  sky: "bg-sky-500/10 text-sky-600 dark:text-sky-300",
+  rose: "bg-rose-500/10 text-rose-600 dark:text-rose-300",
+};
+
+const STAT_TONE_FALLBACK = ["primary", "sky", "emerald", "amber"];
 
 export function StatCard({
   label,
@@ -201,6 +206,7 @@ export function StatCard({
   deltaGood,
   icon,
   index = 0,
+  tone,
 }: {
   label: string;
   value: React.ReactNode;
@@ -209,34 +215,32 @@ export function StatCard({
   deltaGood?: boolean;
   icon?: React.ReactNode;
   index?: number;
+  tone?: keyof typeof STAT_TONES;
 }) {
+  const resolvedTone = tone ?? STAT_TONE_FALLBACK[index % STAT_TONE_FALLBACK.length];
   return (
-    <FadeIn delay={index * 0.08}>
+    <FadeIn delay={Math.min(index, 3) * 0.06}>
       <CardShell className="relative overflow-hidden">
-        <div
-          className="pointer-events-none absolute -right-6 -top-6 size-24 rounded-full opacity-20 blur-2xl"
-          style={{
-            background: `linear-gradient(135deg, var(--chart-1), var(--chart-2))`,
-          }}
-        />
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {label}
             </p>
             <p className="mt-1.5 text-2xl font-heading font-bold tabular-nums tracking-tight">
               {value}
             </p>
-            <div className="mt-1.5 flex items-center gap-1.5">
-              {delta && <DeltaPill value={delta} good={deltaGood ?? true} />}
-              {sub && <span className="truncate text-[11px] text-muted-foreground">{sub}</span>}
-            </div>
+            {(delta || sub) && (
+              <div className="mt-1.5 flex items-center gap-1.5">
+                {delta && <DeltaPill value={delta} good={deltaGood ?? true} />}
+                {sub && <span className="truncate text-[11.5px] text-muted-foreground">{sub}</span>}
+              </div>
+            )}
           </div>
           {icon && (
             <div
               className={cn(
-                "flex size-10 shrink-0 items-center justify-center rounded-xl text-white",
-                ICON_GRADIENTS[index % ICON_GRADIENTS.length]
+                "flex size-10 shrink-0 items-center justify-center rounded-xl",
+                STAT_TONES[resolvedTone]
               )}
             >
               {icon}

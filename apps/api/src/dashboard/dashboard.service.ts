@@ -1,6 +1,10 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
+import { dateStrDhaka } from "../people/people-utils";
+
+/** UTC-midnight labelled with today's Dhaka date — matches `attendance.date`. */
+const dhakaTodayColumn = () => new Date(`${dateStrDhaka(new Date())}T00:00:00.000Z`);
 
 const STAGE_PROBABILITY: Record<string, number> = {
   NEW: 0.1,
@@ -26,6 +30,72 @@ export class DashboardService {
 
   async overview() {
     return this.cache.wrap("dashboard:overview", 30, () => this.computeOverview());
+  }
+
+  /** Personal glimpse: my tasks, my leads + follow-ups, today events, my attendance. */
+  async myDay(userId?: string) {
+    if (!userId) return { tasks: [], leads: [], followUpsDue: [], events: [], attendance: null, leaves: [] };
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, employeeId: true },
+    });
+    const now = new Date();
+    const todayStr = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())).toISOString().slice(0, 10);
+
+    const [tasks, leads, events, attendance, leaves] = await Promise.all([
+      this.prisma.task.findMany({
+        where: {
+          status: { not: "DONE" },
+          archivedAt: null,
+          ...(user?.employeeId ? { assignedToId: user.employeeId } : { assignedToId: "__none__" }),
+        },
+        select: {
+          id: true, title: true, status: true, priority: true, dueDate: true,
+          project: { select: { id: true, name: true } },
+        },
+        orderBy: [{ dueDate: "asc" }],
+        take: 12,
+      }),
+      this.prisma.lead.findMany({
+        where: { assignedToId: userId, stage: { notIn: ["WON", "LOST"] } },
+        select: {
+          id: true, name: true, company: true, stage: true, temperature: true,
+          estimatedDealSize: true, nextFollowUpAt: true, leadScore: true,
+        },
+        orderBy: [{ nextFollowUpAt: "asc" }],
+        take: 10,
+      }),
+      this.prisma.calendarEvent.findMany({
+        where: { date: todayStr },
+        select: { id: true, title: true, type: true, date: true, clientId: true },
+      }),
+      this.prisma.attendance.findFirst({
+        where: { employeeId: user?.employeeId ?? "__none__", date: dhakaTodayColumn() },
+        select: { status: true, checkInTime: true, checkOutTime: true },
+      }),
+      this.prisma.leaveRequest.findMany({
+        where: { employeeId: user?.employeeId ?? "__none__", status: "PENDING" },
+        select: { id: true, leaveType: true, startDate: true, endDate: true, status: true },
+      }),
+    ]);
+
+    const startOfDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const endOfDay = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+    const tasksOverdue = tasks.filter((t) => t.dueDate && t.dueDate < startOfDay).length;
+    const tasksDueToday = tasks.filter((t) => t.dueDate && t.dueDate >= startOfDay && t.dueDate < endOfDay).length;
+    const followUpsDue = leads.filter((l) => l.nextFollowUpAt && new Date(l.nextFollowUpAt).getTime() <= now.getTime());
+
+    return {
+      tasks,
+      tasksOverdue,
+      tasksDueToday,
+      leads,
+      followUpsDue,
+      followUpsDueCount: followUpsDue.length,
+      events,
+      attendance,
+      leaves,
+    };
   }
 
   private async computeOverview() {
@@ -77,7 +147,7 @@ export class DashboardService {
       this.prisma.portalActivityLog.findMany({ orderBy: { timestamp: "desc" }, take: 6, include: { portalUser: { include: { clientContact: { select: { name: true, client: { select: { companyName: true } } } } } } } }),
       this.prisma.systemAuditLog.findMany({ orderBy: { timestamp: "desc" }, take: 4 }),
       this.prisma.leaveRequest.findMany({ where: { status: "APPROVED" }, select: { employeeId: true, startDate: true, endDate: true } }),
-      this.prisma.attendance.findMany({ where: { date: this.startOfToday() }, select: { employeeId: true, status: true } }),
+      this.prisma.attendance.findMany({ where: { date: dhakaTodayColumn() }, select: { employeeId: true, status: true } }),
       this.prisma.taskComment.findMany({ orderBy: { createdAt: "desc" }, take: 5, include: { author: { select: { name: true } } } }),
     ]);
 

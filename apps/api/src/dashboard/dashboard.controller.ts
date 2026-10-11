@@ -15,4 +15,9 @@ export class DashboardController {
   scoped(@CurrentUser("role") role: string) {
     return this.dashboard.scoped(role);
   }
+
+  @Get("my-day")
+  myDay(@CurrentUser() user: any) {
+    return this.dashboard.myDay(user?.sub);
+  }
 }

@@ -37,6 +37,7 @@ import {
   StageBarChart,
   UtilizationHeatmap,
 } from "@/components/charts";
+import { MyDayWidget } from "@/components/my-day-widget";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -185,6 +186,9 @@ export default function DashboardPage() {
           </div>
         </div>
       </FadeIn>
+
+      {/* ── My Day: self-service clock in/out (only for employee-linked accounts) ── */}
+      <MyDayWidget userName={user?.name} />
 
       {/* ── Stat cards ── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

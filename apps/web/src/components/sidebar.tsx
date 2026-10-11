@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   BarChart3,
   Building2,
@@ -9,10 +11,12 @@ import {
   Globe2,
   LayoutDashboard,
   ListTodo,
+  Menu,
   Settings,
   Users,
   Wallet,
   Workflow,
+  X,
   Zap,
 } from "lucide-react";
 import { cn, Avatar } from "./shared";
@@ -50,6 +54,22 @@ export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const perms = user?.permissions;
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close the mobile drawer on navigation
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll while the drawer is open
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileOpen]);
 
   const visible = NAV.map((group) => ({
     ...group,
@@ -59,12 +79,8 @@ export function Sidebar() {
     }),
   })).filter((g) => g.items.length > 0);
 
-  return (
-    <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-white lg:flex">
-      <div className="flex h-16 items-center gap-2.5 px-5">
-        <BrandLogo variant="light" />
-      </div>
-
+  const nav = (
+    <>
       <nav className="flex-1 overflow-y-auto px-3 py-3">
         {visible.map((group) => (
           <div key={group.section} className="mb-4">
@@ -79,7 +95,7 @@ export function Sidebar() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[12.5px] font-medium transition-colors",
+                      "group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[12.5px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/40",
                       active
                         ? "bg-sidebar-primary text-white shadow-primary/25"
                         : "text-white/70 hover:bg-sidebar-accent hover:text-white"
@@ -125,6 +141,62 @@ export function Sidebar() {
           </button>
         </div>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-white lg:flex">
+        <div className="flex h-16 items-center gap-2.5 px-5">
+          <BrandLogo variant="light" />
+        </div>
+        {nav}
+      </aside>
+
+      {/* Mobile: floating menu button + slide-over nav (no sidebar below lg) */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open navigation menu"
+        className="fixed bottom-5 right-5 z-40 flex size-12 items-center justify-center rounded-2xl bg-sidebar text-white shadow-xl transition-transform outline-none active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/60 lg:hidden"
+      >
+        <Menu className="size-5" />
+      </button>
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm lg:hidden"
+            onClick={() => setMobileOpen(false)}
+          >
+            <motion.aside
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+              onClick={(e) => e.stopPropagation()}
+              className="flex h-full w-72 max-w-[85vw] flex-col bg-sidebar text-white shadow-2xl"
+              role="dialog"
+              aria-label="Navigation menu"
+            >
+              <div className="flex items-center justify-between py-3 pl-5 pr-3">
+                <BrandLogo variant="light" />
+                <button
+                  onClick={() => setMobileOpen(false)}
+                  aria-label="Close navigation menu"
+                  className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col">
+                {nav}
+              </div>
+            </motion.aside>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }

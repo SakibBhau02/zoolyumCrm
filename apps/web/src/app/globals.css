@@ -63,9 +63,11 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-display);
+  /* Noto Sans Bengali covers ৳ (U+09F3) + Bangla text, which Inter/Outfit
+     don't ship — it only renders for those glyphs, everything else unchanged. */
+  --font-sans: var(--font-inter), "Noto Sans Bengali", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-heading: var(--font-display), "Noto Sans Bengali", ui-sans-serif, system-ui, sans-serif;
   --font-bangla: var(--font-bangla);
 }
 
@@ -190,6 +192,38 @@
 }
 .animate-pulse-glow {
   animation: pulse-glow 4s ease-in-out infinite;
+}
+
+/* ─── Print (invoice print preview) ─── */
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+  body {
+    background: #fff !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .invoice-print-area,
+  .invoice-print-area * {
+    visibility: visible;
+  }
+  .invoice-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .no-print {
+    display: none !important;
+  }
 }
 
 /* ─── Scrollbar ─── */
