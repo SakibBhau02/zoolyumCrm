@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
 import { PrismaModule } from "./prisma/prisma.module";
 import { CacheModule } from "./cache/cache.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
@@ -24,6 +25,9 @@ import { WhatsappModule } from "./whatsapp/whatsapp.module";
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Enables @Cron discovery. Without this, every @Cron in the codebase
+    // (task reminders, snapshotter, timer watchdog) is silently dead code.
+    ScheduleModule.forRoot(),
     PrismaModule,
     CacheModule,
     AuthModule,

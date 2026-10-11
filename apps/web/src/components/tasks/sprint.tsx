@@ -50,12 +50,15 @@ export function SprintPicker({
   value,
   onChange,
   sprints,
+  canPlan,
   onSprintsChanged,
   projects,
 }: {
   value: string;
   onChange: (id: string) => void;
   sprints: Sprint[] | undefined | null;
+  /** when false, the create + delete controls are hidden (backend 403s anyway) */
+  canPlan: boolean;
   onSprintsChanged: () => void;
   projects: { id: string; name: string }[];
 }) {
@@ -149,13 +152,15 @@ export function SprintPicker({
                       {s.project ? ` · ${s.project.name}` : ""}
                     </p>
                   </button>
-                  <button
-                    onClick={() => remove(s.id)}
-                    className="flex size-6 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100"
-                    aria-label="Delete sprint"
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
+                  {canPlan && (
+                    <button
+                      onClick={() => remove(s.id)}
+                      aria-label="Delete sprint"
+                      className="flex size-6 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100"
+                    >
+                      <Trash2 className="size-3" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -199,11 +204,11 @@ export function SprintPicker({
                   <Btn variant="ghost" onClick={() => setCreating(false)}>Cancel</Btn>
                 </div>
               </div>
-            ) : (
+            ) : canPlan ? (
               <button onClick={() => setCreating(true)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[12px] font-bold text-primary transition-colors hover:bg-primary/10">
                 <Plus className="size-3.5" /> New sprint
               </button>
-            )}
+            ) : null}
           </div>
         </>
       )}

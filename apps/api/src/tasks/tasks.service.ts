@@ -290,9 +290,27 @@ export class TasksService {
         break;
       }
       case "assign": {
-        const res = await this.prisma.task.updateMany({ where: { id: { in: allowed } }, data: { assignedToId: body.value ?? null } });
+        const actorEmpId = await this.empId(user?.sub);
+        // per-task update (not updateMany) so each task keeps its own
+        // handover entry — "who gave it to whom" must survive bulk ops.
+        for (const id of allowed) {
+          const task = tasks.find((t) => t.id === id)!;
+          if (task.assignedToId === (body.value ?? null)) continue;
+          await this.prisma.task.update({
+            where: { id },
+            data: {
+              assignedToId: body.value ?? null,
+              assignedById: body.value ? actorEmpId : null,
+              assignedAt: body.value ? now : null,
+              activityLog: [
+                { action: "assigned", field: "assignedTo", from: task.assignedToId, to: body.value ?? null, at: now.toISOString(), by: user?.name ?? "Bulk update" },
+                ...(((task.activityLog ?? []) as any[]).slice(0, 99)),
+              ] as any,
+            },
+          });
+          count++;
+        }
         if (body.value) for (const id of allowed) await this.notifyAssignee(body.value, id, tasks.find((t) => t.id === id)?.title ?? "").catch(() => {});
-        count = res.count;
         break;
       }
       case "priority": {
@@ -332,6 +350,13 @@ export class TasksService {
   }
 
   // ── Sprint / cycle ───────────────────────────────────────────────────
+  // Reading sprints is open to the team; creating, editing, deleting or
+  // filling them reshapes everyone's plan, so those need PM/Admin.
+  private requirePlanner(user?: { sub?: string; role?: string }) {
+    if (!user?.sub) throw new ForbiddenException("Login required");
+    if (!this.isPM(user.role)) throw new ForbiddenException("Only Project Manager or Admin can manage sprints, templates and automation rules");
+  }
+
   async listSprints(query: { projectId?: string; status?: string; includeCompleted?: string } = {}) {
     return this.prisma.sprint.findMany({
       where: {
@@ -343,7 +368,8 @@ export class TasksService {
     });
   }
 
-  async createSprint(body: any) {
+  async createSprint(body: any, user?: any) {
+    this.requirePlanner(user);
     if (!body.name?.trim()) throw new BadRequestException("Sprint name is required");
     if (!body.startDate || !body.endDate) throw new BadRequestException("startDate and endDate are required");
     const start = new Date(body.startDate);
@@ -362,7 +388,8 @@ export class TasksService {
     });
   }
 
-  async updateSprint(id: string, body: any) {
+  async updateSprint(id: string, body: any, user?: any) {
+    this.requirePlanner(user);
     const existing = await this.prisma.sprint.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Sprint not found");
     const data: any = {};
@@ -372,10 +399,15 @@ export class TasksService {
     if (body.status !== undefined) data.status = body.status;
     if (body.projectId !== undefined) data.projectId = body.projectId || null;
     if (body.capacityHours !== undefined) data.capacityHours = body.capacityHours;
+    // keep the window valid when both ends are known after the edit
+    const start = data.startDate ?? existing.startDate;
+    const end = data.endDate ?? existing.endDate;
+    if (end < start) throw new BadRequestException("endDate must be after startDate");
     return this.prisma.sprint.update({ where: { id }, data });
   }
 
-  async deleteSprint(id: string) {
+  async deleteSprint(id: string, user?: any) {
+    this.requirePlanner(user);
     const existing = await this.prisma.sprint.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Sprint not found");
     // detach tasks rather than cascade-delete them
@@ -390,9 +422,21 @@ export class TasksService {
   async assignTasksToSprint(id: string, taskIds: string[], user?: any) {
     const sprint = await this.prisma.sprint.findUnique({ where: { id } });
     if (!sprint) throw new NotFoundException("Sprint not found");
-    const res = await this.prisma.task.updateMany({ where: { id: { in: taskIds } }, data: { sprintId: id } });
+    if (!taskIds?.length) return { ok: true, affected: 0 };
+    // per-task full-edit check (same rule as POST /tasks/bulk) plus the
+    // cross-project guard from setTaskSprint — a sprint scoped to project A
+    // must not silently absorb project B's tasks.
+    const tasks = await this.prisma.task.findMany({ where: { id: { in: taskIds } } });
+    const allowed: string[] = [];
+    for (const t of tasks) {
+      if (!(await this.canEditFull(t, user))) continue;
+      if (t.projectId && sprint.projectId && sprint.projectId !== t.projectId) continue;
+      allowed.push(t.id);
+    }
+    if (!allowed.length) throw new ForbiddenException("You don't have permission to move these tasks");
+    const res = await this.prisma.task.updateMany({ where: { id: { in: allowed } }, data: { sprintId: id } });
     await this.invalidateTasks();
-    return { ok: true, affected: res.count };
+    return { ok: true, affected: res.count, skipped: tasks.length - allowed.length };
   }
 
   async removeTaskFromSprint(id: string, taskId: string) {
@@ -657,8 +701,6 @@ export class TasksService {
   }
 
   async deleteSavedView(id: string, user: any) {
-    const v = await this.prisma.task.findUnique({ where: { id: "__never__" } }); // noop keeps prisma typing warm
-    void v;
     const view = await this.prisma.savedTaskView.findUnique({ where: { id } });
     if (!view) throw new NotFoundException("View not found");
     if (view.ownerId && view.ownerId !== user?.sub && !this.isAdmin(user?.role)) throw new ForbiddenException("Only the owner can delete this view");
@@ -1030,7 +1072,7 @@ export class TasksService {
   async remove(id: string, user?: any) {
     const existing = await this.prisma.task.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Task not found");
-    if (user && !(await this.canEditFull(existing, user))) throw new ForbiddenException("Only creator/PM/Admin can delete task");
+    if (user && !(await this.canEditFull(existing, user))) throw new ForbiddenException("Only the assigner, reporter, PM or Admin can delete this task");
     await this.prisma.task.delete({ where: { id } }).catch(() => {
       throw new NotFoundException("Task not found");
     });
@@ -1047,7 +1089,10 @@ export class TasksService {
         title: `${t.title} (Copy)`,
         description: t.description,
         projectId: t.projectId,
+        sprintId: null, // a copy starts in the backlog, not inside the sprint
         assignedToId: t.assignedToId,
+        assignedById: t.assignedById,
+        assignedAt: t.assignedToId ? new Date() : null,
         reporterId: t.reporterId,
         priority: t.priority,
         dueDate: t.dueDate,
@@ -1120,6 +1165,8 @@ export class TasksService {
           deliverableId: t.deliverableId,
           sprintId: null, // next occurrence lands in the backlog, not the closed sprint
           assignedToId: t.assignedToId,
+          assignedById: t.assignedById,
+          assignedAt: t.assignedToId ? new Date() : null,
           reporterId: t.reporterId,
           priority: t.priority,
           dueDate: nextDue,
@@ -1246,7 +1293,10 @@ export class TasksService {
     return { closed: stale.length };
   }
 
-  async toggleReaction(taskId: string, commentId: string, body: { emoji: string; userId: string }) {
+  async toggleReaction(taskId: string, commentId: string, body: { emoji: string; userId: string }, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canViewTask(task, user))) throw new ForbiddenException("You don't have permission to react on this task");
     const c = await this.prisma.taskComment.findFirst({ where: { id: commentId, taskId } });
     if (!c) throw new NotFoundException("Comment not found");
     const reactions = ((c.reactions ?? []) as any[]);
@@ -1267,14 +1317,29 @@ export class TasksService {
     });
   }
 
-  async deleteComment(taskId: string, commentId: string) {
+  async deleteComment(taskId: string, commentId: string, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    const comment = await this.prisma.taskComment.findFirst({ where: { id: commentId, taskId } });
+    if (!comment) throw new NotFoundException("Comment not found");
+    // Author can remove their own comment; otherwise only full editors.
+    // (Author check is by User id — comments link users, tasks link employees.)
+    const isAuthor = user?.sub && comment.authorId === user.sub;
+    if (!isAuthor && user && !(await this.canEditFull(task, user))) {
+      throw new ForbiddenException("Only the author or a full editor can delete this comment");
+    }
     await this.prisma.taskComment.deleteMany({ where: { id: commentId, taskId } });
     return { ok: true };
   }
 
   // ── Dependencies ─────────────────────────────────────────────────────
-  async addDependency(taskId: string, dependsOnTaskId: string, type = "blocked-by") {
-    if (taskId === dependsOnTaskId) throw new Error("Cannot depend on itself");
+  // Changing the graph reshapes everyone's critical path, so both ends need
+  // at least work-level access to the task being edited.
+  async addDependency(taskId: string, dependsOnTaskId: string, type = "blocked-by", user?: any) {
+    if (taskId === dependsOnTaskId) throw new BadRequestException("Cannot depend on itself");
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canWorkOnTask(task, user))) throw new ForbiddenException("You don't have permission to edit this task's dependencies");
     return this.prisma.taskDependency.upsert({
       where: { taskId_dependsOnTaskId: { taskId, dependsOnTaskId } },
       create: { taskId, dependsOnTaskId, type },
@@ -1282,7 +1347,10 @@ export class TasksService {
     });
   }
 
-  async removeDependency(taskId: string, dependsOnTaskId: string) {
+  async removeDependency(taskId: string, dependsOnTaskId: string, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canWorkOnTask(task, user))) throw new ForbiddenException("You don't have permission to edit this task's dependencies");
     await this.prisma.taskDependency.deleteMany({ where: { taskId, dependsOnTaskId } });
     return { ok: true };
   }
@@ -1324,11 +1392,14 @@ export class TasksService {
   }
 
   // ── Templates ────────────────────────────────────────────────────────
+  // Templates shape everyone's work, so authoring them is PM/Admin-only.
+  // *Using* a template just creates tasks, so it stays open to task creators.
   async listTemplates() {
     return this.prisma.taskTemplate.findMany({ orderBy: { createdAt: "desc" } });
   }
 
-  async createTemplate(body: { name: string; description?: string; category?: string; benchmarkDurationDays?: number; benchmarkHours?: number; defaultTasks: any[] }) {
+  async createTemplate(body: { name: string; description?: string; category?: string; benchmarkDurationDays?: number; benchmarkHours?: number; defaultTasks: any[] }, user?: any) {
+    this.requirePlanner(user);
     return this.prisma.taskTemplate.create({
       data: {
         name: body.name,
@@ -1341,7 +1412,8 @@ export class TasksService {
     });
   }
 
-  async deleteTemplate(id: string) {
+  async deleteTemplate(id: string, user?: any) {
+    this.requirePlanner(user);
     await this.prisma.taskTemplate.delete({ where: { id } }).catch(() => {
       throw new NotFoundException("Template not found");
     });
@@ -1352,14 +1424,21 @@ export class TasksService {
     const tpl = await this.prisma.taskTemplate.findUnique({ where: { id } });
     if (!tpl) throw new NotFoundException("Template not found");
     const tasks = (tpl.defaultTasks as any[]) ?? [];
+    // Handoffs from a template carry the same provenance as a manual create:
+    // the user pressing the button is both reporter and assigner.
+    const creatorEmpId = await this.empId(body.createdById);
     const created = [];
     for (const t of tasks) {
+      const assignedToId = body.assigneeId;
       const task = await this.prisma.task.create({
         data: {
           title: t.title,
           description: t.description,
           projectId: body.projectId,
-          assignedToId: body.assigneeId,
+          assignedToId,
+          assignedById: assignedToId && assignedToId !== creatorEmpId ? creatorEmpId ?? undefined : undefined,
+          assignedAt: assignedToId ? new Date() : null,
+          reporterId: creatorEmpId ?? undefined,
           priority: t.priority ?? "MEDIUM",
           status: "TODO",
           estimatedHours: t.estimatedHours,
@@ -1371,6 +1450,7 @@ export class TasksService {
           activityLog: [
             { action: "created", field: "task", from: null, to: "TODO", at: new Date().toISOString(), by: body.createdByName ?? "System" },
             { action: "updated", field: "note", from: null, to: `Created from template "${tpl.name}"`, at: new Date().toISOString(), by: body.createdByName ?? "System" },
+            ...(assignedToId ? [{ action: "assigned", field: "assignedTo", from: null, to: assignedToId, at: new Date().toISOString(), by: body.createdByName ?? "System" }] : []),
           ],
         },
       });
@@ -1396,11 +1476,13 @@ export class TasksService {
   }
 
   // ── Automation rules ─────────────────────────────────────────────────
+  // Rules rewrite other people's tasks, so authoring them is PM/Admin-only.
   async listAutomation() {
     return this.prisma.automationRule.findMany({ orderBy: { createdAt: "desc" } });
   }
 
-  async createAutomation(body: { name: string; trigger: string; action: string; config: any; enabled?: boolean }) {
+  async createAutomation(body: { name: string; trigger: string; action: string; config: any; enabled?: boolean }, user?: any) {
+    this.requirePlanner(user);
     return this.prisma.automationRule.create({
       data: {
         name: body.name,
@@ -1412,13 +1494,15 @@ export class TasksService {
     });
   }
 
-  async updateAutomation(id: string, body: any) {
+  async updateAutomation(id: string, body: any, user?: any) {
+    this.requirePlanner(user);
     return this.prisma.automationRule.update({ where: { id }, data: body }).catch(() => {
       throw new NotFoundException("Rule not found");
     });
   }
 
-  async deleteAutomation(id: string) {
+  async deleteAutomation(id: string, user?: any) {
+    this.requirePlanner(user);
     await this.prisma.automationRule.delete({ where: { id } }).catch(() => {
       throw new NotFoundException("Rule not found");
     });
@@ -1527,8 +1611,13 @@ export class TasksService {
       where: { status: "APPROVED", startDate: { lte: windowEnd }, endDate: { gte: windowStart } },
       select: { employeeId: true, startDate: true, endDate: true },
     });
+    // Company default weekly offs. An empty per-employee array means
+    // "follow policy" (see Employee.weeklyOffDays), not "no off days".
+    const policy = await this.prisma.attendancePolicy.findUnique({ where: { id: "default" }, select: { weeklyOffDays: true } }).catch(() => null);
+    const defaultOffs = (policy?.weeklyOffDays ?? ["FRIDAY", "SATURDAY"]).map((d) => String(d).trim().toUpperCase());
 
     const now = Date.now();
+    const DAY_NAMES = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
     const rows = employees.map((e) => {
       const tasks = openTasks.filter((t) => t.assignedToId === e.id);
       const allocated = tasks.reduce((s, t) => s + Number(t.estimatedHours ?? 0), 0);
@@ -1536,16 +1625,29 @@ export class TasksService {
       const base = Number(e.weeklyCapacityHours ?? 40);
       const dayMs = 86400000;
       const hoursPerDay = base / 5; // capacity spread over a 5-day week
+      const offSet = new Set(
+        (e.weeklyOffDays?.length ? e.weeklyOffDays : defaultOffs).map((d) => String(d).trim().toUpperCase())
+      );
       let leaveDays = 0;
+      let offDays = 0;
       for (let d = 0; d < 7; d++) {
         const day = new Date(windowStart.getTime() + d * dayMs);
+        if (offSet.has(DAY_NAMES[day.getDay()])) {
+          offDays++;
+          continue; // weekly off — leave on top of it doesn't double-count
+        }
         const overlaps = leaves.some(
           (l) => l.employeeId === e.id && new Date(l.startDate) <= day && new Date(l.endDate) >= day
         );
         if (overlaps) leaveDays++;
       }
-      const outDays = leaveDays + (e.weeklyOffDays?.length ?? 0) * 0;
-      const effective = Math.max(0, Math.round((base - leaveDays * hoursPerDay) * 10) / 10);
+      const outDays = leaveDays + offDays;
+      const effective = Math.max(0, Math.round((base - outDays * hoursPerDay) * 10) / 10);
+
+      const reasons: string[] = [];
+      if (leaveDays > 0) reasons.push(`${leaveDays} leave day(s) this week`);
+      if (offDays > 0) reasons.push(`${offDays} weekly off day(s) in window`);
+      if (!reasons.length && allocated > base) reasons.push("allocated above base capacity");
 
       return {
         ...e,
@@ -1553,11 +1655,12 @@ export class TasksService {
         allocated: Math.round(allocated * 10) / 10,
         baseCapacity: base,
         leaveDaysInWindow: leaveDays,
+        weeklyOffDaysInWindow: offDays,
         outDays,
         capacity: effective,
         utilization: effective ? Math.min(1.5, allocated / effective) : allocated > 0 ? 1.5 : 0,
         overbooked: effective > 0 ? allocated > effective : allocated > 0,
-        overbookedReason: leaveDays > 0 ? `${leaveDays} leave day(s) this week` : allocated > base ? "allocated above base capacity" : null,
+        overbookedReason: reasons.length ? reasons.join("; ") : null,
         urgent: tasks.filter((t) => t.priority === "URGENT").length,
         overdue: tasks.filter((t) => t.dueDate && t.dueDate.getTime() < now).length,
         tasks: tasks.map((t) => ({ title: t.title, hours: Number(t.estimatedHours ?? 0), priority: t.priority, due: t.dueDate })),

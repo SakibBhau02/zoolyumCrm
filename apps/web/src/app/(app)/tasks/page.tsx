@@ -35,6 +35,8 @@ type TaskRow = {
   reporterId?: string | null;
   parentTaskId?: string | null;
   projectId?: string | null;
+  sprintId?: string | null;
+  sprint?: { id: string; name: string; status: string } | null;
   tags?: string[];
   isBlocked?: boolean;
   isClientVisible?: boolean;
@@ -83,6 +85,7 @@ type WorkloadRow = {
   capacity?: number;
   baseCapacity?: number;
   leaveDaysInWindow?: number;
+  weeklyOffDaysInWindow?: number;
   overbookedReason?: string | null;
   utilization?: number;
   taskCount?: number;
@@ -382,6 +385,9 @@ function FragmentRow({ t, i, expanded, hasChildren, childrenList, onToggleExpand
               {t.isBlocked && <span className="shrink-0 rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-bold text-rose-400">BLOCKED</span>}
               {t.parentTaskId && <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">subtask</span>}
               {t.isClientVisible && <span className="shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-bold text-sky-400">client</span>}
+              <span onClick={(e) => e.stopPropagation()} className="shrink-0">
+                <TaskTimerButton taskId={t.id} compact onChanged={onChanged} />
+              </span>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               {t.project?.name ? <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground"><FolderKanban className="size-2.5" />{t.project.name}</span> : <span className="text-[10px] text-muted-foreground/50">No project</span>}
@@ -442,6 +448,10 @@ export default function TasksPage() {
   const { data: myDay } = useApi<any[]>(`/tasks/my-day?v=${aux}`);
   const { data: sprints } = useApi<Sprint[]>(`/tasks/sprints?v=${aux}`);
   const { data: savedViews } = useApi<SavedView[]>(`/tasks/views?v=${aux}`);
+  const { data: me } = useApi<{ roleName?: string }>(`/auth/me`);
+  // Mirrors the backend isPM() rule: sprint/template/automation authoring
+  // reshapes everyone's plan, so only planners see those controls.
+  const canPlan = !!me && ["Owner", "Admin", "HR/Admin", "Project Manager"].includes(me.roleName ?? "");
   const activeSprint = (sprints ?? []).find((s) => s.id === fSprint) ?? null;
 
   const [tasks, setTasks] = useState<TaskRow[] | null>(null);
@@ -943,7 +953,10 @@ export default function TasksPage() {
         </div>
         <div className="flex items-start justify-between gap-2">
           <p className="min-w-0 line-clamp-2 flex-1 text-[12.5px] font-bold leading-snug">{t.title}</p>
-          <button onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === t.id ? null : t.id); }} className="shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted group-hover:text-foreground"><MoreHorizontal className="size-3.5" /></button>
+          <div className="flex shrink-0 items-center" onClick={(e) => e.stopPropagation()}>
+            <TaskTimerButton taskId={t.id} compact onChanged={reload} />
+            <button onClick={() => setMenuFor(menuFor === t.id ? null : t.id)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted group-hover:text-foreground"><MoreHorizontal className="size-3.5" /></button>
+          </div>
         </div>
         {cardMenu(t)}
         {t.description && <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground/80">{t.description}</p>}
@@ -1263,6 +1276,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                 value={fSprint}
                 onChange={setFSprint}
                 sprints={sprints}
+                canPlan={canPlan}
                 onSprintsChanged={() => setAux((a) => a + 1)}
                 projects={(projects ?? []).map((p) => ({ id: p.id, name: p.name }))}
               />
@@ -1348,7 +1362,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
 
       <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <CardShell>
-          <SectionTitle title="Templates" subtitle="Reusable task checklists" action={<Btn variant="primary" onClick={() => setTplOpen(true)}><Plus className="size-3.5" /> New</Btn>} />
+          <SectionTitle title="Templates" subtitle="Reusable task checklists" action={canPlan ? <Btn variant="primary" onClick={() => setTplOpen(true)}><Plus className="size-3.5" /> New</Btn> : null} />
           {tplErr ? (
             <div className="flex flex-col items-center gap-3"><EmptyState title={tplErr} /><Btn variant="outline" onClick={() => setAux((a) => a + 1)}><RefreshCw className="size-3.5" /> Retry</Btn></div>
           ) : !templates ? (
@@ -1366,7 +1380,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                       <button onClick={() => useTemplate(t)} title="Use template" className="flex size-7 items-center justify-center rounded-lg text-emerald-400 transition-colors hover:bg-emerald-500/10"><Play className="size-3.5" /></button>
-                      <button onClick={() => deleteTemplate(t)} title="Delete template" className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"><Trash2 className="size-3.5" /></button>
+                      <button onClick={() => deleteTemplate(t)} title="Delete template" style={canPlan ? undefined : { display: "none" }} className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"><Trash2 className="size-3.5" /></button>
                     </div>
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -1382,7 +1396,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
         </CardShell>
 
         <CardShell>
-          <SectionTitle title="Automation" subtitle="Rules that fire on status, priority or assignee changes" action={<Btn variant="primary" onClick={() => setAutoOpen(true)}><Plus className="size-3.5" /> Add rule</Btn>} />
+          <SectionTitle title="Automation" subtitle="Rules that fire on status, priority or assignee changes" action={canPlan ? <Btn variant="primary" onClick={() => setAutoOpen(true)}><Plus className="size-3.5" /> Add rule</Btn> : null} />
           {rulesErr ? (
             <div className="flex flex-col items-center gap-3"><EmptyState title={rulesErr} /><Btn variant="outline" onClick={() => setAux((a) => a + 1)}><RefreshCw className="size-3.5" /> Retry</Btn></div>
           ) : !rules ? (
@@ -1403,10 +1417,16 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    <button onClick={() => toggleRule(r)} className={cn("relative h-5 w-9 rounded-full transition-colors", r.enabled ? "bg-primary" : "bg-muted")} title={r.enabled ? "Disable" : "Enable"}>
-                      <span className={cn("absolute top-0.5 size-4 rounded-full bg-white shadow transition-all", r.enabled ? "left-[18px]" : "left-0.5")} />
-                    </button>
-                    <button onClick={() => deleteRule(r)} title="Delete rule" className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"><Trash2 className="size-3.5" /></button>
+                    {canPlan ? (
+                      <>
+                        <button onClick={() => toggleRule(r)} className={cn("relative h-5 w-9 rounded-full transition-colors", r.enabled ? "bg-primary" : "bg-muted")} title={r.enabled ? "Disable" : "Enable"}>
+                          <span className={cn("absolute top-0.5 size-4 rounded-full bg-white shadow transition-all", r.enabled ? "left-[18px]" : "left-0.5")} />
+                        </button>
+                        <button onClick={() => deleteRule(r)} title="Delete rule" className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"><Trash2 className="size-3.5" /></button>
+                      </>
+                    ) : (
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", r.enabled ? "bg-emerald-500/10 text-emerald-400" : "bg-muted text-muted-foreground")}>{r.enabled ? "on" : "off"}</span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1454,7 +1474,14 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                               </div>
                               <span className="text-[11px] tabular-nums text-muted-foreground">
                                 {w.allocated ?? 0}h / {cap}h
-                                {w.leaveDaysInWindow ? <span className="ml-1 text-amber-400" title={`${w.leaveDaysInWindow} leave day(s) reduced capacity`}>· {w.leaveDaysInWindow}d leave</span> : null}
+                                {(w.leaveDaysInWindow || w.weeklyOffDaysInWindow) ? (
+                                  <span
+                                    className="ml-1 text-amber-400"
+                                    title={[w.leaveDaysInWindow ? `${w.leaveDaysInWindow} leave day(s)` : null, w.weeklyOffDaysInWindow ? `${w.weeklyOffDaysInWindow} weekly off day(s)` : null].filter(Boolean).join(" + ") + " reduced capacity"}
+                                  >
+                                    · {[w.leaveDaysInWindow ? `${w.leaveDaysInWindow}d leave` : null, w.weeklyOffDaysInWindow ? `${w.weeklyOffDaysInWindow}d off` : null].filter(Boolean).join(" + ")}
+                                  </span>
+                                ) : null}
                               </span>
                             </div>
                           </Td>
@@ -1596,6 +1623,22 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Project"><Select value={detail.projectId ?? ""} onChange={(e) => canFull && patchDetail({ projectId: e.target.value || null }, "Project updated")} disabled={!canFull} className="!py-1.5"><option value="">None</option>{(projects ?? []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</Select></Field>
+              <Field label="Sprint" hint={canFull ? undefined : "Creator/PM only"}>
+                <Select
+                  value={detail.sprintId ?? ""}
+                  disabled={!canFull}
+                  className="!py-1.5"
+                  onChange={(e) => {
+                    if (!canFull) return;
+                    apiFetch(`/tasks/${detail.id}/sprint`, { method: "PATCH", body: JSON.stringify({ sprintId: e.target.value || null }) })
+                      .then(() => { notify(e.target.value ? "Added to sprint" : "Removed from sprint"); reload(); })
+                      .catch((er: any) => notify(er.message ?? "Sprint move failed"));
+                  }}
+                >
+                  <option value="">Backlog (no sprint)</option>
+                  {(sprints ?? []).map((s) => (<option key={s.id} value={s.id}>{s.name} · {s.status}</option>))}
+                </Select>
+              </Field>
               <Field label="Assignee"><Select value={detail.assignedToId ?? ""} onChange={(e) => canFull && patchDetail({ assignedToId: e.target.value || null }, "Assignee updated")} disabled={!canFull} className="!py-1.5"><option value="">Unassigned</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
               <Field label="Reporter"><Select value={detail.reporterId ?? ""} onChange={(e) => canFull && patchDetail({ reporterId: e.target.value || null }, "Reporter updated")} disabled={!canFull} className="!py-1.5"><option value="">None</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
               <Field label="Start date"><Input type="date" value={detail.startDate?.slice(0, 10) ?? ""} onChange={(e) => canFull && patchDetail({ startDate: e.target.value || null }, "Start date updated")} disabled={!canFull} /></Field>

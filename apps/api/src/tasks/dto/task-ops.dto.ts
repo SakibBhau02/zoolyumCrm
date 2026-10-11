@@ -10,6 +10,8 @@ export class BulkTaskDto {
   @IsIn(BULK_OPS as unknown as string[])
   op!: (typeof BULK_OPS)[number];
 
+  // Deliberately undecorated: string | number | date | null depending on op.
+  // Declared so whitelist keeps it; validated per-op in the service.
   @IsOptional()
   value?: any;
 }

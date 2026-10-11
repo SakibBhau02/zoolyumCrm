@@ -22,6 +22,8 @@ export type TaskRow = {
   reporterId?: string | null;
   parentTaskId?: string | null;
   projectId?: string | null;
+  sprintId?: string | null;
+  deliverableId?: string | null;
   tags?: string[];
   isBlocked?: boolean;
   isClientVisible?: boolean;

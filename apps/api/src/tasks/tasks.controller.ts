@@ -25,18 +25,18 @@ export class TasksController {
   }
 
   @Post("sprints")
-  createSprint(@Body() body: SprintDto) {
-    return this.tasks.createSprint(body);
+  createSprint(@Body() body: SprintDto, @CurrentUser() user: any) {
+    return this.tasks.createSprint(body, user);
   }
 
   @Patch("sprints/:id")
-  updateSprint(@Param("id") id: string, @Body() body: Partial<SprintDto>) {
-    return this.tasks.updateSprint(id, body);
+  updateSprint(@Param("id") id: string, @Body() body: Partial<SprintDto>, @CurrentUser() user: any) {
+    return this.tasks.updateSprint(id, body, user);
   }
 
   @Delete("sprints/:id")
-  deleteSprint(@Param("id") id: string) {
-    return this.tasks.deleteSprint(id);
+  deleteSprint(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.tasks.deleteSprint(id, user);
   }
 
   @Post("sprints/:id/tasks")
@@ -98,13 +98,13 @@ export class TasksController {
   }
 
   @Post("templates")
-  createTemplate(@Body() body: any) {
-    return this.tasks.createTemplate(body);
+  createTemplate(@Body() body: any, @CurrentUser() user: any) {
+    return this.tasks.createTemplate(body, user);
   }
 
   @Delete("templates/:id")
-  deleteTemplate(@Param("id") id: string) {
-    return this.tasks.deleteTemplate(id);
+  deleteTemplate(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.tasks.deleteTemplate(id, user);
   }
 
   @Post("templates/:id/use")
@@ -122,18 +122,18 @@ export class TasksController {
   }
 
   @Post("automation")
-  createAutomation(@Body() body: any) {
-    return this.tasks.createAutomation(body);
+  createAutomation(@Body() body: any, @CurrentUser() user: any) {
+    return this.tasks.createAutomation(body, user);
   }
 
   @Patch("automation/:id")
-  updateAutomation(@Param("id") id: string, @Body() body: any) {
-    return this.tasks.updateAutomation(id, body);
+  updateAutomation(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+    return this.tasks.updateAutomation(id, body, user);
   }
 
   @Delete("automation/:id")
-  deleteAutomation(@Param("id") id: string) {
-    return this.tasks.deleteAutomation(id);
+  deleteAutomation(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.tasks.deleteAutomation(id, user);
   }
 
   @Get("workload")
@@ -239,23 +239,23 @@ export class TasksController {
   }
 
   @Patch(":id/comments/:commentId/reactions")
-  toggleReaction(@Param("id") id: string, @Param("commentId") commentId: string, @Body() body: { emoji: string; userId: string }) {
-    return this.tasks.toggleReaction(id, commentId, body);
+  toggleReaction(@Param("id") id: string, @Param("commentId") commentId: string, @Body() body: { emoji: string; userId: string }, @CurrentUser() user: any) {
+    return this.tasks.toggleReaction(id, commentId, body, user);
   }
 
   @Delete(":id/comments/:commentId")
-  deleteComment(@Param("id") id: string, @Param("commentId") commentId: string) {
-    return this.tasks.deleteComment(id, commentId);
+  deleteComment(@Param("id") id: string, @Param("commentId") commentId: string, @CurrentUser() user: any) {
+    return this.tasks.deleteComment(id, commentId, user);
   }
 
   @Post(":id/dependencies")
-  addDependency(@Param("id") id: string, @Body() body: { dependsOnTaskId: string; type?: string }) {
-    return this.tasks.addDependency(id, body.dependsOnTaskId, body.type);
+  addDependency(@Param("id") id: string, @Body() body: { dependsOnTaskId: string; type?: string }, @CurrentUser() user: any) {
+    return this.tasks.addDependency(id, body.dependsOnTaskId, body.type, user);
   }
 
   @Delete(":id/dependencies/:depId")
-  removeDependency(@Param("id") id: string, @Param("depId") depId: string) {
-    return this.tasks.removeDependency(id, depId);
+  removeDependency(@Param("id") id: string, @Param("depId") depId: string, @CurrentUser() user: any) {
+    return this.tasks.removeDependency(id, depId, user);
   }
 
   @Post(":id/time-logs")

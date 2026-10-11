@@ -147,3 +147,93 @@ also why the original round's smoke test saw 0 notifications.)
 - Weekly-off hours subtraction in capacity
 - Gantt dependency arrows + drag rescheduling
 - Old burndown days stay "estimated" — expected; snapshots only accumulate forward
+
+---
+
+# Full-module audit round ("shob kichu dekho") — same day
+
+Re-read the whole plan + notes, then audited schema ↔ code ↔ UI end to end.
+Found one P0, several P1 permission holes, and closed the last plan follow-up.
+
+## P0 — `ScheduleModule.forRoot()` was never registered
+
+`@nestjs/schedule` is installed and three `@Cron`s exist in `tasks.service.ts`
+(`overdueReminders` 09:30, `closeStaleTimers` 03:00, `snapshotActiveSprints` 23:30),
+but `app.module.ts` never imported `ScheduleModule.forRoot()` — and there are no
+other `@Cron`s anywhere in the repo. **Without it Nest never discovers cron
+methods, so all three jobs were silently dead code.** One-line fix in
+`app.module.ts` with a comment explaining why it must stay.
+
+## P1 — permission holes closed
+
+All verified live as rahim (Sales/BD, no employee) → 403 in every case:
+
+| Endpoint | Before | After |
+|---|---|---|
+| `POST/DELETE :id/dependencies` | no user param at all — any login could rewire the graph | `canWorkOnTask` required |
+| `DELETE :id/comments/:commentId` | any login could delete anyone's comment | author (by User id) or `canEditFull` |
+| `PATCH :id/comments/:commentId/reactions` | no check | `canViewTask` required |
+| Sprint create/update/delete | open to every login | `requirePlanner()` (PM/Admin) |
+| `POST /sprints/:id/tasks` | open + no cross-project check | per-task `canEditFull` + project-match, returns `{affected, skipped}` |
+| Template create/delete, automation create/update/delete | open to every login | `requirePlanner()`; template *use* stays open |
+
+Also: `updateSprint` now rejects `endDate < startDate` (create already did).
+
+## P1 — assigner provenance plugged everywhere
+
+`assignedById` was only stamped on manual create/update. Now also on:
+`clone()`, `spawnRecurrence()`, `useTemplate()`, and bulk `assign` (which moved
+from `updateMany` to per-task updates so each task keeps its own `assigned`
+activity entry — handover history must survive bulk ops). Verified live:
+bulk-assign to Sohan → `assignedBy: Sakib Chowdhury`; clone → same.
+
+## P2 — UI gaps closed
+
+- Timer buttons on board cards + list rows (plan Batch 1 promised "play/stop on
+  card"; only the drawer had one). 24 cards + drawer = 25 buttons confirmed.
+- Non-planners no longer see sprint create/delete, template New/delete, or
+  automation add/toggle/delete (`canPlan` from `/auth/me` roleName, mirroring
+  backend `isPM()`; backend 403s regardless).
+- Drawer metadata gained the missing **Sprint** select (`PATCH :id/sprint`,
+  `canFull`-gated) — previously tasks could only enter sprints via API.
+- Form-mode project panel no longer prints a wrong "0 tasks" (the Flow project
+  fetch has no `_count`; the count now renders only when present).
+
+## Plan leftover closed — weekly-off capacity
+
+`Employee.weeklyOffDays` empty means "follow policy", not "no offs" — the first
+implementation treated it as no offs (all DB employees have `[]`). Now falls
+back to `AttendancePolicy.default.weeklyOffDays` (Fri/Sat). Live result for the
+Sun–Sat window: `off=2, capacity=24` with reason
+"2 weekly off day(s) in window"; UI badge shows "2d off".
+
+## Incidental findings (no change)
+
+- `BulkTaskDto.value` has no decorator but survives `whitelist: true` (only
+  *undeclared* props are stripped); verified live twice. Left as-is + comment.
+- `nest start --watch` + `deleteOutDir: true` self-destructs under rapid saves
+  (two overlapping compilations → `Cannot find module dist/main`, process dies
+  and never recovers). Switched the running dev server to
+  `build` + `start:prod` with explicit rebuilds. Recommend the same for
+  day-to-day backend work until `deleteOutDir` is turned off.
+- `page.tsx` has a *local* `TaskRow` duplicating the modal's — pre-existing;
+  both gained `sprintId`. A merge/dedupe pass would help but is cosmetic.
+- Each timer button fetches `/tasks/timers/running` on mount (~25 parallel
+  trivial queries per board load). Cheap enough to leave; lift state up if it
+  ever shows in profiling.
+
+## Verification — audit round
+
+- `npm run build --prefix apps/api` ✅ 0 errors, `npm run build --prefix apps/web` ✅
+  (one fix: page-local `TaskRow` needed `sprintId`; one revert of my own bad edit
+  in sprint.tsx caught before build)
+- Live (prod-mode API, sakib Owner / rahim Sales-BD):
+  - workload → `off=2, capacity=24` for all three employees
+  - sprint/template/automation create as rahim → 403 × 3
+  - dependency add, comment delete as rahim → 403 × 2; author delete → ok
+  - sprint move as owner → ok; as rahim → 403; cross-project bulk assign → skipped → 403 with message
+  - bulk assign + clone assigner stamps → correct; clone + test rows deleted
+- Browser: Sprint field + "Backlog (no sprint)" in drawer, planner buttons
+  visible as Owner, 25 timer buttons, "2d off" badge; only the pre-existing
+  logo 404 in console.
+- No DB residue: all audit rows removed (verified by re-query, not assumed).
