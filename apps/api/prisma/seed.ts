@@ -226,6 +226,15 @@ async function main() {
   }
 
   // ── Leave ────────────────────────────────────────────────────────────
+  // Quota table first (balances derive from it; UNPAID stays unlimited).
+  await prisma.leavePolicy.createMany({
+    data: [
+      { leaveType: "CASUAL", annualDays: bdt(10), description: "Casual leave — planned short leave" },
+      { leaveType: "SICK", annualDays: bdt(14), description: "Sick leave — medical" },
+      { leaveType: "EARNED", annualDays: bdt(18), description: "Earned / annual leave" },
+    ],
+    skipDuplicates: true,
+  });
   await prisma.leaveBalance.createMany({
     data: [
       { employeeId: empFahim.id, leaveType: "CASUAL", balanceDays: bdt(8), period: "2026" },

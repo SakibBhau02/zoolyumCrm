@@ -201,6 +201,11 @@ export class PeopleController {
     return this.leave.leaveRequests();
   }
 
+  @Get("leave-requests/:id")
+  leaveRequestDetail(@Param("id") id: string) {
+    return this.leave.leaveRequestDetail(id);
+  }
+
   @Post("leave-requests")
   applyLeave(@Body() body: any) {
     return this.leave.applyLeave(body);
@@ -208,12 +213,47 @@ export class PeopleController {
 
   @Patch("leave-requests/:id")
   approveLeave(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
-    return this.leave.approveLeave(id, body.approved, user?.sub);
+    return this.leave.approveLeave(id, body.approved === true, user, body.note);
   }
 
   @Get("leave-balances")
   leaveBalances(@Query("employeeId") employeeId?: string) {
     return this.leave.leaveBalances(employeeId);
+  }
+
+  @Post("leave-balances/ensure")
+  @Roles(...HR_ROLES)
+  ensureLeaveBalances(@Body() body: { period?: string; employeeId?: string; reset?: boolean }) {
+    return this.leave.ensureBalances(body.period, body.employeeId, body.reset === true);
+  }
+
+  @Get("leave-policies")
+  leavePolicies() {
+    return this.leave.leavePolicies();
+  }
+
+  @Patch("leave-policies")
+  @Roles(...HR_ROLES)
+  upsertLeavePolicies(@Body() body: { policies: { leaveType: string; annualDays?: number | null; description?: string }[] }) {
+    return this.leave.upsertLeavePolicies(body.policies ?? []);
+  }
+
+  // ── Work calendar (monthly open/closed overrides) ──────────────────────
+  @Get("work-calendar")
+  workCalendar(@Query("month") month?: string) {
+    return this.attendance.workCalendar(month);
+  }
+
+  @Post("work-calendar")
+  @Roles(...HR_ROLES)
+  upsertOverride(@Body() body: { date: string; isOpen: boolean; note?: string }, @CurrentUser() user: any) {
+    return this.attendance.upsertOverride(body, user?.sub);
+  }
+
+  @Delete("work-calendar/:id")
+  @Roles(...HR_ROLES)
+  deleteOverride(@Param("id") id: string) {
+    return this.attendance.deleteOverride(id);
   }
 
   @Get("payroll")

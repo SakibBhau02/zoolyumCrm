@@ -127,6 +127,7 @@ model User {
   notifications                Notification[]
   notificationPreferences      NotificationPreference[]
   projectReferences            ProjectReference[]
+  workdayOverrides             WorkdayOverride[]
   generatedReports             ProjectReport[]          @relation("ReportGeneratedBy")
   savedTaskViews               SavedTaskView[]
 }
@@ -1206,16 +1207,25 @@ model Attendance {
 }
 
 model LeaveRequest {
-  id           String      @id @default(cuid())
-  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  employeeId   String
-  leaveType    LeaveType
-  startDate    DateTime    @db.Date
-  endDate      DateTime    @db.Date
-  status       LeaveStatus @default(PENDING)
-  approvedBy   User?       @relation("LeaveApproval", fields: [approvedById], references: [id])
-  approvedById String?
-  appliedAt    DateTime    @default(now())
+  id            String      @id @default(cuid())
+  employee      Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId    String
+  leaveType     LeaveType
+  startDate     DateTime    @db.Date
+  endDate       DateTime    @db.Date
+  status        LeaveStatus @default(PENDING)
+  approvedBy    User?       @relation("LeaveApproval", fields: [approvedById], references: [id])
+  approvedById  String?
+  appliedAt     DateTime    @default(now())
+  // Audit trail for the balance ledger (the detail view reads these):
+  // working-day count, how much was actually deducted, from which balance,
+  // and when the decision happened. Reject-after-approve restores deductedDays.
+  workingDays   Int?
+  deductedDays  Decimal?    @db.Decimal(5, 1)
+  balanceBefore Decimal?    @db.Decimal(5, 1)
+  balanceAfter  Decimal?    @db.Decimal(5, 1)
+  decidedAt     DateTime?
+  decisionNote  String?
 }
 
 model LeaveBalance {
@@ -1352,9 +1362,39 @@ model Holiday {
   date         String   @unique // YYYY-MM-DD
   name         String
   description  String?
-  tentative    Boolean  @default(false) // e.g. lunar Eid dates — confirm before payroll month
+  tentative    Boolean  @default(false) // e.g. lunar Eid dates - confirm before payroll month
   isGovernment Boolean  @default(true)
   createdAt    DateTime @default(now())
+}
+
+// ── Workday overrides: per-date exceptions to the weekly rhythm ─────────
+// The weekly off pattern (Fri/Sat) is the default; some Saturdays the office
+// opens, some weekdays it closes (events, make-up days). An override row wins
+// over weeklyOffDays everywhere the attendance engine asks "is this working?".
+// Holidays stay separate (government/religious leave with payroll meaning;
+// overrides are pure open/closed switches with an optional note).
+model WorkdayOverride {
+  id          String   @id @default(cuid())
+  date        String   @unique // YYYY-MM-DD (Dhaka calendar date)
+  isOpen      Boolean // true = working despite weekly off; false = closed despite weekday
+  note        String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ── Leave quotas: yearly entitlement per leave type ─────────────────────
+//Balances are per (employee, type, year-period) and reset every January —
+// `ensureBalances` (re)creates them from these rows. UNPAID has no row (or a
+// null annualDays row): unlimited, never deducted, payroll handles LOP.
+model LeavePolicy {
+  id          String    @id @default(cuid())
+  leaveType   LeaveType @unique
+  annualDays  Decimal?  @db.Decimal(5, 1) // null = unlimited (UNPAID)
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
 
 model AttendancePolicy {

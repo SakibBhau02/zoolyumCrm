@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { AttendanceStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
-import { dateStrDhaka, dhakaDayRange, dhakaDaysInMonth, invalidatePeopleCache, minutesOf, parseDeviceTime, toHHmmDhaka, weekdayDhaka } from "./people-utils";
+import { dateStrDhaka, dhakaDayRange, dhakaDaysInMonth, eachDayStr, invalidatePeopleCache, isWorkingDay, minutesOf, parseDeviceTime, toHHmmDhaka, weekdayDhaka } from "./people-utils";
 
 @Injectable()
 export class AttendanceService {
@@ -15,6 +15,30 @@ export class AttendanceService {
   private offDaysFor(emp: any, policy: any) {
     const od = emp.weeklyOffDays && emp.weeklyOffDays.length ? emp.weeklyOffDays : policy.weeklyOffDays;
     return new Set(od);
+  }
+
+  /**
+   * Working-day count for an arbitrary range — the single source of truth for
+   * leave deduction (LeaveService) and anything else that needs "how many of
+   * these days consume quota". Same precedence as the engine: explicit
+   * calendar override > holiday > weekly off.
+   */
+  async countWorkingDays(employeeId: string, from: string, to: string): Promise<{ working: number; total: number }> {
+    const emp = await this.prisma.employee.findUnique({ where: { id: employeeId }, select: { id: true, weeklyOffDays: true } });
+    if (!emp) throw new NotFoundException("Employee not found");
+    const [policy, holidays, overrides] = await Promise.all([
+      this.attendancePolicy(),
+      this.prisma.holiday.findMany({ select: { date: true } }),
+      this.overrideMap(),
+    ]);
+    const weeklyOff = new Set(
+      (emp.weeklyOffDays?.length ? emp.weeklyOffDays : policy.weeklyOffDays).map((d: any) => String(d).trim().toUpperCase())
+    );
+    const holidaySet = new Set(holidays.map((h) => h.date));
+    const overrideBools = new Map([...overrides.entries()].map(([k, v]) => [k, v.isOpen]));
+    const days = eachDayStr(from, to);
+    const working = days.filter((d) => isWorkingDay(d, weeklyOff, holidaySet, overrideBools)).length;
+    return { working, total: days.length };
   }
 
   private computeDayStatus(emp: any, punches: { punchTime: Date }[], policy: any): { status: AttendanceStatus; checkIn: Date | null; checkOut: Date | null; minutesLate: number } {
@@ -111,9 +135,62 @@ export class AttendanceService {
     return this.prisma.attendancePolicy.update({ where: { id: "default" }, data });
   }
 
+  // ── Work calendar (monthly open/closed overrides) ────────────────────
+  // Weekly offs are the default rhythm; this is the exception list. One row
+  // per date: open a Saturday, or close a weekday. Every engine path that
+  // asks "is this a working day" reads this map first.
+  async overrideMap(): Promise<Map<string, { isOpen: boolean; note: string | null }>> {
+    const rows = await this.prisma.workdayOverride.findMany({ select: { date: true, isOpen: true, note: true } });
+    return new Map(rows.map((r) => [r.date, { isOpen: r.isOpen, note: r.note ?? null }]));
+  }
+
+  async workCalendar(month?: string) {
+    const m = month && /^\d{4}-\d{2}$/.test(month) ? month : dateStrDhaka(new Date()).slice(0, 7);
+    const [overrides, holidays, policy] = await Promise.all([
+      this.prisma.workdayOverride.findMany({
+        where: { date: { gte: `${m}-01`, lt: `${m}-32` } },
+        include: { createdBy: { select: { id: true, name: true } } },
+        orderBy: { date: "asc" },
+      }),
+      this.prisma.holiday.findMany({
+        where: { date: { gte: `${m}-01`, lt: `${m}-32` } },
+        orderBy: { date: "asc" },
+      }),
+      this.attendancePolicy(),
+    ]);
+    return { month: m, weeklyOffDays: policy.weeklyOffDays, overrides, holidays };
+  }
+
+  async upsertOverride(body: { date: string; isOpen: boolean; note?: string }, userId?: string) {
+    if (!body.date || !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) throw new BadRequestException("date must be YYYY-MM-DD");
+    // Only dates from the start of the current month forward — history is
+    // immutable (payroll already ran on it).
+    const monthFloor = `${dateStrDhaka(new Date()).slice(0, 7)}-01`;
+    if (body.date < monthFloor) throw new BadRequestException("Cannot change past months — payroll already ran on them");
+    const row = await this.prisma.workdayOverride.upsert({
+      where: { date: body.date },
+      create: { date: body.date, isOpen: !!body.isOpen, note: body.note?.trim() || null, createdById: userId ?? null },
+      update: { isOpen: !!body.isOpen, note: body.note?.trim() || null, createdById: userId ?? null },
+      include: { createdBy: { select: { id: true, name: true } } },
+    });
+    await invalidatePeopleCache(this.cache);
+    return row;
+  }
+
+  async deleteOverride(id: string) {
+    const row = await this.prisma.workdayOverride.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Override not found");
+    const monthFloor = `${dateStrDhaka(new Date()).slice(0, 7)}-01`;
+    if (row.date < monthFloor) throw new BadRequestException("Cannot change past months — payroll already ran on them");
+    await this.prisma.workdayOverride.delete({ where: { id } });
+    await invalidatePeopleCache(this.cache);
+    return { ok: true };
+  }
+
   private async syncDay(emp: any, dstr: string, ctx: {
     policy: any;
     holidays: Set<string>;
+    overrides: Map<string, { isOpen: boolean; note: string | null }>;
     leavesByEmp: Map<string, { startDate: Date; endDate: Date }[]>;
     punchesByEmpDate: Map<string, { punchTime: Date }[]>;
   }) {
@@ -121,8 +198,13 @@ export class AttendanceService {
     // is UTC-midnight labelled with that date so displays stay correct.
     const date = new Date(`${dstr}T00:00:00.000Z`);
     const { start, end } = dhakaDayRange(dstr);
-    if (this.offDaysFor(emp, ctx.policy).has(weekdayDhaka(date))) return null;
-    if (ctx.holidays.has(dstr)) return null;
+    // Precedence: explicit override > weekly off / holiday.
+    const ov = ctx.overrides.get(dstr)?.isOpen;
+    if (ov === false) return null; // office closed by override
+    if (ov !== true) {
+      if (this.offDaysFor(emp, ctx.policy).has(weekdayDhaka(date))) return null;
+      if (ctx.holidays.has(dstr)) return null;
+    }
     const punches = (ctx.punchesByEmpDate.get(`${emp.id}|${dstr}`) ?? []).sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
     const leaves = (ctx.leavesByEmp.get(emp.id) ?? []).filter((l) => date >= l.startDate && date <= l.endDate);
     if (leaves.length && !punches.length) {
@@ -144,19 +226,22 @@ export class AttendanceService {
     return att;
   }
 
-  private async recomputeDay(employeeId: string, dstr: string) {
+  /** Recompute one day. Public so LeaveService can refresh days after a leave decision. */
+  async recomputeDay(employeeId: string, dstr: string) {
     const { start, end } = dhakaDayRange(dstr);
     const policy = await this.attendancePolicy();
     const emp = await this.prisma.employee.findUnique({ where: { id: employeeId } });
     if (!emp) return;
-    const [holidays, leaves, punches] = await Promise.all([
+    const [holidays, leaves, punches, overrides] = await Promise.all([
       this.prisma.holiday.findMany({ select: { date: true } }),
       this.prisma.leaveRequest.findMany({ where: { status: "APPROVED", startDate: { lte: end }, endDate: { gte: start } } }),
       this.prisma.punchLog.findMany({ where: { employeeId, punchTime: { gte: start, lt: end } } }),
+      this.overrideMap(),
     ]);
     await this.syncDay(emp, dstr, {
       policy,
       holidays: new Set(holidays.map((h) => h.date)),
+      overrides,
       leavesByEmp: new Map([[employeeId, leaves.map((l) => ({ startDate: l.startDate, endDate: l.endDate }))]]),
       punchesByEmpDate: new Map([[`${employeeId}|${dstr}`, punches]]),
     });
@@ -322,15 +407,17 @@ export class AttendanceService {
     const start = first.start;
     const end = last.end;
     const policy = await this.attendancePolicy();
-    const [employees, holidays, leaves, punches] = await Promise.all([
+    const [employees, holidays, leaves, punches, overrides] = await Promise.all([
       this.prisma.employee.findMany({ where: { employmentStatus: "ACTIVE" } }),
       this.prisma.holiday.findMany({ select: { date: true } }),
       this.prisma.leaveRequest.findMany({ where: { status: "APPROVED", startDate: { lt: new Date(end.getTime() + 86400000) }, endDate: { gte: start } } }),
       this.prisma.punchLog.findMany({ where: { employeeId: { not: null }, punchTime: { gte: start, lt: end } } }),
+      this.overrideMap(),
     ]);
     const ctx = {
       policy,
       holidays: new Set(holidays.map((h) => h.date)),
+      overrides,
       leavesByEmp: new Map<string, { startDate: Date; endDate: Date }[]>(),
       punchesByEmpDate: new Map<string, { punchTime: Date }[]>(),
     };
@@ -391,12 +478,13 @@ export class AttendanceService {
     const { start, end } = this.rangeBounds(days);
     const policy = await this.attendancePolicy();
     const threshold = policy.overtimeThresholdMinutes ?? 30;
-    const [employees, holidays, leaves, attendance, punches] = await Promise.all([
+    const [employees, holidays, leaves, attendance, punches, overrides] = await Promise.all([
       this.prisma.employee.findMany({ where: { employmentStatus: "ACTIVE" } }),
       this.prisma.holiday.findMany({ select: { date: true } }),
       this.prisma.leaveRequest.findMany({ where: { status: "APPROVED", startDate: { lt: new Date(end.getTime() + 86400000) }, endDate: { gte: start } } }),
       this.prisma.attendance.findMany({ where: { date: { gte: start, lt: end } } }),
       this.prisma.punchLog.findMany({ where: { employeeId: { not: null }, punchTime: { gte: start, lt: end } } }),
+      this.overrideMap(),
     ]);
     const holidaySet = new Set(holidays.map((h) => h.date));
     const todayStr = dateStrDhaka(new Date());
@@ -412,8 +500,13 @@ export class AttendanceService {
       let workedMinutes = 0, expectedMinutes = 0, overtimeMinutes = 0, undertimeMinutes = 0, daysCounted = 0;
       for (const dstr of days) {
         if (dstr > todayStr) break;
-        if (off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)))) { weekOffDays++; continue; }
-        if (holidaySet.has(dstr)) { holidayDays++; continue; }
+        // Explicit calendar override wins over weekly off / holiday.
+        const ov = overrides.get(dstr)?.isOpen;
+        if (ov === false) { holidayDays++; continue; }
+        if (ov !== true) {
+          if (off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)))) { weekOffDays++; continue; }
+          if (holidaySet.has(dstr)) { holidayDays++; continue; }
+        }
         if (empLeaves.some((l) => dstr >= dateStrDhaka(l.startDate) && dstr <= dateStrDhaka(l.endDate))) { leaveDays++; workingDays++; continue; }
         workingDays++;
         const att = empAtt.find((a) => dateStrDhaka(a.date) === dstr);
@@ -588,11 +681,12 @@ export class AttendanceService {
     const policy = await this.attendancePolicy();
     const threshold = policy.overtimeThresholdMinutes ?? 30;
     const expected = this.expectedMinutes(emp, policy);
-    const [holidays, leaves, attendance, punches] = await Promise.all([
+    const [holidays, leaves, attendance, punches, overrides] = await Promise.all([
       this.prisma.holiday.findMany({ select: { date: true, name: true } }),
       this.prisma.leaveRequest.findMany({ where: { employeeId, status: "APPROVED", startDate: { lt: new Date(end.getTime() + 86400000) }, endDate: { gte: start } } }),
       this.prisma.attendance.findMany({ where: { employeeId, date: { gte: new Date(`${days[0]}T00:00:00.000Z`), lt: new Date(new Date(`${days[days.length - 1]}T00:00:00.000Z`).getTime() + 86400000) } } }),
       this.prisma.punchLog.findMany({ where: { employeeId, punchTime: { gte: start, lt: end } }, orderBy: { punchTime: "asc" } }),
+      this.overrideMap(),
     ]);
     const holidaySet = new Set(holidays.map((h) => h.date));
     const holidayName = new Map(holidays.map((h) => [h.date, h.name]));
@@ -604,14 +698,17 @@ export class AttendanceService {
     const summary = { working: 0, present: 0, late: 0, halfDay: 0, absent: 0, leave: 0, off: 0, holiday: 0, lateMinutes: 0, workedMinutes: 0, expectedMinutes: 0, overtimeMinutes: 0, undertimeMinutes: 0 };
     for (const dstr of days) {
       const isFuture = dstr > todayStr;
-      const isOff = off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)));
-      const isHoliday = holidaySet.has(dstr);
+      const ov = overrides.get(dstr);
+      const isOff = ov?.isOpen !== true && off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)));
+      const isHoliday = ov?.isOpen !== true && holidaySet.has(dstr);
+      const isOverrideClosed = ov?.isOpen === false;
       const onLeave = leaves.some((l) => dstr >= dateStrDhaka(l.startDate) && dstr <= dateStrDhaka(l.endDate));
       const att = attendance.find((a) => dateStrDhaka(a.date) === dstr);
       const dayPunches = punches.filter((p) => dateStrDhaka(p.punchTime) === dstr);
       let kind: string;
       let hours: { worked: number; overtime: number; undertime: number; open: boolean } | null = null;
       if (isFuture) kind = "future";
+      else if (isOverrideClosed) { kind = "holiday"; summary.holiday++; }
       else if (isOff) { kind = "off"; summary.off++; }
       else if (isHoliday) { kind = "holiday"; summary.holiday++; }
       else if (onLeave && !dayPunches.length) { kind = "leave"; summary.leave++; }
@@ -648,7 +745,7 @@ export class AttendanceService {
         stillInside: hours?.open ?? false,
         punches: dayPunches.length,
         leave: onLeave,
-        holiday: isHoliday ? holidayName.get(dstr) ?? true : false,
+        holiday: isOverrideClosed ? overrides.get(dstr)?.note ?? "Office closed" : isHoliday ? holidayName.get(dstr) ?? true : false,
       });
     }
     return {
@@ -804,12 +901,13 @@ export class AttendanceService {
     const { start, end } = this.rangeBounds(days);
     const policy = await this.attendancePolicy();
     const threshold = policy.overtimeThresholdMinutes ?? 30;
-    const [employees, holidays, leaves, attendance, punches] = await Promise.all([
+    const [employees, holidays, leaves, attendance, punches, overrides] = await Promise.all([
       this.prisma.employee.findMany({ where: { employmentStatus: "ACTIVE" } }),
       this.prisma.holiday.findMany({ select: { date: true } }),
       this.prisma.leaveRequest.findMany({ where: { status: "APPROVED", startDate: { lt: new Date(end.getTime() + 86400000) }, endDate: { gte: start } } }),
       this.prisma.attendance.findMany({ where: { date: { gte: start, lt: end } } }),
       this.prisma.punchLog.findMany({ where: { employeeId: { not: null }, punchTime: { gte: start, lt: end } } }),
+      this.overrideMap(),
     ]);
     const holidaySet = new Set(holidays.map((h) => h.date));
     const rows = employees.map((emp) => {
@@ -823,8 +921,12 @@ export class AttendanceService {
       let streakOpen = true;
       for (let i = days.length - 1; i >= 0; i--) {
         const dstr = days[i];
-        if (off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)))) continue;
-        if (holidaySet.has(dstr)) continue;
+        const ov = overrides.get(dstr)?.isOpen;
+        if (ov === false) continue;
+        if (ov !== true) {
+          if (off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)))) continue;
+          if (holidaySet.has(dstr)) continue;
+        }
         if (empLeaves.some((l) => dstr >= dateStrDhaka(l.startDate) && dstr <= dateStrDhaka(l.endDate))) continue;
         const att = empAtt.find((a) => dateStrDhaka(a.date) === dstr);
         const dayPunches = empPunches.filter((p) => dateStrDhaka(p.punchTime) === dstr).sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());

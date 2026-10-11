@@ -75,6 +75,40 @@ export const leaveDays = (start: Date, end: Date): number => {
   return Math.max(1, Math.round(ms / 86400000) + 1);
 };
 
+/** Inclusive YYYY-MM-DD list between two Dhaka calendar dates (guard: 366). */
+export const eachDayStr = (from: string, to: string): string[] => {
+  const out: string[] = [];
+  const d = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  let guard = 0;
+  while (d <= end && guard++ < 366) {
+    out.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+};
+
+/**
+ * Working-day test shared by the attendance engine and leave deduction.
+ * Precedence: explicit override > holiday > weekly off.
+ * An override-open Saturday counts as working; an override-closed weekday
+ * counts as non-working (same as a holiday for counting purposes).
+ */
+export const isWorkingDay = (
+  dstr: string,
+  weeklyOff: Set<string>,
+  holidays: Set<string>,
+  overrides: Map<string, boolean>
+): boolean => {
+  const ov = overrides.get(dstr);
+  if (ov !== undefined) return ov;
+  if (holidays.has(dstr)) return false;
+  const wd = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"][
+    new Date(`${dstr}T00:00:00.000Z`).getUTCDay()
+  ];
+  return !weeklyOff.has(wd);
+};
+
 export const invalidatePeopleCache = async (cache: CacheService) => {
   await cache.del("people:overview");
   await cache.del("people:employees");
