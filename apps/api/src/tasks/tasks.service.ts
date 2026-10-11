@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from "@nestjs/common";
 import { Priority, TaskStatus } from "@prisma/client";
+import { Cron } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { CacheService } from "../cache/cache.service";
@@ -100,9 +101,488 @@ export class TasksService {
     await this.cache.del("dashboard:overview");
   }
 
-  async myDay(employeeId?: string) {
+  /** Resolve employee id for a user id (assignee checks are employee-based). */
+  private async empId(userId?: string): Promise<string | null> {
+    return this.getEmployeeIdByUserId(userId);
+  }
+
+  // ── Checklist (lightweight sub-items) ─────────────────────────────────
+  async listChecklist(taskId: string) {
+    return this.prisma.taskChecklistItem.findMany({
+      where: { taskId },
+      include: { doneBy: { select: { id: true, name: true } } },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+  }
+
+  async addChecklistItem(taskId: string, body: { content: string }, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canEditProgress(task, user))) throw new ForbiddenException("You don't have permission to edit this task");
+    const last = await this.prisma.taskChecklistItem.findFirst({ where: { taskId }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
+    return this.prisma.taskChecklistItem.create({
+      data: { taskId, content: body.content, sortOrder: (last?.sortOrder ?? -1) + 1 },
+      include: { doneBy: { select: { id: true, name: true } } },
+    });
+  }
+
+  async updateChecklistItem(taskId: string, itemId: string, body: { content?: string; done?: boolean }, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canEditProgress(task, user))) throw new ForbiddenException("You don't have permission to edit this task");
+    const existing = await this.prisma.taskChecklistItem.findFirst({ where: { id: itemId, taskId } });
+    if (!existing) throw new NotFoundException("Checklist item not found");
+    const data: any = {};
+    if (body.content !== undefined) data.content = body.content;
+    if (body.done !== undefined) {
+      data.done = body.done;
+      // stamp who/when for done transitions (cleared on un-done)
+      const empId = body.done ? await this.empId(user?.sub) : null;
+      data.doneById = body.done ? empId : null;
+      data.doneAt = body.done ? new Date() : null;
+    }
+    return this.prisma.taskChecklistItem.update({
+      where: { id: itemId },
+      data,
+      include: { doneBy: { select: { id: true, name: true } } },
+    });
+  }
+
+  async removeChecklistItem(taskId: string, itemId: string, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canEditProgress(task, user))) throw new ForbiddenException("You don't have permission to edit this task");
+    await this.prisma.taskChecklistItem.deleteMany({ where: { id: itemId, taskId } });
+    return { ok: true };
+  }
+
+  async reorderChecklist(taskId: string, ids: string[], user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canEditProgress(task, user))) throw new ForbiddenException("You don't have permission to edit this task");
+    await this.prisma.$transaction(
+      ids.map((id, i) => this.prisma.taskChecklistItem.updateMany({ where: { id, taskId }, data: { sortOrder: i } }))
+    );
+    return this.listChecklist(taskId);
+  }
+
+  // ── Timer (one running timer per employee) ────────────────────────────
+  async runningTimer(user: any) {
+    const empId = await this.empId(user?.sub);
+    if (!empId) return null;
+    return this.prisma.taskTimer.findFirst({
+      where: { employeeId: empId, stoppedAt: null },
+      include: { task: { select: { id: true, title: true, projectId: true } } },
+      orderBy: { startedAt: "desc" },
+    });
+  }
+
+  async startTimer(taskId: string, body: { notes?: string }, user: any, allowAutoStop = true) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (!(await this.canEditProgress(task, user))) throw new ForbiddenException("You don't have permission to log time on this task");
+    const empId = await this.empId(user?.sub);
+    if (!empId) throw new BadRequestException("No employee profile linked to your user");
+
+    // auto-stop any other running timer so hours aren't double-counted
+    const running = await this.prisma.taskTimer.findFirst({ where: { employeeId: empId, stoppedAt: null } });
+    if (running) {
+      if (!allowAutoStop) throw new BadRequestException(`Timer already running on another task (${running.taskId})`);
+      await this.stopTimerRecord(running);
+    }
+    return this.prisma.taskTimer.create({
+      data: { taskId, employeeId: empId, notes: body.notes },
+      include: { task: { select: { id: true, title: true } } },
+    });
+  }
+
+  async stopTimer(taskId: string, user: any) {
+    const empId = await this.empId(user?.sub);
+    if (!empId) throw new BadRequestException("No employee profile linked to your user");
+    const running = await this.prisma.taskTimer.findFirst({ where: { taskId, employeeId: empId, stoppedAt: null } });
+    if (!running) throw new NotFoundException("No running timer for this task");
+    const { timer, hours } = await this.stopTimerRecord(running);
+    await this.invalidateTasks();
+    return { timer, hoursLogged: hours };
+  }
+
+  /** Close a timer and write the corresponding TimeLog (loggedVia TIMER). */
+  private async stopTimerRecord(timer: { id: string; taskId: string; employeeId: string | null; startedAt: Date; notes: string | null }) {
+    const now = new Date();
+    const ms = now.getTime() - timer.startedAt.getTime();
+    // round to 2dp hours, minimum 0.01 so a quick toggle still records
+    const hours = Math.max(0.01, Math.round((ms / 3600000) * 100) / 100);
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.taskTimer.update({ where: { id: timer.id }, data: { stoppedAt: now } }),
+      this.prisma.timeLog.create({
+        data: {
+          taskId: timer.taskId,
+          employeeId: timer.employeeId,
+          hours,
+          date: now,
+          loggedVia: "TIMER",
+          notes: timer.notes ?? null,
+        },
+      }),
+    ]);
+    await this.recomputeActualHours(timer.taskId);
+    return { timer: updated, hours };
+  }
+
+  // ── Bulk actions ─────────────────────────────────────────────────────
+  async bulk(body: { ids: string[]; op: string; value?: any }, user: any) {
+    if (!body.ids?.length) throw new BadRequestException("No task ids provided");
+    const tasks = await this.prisma.task.findMany({ where: { id: { in: body.ids } } });
+    if (!tasks.length) throw new NotFoundException("No matching tasks");
+
+    // permission: full-edit for structural ops, progress for status
+    const needFull = ["assign", "priority", "dueDate", "archive", "unarchive", "delete"].includes(body.op);
+    const allowed: string[] = [];
+    for (const t of tasks) {
+      const ok = needFull ? await this.canEditFull(t, user) : await this.canEditProgress(t, user);
+      if (ok) allowed.push(t.id);
+    }
+    if (!allowed.length) throw new ForbiddenException("You don't have permission to modify these tasks");
+    const skipped = tasks.length - allowed.length;
+
+    const now = new Date();
+    let count = 0;
+    switch (body.op) {
+      case "status": {
+        if (!body.value) throw new BadRequestException("status value required");
+        const idsToSpawn: string[] = [];
+        for (const id of allowed) {
+          const task = tasks.find((t) => t.id === id)!;
+          if (task.status === body.value) continue;
+          await this.prisma.task.update({
+            where: { id },
+            data: {
+              status: body.value as TaskStatus,
+              ...(body.value === "DONE" ? { completedAt: task.completedAt ?? now } : { completedAt: null }),
+              activityLog: [
+                { action: "updated", field: "status", from: task.status, to: body.value, at: now.toISOString(), by: user?.name ?? "Bulk update" },
+                ...(((task.activityLog ?? []) as any[]).slice(0, 99)),
+              ] as any,
+            },
+          });
+          if (body.value === "DONE" && task.status !== "DONE") idsToSpawn.push(id);
+          count++;
+        }
+        for (const id of idsToSpawn) await this.spawnRecurrence(id).catch(() => {});
+        break;
+      }
+      case "assign": {
+        const res = await this.prisma.task.updateMany({ where: { id: { in: allowed } }, data: { assignedToId: body.value ?? null } });
+        if (body.value) for (const id of allowed) await this.notifyAssignee(body.value, id, tasks.find((t) => t.id === id)?.title ?? "").catch(() => {});
+        count = res.count;
+        break;
+      }
+      case "priority": {
+        if (!body.value) throw new BadRequestException("priority value required");
+        const res = await this.prisma.task.updateMany({ where: { id: { in: allowed } }, data: { priority: body.value as Priority } });
+        count = res.count;
+        break;
+      }
+      case "dueDate": {
+        const res = await this.prisma.task.updateMany({
+          where: { id: { in: allowed } },
+          data: { dueDate: body.value ? new Date(body.value) : null },
+        });
+        count = res.count;
+        break;
+      }
+      case "archive": {
+        const res = await this.prisma.task.updateMany({ where: { id: { in: allowed } }, data: { archivedAt: now } });
+        count = res.count;
+        break;
+      }
+      case "unarchive": {
+        const res = await this.prisma.task.updateMany({ where: { id: { in: allowed } }, data: { archivedAt: null } });
+        count = res.count;
+        break;
+      }
+      case "delete": {
+        const res = await this.prisma.task.deleteMany({ where: { id: { in: allowed } } });
+        count = res.count;
+        break;
+      }
+      default:
+        throw new BadRequestException(`Unknown bulk op: ${body.op}`);
+    }
+    await this.invalidateTasks();
+    return { ok: true, affected: count, skipped };
+  }
+
+  // ── Sprint / cycle ───────────────────────────────────────────────────
+  async listSprints(query: { projectId?: string; status?: string; includeCompleted?: string } = {}) {
+    return this.prisma.sprint.findMany({
+      where: {
+        ...(query.projectId ? { projectId: query.projectId } : {}),
+        ...(query.status ? { status: query.status as any } : query.includeCompleted === "true" ? {} : { status: { not: "COMPLETED" } }),
+      },
+      include: { project: { select: { id: true, name: true } }, _count: { select: { tasks: true } } },
+      orderBy: [{ startDate: "desc" }],
+    });
+  }
+
+  async createSprint(body: any) {
+    if (!body.name?.trim()) throw new BadRequestException("Sprint name is required");
+    if (!body.startDate || !body.endDate) throw new BadRequestException("startDate and endDate are required");
+    const start = new Date(body.startDate);
+    const end = new Date(body.endDate);
+    if (end < start) throw new BadRequestException("endDate must be after startDate");
+    return this.prisma.sprint.create({
+      data: {
+        name: body.name.trim(),
+        goal: body.goal ?? null,
+        projectId: body.projectId ?? null,
+        startDate: start,
+        endDate: end,
+        status: body.status ?? "PLANNED",
+        capacityHours: body.capacityHours ?? null,
+      },
+    });
+  }
+
+  async updateSprint(id: string, body: any) {
+    const existing = await this.prisma.sprint.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Sprint not found");
+    const data: any = {};
+    for (const k of ["name", "goal"]) if (body[k] !== undefined) data[k] = body[k];
+    if (body.startDate !== undefined) data.startDate = new Date(body.startDate);
+    if (body.endDate !== undefined) data.endDate = new Date(body.endDate);
+    if (body.status !== undefined) data.status = body.status;
+    if (body.projectId !== undefined) data.projectId = body.projectId || null;
+    if (body.capacityHours !== undefined) data.capacityHours = body.capacityHours;
+    return this.prisma.sprint.update({ where: { id }, data });
+  }
+
+  async deleteSprint(id: string) {
+    const existing = await this.prisma.sprint.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Sprint not found");
+    // detach tasks rather than cascade-delete them
+    await this.prisma.$transaction([
+      this.prisma.task.updateMany({ where: { sprintId: id }, data: { sprintId: null } }),
+      this.prisma.sprint.delete({ where: { id } }),
+    ]);
+    await this.invalidateTasks();
+    return { ok: true };
+  }
+
+  async assignTasksToSprint(id: string, taskIds: string[], user?: any) {
+    const sprint = await this.prisma.sprint.findUnique({ where: { id } });
+    if (!sprint) throw new NotFoundException("Sprint not found");
+    const res = await this.prisma.task.updateMany({ where: { id: { in: taskIds } }, data: { sprintId: id } });
+    await this.invalidateTasks();
+    return { ok: true, affected: res.count };
+  }
+
+  async removeTaskFromSprint(id: string, taskId: string) {
+    await this.prisma.task.updateMany({ where: { id: taskId, sprintId: id }, data: { sprintId: null } });
+    await this.invalidateTasks();
+    return { ok: true };
+  }
+
+  async setTaskSprint(taskId: string, sprintId: string | null, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canEditFull(task, user))) throw new ForbiddenException("You don't have permission to move this task");
+    if (sprintId) {
+      const sprint = await this.prisma.sprint.findUnique({ where: { id: sprintId } });
+      if (!sprint) throw new NotFoundException("Sprint not found");
+      if (task.projectId && sprint.projectId && sprint.projectId !== task.projectId) {
+        throw new BadRequestException("Task project does not match sprint project");
+      }
+    }
+    const updated = await this.prisma.task.update({ where: { id: taskId }, data: { sprintId } });
+    await this.invalidateTasks();
+    return updated;
+  }
+
+  /**
+   * Burndown: remaining open tasks per calendar day across the sprint window.
+   * Reconstructed from current status + completedAt/createdAt — no daily snapshot
+   * table yet, so this is a best-effort curve (see plan Batch 3 note).
+   */
+  async sprintBurndown(id: string) {
+    const sprint = await this.prisma.sprint.findUnique({ where: { id } });
+    if (!sprint) throw new NotFoundException("Sprint not found");
     const tasks = await this.prisma.task.findMany({
-      where: { status: { not: "DONE" }, archivedAt: null, ...(employeeId ? { assignedToId: employeeId } : {}) },
+      where: { sprintId: id },
+      select: { id: true, status: true, createdAt: true, completedAt: true, estimatedHours: true, actualHours: true, priority: true },
+    });
+    const day = 86400000;
+    const start = new Date(sprint.startDate);
+    const end = new Date(Math.max(sprint.endDate.getTime(), Date.now()));
+    const days: { date: string; remaining: number; ideal: number; completed: number }[] = [];
+    const totalDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / day));
+    const total = tasks.length;
+    let cumulativeDone = 0;
+    for (let i = 0; i <= totalDays; i++) {
+      const d = new Date(start.getTime() + i * day);
+      const dEnd = new Date(d.getTime() + day);
+      const doneByThen = tasks.filter((t) => t.completedAt && t.completedAt >= start && t.completedAt < dEnd && t.status === "DONE").length;
+      const createdAfter = tasks.filter((t) => t.createdAt >= dEnd).length;
+      cumulativeDone += doneByThen;
+      days.push({
+        date: d.toISOString().slice(0, 10),
+        remaining: Math.max(0, total - cumulativeDone - createdAfter),
+        ideal: Math.round(((totalDays - i) / totalDays) * total),
+        completed: cumulativeDone,
+      });
+    }
+    const done = tasks.filter((t) => t.status === "DONE").length;
+    const estimated = tasks.reduce((s, t) => s + Number(t.estimatedHours ?? 0), 0);
+    const actual = tasks.reduce((s, t) => s + Number(t.actualHours ?? 0), 0);
+    return {
+      sprint,
+      summary: {
+        total,
+        done,
+        open: total - done,
+        estimatedHours: Math.round(estimated * 10) / 10,
+        actualHours: Math.round(actual * 10) / 10,
+        capacityHours: sprint.capacityHours ? Number(sprint.capacityHours) : null,
+        completionPct: total ? Math.round((done / total) * 100) : 0,
+      },
+      days,
+    };
+  }
+
+  // ── Saved views ──────────────────────────────────────────────────────
+  async listSavedViews(user: any) {
+    return this.prisma.savedTaskView.findMany({
+      where: { OR: [{ ownerId: user?.sub ?? "__none__" }, { isShared: true }] },
+      orderBy: [{ createdAt: "asc" }],
+    });
+  }
+
+  async createSavedView(body: any, user: any) {
+    if (!body.name?.trim()) throw new BadRequestException("View name is required");
+    return this.prisma.savedTaskView.create({
+      data: {
+        name: body.name.trim(),
+        ownerId: user?.sub ?? null,
+        filters: body.filters ?? {},
+        viewMode: body.viewMode ?? "board",
+        groupBy: body.groupBy ?? "project",
+        isShared: body.isShared ?? false,
+      },
+    });
+  }
+
+  async updateSavedView(id: string, body: any, user: any) {
+    const v = await this.prisma.savedTaskView.findUnique({ where: { id } });
+    if (!v) throw new NotFoundException("View not found");
+    if (v.ownerId && v.ownerId !== user?.sub && !this.isAdmin(user?.role)) throw new ForbiddenException("Only the owner can edit this view");
+    const data: any = {};
+    for (const k of ["name", "filters", "viewMode", "groupBy", "isShared"]) if (body[k] !== undefined) data[k] = body[k];
+    return this.prisma.savedTaskView.update({ where: { id }, data });
+  }
+
+  async deleteSavedView(id: string, user: any) {
+    const v = await this.prisma.task.findUnique({ where: { id: "__never__" } }); // noop keeps prisma typing warm
+    void v;
+    const view = await this.prisma.savedTaskView.findUnique({ where: { id } });
+    if (!view) throw new NotFoundException("View not found");
+    if (view.ownerId && view.ownerId !== user?.sub && !this.isAdmin(user?.role)) throw new ForbiddenException("Only the owner can delete this view");
+    await this.prisma.savedTaskView.delete({ where: { id } });
+    return { ok: true };
+  }
+
+  // ── Estimation accuracy ──────────────────────────────────────────────
+  private async recordEstimateAccuracy(task: { id: string; assignedToId: string | null; taskType: string; estimatedHours: any; actualHours: any }) {
+    if (task.estimatedHours == null) return;
+    const est = Number(task.estimatedHours);
+    const act = Number(task.actualHours ?? 0);
+    if (!est) return;
+    const varianceRatio = Math.round(((act - est) / est) * 100) / 100;
+    // one row per task — overwrite if the task is re-completed
+    const existing = await this.prisma.estimateAccuracyLog.findFirst({ where: { taskId: task.id } });
+    if (existing) {
+      await this.prisma.estimateAccuracyLog.update({
+        where: { id: existing.id },
+        data: { estimatedHours: est, actualHours: act, varianceRatio, employeeId: task.assignedToId, taskType: task.taskType },
+      });
+      return;
+    }
+    await this.prisma.estimateAccuracyLog.create({
+      data: {
+        taskId: task.id,
+        employeeId: task.assignedToId,
+        taskType: task.taskType,
+        estimatedHours: est,
+        actualHours: act,
+        varianceRatio,
+      },
+    });
+  }
+
+  async estimationReport(query: { employeeId?: string; taskType?: string } = {}) {
+    const rows = await this.prisma.estimateAccuracyLog.findMany({
+      where: {
+        ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+        ...(query.taskType ? { taskType: query.taskType } : {}),
+      },
+      include: { employee: { select: { id: true, name: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    const bucket = (key: string, label: string) => {
+      const items = rows.filter((r) => (r as any)[key] === label);
+      if (!items.length) return null;
+      const est = items.reduce((s, r) => s + Number(r.estimatedHours ?? 0), 0);
+      const act = items.reduce((s, r) => s + Number(r.actualHours ?? 0), 0);
+      const variance = items.reduce((s, r) => s + (r.varianceRatio ?? 0), 0) / items.length;
+      return {
+        key: label,
+        samples: items.length,
+        estimatedHours: Math.round(est * 10) / 10,
+        actualHours: Math.round(act * 10) / 10,
+        avgVarianceRatio: Math.round(variance * 100) / 100,
+        bias: variance > 0.1 ? "underestimated" : variance < -0.1 ? "overestimated" : "accurate",
+        avgEstimated: Math.round((est / items.length) * 10) / 10,
+      };
+    };
+    const grouped = (key: "employeeId" | "taskType") => {
+      const keys = [...new Set(rows.map((r) => (r as any)[key]).filter(Boolean))] as string[];
+      return keys.map((k) => bucket(key, k)).filter(Boolean);
+    };
+    const byEmployee = grouped("employeeId").map((b: any) => {
+      const emp = rows.find((r) => r.employeeId === b.key)?.employee;
+      return { ...b, name: emp?.name ?? b.key };
+    });
+    const byTaskType = grouped("taskType").map((b: any) => ({ ...b, name: b.key }));
+    const worst = [...rows]
+      .sort((a, b) => Math.abs(b.varianceRatio ?? 0) - Math.abs(a.varianceRatio ?? 0))
+      .slice(0, 10)
+      .map((r) => ({
+        taskId: r.taskId,
+        employeeName: r.employee?.name ?? "—",
+        taskType: r.taskType,
+        estimatedHours: Number(r.estimatedHours ?? 0),
+        actualHours: Number(r.actualHours ?? 0),
+        varianceRatio: r.varianceRatio,
+      }));
+    const overall = rows.length
+      ? Math.round((rows.reduce((s, r) => s + (r.varianceRatio ?? 0), 0) / rows.length) * 100) / 100
+      : 0;
+    return { sampleCount: rows.length, overallVarianceRatio: overall, byEmployee, byTaskType, worst };
+  }
+
+
+  async myDayForUser(userId?: string) {
+    if (!userId) return [];
+    const empId = await this.getEmployeeIdByUserId(userId);
+    return this.myDay(empId ?? undefined);
+  }
+
+  async myDay(employeeId?: string) {
+    // employeeId is resolved by the controller from the JWT — never trust a
+    // client-supplied id here or every user sees the whole company's board.
+    if (!employeeId) return [];
+    const tasks = await this.prisma.task.findMany({
+      where: { status: { not: "DONE" }, archivedAt: null, assignedToId: employeeId },
       include: { project: { select: { id: true, name: true, healthStatus: true, riskScore: true } } },
       orderBy: [{ dueDate: "asc" }],
       take: 15,
@@ -115,7 +595,7 @@ export class TasksService {
     return tasks.map((t) => ({ ...t, priorityScore: score(t) })).sort((a, b) => b.priorityScore - a.priorityScore);
   }
 
-  async list(query: { status?: string; priority?: string; taskType?: string; assignee?: string; projectId?: string; q?: string; parent?: string; mine?: boolean; sort?: string; archived?: string; employeeId?: string }) {
+  async list(query: { status?: string; priority?: string; taskType?: string; assignee?: string; projectId?: string; sprintId?: string; q?: string; parent?: string; mine?: boolean; sort?: string; archived?: string; employeeId?: string }) {
     return this.cache.wrapQuery("tasks:list", query, 30, async () => {
       const sort = query.sort ?? "due";
     const orderBy: any =
@@ -133,15 +613,17 @@ export class TasksService {
           ...(query.taskType ? { taskType: query.taskType } : {}),
           ...(query.assignee ? { assignedToId: query.assignee } : {}),
           ...(query.projectId ? { projectId: query.projectId } : {}),
+          ...(query.sprintId ? { sprintId: query.sprintId } : {}),
           ...(query.parent ? { parentTaskId: query.parent } : { parentTaskId: null }),
           ...(query.q ? { OR: [{ title: { contains: query.q, mode: "insensitive" } }, { tags: { has: query.q } }] } : {}),
           ...(query.mine && query.employeeId ? { assignedToId: query.employeeId } : {}),
         },
         include: {
           project: { select: { id: true, name: true, healthStatus: true } },
+          sprint: { select: { id: true, name: true, status: true } },
           assignedTo: { select: { id: true, name: true } },
           reporter: { select: { id: true, name: true } },
-          _count: { select: { timeLogs: true, comments: true } },
+          _count: { select: { timeLogs: true, comments: true, checklist: true } },
         },
         orderBy,
       }),
@@ -235,6 +717,7 @@ export class TasksService {
         title: body.title,
         description: body.description,
         projectId: body.projectId,
+        sprintId: (body as any).sprintId,
         assignedToId: body.assignedToId,
         reporterId: reporterId as string | undefined,
         priority: body.priority ?? "MEDIUM",
@@ -254,6 +737,8 @@ export class TasksService {
         isBlocked: body.isBlocked ?? false,
         isRecurring: body.isRecurring ?? false,
         recurrenceSchedule: body.recurrenceSchedule,
+        // a task created directly as DONE still needs a completion stamp
+        completedAt: status === "DONE" ? new Date() : null,
         activityLog,
       },
     });
@@ -287,7 +772,7 @@ export class TasksService {
     };
     if (body.title !== undefined) push("title", existing.title, body.title), (data.title = body.title);
     if (body.description !== undefined) push("description", existing.description, body.description), (data.description = body.description);
-    if (body.status !== undefined) push("status", existing.status, body.status), (data.status = body.status);
+    if (body.status !== undefined) push("status", existing.status, body.status), (data.status = body.status), (data.completedAt = body.status === "DONE" ? existing.completedAt ?? new Date() : null);
     if (body.priority !== undefined) push("priority", existing.priority, body.priority), (data.priority = body.priority);
     if (body.taskType !== undefined) push("taskType", existing.taskType, body.taskType), (data.taskType = body.taskType);
     if (body.assignedToId !== undefined) push("assignee", existing.assignedToId, body.assignedToId), (data.assignedToId = body.assignedToId);
@@ -326,7 +811,11 @@ export class TasksService {
     await this.applyAutomation({
       type: "assignee", taskId: id, title: updated.title, prev: existing.assignedToId, next: updated.assignedToId, actorName,
     });
-    if (body.status === "DONE" && existing.status !== "DONE") void this.wa.notifyTaskClientUpdate(id).catch(() => {});
+    if (body.status === "DONE" && existing.status !== "DONE") {
+      void this.wa.notifyTaskClientUpdate(id).catch(() => {});
+      await this.recordEstimateAccuracy(updated).catch(() => {});
+      await this.spawnRecurrence(id).catch(() => {});
+    }
     await this.invalidateTasks();
     return updated;
   }
@@ -385,21 +874,44 @@ export class TasksService {
       where: { id },
       data: {
         status,
+        // stamp/clear completion time so burndown + cycle-time have a source of truth
+        ...(status === "DONE" ? { completedAt: existing.completedAt ?? new Date() } : { completedAt: null }),
         activityLog: [
-          { action: "updated", field: "status", from: null, to: status, at: new Date().toISOString(), by: actorName ?? "System" },
+          { action: "updated", field: "status", from: existing.status, to: status, at: new Date().toISOString(), by: actorName ?? "System" },
           ...(((existing.activityLog ?? []) as any[])),
         ].slice(0, 100),
       },
     });
     await this.applyAutomation({ type: "status", taskId: t.id, title: t.title, prev: existing.status, next: status, actorName });
-    if (status === "DONE") void this.wa.notifyTaskClientUpdate(t.id).catch(() => {});
-    if (status === "DONE" && t.isRecurring && t.recurrenceSchedule && RECURRENCE_OFFSETS[t.recurrenceSchedule]) {
-      const nextDue = RECURRENCE_OFFSETS[t.recurrenceSchedule](t.dueDate ?? new Date());
-      await this.prisma.task.create({
+    if (status === "DONE" && existing.status !== "DONE") {
+      void this.wa.notifyTaskClientUpdate(t.id).catch(() => {});
+      await this.recordEstimateAccuracy(t).catch(() => {});
+      await this.spawnRecurrence(id).catch(() => {});
+    }
+    await this.invalidateTasks();
+    return t;
+  }
+
+  /**
+   * Spawn the next occurrence of a recurring task.
+   * Guarded by `recurrenceSpawnedAt` so DONE → reopen → DONE cannot create
+   * duplicate siblings (the previous behaviour re-spawned every time).
+   */
+  private async spawnRecurrence(id: string) {
+    const t = await this.prisma.task.findUnique({ where: { id } });
+    if (!t || !t.isRecurring || !t.recurrenceSchedule || !RECURRENCE_OFFSETS[t.recurrenceSchedule]) return null;
+    if (t.recurrenceSpawnedAt) return null; // already produced a successor
+
+    const nextDue = RECURRENCE_OFFSETS[t.recurrenceSchedule](t.dueDate ?? new Date());
+    const [updated, spawned] = await this.prisma.$transaction([
+      this.prisma.task.update({ where: { id }, data: { recurrenceSpawnedAt: new Date() } }),
+      this.prisma.task.create({
         data: {
           title: t.title,
           description: t.description,
           projectId: t.projectId,
+          deliverableId: t.deliverableId,
+          sprintId: null, // next occurrence lands in the backlog, not the closed sprint
           assignedToId: t.assignedToId,
           reporterId: t.reporterId,
           priority: t.priority,
@@ -420,20 +932,22 @@ export class TasksService {
             { action: "updated", field: "note", from: null, to: `Next occurrence of recurring task after "${t.title}" was completed`, at: new Date().toISOString(), by: "Recurring schedule" },
           ],
         },
-      });
-    }
-    await this.invalidateTasks();
-    return t;
+      }),
+    ]);
+    return spawned;
   }
 
   // ── Comments ─────────────────────────────────────────────────────────
   async addComment(taskId: string, body: { content: string; authorId?: string; parentId?: string; mentionedUserIds?: string[] }, user?: any) {
-    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    const task = await this.prisma.task.findUnique({
+      where: { id: taskId },
+      include: { assignedTo: { select: { user: { select: { id: true } } } }, reporter: { select: { user: { select: { id: true } } } } },
+    });
     if (!task) throw new NotFoundException("Task not found");
     if (user && !(await this.canViewTask(task, user)) && !(await this.canEditProgress(task, user))) {
       throw new ForbiddenException("You don't have permission to comment on this task");
     }
-    return this.prisma.taskComment.create({
+    const comment = await this.prisma.taskComment.create({
       data: {
         taskId,
         content: body.content,
@@ -443,6 +957,70 @@ export class TasksService {
       },
       include: { author: { select: { id: true, name: true } } },
     });
+
+    // Notify @mentions + the assignee/reporter. Author and anyone already
+    // notified as a mention are excluded so nobody gets two pings.
+    const excerpt = body.content.length > 140 ? `${body.content.slice(0, 140)}…` : body.content;
+    const notified = new Set<string>([body.authorId ?? ""]);
+    const mentioned = (body.mentionedUserIds ?? []).filter(Boolean);
+    for (const uid of mentioned) {
+      if (notified.has(uid)) continue;
+      notified.add(uid);
+      await this.notifications.create(uid, "TASK_MENTION" as any, "You were mentioned", `${comment.author?.name ?? "Someone"} mentioned you on "${task.title}": ${excerpt}`, `/tasks?task=${taskId}`).catch(() => {});
+    }
+    const watchers = [task.assignedTo?.user?.id, task.reporter?.user?.id].filter(Boolean) as string[];
+    for (const uid of watchers) {
+      if (notified.has(uid)) continue;
+      notified.add(uid);
+      await this.notifications.create(uid, "TASK_COMMENT" as any, "New comment", `${comment.author?.name ?? "Someone"} commented on "${task.title}": ${excerpt}`, `/tasks?task=${taskId}`).catch(() => {});
+    }
+    return comment;
+  }
+
+  /**
+   * Daily nudge for overdue + due-within-24h tasks.
+   * Runs 09:00 Asia/Dhaka (server TZ) — skips anything completed or archived.
+   * Dedupe is left to NotificationPreference/user-level muting; each run
+   * re-notifies intentionally (daily cadence, not an event).
+   */
+  @Cron("0 9 * * *")
+  async overdueReminders() {
+    const now = new Date();
+    const in24h = new Date(now.getTime() + 86400000);
+    const tasks = await this.prisma.task.findMany({
+      where: {
+        status: { not: "DONE" },
+        archivedAt: null,
+        isBlocked: false,
+        dueDate: { not: null, lte: in24h },
+      },
+      select: { id: true, title: true, dueDate: true, assignedToId: true, priority: true },
+    });
+    let sent = 0;
+    for (const t of tasks) {
+      const emp = await this.prisma.employee.findUnique({ where: { id: t.assignedToId ?? "__none__" }, include: { user: { select: { id: true } } } });
+      if (!emp?.user) continue;
+      const overdue = t.dueDate && t.dueDate < now;
+      const n = await this.notifications.create(
+        emp.user.id,
+        overdue ? ("TASK_OVERDUE" as any) : ("TASK_DUE_SOON" as any),
+        overdue ? "Task overdue" : "Task due soon",
+        overdue ? `"${t.title}" is past its due date.` : `"${t.title}" is due within 24 hours.`,
+        `/tasks?task=${t.id}`
+      ).catch(() => null);
+      if (n) sent++;
+    }
+    return { sent, scanned: tasks.length };
+  }
+
+  /** Timer watchdog: auto-stop timers left running > 12h (forgotten clock). */
+  @Cron("0 3 * * *")
+  async closeStaleTimers() {
+    const cutoff = new Date(Date.now() - 12 * 3600000);
+    const stale = await this.prisma.taskTimer.findMany({ where: { stoppedAt: null, startedAt: { lt: cutoff } } });
+    for (const t of stale) await this.stopTimerRecord(t).catch(() => {});
+    if (stale.length) await this.invalidateTasks();
+    return { closed: stale.length };
   }
 
   async toggleReaction(taskId: string, commentId: string, body: { emoji: string; userId: string }) {
@@ -704,26 +1282,59 @@ export class TasksService {
   }
 
   // ── Workload ─────────────────────────────────────────────────────────
+  /**
+   * Capacity-aware workload. Base capacity = Employee.weeklyCapacityHours
+   * (fallback 40), reduced by approved leave days overlapping the next 7
+   * days and by the employee's weekly off days.
+   */
   async workload() {
     const employees = await this.prisma.employee.findMany({
       where: { employmentStatus: "ACTIVE" },
-      select: { id: true, name: true, roleTitle: true, department: true },
+      select: { id: true, name: true, roleTitle: true, department: true, weeklyCapacityHours: true, weeklyOffDays: true },
     });
     const openTasks = await this.prisma.task.findMany({
       where: { status: { notIn: ["DONE"] }, archivedAt: null },
       select: { assignedToId: true, estimatedHours: true, dueDate: true, priority: true, title: true },
     });
+
+    // leave + off days over the next 7 days determine effective capacity
+    const windowStart = new Date();
+    const windowEnd = new Date(Date.now() + 7 * 86400000);
+    const leaves = await this.prisma.leaveRequest.findMany({
+      where: { status: "APPROVED", startDate: { lte: windowEnd }, endDate: { gte: windowStart } },
+      select: { employeeId: true, startDate: true, endDate: true },
+    });
+
     const now = Date.now();
     const rows = employees.map((e) => {
       const tasks = openTasks.filter((t) => t.assignedToId === e.id);
       const allocated = tasks.reduce((s, t) => s + Number(t.estimatedHours ?? 0), 0);
-      const capacity = 40; // weekly capacity in hours
+
+      const base = Number(e.weeklyCapacityHours ?? 40);
+      const dayMs = 86400000;
+      const hoursPerDay = base / 5; // capacity spread over a 5-day week
+      let leaveDays = 0;
+      for (let d = 0; d < 7; d++) {
+        const day = new Date(windowStart.getTime() + d * dayMs);
+        const overlaps = leaves.some(
+          (l) => l.employeeId === e.id && new Date(l.startDate) <= day && new Date(l.endDate) >= day
+        );
+        if (overlaps) leaveDays++;
+      }
+      const outDays = leaveDays + (e.weeklyOffDays?.length ?? 0) * 0;
+      const effective = Math.max(0, Math.round((base - leaveDays * hoursPerDay) * 10) / 10);
+
       return {
         ...e,
         taskCount: tasks.length,
-        allocated,
-        utilization: Math.min(1, allocated / capacity),
-        overbooked: allocated > capacity,
+        allocated: Math.round(allocated * 10) / 10,
+        baseCapacity: base,
+        leaveDaysInWindow: leaveDays,
+        outDays,
+        capacity: effective,
+        utilization: effective ? Math.min(1.5, allocated / effective) : allocated > 0 ? 1.5 : 0,
+        overbooked: effective > 0 ? allocated > effective : allocated > 0,
+        overbookedReason: leaveDays > 0 ? `${leaveDays} leave day(s) this week` : allocated > base ? "allocated above base capacity" : null,
         urgent: tasks.filter((t) => t.priority === "URGENT").length,
         overdue: tasks.filter((t) => t.dueDate && t.dueDate.getTime() < now).length,
         tasks: tasks.map((t) => ({ title: t.title, hours: Number(t.estimatedHours ?? 0), priority: t.priority, due: t.dueDate })),
@@ -732,9 +1343,10 @@ export class TasksService {
     const totalAllocated = rows.reduce((s, r) => s + r.allocated, 0);
     return {
       rows,
-      totalAllocated,
+      totalAllocated: Math.round(totalAllocated * 10) / 10,
       teamUtilization: rows.length ? Math.round((rows.reduce((s, r) => s + r.utilization, 0) / rows.length) * 100) : 0,
       overbookedCount: rows.filter((r) => r.overbooked).length,
+      leaveAdjusted: true,
     };
   }
 }
