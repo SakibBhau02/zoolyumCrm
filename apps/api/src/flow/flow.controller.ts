@@ -16,8 +16,6 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { randomUUID } from "crypto";
 import { basename, extname, join } from "path";
-import { mkdirSync } from "fs";
-import { ProjectType } from "@prisma/client";
 import { FlowService } from "./flow.service";
 import { CurrentUser, AuthUser } from "../common/decorators/current-user.decorator";
 import { Public } from "../common/decorators/public.decorator";
@@ -25,8 +23,9 @@ import { Roles } from "../common/decorators/roles.decorator";
 import { CreateProjectDto } from "./dto/create-project.dto";
 import { UpdateProjectDto } from "./dto/update-project.dto";
 import { CreateReferenceDto } from "./dto/create-reference.dto";
+import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
 
-const UPLOAD_DIR = join(process.cwd(), "uploads");
+const flowUploadDir = () => uploadsDir();
 
 @Controller("flow")
 export class FlowController {
@@ -96,6 +95,59 @@ export class FlowController {
     return this.flow.bulkAssignTasks(id, body.taskIds);
   }
 
+  // ── Deliverables (proposal commitments) ─────────────────────────────
+  @Post("projects/:id/deliverables")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  addDeliverable(
+    @Param("id") id: string,
+    @Body() dto: { title: string; description?: string; taskIds?: string[] }
+  ) {
+    return this.flow.addDeliverable(id, dto);
+  }
+
+  @Patch("deliverables/:id")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  updateDeliverable(
+    @Param("id") id: string,
+    @Body() dto: { title?: string; description?: string; status?: string; taskIds?: string[] }
+  ) {
+    return this.flow.updateDeliverable(id, dto);
+  }
+
+  @Delete("deliverables/:id")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  removeDeliverable(@Param("id") id: string) {
+    return this.flow.removeDeliverable(id);
+  }
+
+  // ── Reports (auto-populated from deliverables) ──────────────────────
+  @Post("projects/:id/reports/generate")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  generateReport(
+    @Param("id") id: string,
+    @Body() dto: { periodStart?: string; periodEnd?: string; pmNotes?: string },
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.generateReport(id, dto, user?.sub);
+  }
+
+  @Get("projects/:id/reports")
+  listReports(@Param("id") id: string) {
+    return this.flow.listReports(id);
+  }
+
+  @Patch("reports/:id")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  updateReport(@Param("id") id: string, @Body() dto: { pmNotes?: string; status?: string }) {
+    return this.flow.updateReport(id, dto);
+  }
+
+  @Delete("reports/:id")
+  @Roles("Owner", "CONTROL", "PM", "Project Manager")
+  removeReport(@Param("id") id: string) {
+    return this.flow.removeReport(id);
+  }
+
   @Get("projects/:id/discussions")
   discussions(@Param("id") id: string) {
     return this.flow.discussions(id);
@@ -141,8 +193,7 @@ export class FlowController {
     FileInterceptor("file", {
       storage: diskStorage({
         destination: (_req, _file, cb) => {
-          mkdirSync(UPLOAD_DIR, { recursive: true });
-          cb(null, UPLOAD_DIR);
+          cb(null, flowUploadDir());
         },
         filename: (_req, file, cb) => cb(null, `${randomUUID()}--${file.originalname.replace(/[^\w.\-]/g, "_")}`),
       }),
@@ -165,11 +216,11 @@ export class FlowController {
     if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
       throw new BadRequestException("Invalid filename");
     }
-    const sanitized = filename.replace(/[^a-zA-Z0-9.\-_]/g, "");
-    const safe = basename(sanitized);
-    const filePath = join(UPLOAD_DIR, safe);
-    // defense-in-depth: ensure resolved path stays inside UPLOAD_DIR
-    if (!filePath.startsWith(UPLOAD_DIR)) {
+    const safe = basename(sanitizeFilename(filename));
+    const dir = flowUploadDir();
+    const filePath = findUploadedFile(safe);
+    // defense-in-depth: ensure resolved path stays inside an uploads dir
+    if (!filePath.startsWith(dir) && !filePath.startsWith(join(process.cwd(), "uploads"))) {
       throw new BadRequestException("Invalid filename");
     }
     res.setHeader("Content-Disposition", `attachment; filename="${safe}"`);

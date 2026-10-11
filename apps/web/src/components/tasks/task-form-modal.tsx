@@ -63,6 +63,9 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
     title: "", description: "", projectId: "", priority: "MEDIUM", status: "TODO", taskType: "general",
     assignedToId: "", reporterId: "", extraAssignees: [] as string[], dueDate: "", startDate: "",
     estimatedHours: "", tags: "", parentTaskId: "", isClientVisible: false, isRecurring: false, recurrenceSchedule: "weekly",
+    referenceLinks: [] as { id: string; title: string; url: string }[],
+    customFields: [] as { id: string; key: string; value: string }[],
+    attachments: [] as { id: string; name: string; url: string; size: string; type: string }[],
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -81,11 +84,15 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
         tags: (initial.tags ?? []).join(", "), parentTaskId: initial.parentTaskId ?? "",
         isClientVisible: !!initial.isClientVisible, isRecurring: !!initial.isRecurring,
         recurrenceSchedule: initial.recurrenceSchedule ?? "weekly",
+        referenceLinks: (initial.referenceLinks ?? []) as any,
+        customFields: (initial.customFields ?? []) as any,
+        attachments: (initial.attachments ?? []) as any,
       }
       : {
         title: "", description: "", projectId: projectId ?? "", priority: "MEDIUM", status: "TODO", taskType: "general",
         assignedToId: "", reporterId: "", extraAssignees: [], dueDate: "", startDate: "",
         estimatedHours: "", tags: "", parentTaskId: "", isClientVisible: false, isRecurring: false, recurrenceSchedule: "weekly",
+        referenceLinks: [], customFields: [], attachments: [],
       });
   }, [open, initial, projectId]);
   const save = async (e: React.FormEvent) => {
@@ -107,6 +114,9 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
           isClientVisible: f.isClientVisible,
           assignees: f.extraAssignees.map((id) => ({ id, name: users.find((u) => u.id === id)?.name ?? id })),
           isRecurring: f.isRecurring, recurrenceSchedule: f.recurrenceSchedule,
+          referenceLinks: f.referenceLinks,
+          customFields: f.customFields,
+          attachments: f.attachments,
         }),
       });
       onSaved();
@@ -153,6 +163,48 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
             </Select>
           )}
         </div>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
+          <span className="text-[11.5px] font-bold text-muted-foreground">Reference Links — visible to assignee (enterprise)</span>
+          {f.referenceLinks.map((l, i) => (
+            <div key={l.id} className="flex items-center gap-2">
+              <Input value={l.title} onChange={(e) => setF({ ...f, referenceLinks: f.referenceLinks.map((x, xi) => xi===i ? { ...x, title: e.target.value } : x) })} placeholder="Title" className="!w-32" />
+              <Input value={l.url} onChange={(e) => setF({ ...f, referenceLinks: f.referenceLinks.map((x, xi) => xi===i ? { ...x, url: e.target.value } : x) })} placeholder="https://..." className="flex-1" />
+              <button type="button" onClick={() => setF({ ...f, referenceLinks: f.referenceLinks.filter((_, xi) => xi!==i) })} className="flex size-7 items-center justify-center rounded-lg text-rose-400 hover:bg-rose-500/10">×</button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setF({ ...f, referenceLinks: [...f.referenceLinks, { id: `l${Date.now()}`, title: "", url: "" }] })} className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-[11px] font-bold text-primary hover:border-primary/40">+ Add reference link</button>
+          {f.referenceLinks.length===0 && <p className="text-[11px] text-muted-foreground/70">No links — add Figma, Drive, PR links. Assignee will see these in detail.</p>}
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
+          <span className="text-[11.5px] font-bold text-muted-foreground">Attachments — visible to assignee</span>
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border bg-card px-3 py-2 text-[11px] font-semibold text-muted-foreground hover:border-primary/40 hover:text-foreground">
+            <input type="file" className="hidden" onChange={(e) => {
+              const file=e.target.files?.[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ setF({...f, attachments:[...f.attachments, { id:`a${Date.now()}`, name:file.name, url:String(reader.result), size:file.size<1024? `${file.size} B` : file.size<1048576? `${Math.round(file.size/1024)} KB` : `${(file.size/1048576).toFixed(1)} MB`, type:file.type }] as any}); }; reader.readAsDataURL(file); e.target.value="";
+            }} /> + Upload file (assignee will see)
+          </label>
+          {f.attachments.map((a, i) => (
+            <div key={a.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-card px-3 py-1.5 text-[11px]">
+              <span className="truncate font-medium">{a.name} · {a.size}</span>
+              <button type="button" onClick={() => setF({ ...f, attachments: f.attachments.filter((_, xi) => xi!==i) })} className="text-rose-400">×</button>
+            </div>
+          ))}
+          {f.attachments.length===0 && <p className="text-[11px] text-muted-foreground/70">No files yet.</p>}
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
+          <span className="text-[11.5px] font-bold text-muted-foreground">Custom Fields — visible to assignee</span>
+          {f.customFields.map((c, i) => (
+            <div key={c.id} className="flex items-center gap-2">
+              <Input value={c.key} onChange={(e) => setF({ ...f, customFields: f.customFields.map((x, xi) => xi===i ? { ...x, key: e.target.value } : x) })} placeholder="Key (e.g. severity)" className="!w-32" />
+              <Input value={c.value} onChange={(e) => setF({ ...f, customFields: f.customFields.map((x, xi) => xi===i ? { ...x, value: e.target.value } : x) })} placeholder="Value" className="flex-1" />
+              <button type="button" onClick={() => setF({ ...f, customFields: f.customFields.filter((_, xi) => xi!==i) })} className="flex size-7 items-center justify-center rounded-lg text-rose-400 hover:bg-rose-500/10">×</button>
+            </div>
+          ))}
+          <button type="button" onClick={() => setF({ ...f, customFields: [...f.customFields, { id:`cf${Date.now()}`, key: "", value: "" }] })} className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-[11px] font-bold text-primary hover:border-primary/40">+ Add custom field</button>
+        </div>
+
         {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Create task"} />
       </form>

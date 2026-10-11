@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ForbiddenException } from "@nestjs/common";
 import { Priority, TaskStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { CacheService } from "../cache/cache.service";
+import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
 
 const STATUS_ORDER: TaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW", "BLOCKED", "DONE"];
 
@@ -19,8 +20,51 @@ export class TasksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly wa: WhatsappTriggersService
   ) {}
+
+  // ── Permission helpers (enterprise field-level) ──────────────────────────
+  private isAdmin(role?: string) {
+    return role === "Owner" || role === "HR/Admin" || role === "Admin";
+  }
+  private isPM(role?: string) {
+    return role === "Owner" || role === "Project Manager" || role === "Admin" || role === "HR/Admin";
+  }
+  private async getEmployeeIdByUserId(userId?: string): Promise<string | null> {
+    if (!userId) return null;
+    const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { employeeId: true } });
+    return (u as any)?.employeeId ?? null;
+  }
+  private async canViewTask(task: any, user?: { sub?: string; role?: string }): Promise<boolean> {
+    if (!user?.sub) return false; // unauthenticated handled by guard, but safe
+    if (this.isAdmin(user.role) || this.isPM(user.role)) return true;
+    const empId = await this.getEmployeeIdByUserId(user.sub);
+    if (!empId) return false;
+    if (task.assignedToId === empId || task.reporterId === empId) return true;
+    // also check assignees JSON array
+    const assignees = (task.assignees ?? []) as any[];
+    if (assignees.some((a: any) => a.id === empId)) return true;
+    return false;
+  }
+  private async canEditFull(task: any, user?: { sub?: string; role?: string }): Promise<boolean> {
+    if (!user?.sub) return false;
+    if (this.isAdmin(user.role) || this.isPM(user.role)) return true;
+    const empId = await this.getEmployeeIdByUserId(user.sub);
+    if (!empId) return false;
+    if (task.reporterId === empId) return true; // creator (reporter) owns task
+    return false;
+  }
+  private async canEditProgress(task: any, user?: { sub?: string; role?: string }): Promise<boolean> {
+    if (await this.canEditFull(task, user)) return true;
+    if (!user?.sub) return false;
+    const empId = await this.getEmployeeIdByUserId(user.sub);
+    if (!empId) return false;
+    if (task.assignedToId === empId) return true;
+    const assignees = (task.assignees ?? []) as any[];
+    if (assignees.some((a: any) => a.id === empId)) return true;
+    return false;
+  }
 
   async stats() {
     return this.cache.wrap("tasks:stats", 30, async () => {
@@ -108,7 +152,7 @@ export class TasksService {
     });
   }
 
-  async detail(id: string) {
+  async detail(id: string, user?: any) {
     const task = await this.prisma.task.findUnique({
       where: { id },
       include: {
@@ -125,12 +169,19 @@ export class TasksService {
       },
     });
     if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canViewTask(task, user))) {
+      throw new ForbiddenException("You don't have permission to view this task");
+    }
     const subtasks = await this.prisma.task.findMany({
       where: { parentTaskId: id },
       include: { assignedTo: { select: { id: true, name: true } } },
       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     });
-    return { ...task, subtasks };
+    // also compute permissions for frontend
+    const canEditFull = user ? await this.canEditFull(task, user) : false;
+    const canEditProgress = user ? await this.canEditProgress(task, user) : false;
+    const canView = user ? await this.canViewTask(task, user) : true;
+    return { ...task, subtasks, _permissions: { canView, canEditFull, canEditProgress } };
   }
 
   async create(body: {
@@ -164,6 +215,11 @@ export class TasksService {
       const siblings = await this.prisma.task.findMany({ where: { parentTaskId: body.parentTaskId }, select: { sortOrder: true } });
       sortOrder = siblings.reduce((m, s) => Math.max(m, s.sortOrder), 0) + 1;
     }
+    // enterprise: auto-set reporter to creator's employee if not provided
+    let reporterId = body.reporterId as string | undefined;
+    if (!reporterId && body.createdById) {
+      reporterId = (await this.getEmployeeIdByUserId(body.createdById)) ?? undefined;
+    }
     const activityLog = [
       {
         action: "created",
@@ -180,7 +236,7 @@ export class TasksService {
         description: body.description,
         projectId: body.projectId,
         assignedToId: body.assignedToId,
-        reporterId: body.reporterId,
+        reporterId: reporterId as string | undefined,
         priority: body.priority ?? "MEDIUM",
         dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
         startDate: body.startDate ? new Date(body.startDate) : undefined,
@@ -202,13 +258,25 @@ export class TasksService {
       },
     });
     await this.notifyAssignee(body.assignedToId, task.id, task.title);
+    void this.wa.notifyTaskAssigned(task.id).catch(() => {});
     await this.invalidateTasks();
     return task;
   }
 
-  async update(id: string, body: any, actorName?: string) {
+  async update(id: string, body: any, actor?: any) {
     const existing = await this.prisma.task.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Task not found");
+    const actorName = actor?.name ?? actor ?? "System";
+    const actorUser = typeof actor === "object" && actor?.sub ? actor : { sub: actor, role: undefined, name: actorName };
+    const canFull = await this.canEditFull(existing, actorUser);
+    const canProgress = await this.canEditProgress(existing, actorUser);
+    if (!canFull && !canProgress) throw new ForbiddenException("You don't have permission to edit this task");
+    if (!canFull && canProgress) {
+      const allowed = ["status"];
+      const keys = Object.keys(body).filter((k) => body[k] !== undefined);
+      const disallowed = keys.filter((k) => !allowed.includes(k));
+      if (disallowed.length) throw new ForbiddenException(`Assignee can only edit: ${allowed.join(", ")} (tried: ${disallowed.join(", ")})`);
+    }
 
     const data: any = {};
     const log: any[] = [];
@@ -247,6 +315,7 @@ export class TasksService {
     const updated = await this.prisma.task.update({ where: { id }, data });
     if (body.assignedToId && body.assignedToId !== existing.assignedToId) {
       await this.notifyAssignee(body.assignedToId, id, updated.title);
+      void this.wa.notifyTaskAssigned(id).catch(() => {});
     }
     await this.applyAutomation({
       type: "status", taskId: id, title: updated.title, prev: existing.status, next: updated.status, actorName,
@@ -257,11 +326,15 @@ export class TasksService {
     await this.applyAutomation({
       type: "assignee", taskId: id, title: updated.title, prev: existing.assignedToId, next: updated.assignedToId, actorName,
     });
+    if (body.status === "DONE" && existing.status !== "DONE") void this.wa.notifyTaskClientUpdate(id).catch(() => {});
     await this.invalidateTasks();
     return updated;
   }
 
-  async remove(id: string) {
+  async remove(id: string, user?: any) {
+    const existing = await this.prisma.task.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException("Task not found");
+    if (user && !(await this.canEditFull(existing, user))) throw new ForbiddenException("Only creator/PM/Admin can delete task");
     await this.prisma.task.delete({ where: { id } }).catch(() => {
       throw new NotFoundException("Task not found");
     });
@@ -269,9 +342,10 @@ export class TasksService {
     return { ok: true };
   }
 
-  async clone(id: string) {
+  async clone(id: string, user?: any) {
     const t = await this.prisma.task.findUnique({ where: { id } });
     if (!t) throw new NotFoundException("Task not found");
+    if (user && !(await this.canViewTask(t, user))) throw new ForbiddenException("You don't have permission to clone this task");
     const cloned = await this.prisma.task.create({
       data: {
         title: `${t.title} (Copy)`,
@@ -301,9 +375,12 @@ export class TasksService {
     return cloned;
   }
 
-  async updateStatus(id: string, status: TaskStatus, actorName?: string) {
+  async updateStatus(id: string, status: TaskStatus, actor?: any) {
     const existing = await this.prisma.task.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Task not found");
+    const actorName = actor?.name ?? actor ?? "System";
+    const actorUser = typeof actor === "object" && actor?.sub ? actor : { sub: actor, name: actorName };
+    if (!(await this.canEditProgress(existing, actorUser))) throw new ForbiddenException("You don't have permission to change status");
     const t = await this.prisma.task.update({
       where: { id },
       data: {
@@ -315,6 +392,7 @@ export class TasksService {
       },
     });
     await this.applyAutomation({ type: "status", taskId: t.id, title: t.title, prev: existing.status, next: status, actorName });
+    if (status === "DONE") void this.wa.notifyTaskClientUpdate(t.id).catch(() => {});
     if (status === "DONE" && t.isRecurring && t.recurrenceSchedule && RECURRENCE_OFFSETS[t.recurrenceSchedule]) {
       const nextDue = RECURRENCE_OFFSETS[t.recurrenceSchedule](t.dueDate ?? new Date());
       await this.prisma.task.create({
@@ -349,7 +427,12 @@ export class TasksService {
   }
 
   // ── Comments ─────────────────────────────────────────────────────────
-  async addComment(taskId: string, body: { content: string; authorId?: string; parentId?: string; mentionedUserIds?: string[] }) {
+  async addComment(taskId: string, body: { content: string; authorId?: string; parentId?: string; mentionedUserIds?: string[] }, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canViewTask(task, user)) && !(await this.canEditProgress(task, user))) {
+      throw new ForbiddenException("You don't have permission to comment on this task");
+    }
     return this.prisma.taskComment.create({
       data: {
         taskId,
@@ -409,7 +492,10 @@ export class TasksService {
     await this.prisma.task.update({ where: { id: taskId }, data: { actualHours: agg._sum.hours ?? 0 } });
   }
 
-  async logTime(taskId: string, body: { hours: number; date?: string; notes?: string; employeeId?: string; loggedVia?: "MANUAL" | "TIMER"; isBillable?: boolean }) {
+  async logTime(taskId: string, body: { hours: number; date?: string; notes?: string; employeeId?: string; loggedVia?: "MANUAL" | "TIMER"; isBillable?: boolean }, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canEditProgress(task, user))) throw new ForbiddenException("You don't have permission to log time on this task");
     const log = await this.prisma.timeLog.create({
       data: {
         taskId,
@@ -426,7 +512,10 @@ export class TasksService {
     return log;
   }
 
-  async removeTimeLog(taskId: string, logId: string) {
+  async removeTimeLog(taskId: string, logId: string, user?: any) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException("Task not found");
+    if (user && !(await this.canEditProgress(task, user)) && !(await this.canEditFull(task, user))) throw new ForbiddenException("You don't have permission to remove time log");
     await this.prisma.timeLog.deleteMany({ where: { id: logId, taskId } });
     await this.recomputeActualHours(taskId);
     await this.invalidateTasks();

@@ -14,11 +14,12 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { randomUUID } from "crypto";
-import { join } from "path";
-import { existsSync, mkdirSync } from "fs";
 import { PulseService } from "./pulse.service";
 import { CurrentUser, AuthUser } from "../common/decorators/current-user.decorator";
 import { Public } from "../common/decorators/public.decorator";
+import { findUploadedFile, uploadsDir } from "../common/file-storage";
+
+const pulseUploadDir = () => uploadsDir();
 import {
   AddActivityDto,
   ConvertLeadDto,
@@ -33,9 +34,6 @@ import {
   UpdateMeetingDto,
   UpdateProposalDto,
 } from "./dto/lead.dto";
-
-const UPLOADS_DIR = join(process.cwd(), "uploads");
-if (!existsSync(UPLOADS_DIR)) mkdirSync(UPLOADS_DIR, { recursive: true });
 
 @Controller("pulse")
 export class PulseController {
@@ -159,6 +157,11 @@ export class PulseController {
     return this.pulse.updateProposal(id, proposalId, dto);
   }
 
+  @Post("leads/:id/proposals/:proposalId/viewed")
+  markProposalViewed(@Param("id") id: string, @Param("proposalId") proposalId: string) {
+    return this.pulse.markProposalViewed(id, proposalId);
+  }
+
   // ── Follow-ups (v0-crm subsystem) ───────────────────────────────────────
   @Get("leads/:id/follow-ups")
   getFollowUps(@Param("id") id: string) {
@@ -200,6 +203,34 @@ export class PulseController {
     return this.pulse.removeNote(id, noteId);
   }
 
+  // ── Attachments (reference files) ───────────────────────────────────────
+  @Post("leads/:id/attachments")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => cb(null, pulseUploadDir()),
+        filename: (_req, file, cb) => {
+          const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+          cb(null, `${randomUUID()}--${safe}`);
+        },
+      }),
+      limits: { fileSize: 15 * 1024 * 1024 },
+    })
+  )
+  addAttachment(
+    @Param("id") id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: { title?: string },
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.pulse.addAttachment(id, file, body?.title, user?.sub);
+  }
+
+  @Delete("leads/:id/attachments/:attachmentId")
+  removeAttachment(@Param("id") id: string, @Param("attachmentId") attachmentId: string) {
+    return this.pulse.removeAttachment(id, attachmentId);
+  }
+
   // ── Categories (user-defined) ───────────────────────────────────────────
   @Get("categories")
   listCategories() {
@@ -221,7 +252,7 @@ export class PulseController {
   @UseInterceptors(
     FileInterceptor("file", {
       storage: diskStorage({
-        destination: UPLOADS_DIR,
+        destination: (_req, _file, cb) => cb(null, pulseUploadDir()),
         filename: (_req, file, cb) => {
           const safe = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
           cb(null, `${randomUUID()}--${safe}`);
@@ -239,6 +270,6 @@ export class PulseController {
   @Public()
   serveUpload(@Param("filename") filename: string, @Res() res: any) {
     const safe = filename.replace(/[^a-zA-Z0-9.\-_]/g, "");
-    res.sendFile(safe, { root: UPLOADS_DIR });
+    return res.sendFile(findUploadedFile(safe));
   }
 }

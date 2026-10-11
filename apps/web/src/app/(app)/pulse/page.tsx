@@ -14,18 +14,27 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Copy,
   Download,
+  ExternalLink,
   FileText,
   Flame,
   Gauge,
   Globe,
   Hash,
+  History,
+  LayoutDashboard,
   Link2,
+  Mail,
   MapPin,
+  MessageCircle,
+  Paperclip,
   Pencil,
+  Phone,
   Plus,
   RefreshCw,
   Search,
+  Settings2,
   Snowflake,
   Star,
   StickyNote,
@@ -39,7 +48,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { apiFetch, API_URL, getToken } from "@/lib/api";
+import { apiFetch, apiFetchFormData, API_URL, getToken } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
@@ -71,6 +80,49 @@ import {
 
 const STAGES = ["NEW", "CONTACTED", "QUALIFIED", "PROPOSAL_SENT", "NEGOTIATION", "WON", "LOST"] as const;
 const ACTIVE_STAGES = STAGES.filter((s) => s !== "WON" && s !== "LOST") as (typeof STAGES)[number][];
+// forward pipeline flow (LOST is a separate off-ramp)
+const PIPELINE = ["NEW", "CONTACTED", "QUALIFIED", "PROPOSAL_SENT", "NEGOTIATION", "WON"] as const;
+
+type DetailTab = "overview" | "notes" | "activity" | "files" | "meetings" | "followups" | "details";
+
+function fmtSize(bytes: number | null | undefined) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// stored file URLs are API-relative ("/api/pulse/uploads/…") — resolve to the API origin
+function absoluteUrl(url: string) {
+  return url.startsWith("/api/") ? `${API_URL.replace(/\/api\/?$/, "")}${url}` : url;
+}
+
+// proposal links are pasted from Notion / Google Drive — tolerate missing scheme
+function normalizeLink(raw: string) {
+  const t = raw.trim();
+  if (!t) return "";
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(t) ? t : `https://${t}`;
+}
+
+function isValidLink(raw: string) {
+  const t = raw.trim();
+  // browsers leniently parse spaces via new URL — but backend validator
+  // rejects them, so fail fast here to keep the Bengali error message
+  if (!t || /\s/.test(t)) return false;
+  try {
+    const u = new URL(normalizeLink(t));
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+// preferred view target for a proposal: pasted link first, uploaded file fallback
+function proposalTarget(p: Proposal) {
+  if (p.portalLink?.trim()) return normalizeLink(p.portalLink);
+  if (p.fileUrl?.trim()) return absoluteUrl(p.fileUrl.trim());
+  return null;
+}
 
 const SOURCES = [
   "WEBSITE", "REFERRAL", "LINKEDIN", "GOOGLE_ADS", "FACEBOOK", "WHATSAPP",
@@ -335,7 +387,7 @@ function LeadFormModal({
               <button
                 type="button"
                 onClick={() => setNewCatOpen((v) => !v)}
-                className="flex shrink-0 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[11px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                className="flex shrink-0 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[13px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                 title="Add new category"
               >
                 <Plus className="size-3.5" /> New
@@ -401,7 +453,7 @@ function LeadFormModal({
         <Field label="Notes">
           <Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Context, commitments, objections…" />
         </Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-[14px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Add lead"} />
       </form>
     </Modal>
@@ -512,7 +564,7 @@ function MeetingModal({
           <Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Agenda, prep…" />
         </Field>
         <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
-          <p className="mb-2 text-[11px] font-bold tracking-wide text-primary uppercase">Action → task</p>
+          <p className="mb-2 text-[13px] font-bold tracking-wide text-primary uppercase">Action → task</p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Assign action to" hint="Task auto-created for this member">
               <Select value={f.assignToId} onChange={(e) => setF({ ...f, assignToId: e.target.value })}>
@@ -542,7 +594,7 @@ function MeetingModal({
                   }))
                 }
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10.5px] font-semibold transition-colors",
+                  "flex items-center gap-1.5 rounded-full border px-2 py-1 text-[12px] font-semibold transition-colors",
                   f.attendeeIds.includes(u.id)
                     ? "border-primary/40 bg-primary/15 text-primary"
                     : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -552,10 +604,10 @@ function MeetingModal({
                 {u.name}
               </button>
             ))}
-            {(users ?? []).length === 0 && <p className="p-1 text-[11px] text-muted-foreground">No team members</p>}
+            {(users ?? []).length === 0 && <p className="p-1 text-[13px] text-muted-foreground">No team members</p>}
           </div>
         </Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-[14px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Schedule" />
       </form>
     </Modal>
@@ -568,15 +620,6 @@ function nextScheduled<T>(items: T[] | undefined, dateKey: keyof T, statusKey: k
   return (items ?? [])
     .filter((i) => String(i[statusKey]) === "SCHEDULED")
     .sort((a, b) => new Date(String(a[dateKey])).getTime() - new Date(String(b[dateKey])).getTime())[0];
-}
-
-function GlanceItem({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="min-w-28">
-      <p className="text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p className="mt-0.5 truncate text-[12.5px] font-semibold">{value}</p>
-    </div>
-  );
 }
 
 // ── Convert modal ────────────────────────────────────────────────────────
@@ -640,7 +683,7 @@ function ConvertModal({
   return (
     <Modal open={open} onClose={onClose} title="Convert to client">
       <form onSubmit={save} className="flex flex-col gap-4">
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-[11.5px] font-medium text-emerald-400">
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-[13px] font-medium text-emerald-400">
           On convert: client record তৈরি হবে + PLANNING project auto-create হবে এবং proposal ও activity history project-এ ক্যারি হবে (Flow মডিউলে দেখা যাবে)।
         </div>
         <Field label="Company name *">
@@ -668,7 +711,7 @@ function ConvertModal({
             </Select>
           </Field>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-[14px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Convert & onboard" />
       </form>
     </Modal>
@@ -732,7 +775,7 @@ function LostModal({
         <Field label="Notes">
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What happened, competitor, timing…" />
         </Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-[14px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Mark lost" />
       </form>
     </Modal>
@@ -807,13 +850,13 @@ function CategoryModal({
             <Plus className="size-3.5" /> Add
           </Btn>
         </form>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-[14px] font-medium text-rose-400">{err}</p>}
         <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto">
-          {categories.length === 0 && <p className="text-[11.5px] text-muted-foreground">No categories yet.</p>}
+          {categories.length === 0 && <p className="text-[13px] text-muted-foreground">No categories yet.</p>}
           {categories.map((c, i) => (
             <div key={c.id} className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-2">
               {c.color && <span className="size-2 shrink-0 rounded-full" style={{ background: c.color }} />}
-              <span className="flex-1 truncate text-[12px] font-semibold">{c.name}</span>
+              <span className="flex-1 truncate text-[14px] font-semibold">{c.name}</span>
               <button onClick={() => remove(c)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400" title="Delete category">
                 <Trash2 className="size-3.5" />
               </button>
@@ -893,10 +936,23 @@ export default function PulsePage() {
   const [proposalModal, setProposalModal] = useState(false);
   const [proposalUrl, setProposalUrl] = useState("");
   const [proposalPortal, setProposalPortal] = useState("");
+  const [proposalSendNow, setProposalSendNow] = useState(false);
+  const [editProposal, setEditProposal] = useState<Proposal | null>(null);
+  const [editLink, setEditLink] = useState("");
+  const [editFileUrl, setEditFileUrl] = useState("");
+  const [editStatus, setEditStatus] = useState("DRAFT");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const editFileRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const [importBusy, setImportBusy] = useState(false);
+
+  // lead-detail view state
+  const [detailTab, setDetailTab] = useState<DetailTab>("overview");
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [attBusy, setAttBusy] = useState(false);
+  const [attDrag, setAttDrag] = useState(false);
+  const attRef = useRef<HTMLInputElement>(null);
 
   const exportCsv = async () => {
     try {
@@ -1068,6 +1124,7 @@ export default function PulsePage() {
 
   useEffect(() => {
     currentLeadIdRef.current = selectedId;
+    setDetailTab("overview");
   }, [selectedId]);
 
   useEffect(() => {
@@ -1166,6 +1223,49 @@ export default function PulsePage() {
     });
   };
 
+  // ── lead-detail: contact copy + attachments ────────────────────────────
+  const copyContact = async (value: string, field: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 1500);
+    } catch {
+      notify("Copy failed");
+    }
+  };
+
+  const uploadAttachment = async (files: FileList | File[]) => {
+    if (!selectedId || attBusy) return;
+    const list = Array.from(files);
+    if (!list.length) return;
+    setAttBusy(true);
+    try {
+      for (const f of list) {
+        const fd = new FormData();
+        fd.append("file", f);
+        await apiFetchFormData(`/pulse/leads/${selectedId}/attachments`, fd);
+      }
+      notify(list.length > 1 ? `${list.length} attachments uploaded` : "Attachment uploaded");
+      qc.invalidateQueries({ queryKey: ["pulse", "lead", selectedId] });
+      qc.invalidateQueries({ queryKey: ["pulse", "leads", query] });
+    } catch (e: any) {
+      notify(e.message ?? "Upload failed");
+    } finally {
+      setAttBusy(false);
+    }
+  };
+
+  const deleteAttachment = async (attachmentId: string) => {
+    if (!selectedId) return;
+    try {
+      await apiFetch(`/pulse/leads/${selectedId}/attachments/${attachmentId}`, { method: "DELETE" });
+      notify("Attachment removed");
+      qc.invalidateQueries({ queryKey: ["pulse", "lead", selectedId] });
+    } catch (e: any) {
+      notify(e.message ?? "Failed");
+    }
+  };
+
   const moveStage = (lead: Lead, dir: -1 | 1) => {
     const idx = STAGES.indexOf(lead.stage as (typeof STAGES)[number]);
     const next = STAGES[idx + dir];
@@ -1253,8 +1353,14 @@ export default function PulsePage() {
   };
 
   const addProposal = async () => {
-    if (!selectedId || (!proposalUrl.trim() && !proposalPortal.trim())) {
-      notify("Add a file or portal link");
+    if (!selectedId) return;
+    const link = proposalPortal.trim();
+    if (!proposalUrl.trim() && !link) {
+      notify("একটা file upload করো অথবা proposal link paste করো");
+      return;
+    }
+    if (link && !isValidLink(link)) {
+      notify("Link টা valid URL না — https:// সহ paste করো");
       return;
     }
     try {
@@ -1262,20 +1368,83 @@ export default function PulsePage() {
         method: "POST",
         body: JSON.stringify({
           fileUrl: proposalUrl.trim() || undefined,
-          portalLink: proposalPortal.trim() || undefined,
+          portalLink: link ? normalizeLink(link) : undefined,
+          status: proposalSendNow ? "SENT" : "DRAFT",
         }),
       });
       setProposalModal(false);
       setProposalUrl("");
       setProposalPortal("");
-      notify("Proposal added");
+      setProposalSendNow(false);
+      notify(proposalSendNow ? "Proposal sent — stage updated" : "Proposal added as draft");
       reload();
     } catch (e: any) {
       notify(e.message ?? "Failed");
     }
   };
 
-  const uploadFile = async (file: File) => {
+  // open the proposal for viewing (tracks "seen" for internal views)
+  const openProposal = (p: Proposal) => {
+    const target = proposalTarget(p);
+    if (!target) {
+      notify("এই proposal-এ কোনো link বা file নেই");
+      return;
+    }
+    if (selectedId && !p.viewed) {
+      apiFetch(`/pulse/leads/${selectedId}/proposals/${p.id}/viewed`, { method: "POST" })
+        .then(() => reload())
+        .catch(() => {});
+    }
+    window.open(target, "_blank", "noopener,noreferrer");
+  };
+
+  const copyProposalLink = async (p: Proposal) => {
+    const target = proposalTarget(p);
+    if (!target) {
+      notify("Copy করার মতো link নেই");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(target);
+      setCopiedField(`proposal-${p.id}`);
+      setTimeout(() => setCopiedField(null), 1500);
+    } catch {
+      notify("Copy failed");
+    }
+  };
+
+  const openEditProposal = (p: Proposal) => {
+    setEditProposal(p);
+    setEditLink(p.portalLink ?? "");
+    setEditFileUrl(p.fileUrl ?? "");
+    setEditStatus(p.status);
+  };
+
+  const saveEditProposal = async () => {
+    if (!selectedId || !editProposal) return;
+    const link = editLink.trim();
+    if (link && !isValidLink(link)) {
+      notify("Link টা valid URL না — https:// সহ paste করো");
+      return;
+    }
+    try {
+      await apiFetch(`/pulse/leads/${selectedId}/proposals/${editProposal.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          portalLink: link ? normalizeLink(link) : undefined,
+          fileUrl: editFileUrl.trim() || undefined,
+          status: editStatus,
+        }),
+      });
+      setEditProposal(null);
+      notify("Proposal updated");
+      reload();
+    } catch (e: any) {
+      notify(e.message ?? "Failed");
+    }
+  };
+
+  const uploadFile = async (file: File, onDone?: (url: string) => void) => {
     setUploading(true);
     try {
       const fd = new FormData();
@@ -1287,7 +1456,7 @@ export default function PulsePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? "Upload failed");
-      setProposalUrl(data.fileUrl);
+      (onDone ?? setProposalUrl)(data.fileUrl);
       notify("File uploaded");
     } catch (e: any) {
       notify(e.message ?? "Upload failed");
@@ -1326,7 +1495,7 @@ export default function PulsePage() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[12.5px] font-medium text-white shadow-xl"
+          className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[14px] font-medium text-white shadow-xl"
         >
           {flash}
         </motion.div>
@@ -1432,20 +1601,20 @@ export default function PulsePage() {
                 const tone = t === "HOT" ? "bg-rose-500" : t === "WARM" ? "bg-amber-400" : "bg-sky-400";
                 return (
                   <motion.div key={t} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.32 + ["HOT","WARM","COLD"].indexOf(t)*0.07, duration: 0.4, ease: [0.22,1,0.36,1] }} className="flex items-center gap-3">
-                    <span className="w-16 shrink-0 text-[11.5px] font-bold text-muted-foreground">{label(t)}</span>
+                    <span className="w-16 shrink-0 text-[13px] font-bold text-muted-foreground">{label(t)}</span>
                     <div className="relative h-6 flex-1 overflow-hidden rounded-lg bg-muted/50">
                       <motion.div className={`absolute inset-y-0 left-0 rounded-lg ${tone}`} initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ delay: 0.4 + ["HOT","WARM","COLD"].indexOf(t)*0.07, duration: 0.65, ease: [0.22,1,0.36,1] }} />
                     </div>
-                    <span className="w-8 shrink-0 text-right text-[12.5px] font-bold tabular-nums">{n}</span>
-                    <span className="w-10 shrink-0 text-right text-[11px] font-semibold tabular-nums text-muted-foreground">{pct}%</span>
+                    <span className="w-8 shrink-0 text-right text-[14px] font-bold tabular-nums">{n}</span>
+                    <span className="w-10 shrink-0 text-right text-[13px] font-semibold tabular-nums text-muted-foreground">{pct}%</span>
                   </motion.div>
                 );
               })}
             </div>
             <div className="mt-4 flex flex-wrap gap-1.5">
               {Object.entries(summary?.categoryCounts ?? {}).map(([name, count]) => (
-                <span key={name} className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
-                  {name} <span className="rounded-full bg-muted px-1.5 text-[10px] font-bold tabular-nums text-foreground">{count}</span>
+                <span key={name} className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[13px] font-semibold text-muted-foreground">
+                  {name} <span className="rounded-full bg-muted px-1.5 text-[12px] font-bold tabular-nums text-foreground">{count}</span>
                 </span>
               ))}
             </div>
@@ -1464,7 +1633,7 @@ export default function PulsePage() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search leads…"
-              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[14px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
             />
           </div>
           <Select value={source} onChange={(e) => setSource(e.target.value)} className="!w-36">
@@ -1493,7 +1662,7 @@ export default function PulsePage() {
           </Select>
           <button
             onClick={() => setCatOpen(true)}
-            className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-2 text-[11.5px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-2 text-[13px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
             title="Manage categories"
           >
             <Tag className="size-3.5" /> New
@@ -1501,7 +1670,7 @@ export default function PulsePage() {
           <button
             onClick={() => setCalOpen((v) => !v)}
             className={cn(
-              "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[11.5px] font-bold transition-colors",
+              "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-bold transition-colors",
               calOpen || followUpDue || createdAfter
                 ? "border-primary/40 bg-primary/10 text-primary"
                 : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -1513,22 +1682,22 @@ export default function PulsePage() {
           </button>
           {calOpen && (
             <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 p-2">
-              <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+              <label className="flex items-center gap-2 text-[13px] font-semibold text-muted-foreground">
                 Follow-up due by
                 <input
                   type="date"
                   value={followUpDue}
                   onChange={(e) => setFollowUpDue(e.target.value)}
-                  className="rounded-lg border border-border bg-card px-2 py-1.5 text-[11.5px] outline-none focus:border-primary/40"
+                  className="rounded-lg border border-border bg-card px-2 py-1.5 text-[13px] outline-none focus:border-primary/40"
                 />
               </label>
-              <label className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+              <label className="flex items-center gap-2 text-[13px] font-semibold text-muted-foreground">
                 Created after
                 <input
                   type="date"
                   value={createdAfter}
                   onChange={(e) => setCreatedAfter(e.target.value)}
-                  className="rounded-lg border border-border bg-card px-2 py-1.5 text-[11.5px] outline-none focus:border-primary/40"
+                  className="rounded-lg border border-border bg-card px-2 py-1.5 text-[13px] outline-none focus:border-primary/40"
                 />
               </label>
               {(followUpDue || createdAfter) && (
@@ -1537,7 +1706,7 @@ export default function PulsePage() {
                     setFollowUpDue("");
                     setCreatedAfter("");
                   }}
-                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold text-rose-400 transition-colors hover:bg-rose-500/10"
+                  className="flex items-center gap-1 rounded-lg px-2 py-1 text-[13px] font-bold text-rose-400 transition-colors hover:bg-rose-500/10"
                 >
                   <X className="size-3" /> Clear dates
                 </button>
@@ -1547,7 +1716,7 @@ export default function PulsePage() {
           <button
             onClick={() => setStarredOnly((s) => !s)}
             className={cn(
-              "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[11.5px] font-bold transition-colors",
+              "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-bold transition-colors",
               starredOnly
                 ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
                 : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -1611,18 +1780,18 @@ export default function PulsePage() {
                               : "border-border/60 bg-card"
                         )}
                       >
-                        <span className="flex items-center gap-1.5 text-[11.5px] font-bold">
+                        <span className="flex items-center gap-1.5 text-[13px] font-bold">
                           <ChevronLeft className="size-3 text-muted-foreground" />
                           {label(stage)}
                           <ChevronRight className="size-3 text-muted-foreground" />
                         </span>
-                        <span className="text-[10.5px] font-semibold tabular-nums text-muted-foreground">
+                        <span className="text-[12px] font-semibold tabular-nums text-muted-foreground">
                           {items.length} · {formatBDT(value)}
                         </span>
                       </div>
                       <div className="flex flex-col gap-2">
                         {items.length === 0 && (
-                          <p className="px-2 py-3 text-center text-[11px] text-muted-foreground/60">No leads</p>
+                          <p className="px-2 py-3 text-center text-[13px] text-muted-foreground/60">No leads</p>
                         )}
                         {items.map((l, li) => {
                           const fu = followUpStatus(l);
@@ -1637,8 +1806,8 @@ export default function PulsePage() {
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
-                                  <p className="truncate text-[12.5px] font-bold">{l.name}</p>
-                                  <p className="truncate text-[10.5px] text-muted-foreground">
+                                  <p className="truncate text-[14px] font-bold">{l.name}</p>
+                                  <p className="truncate text-[12px] text-muted-foreground">
                                     {l.company ?? l.contactEmail ?? "—"}
                                   </p>
                                 </div>
@@ -1660,24 +1829,24 @@ export default function PulsePage() {
                               </div>
                               <div className="mt-2 flex items-center justify-between gap-2">
                                 <ScoreBar score={l.leadScore} />
-                                <span className="text-[11px] font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</span>
+                                <span className="text-[13px] font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</span>
                               </div>
                               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                 {l.uid && (
-                                  <span className="flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] font-semibold text-muted-foreground">
+                                  <span className="flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
                                     <Hash className="size-2.5" /> {l.uid}
                                   </span>
                                 )}
-                                <span className={cn("rounded-full border px-1.5 py-0.5 text-[9px] font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
+                                <span className={cn("rounded-full border px-1.5 py-0.5 text-[11px] font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
                                   {l.temperature}
                                 </span>
                                 {l.leadCategory && (
-                                  <span className={cn("flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold", categoryToneOf(l.leadCategory, li))}>
+                                  <span className={cn("flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-bold", categoryToneOf(l.leadCategory, li))}>
                                     {l.leadCategory.color && <span className="size-1.5 rounded-full" style={{ background: l.leadCategory.color }} />}
                                     {l.leadCategory.name}
                                   </span>
                                 )}
-                                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+                                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
                                   {label(l.source)}
                                 </span>
                               </div>
@@ -1692,13 +1861,13 @@ export default function PulsePage() {
                                       style={{ width: `${l.probability ?? 0}%` }}
                                     />
                                   </div>
-                                  <span className="text-[9px] font-bold tabular-nums text-muted-foreground">{l.probability ?? 0}%</span>
+                                  <span className="text-[11px] font-bold tabular-nums text-muted-foreground">{l.probability ?? 0}%</span>
                                 </div>
                               </div>
                               {l.tags && l.tags.length > 0 && (
                                 <div className="mt-1.5 flex flex-wrap gap-1">
                                   {l.tags.slice(0, 3).map((t) => (
-                                    <span key={t} className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+                                    <span key={t} className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
                                       #{t}
                                     </span>
                                   ))}
@@ -1707,14 +1876,14 @@ export default function PulsePage() {
                               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                 {fu && (
                                   <span className={cn(
-                                    "rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                                    "rounded-full px-1.5 py-0.5 text-[11px] font-bold",
                                     fu === "overdue" ? "bg-rose-500/15 text-rose-400" : "bg-amber-500/15 text-amber-400"
                                   )}>
                                     {fu === "overdue" ? "⏰ follow-up overdue" : "⏰ follow-up today"}
                                   </span>
                                 )}
                                 {l.nextMeeting && (
-                                  <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold text-primary">
+                                  <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[11px] font-bold text-primary">
                                     📅 {formatDate(l.nextMeeting.scheduledAt)}
                                   </span>
                                 )}
@@ -1738,7 +1907,7 @@ export default function PulsePage() {
                                     </button>
                                   )}
                                 </div>
-                                <span className="text-[9.5px] text-muted-foreground/70">
+                                <span className="text-[11px] text-muted-foreground/70">
                                   {l.assignedTo?.name ?? "unassigned"}
                                 </span>
                               </div>
@@ -1754,7 +1923,7 @@ export default function PulsePage() {
         ) : view === "grid" ? (
           <FadeIn>
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="text-[11.5px] font-semibold text-muted-foreground">Stage:</span>
+              <span className="text-[13px] font-semibold text-muted-foreground">Stage:</span>
               <Select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="!w-40">
                 <option value="">All stages</option>
                 {STAGES.map((s) => (
@@ -1778,8 +1947,8 @@ export default function PulsePage() {
                         <div className="flex min-w-0 items-center gap-2.5">
                           <Avatar name={l.name} />
                           <div className="min-w-0">
-                            <p className="truncate text-[12.5px] font-bold">{l.name}</p>
-                            <p className="truncate text-[10.5px] text-muted-foreground">
+                            <p className="truncate text-[14px] font-bold">{l.name}</p>
+                            <p className="truncate text-[12px] text-muted-foreground">
                               {l.company ?? l.contactEmail ?? "—"}
                             </p>
                           </div>
@@ -1798,15 +1967,15 @@ export default function PulsePage() {
                       </div>
                       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                         {l.uid && (
-                          <span className="flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] font-semibold text-muted-foreground">
+                          <span className="flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
                             <Hash className="size-2.5" /> {l.uid}
                           </span>
                         )}
-                        <span className={cn("rounded-full border px-1.5 py-0.5 text-[9px] font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
+                        <span className={cn("rounded-full border px-1.5 py-0.5 text-[11px] font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
                           {l.temperature}
                         </span>
                         {l.leadCategory && (
-                          <span className={cn("flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold", categoryToneOf(l.leadCategory, gi))}>
+                          <span className={cn("flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-bold", categoryToneOf(l.leadCategory, gi))}>
                             {l.leadCategory.color && <span className="size-1.5 rounded-full" style={{ background: l.leadCategory.color }} />}
                             {l.leadCategory.name}
                           </span>
@@ -1815,10 +1984,10 @@ export default function PulsePage() {
                       </div>
                       <div className="mt-2.5 flex items-center justify-between gap-2">
                         <ScoreBar score={l.leadScore} />
-                        <span className="text-[11px] font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</span>
+                        <span className="text-[13px] font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</span>
                       </div>
                       <div className="mt-2">
-                        <div className="flex items-center justify-between text-[9px] font-semibold text-muted-foreground">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
                           <span>Win probability</span>
                           <span className="tabular-nums">{l.probability ?? 0}%</span>
                         </div>
@@ -1835,17 +2004,17 @@ export default function PulsePage() {
                       {l.tags && l.tags.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
                           {l.tags.slice(0, 4).map((t) => (
-                            <span key={t} className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+                            <span key={t} className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
                               #{t}
                             </span>
                           ))}
                         </div>
                       )}
-                      <div className="mt-2.5 flex items-center justify-between border-t border-border/50 pt-2 text-[10px] text-muted-foreground">
+                      <div className="mt-2.5 flex items-center justify-between border-t border-border/50 pt-2 text-[12px] text-muted-foreground">
                         <span className="flex items-center gap-1">
                           {fu && (
                             <span className={cn(
-                              "rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                              "rounded-full px-1.5 py-0.5 text-[11px] font-bold",
                               fu === "overdue" ? "bg-rose-500/15 text-rose-400" : "bg-amber-500/15 text-amber-400"
                             )}>
                               {fu === "overdue" ? "overdue" : "today"}
@@ -1864,7 +2033,7 @@ export default function PulsePage() {
         ) : (
           <FadeIn>
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <span className="text-[11.5px] font-semibold text-muted-foreground">Stage:</span>
+              <span className="text-[13px] font-semibold text-muted-foreground">Stage:</span>
               <Select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="!w-40">
                 <option value="">All stages</option>
                 {STAGES.map((s) => (
@@ -1872,7 +2041,7 @@ export default function PulsePage() {
                 ))}
               </Select>
             </div>
-            <TableShell noScroll footer={<span className="text-[11.5px] text-muted-foreground">{tableLeads.length} leads</span>}>
+            <TableShell noScroll footer={<span className="text-[13px] text-muted-foreground">{tableLeads.length} leads</span>}>
               <table className="w-full">
                 <THead>
                   <Th>Lead</Th>
@@ -1894,7 +2063,7 @@ export default function PulsePage() {
                           <Avatar name={l.name} />
                           <div>
                             <p className="font-medium">{l.name}</p>
-                            <p className="text-[11px] text-muted-foreground">{l.company ?? l.contactEmail ?? "—"}</p>
+                            <p className="text-[13px] text-muted-foreground">{l.company ?? l.contactEmail ?? "—"}</p>
                           </div>
                           {l.starred && <Star className="size-3 shrink-0 fill-amber-400 text-amber-400" />}
                         </div>
@@ -1902,7 +2071,7 @@ export default function PulsePage() {
                       <Td className="hidden lg:table-cell text-muted-foreground">{label(l.source)}</Td>
                       <Td className="hidden xl:table-cell">
                         {l.leadCategory ? (
-                          <span className={cn("flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold", categoryToneOf(l.leadCategory, ti))}>
+                          <span className={cn("flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px] font-bold", categoryToneOf(l.leadCategory, ti))}>
                             {l.leadCategory.color && <span className="size-1.5 rounded-full" style={{ background: l.leadCategory.color }} />}
                             {l.leadCategory.name}
                           </span>
@@ -1911,12 +2080,12 @@ export default function PulsePage() {
                         )}
                       </Td>
                       <Td className="hidden md:table-cell">
-                        <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
+                        <span className={cn("rounded-full border px-2 py-0.5 text-[12px] font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
                           {l.temperature}
                         </span>
                       </Td>
                       <Td className="hidden md:table-cell">
-                        <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", priorityTone[l.priority] ?? priorityTone.MEDIUM)}>
+                        <span className={cn("rounded-full border px-2 py-0.5 text-[12px] font-bold", priorityTone[l.priority] ?? priorityTone.MEDIUM)}>
                           {l.priority}
                         </span>
                       </Td>
@@ -1925,7 +2094,7 @@ export default function PulsePage() {
                       <Td className="text-muted-foreground">{formatDate(l.nextFollowUpAt)}</Td>
                       <Td className="text-muted-foreground">{l.assignedTo?.name ?? "—"}</Td>
                       <Td onClick={(e) => e.stopPropagation()}>
-                        <Select value={l.stage} onChange={(e) => leadPatch.mutate({ id: l.id, patch: { stage: e.target.value } }, { onSuccess: () => notify(`Moved to ${label(e.target.value)}`) })} className="!w-28 !py-1 text-[11px]">
+                        <Select value={l.stage} onChange={(e) => leadPatch.mutate({ id: l.id, patch: { stage: e.target.value } }, { onSuccess: () => notify(`Moved to ${label(e.target.value)}`) })} className="!w-28 !py-1 text-[13px]">
                           {STAGES.map((s) => (
                             <option key={s} value={s}>{label(s)}</option>
                           ))}
@@ -1941,13 +2110,13 @@ export default function PulsePage() {
 
         {leads && leadsTotal > leads.length && (
           <div className="mt-3 flex items-center justify-center gap-3">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[13px] text-muted-foreground">
               Showing {leads.length} of {leadsTotal} leads
             </span>
             <button
               onClick={() => fetchNextPage()}
               disabled={isFetchingNextPage}
-              className="rounded-xl border border-border bg-card px-3.5 py-1.5 text-[12px] font-semibold text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
+              className="rounded-xl border border-border bg-card px-3.5 py-1.5 text-[14px] font-semibold text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
             >
               {isFetchingNextPage ? "Loading…" : "Load more"}
             </button>
@@ -1966,7 +2135,7 @@ export default function PulsePage() {
               <Avatar name={detail.name} />
               <div>
                 <p className="font-heading text-[15px] font-semibold">{detail.name}</p>
-                <p className="text-[11px] text-muted-foreground">{detail.company ?? detail.contactEmail ?? "—"}</p>
+                <p className="text-[13px] text-muted-foreground">{detail.company ?? detail.contactEmail ?? "—"}</p>
               </div>
               <button
                 onClick={() => leadPatch.mutate({ id: selectedId as string, patch: { starred: !detail.starred } }, { onSuccess: () => notify(detail.starred ? "Removed from starred" : "Starred") })}
@@ -1979,32 +2148,23 @@ export default function PulsePage() {
                 <Star className={cn("size-4", detail.starred && "fill-amber-400")} />
               </button>
               {detail.uid && (
-                <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">
+                <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-mono text-[12px] font-semibold text-muted-foreground">
                   <Hash className="size-3" /> {detail.uid}
                 </span>
               )}
-              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", temperatureTone[detail.temperature] ?? temperatureTone.WARM)}>
+              <span className={cn("rounded-full border px-2 py-0.5 text-[12px] font-bold", temperatureTone[detail.temperature] ?? temperatureTone.WARM)}>
                 {detail.temperature}
               </span>
               {detail.leadCategory && (
-                <span className={cn("flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-bold", categoryToneOf(detail.leadCategory, detail.leadCategory.name.length))}>
+                <span className={cn("flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px] font-bold", categoryToneOf(detail.leadCategory, detail.leadCategory.name.length))}>
                   {detail.leadCategory.color && <span className="size-1.5 rounded-full" style={{ background: detail.leadCategory.color }} />}
                   {detail.leadCategory.name}
                 </span>
               )}
-              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", priorityTone[detail.priority] ?? priorityTone.MEDIUM)}>
-                {detail.priority}
-              </span>
-              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", detail.stage === "WON" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : detail.stage === "LOST" ? "border-rose-500/30 bg-rose-500/10 text-rose-400" : "border-primary/30 bg-primary/10 text-primary")}>
-                {label(detail.stage)}
-              </span>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                score {detail.leadScore} · {detail.probability ?? 0}% win
-              </span>
             </div>
           ) : null
         }
-        size="xl"
+        size="2xl"
       >
         {detailLoading ? (
           <div className="flex flex-col gap-3">
@@ -2017,92 +2177,247 @@ export default function PulsePage() {
             {/* converted banner */}
             {detail.client && (
               <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
-                <p className="flex items-center gap-2 text-[12.5px] font-semibold text-emerald-400">
+                <p className="flex items-center gap-2 text-[14px] font-semibold text-emerald-400">
                   <CheckCircle2 className="size-4" /> Converted — client: {detail.client.companyName}
                 </p>
                 {detail.projects && detail.projects.length > 0 && (
-                  <p className="text-[11px] text-emerald-400/80">
+                  <p className="text-[13px] text-emerald-400/80">
                     project: {detail.projects.map((p) => p.name).join(", ")} ({detail.projects[0].status})
                   </p>
                 )}
               </div>
             )}
             {detail.duplicateWarnings && detail.duplicateWarnings.length > 0 && (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-[11.5px] font-medium text-amber-400">
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-[13px] font-medium text-amber-400">
                 ⚠ Duplicate alert — same contact already exists: {detail.duplicateWarnings.map((w) => w.name).join(", ")}
               </div>
             )}
 
-            {/* glance facts */}
-            <div className="flex flex-wrap gap-x-8 gap-y-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
-              <GlanceItem label="Deal size" value={detail.estimatedDealSize ? `${detail.currency ?? "৳"}${Number(detail.estimatedDealSize).toLocaleString()}` : "—"} />
-              <GlanceItem label="Win probability" value={`${detail.probability ?? 0}%`} />
-              <GlanceItem label="Owner" value={detail.assignedTo?.name ?? "Unassigned"} />
-              <GlanceItem label="Source" value={label(detail.source)} />
-              <GlanceItem label="Last contact" value={detail.lastContactedAt ? timeAgo(detail.lastContactedAt) : "never"} />
-              <GlanceItem
-                label="Website"
-                value={detail.website ? (
-                  <a href={detail.website} target="_blank" rel="noreferrer" className="text-primary hover:underline">{detail.website.replace(/^https?:\/\//, "")}</a>
-                ) : "—"}
-              />
-            </div>
-
-            {/* pipeline status + handled by */}
-            <div className="grid gap-3 lg:grid-cols-[1.6fr_0.9fr]">
-              <div className="rounded-2xl border border-border/60 bg-muted/10 p-3">
-                <p className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Pipeline status — click to move</p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {STAGES.map((s) => {
-                    const active = detail.stage === s;
-                    const isWon = s === "WON";
-                    const isLost = s === "LOST";
-                    return (
+            {/* ── pipeline — click a stage to move ── */}
+            <section className="rounded-2xl border border-border/60 bg-muted/10 p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[14px] font-bold tracking-wide text-muted-foreground uppercase">Pipeline — click to move</p>
+                {detail.stage !== "LOST" && detail.stageEnteredAt && (
+                  <span className="text-[14px] font-semibold text-muted-foreground">
+                    in {label(detail.stage)} · {timeAgo(detail.stageEnteredAt)}
+                  </span>
+                )}
+              </div>
+              <div className="mt-2.5 flex items-center gap-1 overflow-x-auto pb-0.5">
+                {PIPELINE.map((s, i) => {
+                  const curIdx = (PIPELINE as readonly string[]).indexOf(detail.stage);
+                  const isCurrent = detail.stage === s;
+                  const isDone = curIdx >= 0 && i < curIdx;
+                  const isWon = detail.stage === "WON";
+                  return (
+                    <div key={s} className="flex items-center gap-1">
+                      {i > 0 && (
+                        <div className={cn("h-0.5 w-4 shrink-0 rounded-full sm:w-6", isWon || isDone ? "bg-primary/50" : "bg-border")} />
+                      )}
                       <button
-                        key={s}
                         onClick={() => stageChanged(detail, s)}
                         className={cn(
-                          "rounded-full border px-2.5 py-1 text-[10.5px] font-bold transition-colors",
-                          active
-                            ? isWon
-                              ? "border-emerald-500/40 bg-emerald-500 text-white"
-                              : isLost
-                                ? "border-rose-500/40 bg-rose-500 text-white"
-                                : "border-primary bg-primary text-white shadow-sm"
-                            : "border-border bg-card text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                          "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[14px] font-bold transition-colors",
+                          isCurrent && s === "WON" && "border-emerald-500/40 bg-emerald-500 text-white shadow-sm",
+                          isCurrent && s !== "WON" && "border-primary bg-primary text-primary-foreground shadow-sm",
+                          !isCurrent && (isDone || isWon) && "border-primary/30 bg-primary/10 text-primary",
+                          !isCurrent && !(isDone || isWon) && "border-border bg-card text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                          detail.stage === "LOST" && "border-border/60 bg-card text-muted-foreground/40"
                         )}
                       >
+                        {(isDone || isWon) && !isCurrent && <Check className="size-3" />}
                         {label(s)}
                       </button>
-                    );
-                  })}
+                    </div>
+                  );
+                })}
+              </div>
+              {detail.stage === "WON" || detail.stage === "LOST" ? (
+                <div className="mt-2.5 flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
+                  <p className={cn("truncate text-[14px] font-semibold", detail.stage === "WON" ? "text-emerald-400" : "text-rose-400")}>
+                    {detail.stage === "WON"
+                      ? "Won — deal closed"
+                      : `Lost${detail.lostReason ? ` — ${label(detail.lostReason.reasonCategory)}` : ""}`}
+                  </p>
+                  <button
+                    onClick={() => apiFetch(`/pulse/leads/${detail.id}/reopen`, { method: "POST" }).then(() => { notify("Lead reopened"); reload(); })}
+                    className="flex shrink-0 items-center gap-1 text-[14px] font-bold text-primary transition-colors hover:underline"
+                  >
+                    <RefreshCw className="size-3" /> Reopen
+                  </button>
                 </div>
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-muted-foreground">Priority</span>
-                  <Select value={detail.priority} onChange={(e) => patchLead({ priority: e.target.value }, `Priority → ${e.target.value}`)} className="!w-32 !py-1.5 text-[11px]">
-                    {PRIORITIES.map((p) => (
-                      <option key={p} value={p}>{label(p)}</option>
-                    ))}
-                  </Select>
+              ) : (
+                <div className="mt-2 flex items-center justify-end">
+                  <button
+                    onClick={() => setLostLead(detail)}
+                    className="flex items-center gap-1 text-[14px] font-bold text-rose-400/70 transition-colors hover:text-rose-400"
+                  >
+                    <X className="size-3" /> mark lost
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* ── KPI strip ── */}
+            <section className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/40 lg:grid-cols-6">
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[14px] font-bold tracking-wide text-muted-foreground uppercase">Deal size</p>
+                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">
+                  {detail.estimatedDealSize ? `${detail.currency ?? "৳"}${Number(detail.estimatedDealSize).toLocaleString()}` : "—"}
+                </p>
+              </div>
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[14px] font-bold tracking-wide text-muted-foreground uppercase">Win probability</p>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <div className="h-1 w-10 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${detail.probability ?? 0}%` }} />
+                  </div>
+                  <span className="text-[14px] font-bold tabular-nums">{detail.probability ?? 0}%</span>
                 </div>
               </div>
-              <div className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-muted/10 p-3">
-                <p className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Handled by</p>
-                <div className="flex items-center gap-3">
-                  <Avatar name={detail.assignedTo?.name ?? "Unassigned"} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-bold">{detail.assignedTo?.name ?? "Unassigned"}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">{detail.assignedTo ? "Owner" : "No owner yet"}</p>
-                  </div>
-                </div>
-                <Select value={detail.assignedTo?.id ?? ""} onChange={(e) => patchLead({ assignedToId: e.target.value || undefined }, e.target.value ? `Assigned to ${users?.find((u) => u.id === e.target.value)?.name ?? ""}` : "Unassigned")} className="!py-1.5 text-[11px]">
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[14px] font-bold tracking-wide text-muted-foreground uppercase">Lead score</p>
+                <div className="mt-1"><ScoreBar score={detail.leadScore} /></div>
+              </div>
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[14px] font-bold tracking-wide text-muted-foreground uppercase">Priority</p>
+                <Select
+                  value={detail.priority}
+                  onChange={(e) => patchLead({ priority: e.target.value }, `Priority → ${e.target.value}`)}
+                  className="!w-full !border-0 !bg-transparent !px-0 !py-0.5 text-[14px] font-bold"
+                >
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>{label(p)}</option>
+                  ))}
+                </Select>
+              </div>
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[14px] font-bold tracking-wide text-muted-foreground uppercase">Owner</p>
+                <Select
+                  value={detail.assignedTo?.id ?? ""}
+                  onChange={(e) => patchLead({ assignedToId: e.target.value || undefined }, e.target.value ? `Assigned to ${users?.find((u) => u.id === e.target.value)?.name ?? ""}` : "Unassigned")}
+                  className="!w-full !border-0 !bg-transparent !px-0 !py-0.5 text-[14px] font-bold"
+                >
                   <option value="">Unassigned</option>
                   {(users ?? []).map((u: UserLite) => (
                     <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </Select>
               </div>
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[14px] font-bold tracking-wide text-muted-foreground uppercase">Next action</p>
+                {(() => {
+                  if (detail.stage === "WON" || detail.stage === "LOST") return <p className="mt-0.5 text-[14px] font-semibold text-muted-foreground/60">—</p>;
+                  const nf = nextScheduled(detail.followUps, "date", "status");
+                  const nm = nextScheduled(detail.meetings, "scheduledAt", "status");
+                  const items = [
+                    nf ? { at: nf.date, kind: "follow-up" } : null,
+                    nm ? { at: nm.scheduledAt, kind: "meeting" } : null,
+                  ]
+                    .filter((x): x is { at: string; kind: string } => !!x)
+                    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+                  if (!items.length) return <p className="mt-0.5 text-[14px] font-semibold text-muted-foreground/60">nothing scheduled</p>;
+                  const overdue = new Date(items[0].at).getTime() < Date.now();
+                  return (
+                    <p className={cn("mt-0.5 truncate text-[14px] font-bold", overdue ? "text-rose-400" : "text-foreground")}>
+                      {overdue ? "overdue · " : ""}{items[0].kind} · {formatDate(items[0].at)}
+                    </p>
+                  );
+                })()}
+              </div>
+            </section>
+
+            {/* ── contact quick actions ── */}
+            {(detail.contactEmail || detail.contactPhone || detail.website || detail.pageLink) && (
+              <section className="flex flex-wrap items-center gap-2">
+                {detail.contactEmail && (
+                  <div className="flex items-center overflow-hidden rounded-xl border border-border/60 bg-card">
+                    <a href={`mailto:${detail.contactEmail}`} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[14px] font-semibold transition-colors hover:bg-muted/60" title="Send email">
+                      <Mail className="size-3.5 text-muted-foreground" />
+                      <span className="max-w-44 truncate">{detail.contactEmail}</span>
+                    </a>
+                    <button
+                      onClick={() => copyContact(detail.contactEmail!, "email")}
+                      className="border-l border-border/60 px-2 py-1.5 transition-colors hover:bg-muted/60"
+                      title="Copy email"
+                    >
+                      {copiedField === "email" ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5 text-muted-foreground" />}
+                    </button>
+                  </div>
+                )}
+                {detail.contactPhone && (
+                  <div className="flex items-center overflow-hidden rounded-xl border border-border/60 bg-card">
+                    <a href={`tel:${detail.contactPhone.replace(/[^+\d]/g, "")}`} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[14px] font-semibold transition-colors hover:bg-muted/60" title="Call">
+                      <Phone className="size-3.5 text-muted-foreground" />
+                      <span className="max-w-36 truncate">{detail.contactPhone}</span>
+                    </a>
+                    <button
+                      onClick={() => copyContact(detail.contactPhone!, "phone")}
+                      className="border-l border-border/60 px-2 py-1.5 transition-colors hover:bg-muted/60"
+                      title="Copy phone"
+                    >
+                      {copiedField === "phone" ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5 text-muted-foreground" />}
+                    </button>
+                    <a
+                      href={`https://wa.me/${detail.contactPhone.replace(/[^\d]/g, "")}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="border-l border-border/60 px-2 py-1.5 transition-colors hover:bg-emerald-500/10"
+                      title="WhatsApp"
+                    >
+                      <MessageCircle className="size-3.5 text-emerald-500" />
+                    </a>
+                  </div>
+                )}
+                {(detail.website || detail.pageLink) && (
+                  <a
+                    href={detail.website || detail.pageLink!}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 rounded-xl border border-border/60 bg-card px-2.5 py-1.5 text-[14px] font-semibold transition-colors hover:bg-muted/60"
+                    title="Open website"
+                  >
+                    <Globe className="size-3.5 text-muted-foreground" />
+                    <span className="max-w-36 truncate">{(detail.website || detail.pageLink || "").replace(/^https?:\/\//, "")}</span>
+                  </a>
+                )}
+              </section>
+            )}
+
+            {/* ── tabs ── */}
+            <div className="-mx-1 flex gap-0.5 overflow-x-auto border-b border-border/60 px-1">
+              {([
+                { id: "overview", name: "Overview", icon: LayoutDashboard },
+                { id: "notes", name: "Notes", icon: StickyNote, count: detail.notesList?.length ?? 0 },
+                { id: "activity", name: "Activity", icon: History, count: detail.activities?.length ?? 0 },
+                { id: "files", name: "Files", icon: Paperclip, count: (detail.proposals?.length ?? 0) + (detail.attachments?.length ?? 0) },
+                { id: "meetings", name: "Meetings", icon: Video, count: detail.meetings?.length ?? 0 },
+                { id: "followups", name: "Follow-ups", icon: CalendarClock, count: detail.followUps?.length ?? 0 },
+                { id: "details", name: "Details", icon: Settings2 },
+              ] as { id: DetailTab; name: string; icon: typeof LayoutDashboard; count?: number }[]).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setDetailTab(t.id)}
+                  className={cn(
+                    "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 text-[14px] font-semibold transition-colors",
+                    detailTab === t.id ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <t.icon className="size-3.5" />
+                  {t.name}
+                  {!!t.count && (
+                    <span className="rounded-full bg-muted px-1.5 py-px text-[14px] font-bold tabular-nums text-muted-foreground">{t.count}</span>
+                  )}
+                  {detailTab === t.id && (
+                    <motion.span layoutId="lead-detail-tab" className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-primary" />
+                  )}
+                </button>
+              ))}
             </div>
+
+            {/* ── tab: overview ── */}
+            {detailTab === "overview" && (
+              <div className="flex flex-col gap-4">
 
             {/* up next — what happens next */}
             {detail.stage !== "WON" && detail.stage !== "LOST" && (
@@ -2116,34 +2431,34 @@ export default function PulsePage() {
                     {/* next follow-up */}
                     <div className="rounded-2xl border border-border/60 bg-muted/20 p-3.5">
                       <div className="flex items-center justify-between">
-                        <p className="flex items-center gap-1.5 text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                        <p className="flex items-center gap-1.5 text-[12px] font-bold tracking-wide text-muted-foreground uppercase">
                           <CalendarClock className="size-3.5" /> Next follow-up
                         </p>
                         {nf && (
-                          <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold", nfOverdue ? "bg-amber-500/15 text-amber-400" : "bg-primary/15 text-primary")}>
+                          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", nfOverdue ? "bg-amber-500/15 text-amber-400" : "bg-primary/15 text-primary")}>
                             {nfOverdue ? "OVERDUE" : "SCHEDULED"}
                           </span>
                         )}
                       </div>
                       {nf ? (
                         <>
-                          <p className="mt-1.5 text-[13px] font-bold">{formatDate(nf.date)}</p>
-                          {nf.notes && <p className="mt-0.5 text-[11px] text-muted-foreground">{nf.notes}</p>}
+                          <p className="mt-1.5 text-[14px] font-bold">{formatDate(nf.date)}</p>
+                          {nf.notes && <p className="mt-0.5 text-[13px] text-muted-foreground">{nf.notes}</p>}
                           <div className="mt-2.5 flex items-center gap-1.5">
-                            <Btn variant="primary" className="!px-3 !py-1.5 text-[11px]" onClick={() => followUpStatusChange(nf, "COMPLETED")}>
+                            <Btn variant="primary" className="!px-3 !py-1.5 text-[13px]" onClick={() => followUpStatusChange(nf, "COMPLETED")}>
                               <CheckCircle2 className="size-3.5" /> Complete
                             </Btn>
-                            <Btn variant="outline" className="!px-3 !py-1.5 text-[11px]" onClick={() => followUpStatusChange(nf, "MISSED")}>
+                            <Btn variant="outline" className="!px-3 !py-1.5 text-[13px]" onClick={() => followUpStatusChange(nf, "MISSED")}>
                               <X className="size-3.5" /> Missed
                             </Btn>
                           </div>
                         </>
                       ) : (
                         <div className="mt-1.5 flex items-center justify-between gap-2">
-                          <p className="text-[12px] text-muted-foreground">No follow-up scheduled</p>
+                          <p className="text-[14px] text-muted-foreground">No follow-up scheduled</p>
                           <button
-                            onClick={() => document.getElementById("fu-section")?.scrollIntoView({ behavior: "smooth", block: "center" })}
-                            className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:text-primary"
+                            onClick={() => setDetailTab("followups")}
+                            className="flex items-center gap-1 text-[13px] font-bold text-primary transition-colors hover:text-primary"
                           >
                             <Plus className="size-3" /> Schedule
                           </button>
@@ -2153,38 +2468,38 @@ export default function PulsePage() {
                     {/* next meeting */}
                     <div className="rounded-2xl border border-border/60 bg-muted/20 p-3.5">
                       <div className="flex items-center justify-between">
-                        <p className="flex items-center gap-1.5 text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                        <p className="flex items-center gap-1.5 text-[12px] font-bold tracking-wide text-muted-foreground uppercase">
                           <Video className="size-3.5" /> Next meeting
                         </p>
                         {nm && (
-                          <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold", nmOverdue ? "bg-amber-500/15 text-amber-400" : "bg-primary/15 text-primary")}>
+                          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", nmOverdue ? "bg-amber-500/15 text-amber-400" : "bg-primary/15 text-primary")}>
                             {nmOverdue ? "OVERDUE" : "SCHEDULED"}
                           </span>
                         )}
                       </div>
                       {nm ? (
                         <>
-                          <p className="mt-1.5 text-[13px] font-bold">
+                          <p className="mt-1.5 text-[14px] font-bold">
                             {formatDate(nm.scheduledAt)} · {nm.title}
                           </p>
                           <div className="mt-2.5 flex items-center gap-1.5">
-                            <Btn variant="primary" className="!px-3 !py-1.5 text-[11px]" onClick={() => meetingStatus(nm, "COMPLETED")}>
+                            <Btn variant="primary" className="!px-3 !py-1.5 text-[13px]" onClick={() => meetingStatus(nm, "COMPLETED")}>
                               <CheckCircle2 className="size-3.5" /> Complete
                             </Btn>
-                            <Btn variant="outline" className="!px-3 !py-1.5 text-[11px]" onClick={() => meetingStatus(nm, "CANCELLED")}>
+                            <Btn variant="outline" className="!px-3 !py-1.5 text-[13px]" onClick={() => meetingStatus(nm, "CANCELLED")}>
                               <X className="size-3.5" /> Cancel
                             </Btn>
-                            <Btn variant="outline" className="!px-3 !py-1.5 text-[11px]" onClick={() => setMeetingOpen(true)}>
+                            <Btn variant="outline" className="!px-3 !py-1.5 text-[13px]" onClick={() => setMeetingOpen(true)}>
                               <RefreshCw className="size-3.5" /> Reschedule
                             </Btn>
                           </div>
                         </>
                       ) : (
                         <div className="mt-1.5 flex items-center justify-between gap-2">
-                          <p className="text-[12px] text-muted-foreground">No meeting scheduled</p>
+                          <p className="text-[14px] text-muted-foreground">No meeting scheduled</p>
                           <button
                             onClick={() => setMeetingOpen(true)}
-                            className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:text-primary"
+                            className="flex items-center gap-1 text-[13px] font-bold text-primary transition-colors hover:text-primary"
                           >
                             <Plus className="size-3" /> Schedule
                           </button>
@@ -2196,12 +2511,100 @@ export default function PulsePage() {
               })()
             )}
 
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-              {/* left — main work area */}
-              <div className="flex flex-col gap-6 lg:col-span-3">
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {/* lead health */}
+                  <section className="rounded-2xl border border-border/60 p-4">
+                    <h4 className="mb-3 flex items-center gap-1.5 text-[14px] font-bold tracking-wide text-muted-foreground uppercase">
+                      <Gauge className="size-3.5" /> Lead health
+                    </h4>
+                    <ScoreBar score={detail.leadScore} />
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-[14px]">
+                      <div className="rounded-xl bg-muted/50 px-2.5 py-2">
+                        <p className="text-[14px] font-bold text-muted-foreground uppercase">Last contact</p>
+                        <p className="mt-0.5 font-semibold">{detail.lastContactedAt ? timeAgo(detail.lastContactedAt) : "never"}</p>
+                      </div>
+                      <div className="rounded-xl bg-muted/50 px-2.5 py-2">
+                        <p className="text-[14px] font-bold text-muted-foreground uppercase">First response</p>
+                        <p className="mt-0.5 font-semibold">{detail.firstResponseAt ? timeAgo(detail.firstResponseAt) : "—"}</p>
+                      </div>
+                      <div className="rounded-xl bg-muted/50 px-2.5 py-2">
+                        <p className="text-[14px] font-bold text-muted-foreground uppercase">In stage since</p>
+                        <p className="mt-0.5 font-semibold">{detail.stageEnteredAt ? timeAgo(detail.stageEnteredAt) : "—"}</p>
+                      </div>
+                      <div className="rounded-xl bg-muted/50 px-2.5 py-2">
+                        <p className="text-[14px] font-bold text-muted-foreground uppercase">Created</p>
+                        <p className="mt-0.5 font-semibold">{formatDate(detail.createdAt)}</p>
+                      </div>
+                    </div>
+                    {isStale(detail) && (
+                      <p className="mt-3 flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[14px] font-semibold text-amber-400">
+                        <AlertTriangle className="size-3.5" /> Rotten — no touch in 7+ days
+                      </p>
+                    )}
+                    {detail.nextFollowUpAt && detail.stage !== "WON" && detail.stage !== "LOST" && (
+                      <p className="mt-2 flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-2 text-[14px] font-semibold text-sky-400">
+                        <CalendarClock className="size-3.5" />
+                        Next follow-up {new Date(detail.nextFollowUpAt).getTime() < Date.now() ? "overdue — " : ""}{formatDate(detail.nextFollowUpAt)}
+                      </p>
+                    )}
+                  </section>
+
+                  {/* recent activity preview */}
+                  <section className="rounded-2xl border border-border/60 p-4">
+                    <div className="mb-2.5 flex items-center justify-between">
+                      <h4 className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-muted-foreground uppercase">
+                        <History className="size-3.5" /> Recent activity
+                      </h4>
+                      <button onClick={() => setDetailTab("activity")} className="text-[14px] font-bold text-primary transition-colors hover:underline">
+                        View all →
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      {(detail.activities ?? []).slice(0, 4).map((a) => (
+                        <div key={a.id} className="flex items-start gap-2.5 rounded-xl bg-muted/30 px-3 py-2">
+                          <span
+                            className={cn(
+                              "mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 text-[14px] font-bold",
+                              a.type === "NOTE" ? "bg-muted text-muted-foreground"
+                                : a.type === "CREATED" ? "bg-emerald-500/15 text-emerald-400"
+                                  : a.type === "UPDATED" ? "bg-amber-500/15 text-amber-400"
+                                    : a.type === "STAGE_CHANGED" ? "bg-primary/15 text-primary"
+                                      : a.type === "CALL" || a.type === "MEETING" ? "bg-primary/15 text-primary"
+                                        : a.type === "EMAIL" ? "bg-sky-500/15 text-sky-400"
+                                          : a.type === "WHATSAPP" ? "bg-emerald-500/15 text-emerald-400"
+                                            : "bg-blue-500/15 text-blue-400"
+                            )}
+                          >
+                            {a.type}
+                          </span>
+                          <p className="min-w-0 flex-1 truncate text-[14px]" title={a.content}>{a.content}</p>
+                          <span className="shrink-0 text-[12px] text-muted-foreground/60">{timeAgo(a.loggedAt)}</span>
+                        </div>
+                      ))}
+                      {!detail.activities?.length && (
+                        <p className="text-[13px] text-muted-foreground">No activity yet — log the first touch.</p>
+                      )}
+                    </div>
+                  </section>
+                </div>
+
+                {detail.lostReason && (
+                  <section className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4">
+                    <h4 className="mb-1 flex items-center gap-1.5 text-[14px] font-bold tracking-wide text-rose-400 uppercase">
+                      <AlertTriangle className="size-3.5" /> Lost — {label(detail.lostReason.reasonCategory)}
+                    </h4>
+                    {detail.lostReason.notes && <p className="text-[14px] text-muted-foreground">{detail.lostReason.notes}</p>}
+                  </section>
+                )}
+              </div>
+            )}
+
+            {/* ── tab: notes (reference messages) ── */}
+            {detailTab === "notes" && (
+              <div className="flex flex-col">
                 {/* notes — v0-crm note history */}
                 <section>
-                  <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                  <h4 className="mb-2 flex items-center gap-1.5 text-[14px] font-bold tracking-wide text-muted-foreground uppercase">
                     <StickyNote className="size-3.5" /> Notes ({detail.notesList?.length ?? 0})
                   </h4>
                   <div className="mb-2 flex gap-2">
@@ -2219,7 +2622,7 @@ export default function PulsePage() {
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {detail.notesList?.length === 0 && (
-                      <p className="text-[11.5px] text-muted-foreground">No notes yet — capture the first one above.</p>
+                      <p className="text-[13px] text-muted-foreground">No notes yet — capture the first one above.</p>
                     )}
                     {detail.notesList?.map((n, ni) => (
                       <div key={n.id} className="group rounded-xl border border-border/60 px-3 py-2">
@@ -2231,10 +2634,10 @@ export default function PulsePage() {
                               autoFocus
                             />
                             <div className="flex justify-end gap-1.5">
-                              <button onClick={() => setEditingNoteId(null)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-muted-foreground transition-colors hover:bg-muted">
+                              <button onClick={() => setEditingNoteId(null)} className="rounded-lg px-2 py-1 text-[13px] font-bold text-muted-foreground transition-colors hover:bg-muted">
                                 Cancel
                               </button>
-                              <button onClick={() => saveNoteEdit(n.id)} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-[11px] font-bold text-white">
+                              <button onClick={() => saveNoteEdit(n.id)} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-[13px] font-bold text-white">
                                 Save
                               </button>
                             </div>
@@ -2248,9 +2651,9 @@ export default function PulsePage() {
                             }}
                             title="Click to edit"
                           >
-                            <p className="text-[12px] leading-relaxed whitespace-pre-wrap">{n.content}</p>
+                            <p className="text-[14px] leading-relaxed whitespace-pre-wrap">{n.content}</p>
                             <div className="mt-1 flex items-center justify-between">
-                              <span className="text-[9.5px] text-muted-foreground/60">
+                              <span className="text-[11px] text-muted-foreground/60">
                                 {timeAgo(n.createdAt)} · {n.createdBy?.name ?? "system"}
                               </span>
                               <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -2284,9 +2687,15 @@ export default function PulsePage() {
                   </div>
                 </section>
 
+              </div>
+            )}
+
+            {/* ── tab: activity (timeline) ── */}
+            {detailTab === "activity" && (
+              <div className="flex flex-col">
                 {/* timeline */}
                 <section>
-                  <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                  <h4 className="mb-2 flex items-center gap-1.5 text-[14px] font-bold tracking-wide text-muted-foreground uppercase">
                     <RefreshCw className="size-3.5" /> Timeline
                   </h4>
                   <div className="mb-3 flex gap-2">
@@ -2305,13 +2714,13 @@ export default function PulsePage() {
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {detail.activities?.length === 0 && (
-                      <p className="text-[11.5px] text-muted-foreground">No activity yet — log the first touch.</p>
+                      <p className="text-[13px] text-muted-foreground">No activity yet — log the first touch.</p>
                     )}
                     {detail.activities?.map((a) => (
                       <div key={a.id} className="flex items-start gap-2.5 rounded-xl border border-border/60 px-3 py-2">
                         <span
                           className={cn(
-                            "mt-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                            "mt-0.5 rounded-full px-1.5 py-0.5 text-[11px] font-bold",
                             a.type === "NOTE" ? "bg-muted text-muted-foreground"
                               : a.type === "CREATED" ? "bg-emerald-500/15 text-emerald-400"
                                 : a.type === "UPDATED" ? "bg-amber-500/15 text-amber-400"
@@ -2325,11 +2734,11 @@ export default function PulsePage() {
                           {a.type}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <p className="text-[12px] leading-relaxed">{a.content}</p>
+                          <p className="text-[14px] leading-relaxed">{a.content}</p>
                           {a.changes && Object.keys(a.changes).length > 0 && (
                             <div className="mt-1 flex flex-wrap gap-1">
                               {Object.entries(a.changes).map(([field, ch]) => (
-                                <span key={field} className="rounded-md bg-muted/60 px-1.5 py-0.5 text-[9.5px] text-muted-foreground">
+                                <span key={field} className="rounded-md bg-muted/60 px-1.5 py-0.5 text-[11px] text-muted-foreground">
                                   <span className="font-bold uppercase">{label(field)}</span>{" "}
                                   <span className="text-rose-400 line-through">{ch.old == null ? "—" : String(ch.old)}</span>
                                   {" → "}
@@ -2339,7 +2748,7 @@ export default function PulsePage() {
                             </div>
                           )}
                         </div>
-                        <span className="shrink-0 text-[10px] text-muted-foreground/60">
+                        <span className="shrink-0 text-[12px] text-muted-foreground/60">
                           {timeAgo(a.loggedAt)} · {a.loggedBy?.name ?? "system"}
                         </span>
                       </div>
@@ -2347,19 +2756,195 @@ export default function PulsePage() {
                   </div>
                 </section>
 
+              </div>
+            )}
+
+            {/* ── tab: files (attachments + proposals) ── */}
+            {detailTab === "files" && (
+              <div className="flex flex-col gap-5">
+                {/* attachments — reference files */}
+                <section>
+                  <h4 className="mb-2 flex items-center gap-1.5 text-[14px] font-bold tracking-wide text-muted-foreground uppercase">
+                    <Paperclip className="size-3.5" /> Attachments ({detail.attachments?.length ?? 0})
+                  </h4>
+                  <input
+                    ref={attRef}
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.length) uploadAttachment(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => attRef.current?.click()}
+                    disabled={attBusy}
+                    onDragOver={(e) => { e.preventDefault(); setAttDrag(true); }}
+                    onDragLeave={() => setAttDrag(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setAttDrag(false);
+                      if (e.dataTransfer.files?.length) uploadAttachment(e.dataTransfer.files);
+                    }}
+                    className={cn(
+                      "flex w-full flex-col items-center gap-1.5 rounded-2xl border-2 border-dashed px-4 py-5 text-[14px] font-semibold transition-colors disabled:opacity-60",
+                      attDrag ? "border-primary bg-primary/5 text-primary" : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                    )}
+                  >
+                    <Upload className="size-4" />
+                    {attBusy ? "Uploading…" : "Drop reference files or click to browse — PDF, images, docs (max 15MB)"}
+                  </button>
+                  {!!detail.attachments?.length && (
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {detail.attachments.map((a) => (
+                        <div key={a.id} className="group flex items-center gap-2.5 rounded-xl border border-border/60 p-2">
+                          {a.mimeType?.startsWith("image/") ? (
+                            <img src={absoluteUrl(a.fileUrl)} alt={a.filename} className="size-10 shrink-0 rounded-lg border border-border/60 object-cover" />
+                          ) : (
+                            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/40">
+                              <FileText className="size-4 text-muted-foreground" />
+                            </span>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[14px] font-semibold" title={a.filename}>{a.title || a.filename}</p>
+                            <p className="truncate text-[12px] text-muted-foreground">
+                              {fmtSize(a.sizeBytes)} · {timeAgo(a.createdAt)} · {a.uploadedBy?.name ?? "system"}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-0.5">
+                            <a
+                              href={absoluteUrl(a.fileUrl)}
+                              target="_blank"
+                              rel="noreferrer"
+                              download
+                              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                              title="Open / download"
+                            >
+                              <Download className="size-3.5" />
+                            </a>
+                            <button
+                              onClick={() => deleteAttachment(a.id)}
+                              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400 sm:opacity-0 sm:group-hover:opacity-100"
+                              title="Delete attachment"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* proposals */}
+                <section>
+                  <div className="mb-2 flex items-center justify-between">
+                    <h4 className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-muted-foreground uppercase">
+                      <FileText className="size-3.5" /> Proposals ({detail.proposals?.length ?? 0})
+                    </h4>
+                    <button onClick={() => setProposalModal(true)} className="flex items-center gap-1 text-[14px] font-bold text-primary transition-colors hover:text-primary">
+                      <Plus className="size-3" /> New version
+                    </button>
+                  </div>
+                  {(() => {
+                    const list = detail.proposals ?? [];
+                    const current = list.find((p) => p.status === "SENT") ?? list[0] ?? null;
+                    const target = current ? proposalTarget(current) : null;
+                    return (
+                      <>
+                        {current && target && (
+                          <div className="mb-2 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-3">
+                            <p className="flex items-center gap-1 text-[11px] font-bold tracking-wide text-primary uppercase">
+                              <Link2 className="size-3" /> Current proposal · v{current.versionNumber}
+                              {current.sentDate && <span className="ml-1 font-medium normal-case">sent {formatDate(current.sentDate)}</span>}
+                              {current.viewed && <span className="ml-auto flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-400 normal-case"><Check className="size-3" /> Seen</span>}
+                            </p>
+                            <p className="mt-1 truncate text-[13px] text-muted-foreground">{target}</p>
+                            <div className="mt-2 flex items-center gap-1.5">
+                              <button onClick={() => openProposal(current)} className="flex items-center gap-1 rounded-lg bg-brand-gradient px-3 py-1.5 text-[13px] font-bold text-white transition-transform hover:scale-[1.02]">
+                                <ExternalLink className="size-3.5" /> View proposal
+                              </button>
+                              <button onClick={() => copyProposalLink(current)} className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[13px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                                {copiedField === `proposal-${current.id}` ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+                                {copiedField === `proposal-${current.id}` ? "Copied" : "Copy link"}
+                              </button>
+                              <button onClick={() => openEditProposal(current)} className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[13px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                                <Pencil className="size-3.5" /> Edit
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-1.5">
+                          {list.length === 0 && (
+                            <p className="text-[13px] text-muted-foreground">No proposals yet — add the first version above.</p>
+                          )}
+                          {list.map((p) => {
+                            const t = proposalTarget(p);
+                            return (
+                              <div key={p.id} className="rounded-xl border border-border/60 px-3 py-2">
+                                <div className="flex items-center gap-2.5">
+                                  <FileText className="size-4 shrink-0 text-muted-foreground" />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="flex items-center gap-1.5 text-[14px] font-semibold">
+                                      v{p.versionNumber}
+                                      {p.sentDate && <span className="text-[12px] font-medium text-muted-foreground">sent {formatDate(p.sentDate)}</span>}
+                                      {p.viewed && <span className="flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-px text-[11px] font-bold text-emerald-400"><Check className="size-2.5" /> Seen</span>}
+                                    </p>
+                                    <p className="truncate text-[12px] text-muted-foreground">
+                                      {t ?? "no link or file yet"}
+                                    </p>
+                                  </div>
+                                  <Select
+                                    value={p.status}
+                                    onChange={(e) => proposalStatus(p, e.target.value)}
+                                    className={cn("!w-28 shrink-0 !py-1.5 text-[13px]", p.status === "ACCEPTED" && "!border-emerald-500/40 !text-emerald-400", p.status === "REJECTED" && "!border-rose-500/40 !text-rose-400")}
+                                  >
+                                    {["DRAFT", "SENT", "ACCEPTED", "REJECTED"].map((s) => (
+                                      <option key={s} value={s}>{label(s)}</option>
+                                    ))}
+                                  </Select>
+                                </div>
+                                <div className="mt-1.5 flex items-center gap-1.5 pl-[26px]">
+                                  <button onClick={() => openProposal(p)} disabled={!t} className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40">
+                                    <ExternalLink className="size-3" /> View
+                                  </button>
+                                  <button onClick={() => copyProposalLink(p)} disabled={!t} className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                                    {copiedField === `proposal-${p.id}` ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                                    {copiedField === `proposal-${p.id}` ? "Copied" : "Copy"}
+                                  </button>
+                                  <button onClick={() => openEditProposal(p)} className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                                    <Pencil className="size-3" /> Edit link
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </section>
+              </div>
+            )}
+
+            {/* ── tab: meetings ── */}
+            {detailTab === "meetings" && (
+              <div className="flex flex-col">
                 {/* meetings */}
                 <section>
                   <div className="mb-2 flex items-center justify-between">
-                    <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                    <h4 className="flex items-center gap-1.5 text-[13px] font-bold tracking-wide text-muted-foreground uppercase">
                       <Video className="size-3.5" /> Meetings ({detail.meetings?.length ?? 0})
                     </h4>
-                    <button onClick={() => setMeetingOpen(true)} className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:text-primary">
+                    <button onClick={() => setMeetingOpen(true)} className="flex items-center gap-1 text-[13px] font-bold text-primary transition-colors hover:text-primary">
                       <Plus className="size-3" /> Schedule
                     </button>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {detail.meetings?.length === 0 && (
-                      <p className="text-[11.5px] text-muted-foreground">No meetings scheduled.</p>
+                      <p className="text-[13px] text-muted-foreground">No meetings scheduled.</p>
                     )}
                     {detail.meetings?.map((m) => {
                       const past = new Date(m.scheduledAt).getTime() < Date.now();
@@ -2373,15 +2958,15 @@ export default function PulsePage() {
                                   : past ? "bg-amber-400" : "bg-primary"
                           )} />
                           <div className="min-w-0 flex-1">
-                            <p className="text-[12.5px] font-semibold">
+                            <p className="text-[14px] font-semibold">
                               {m.title}{" "}
-                              <span className="text-[10px] font-medium text-muted-foreground">
+                              <span className="text-[12px] font-medium text-muted-foreground">
                                 · {label(m.type)} · {m.durationMins}min
                               </span>
                             </p>
-                            <p className="text-[11px] text-muted-foreground">
+                            <p className="text-[13px] text-muted-foreground">
                               <span className={cn(
-                                "mr-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                                "mr-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-bold",
                                 m.type === "VIDEO_CALL" || m.type === "CALL"
                                   ? "bg-sky-500/15 text-sky-400"
                                   : "bg-amber-500/15 text-amber-400"
@@ -2401,7 +2986,7 @@ export default function PulsePage() {
                               {m.notes && <> · {m.notes}</>}
                             </p>
                             {m.attendees && m.attendees.length > 0 && (
-                              <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground">
+                              <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[12px] text-muted-foreground">
                                 <UserRound className="size-3" />
                                 {m.attendees.map((at, ai) => (
                                   <span key={at.id} className="rounded-md bg-muted/60 px-1.5 py-0.5 font-semibold">
@@ -2413,7 +2998,7 @@ export default function PulsePage() {
                           </div>
                           <div className="flex shrink-0 items-center gap-1">
                             <span className={cn(
-                              "rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                              "rounded-full px-1.5 py-0.5 text-[11px] font-bold",
                               m.status === "COMPLETED" ? "bg-emerald-500/15 text-emerald-400"
                                 : m.status === "CANCELLED" ? "bg-muted text-muted-foreground"
                                   : m.status === "NO_SHOW" ? "bg-rose-500/15 text-rose-400"
@@ -2444,9 +3029,15 @@ export default function PulsePage() {
                   </div>
                 </section>
 
+              </div>
+            )}
+
+            {/* ── tab: follow-ups ── */}
+            {detailTab === "followups" && (
+              <div className="flex flex-col">
                 {/* follow-ups (v0-crm subsystem) */}
-                <section id="fu-section">
-                  <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                <section>
+                  <h4 className="mb-2 flex items-center gap-1.5 text-[14px] font-bold tracking-wide text-muted-foreground uppercase">
                     <CalendarClock className="size-3.5" /> Follow-ups ({detail.followUps?.length ?? 0})
                   </h4>
                   <div className="mb-2 flex flex-wrap gap-2">
@@ -2469,7 +3060,7 @@ export default function PulsePage() {
                   </div>
                   <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-2 py-1.5">
                     <Zap className="size-3.5 text-primary" />
-                    <span className="text-[10.5px] font-bold tracking-wide text-primary uppercase">Action → task</span>
+                    <span className="text-[12px] font-bold tracking-wide text-primary uppercase">Action → task</span>
                     <Select value={followUpAssignee} onChange={(e) => setFollowUpAssignee(e.target.value)} className="!w-40">
                       <option value="">No task</option>
                       {(employees ?? []).map((e) => (
@@ -2485,7 +3076,7 @@ export default function PulsePage() {
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {detail.followUps?.length === 0 && (
-                      <p className="text-[11.5px] text-muted-foreground">No follow-ups scheduled.</p>
+                      <p className="text-[13px] text-muted-foreground">No follow-ups scheduled.</p>
                     )}
                     {detail.followUps?.map((fu) => {
                       const overdue = followUpStatusFn(fu);
@@ -2498,15 +3089,15 @@ export default function PulsePage() {
                                 : overdue ? "bg-amber-400" : "bg-primary"
                           )} />
                           <div className="min-w-0 flex-1">
-                            <p className="text-[12.5px] font-semibold">
+                            <p className="text-[14px] font-semibold">
                               {formatDate(fu.date)}
-                              {overdue && <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-400">overdue</span>}
+                              {overdue && <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-bold text-amber-400">overdue</span>}
                             </p>
-                            {fu.notes && <p className="text-[11px] text-muted-foreground">{fu.notes}</p>}
+                            {fu.notes && <p className="text-[13px] text-muted-foreground">{fu.notes}</p>}
                           </div>
                           <div className="flex shrink-0 items-center gap-1">
                             <span className={cn(
-                              "rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                              "rounded-full px-1.5 py-0.5 text-[11px] font-bold",
                               fu.status === "COMPLETED" ? "bg-emerald-500/15 text-emerald-400"
                                 : fu.status === "MISSED" ? "bg-rose-500/15 text-rose-400"
                                   : "bg-primary/15 text-primary"
@@ -2538,98 +3129,53 @@ export default function PulsePage() {
                   </div>
                 </section>
 
-                {/* proposals */}
-                <section>
-                  <div className="mb-2 flex items-center justify-between">
-                    <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
-                      <FileText className="size-3.5" /> Proposals ({detail.proposals?.length ?? 0})
-                    </h4>
-                    <button onClick={() => setProposalModal(true)} className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:text-primary">
-                      <Plus className="size-3" /> New version
-                    </button>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    {detail.proposals?.length === 0 && (
-                      <p className="text-[11.5px] text-muted-foreground">No proposals yet.</p>
-                    )}
-                    {detail.proposals?.map((p) => (
-                      <div key={p.id} className="flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
-                        <FileText className="size-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[12.5px] font-semibold">
-                            v{p.versionNumber}
-                            {p.sentDate && <span className="ml-1.5 text-[10px] font-medium text-muted-foreground">sent {formatDate(p.sentDate)}</span>}
-                          </p>
-                          <p className="flex flex-wrap items-center gap-2 truncate text-[10.5px] text-muted-foreground">
-                            {p.fileUrl && (
-                              <a href={p.fileUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">file ↗</a>
-                            )}
-                            {p.portalLink && (
-                              <a href={p.portalLink} target="_blank" rel="noreferrer" className="flex items-center gap-0.5 text-primary hover:underline">
-                                <Link2 className="size-3" /> portal ↗
-                              </a>
-                            )}
-                            {!p.fileUrl && !p.portalLink && "no attachment"}
-                          </p>
-                        </div>
-                        <Select
-                          value={p.status}
-                          onChange={(e) => proposalStatus(p, e.target.value)}
-                          className={cn("!w-28 shrink-0 !py-1.5 text-[11px]", p.status === "ACCEPTED" && "!border-emerald-500/40 !text-emerald-400", p.status === "REJECTED" && "!border-rose-500/40 !text-rose-400")}
-                        >
-                          {["DRAFT", "SENT", "ACCEPTED", "REJECTED"].map((s) => (
-                            <option key={s} value={s}>{label(s)}</option>
-                          ))}
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-                </section>
               </div>
+            )}
 
-              {/* right — properties / edit */}
-              <div className="flex flex-col gap-5 lg:col-span-2">
-                <section className="rounded-2xl border border-border/60 p-4">
-                  <h4 className="mb-3 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
-                    <Gauge className="size-3.5" /> Lead health
+            {/* ── tab: details (edit) ── */}
+            {detailTab === "details" && (
+              <div className="flex flex-col">
+                <section>
+                  <h4 className="mb-3 flex items-center gap-1.5 text-[14px] font-bold tracking-wide text-muted-foreground uppercase">
+                    <Settings2 className="size-3.5" /> Edit lead
                   </h4>
-                  <ScoreBar score={detail.leadScore} />
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-[11px]">
-                    <div className="rounded-xl bg-muted/50 px-2.5 py-2">
-                      <p className="text-[9.5px] font-bold text-muted-foreground uppercase">Last contact</p>
-                      <p className="mt-0.5 font-semibold">{detail.lastContactedAt ? timeAgo(detail.lastContactedAt) : "never"}</p>
-                    </div>
-                    <div className="rounded-xl bg-muted/50 px-2.5 py-2">
-                      <p className="text-[9.5px] font-bold text-muted-foreground uppercase">First response</p>
-                      <p className="mt-0.5 font-semibold">{detail.firstResponseAt ? timeAgo(detail.firstResponseAt) : "—"}</p>
-                    </div>
-                    <div className="rounded-xl bg-muted/50 px-2.5 py-2">
-                      <p className="text-[9.5px] font-bold text-muted-foreground uppercase">In stage since</p>
-                      <p className="mt-0.5 font-semibold">{detail.stageEnteredAt ? timeAgo(detail.stageEnteredAt) : "—"}</p>
-                    </div>
-                    <div className="rounded-xl bg-muted/50 px-2.5 py-2">
-                      <p className="text-[9.5px] font-bold text-muted-foreground uppercase">Created</p>
-                      <p className="mt-0.5 font-semibold">{formatDate(detail.createdAt)}</p>
-                    </div>
-                  </div>
-                  {isStale(detail) && (
-                    <p className="mt-3 flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] font-semibold text-amber-400">
-                      <AlertTriangle className="size-3.5" /> Rotten — no touch in 7+ days
-                    </p>
-                  )}
-                  {detail.nextFollowUpAt && detail.stage !== "WON" && detail.stage !== "LOST" && (
-                    <p className="mt-2 flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-2 text-[11px] font-semibold text-sky-400">
-                      <CalendarClock className="size-3.5" />
-                      Next follow-up {new Date(detail.nextFollowUpAt).getTime() < Date.now() ? "overdue — " : ""}{formatDate(detail.nextFollowUpAt)}
-                    </p>
-                  )}
-                </section>
-
-                <section className="rounded-2xl border border-border/60 p-4">
-                  <h4 className="mb-3 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
-                    <Pencil className="size-3.5" /> Details
-                  </h4>
-                  <div className="flex flex-col gap-3">
+                  <div className="grid gap-x-5 gap-y-3.5 sm:grid-cols-2">
+                    <EditField label="Email">
+                      <Input
+                        defaultValue={detail.contactEmail ?? ""}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          if (v !== (detail.contactEmail ?? "")) patchLead({ contactEmail: v || undefined }, "Email updated");
+                        }}
+                      />
+                    </EditField>
+                    <EditField label="Phone">
+                      <Input
+                        defaultValue={detail.contactPhone ?? ""}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          if (v !== (detail.contactPhone ?? "")) patchLead({ contactPhone: v || undefined }, "Phone updated");
+                        }}
+                      />
+                    </EditField>
+                    <EditField label="Website">
+                      <Input
+                        defaultValue={detail.website ?? ""}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          if (v !== (detail.website ?? "")) patchLead({ website: v || undefined }, "Website updated");
+                        }}
+                      />
+                    </EditField>
+                    <EditField label="Social / page link">
+                      <Input
+                        defaultValue={detail.pageLink ?? ""}
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          if (v !== (detail.pageLink ?? "")) patchLead({ pageLink: v || undefined }, "Page link updated");
+                        }}
+                      />
+                    </EditField>
                     <EditField label="Source">
                       <Select value={detail.source} onChange={(e) => patchLead({ source: e.target.value }, `Source → ${label(e.target.value)}`)}>
                         {SOURCES.map((s) => (
@@ -2665,11 +3211,33 @@ export default function PulsePage() {
                         </Select>
                         <button
                           onClick={() => setCatOpen(true)}
-                          className="flex shrink-0 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[11px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                          className="flex shrink-0 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[13px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                           title="Manage categories"
                         >
                           <Tag className="size-3.5" /> New
                         </button>
+                      </div>
+                    </EditField>
+                    <EditField label="Deal size">
+                      <div className="flex gap-2">
+                        <Input
+                          type="number"
+                          defaultValue={detail.estimatedDealSize ?? ""}
+                          onBlur={(e) => {
+                            const v = e.target.value;
+                            if (v !== String(detail.estimatedDealSize ?? "")) patchLead({ estimatedDealSize: v ? Number(v) : null }, "Deal size updated");
+                          }}
+                        />
+                        <Select
+                          defaultValue={detail.currency ?? "BDT"}
+                          onChange={(e) => patchLead({ currency: e.target.value })}
+                          className="!w-24"
+                        >
+                          <option value="BDT">BDT</option>
+                          <option value="USD">USD</option>
+                          <option value="SAR">SAR</option>
+                          <option value="AED">AED</option>
+                        </Select>
                       </div>
                     </EditField>
                     <EditField label="Win probability">
@@ -2697,46 +3265,6 @@ export default function PulsePage() {
                         }}
                       />
                     </EditField>
-                    <EditField label="Website">
-                      <Input
-                        defaultValue={detail.website ?? ""}
-                        onBlur={(e) => {
-                          const v = e.target.value.trim();
-                          if (v !== (detail.website ?? "")) patchLead({ website: v || undefined }, "Website updated");
-                        }}
-                      />
-                    </EditField>
-                    <EditField label="Social / page link">
-                      <Input
-                        defaultValue={detail.pageLink ?? ""}
-                        onBlur={(e) => {
-                          const v = e.target.value.trim();
-                          if (v !== (detail.pageLink ?? "")) patchLead({ pageLink: v || undefined }, "Page link updated");
-                        }}
-                      />
-                    </EditField>
-                    <EditField label="Priority">
-                      <Select value={detail.priority} onChange={(e) => patchLead({ priority: e.target.value }, `Priority → ${e.target.value}`)}>
-                        {PRIORITIES.map((p) => (
-                          <option key={p} value={p}>{label(p)}</option>
-                        ))}
-                      </Select>
-                    </EditField>
-                    <EditField label="Owner">
-                      <Select value={detail.assignedTo?.id ?? ""} onChange={(e) => patchLead({ assignedToId: e.target.value || undefined })}>
-                        <option value="">Unassigned</option>
-                        {(users ?? []).map((u: UserLite) => (
-                          <option key={u.id} value={u.id}>{u.name}</option>
-                        ))}
-                      </Select>
-                    </EditField>
-                    <EditField label="Stage">
-                      <Select value={detail.stage} onChange={(e) => stageChanged(detail, e.target.value)}>
-                        {STAGES.map((s) => (
-                          <option key={s} value={s}>{label(s)}</option>
-                        ))}
-                      </Select>
-                    </EditField>
                     <EditField label="Next follow-up">
                       <Input
                         type="datetime-local"
@@ -2744,59 +3272,10 @@ export default function PulsePage() {
                         onChange={(e) => patchLead({ nextFollowUpAt: e.target.value ? new Date(e.target.value).toISOString() : null }, "Follow-up updated")}
                       />
                     </EditField>
-                    <EditField label="Deal size">
-                      <div className="flex gap-2">
-                        <Input
-                          type="number"
-                          defaultValue={detail.estimatedDealSize ?? ""}
-                          onBlur={(e) => {
-                            const v = e.target.value;
-                            if (v !== String(detail.estimatedDealSize ?? "")) patchLead({ estimatedDealSize: v ? Number(v) : null }, "Deal size updated");
-                          }}
-                        />
-                        <Select
-                          defaultValue={detail.currency ?? "BDT"}
-                          onChange={(e) => patchLead({ currency: e.target.value })}
-                          className="!w-24"
-                        >
-                          <option value="BDT">BDT</option>
-                          <option value="USD">USD</option>
-                          <option value="SAR">SAR</option>
-                          <option value="AED">AED</option>
-                        </Select>
-                      </div>
-                    </EditField>
-                    <EditField label="Email">
-                      <Input
-                        defaultValue={detail.contactEmail ?? ""}
-                        onBlur={(e) => {
-                          const v = e.target.value.trim();
-                          if (v !== (detail.contactEmail ?? "")) patchLead({ contactEmail: v || undefined }, "Email updated");
-                        }}
-                      />
-                    </EditField>
-                    <EditField label="Phone">
-                      <Input
-                        defaultValue={detail.contactPhone ?? ""}
-                        onBlur={(e) => {
-                          const v = e.target.value.trim();
-                          if (v !== (detail.contactPhone ?? "")) patchLead({ contactPhone: v || undefined }, "Phone updated");
-                        }}
-                      />
-                    </EditField>
                   </div>
                 </section>
-
-                {detail.lostReason && (
-                  <section className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4">
-                    <h4 className="mb-1 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-rose-400 uppercase">
-                      <AlertTriangle className="size-3.5" /> Lost — {label(detail.lostReason.reasonCategory)}
-                    </h4>
-                    {detail.lostReason.notes && <p className="text-[11.5px] text-muted-foreground">{detail.lostReason.notes}</p>}
-                  </section>
-                )}
               </div>
-            </div>
+            )}
 
             {/* footer actions */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-4">
@@ -2886,45 +3365,111 @@ export default function PulsePage() {
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="flex flex-col items-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-6 text-[12px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
+            className="flex flex-col items-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-6 text-[14px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
           >
             <Upload className="size-5" />
             {uploading ? "Uploading…" : proposalUrl ? "Uploaded — file attached" : "Upload proposal file (PDF)"}
           </button>
           {proposalUrl && (
-            <p className="truncate rounded-xl bg-emerald-500/10 px-3 py-2 text-[11px] font-medium text-emerald-400">
+            <p className="truncate rounded-xl bg-emerald-500/10 px-3 py-2 text-[13px] font-medium text-emerald-400">
               ✓ {proposalUrl}
             </p>
           )}
-          <Field label="Portal link" hint="Client-facing proposal URL">
-            <Input value={proposalPortal} onChange={(e) => setProposalPortal(e.target.value)} placeholder="https://portal.zoolyum.com/p/…" />
+          <Field label="Proposal link" hint="Notion / Google Drive / PDF লিংক paste করো — client এই link-এই proposal দেখবে">
+            <Input value={proposalPortal} onChange={(e) => setProposalPortal(e.target.value)} placeholder="https://notion.so/… বা https://drive.google.com/…" />
           </Field>
+          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2.5 text-[14px] font-semibold text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground">
+            <input
+              type="checkbox"
+              checked={proposalSendNow}
+              onChange={(e) => setProposalSendNow(e.target.checked)}
+              className="size-4 accent-violet-500"
+            />
+            Send now — SENT হিসেবে mark হবে, lead stage PROPOSAL SENT-এ যাবে
+          </label>
           <FormActions
             busy={false}
             cancel={() => {
               setProposalModal(false);
               setProposalUrl("");
               setProposalPortal("");
+              setProposalSendNow(false);
             }}
-            submitLabel="Add proposal"
+            submitLabel={proposalSendNow ? "Send proposal" : "Save as draft"}
+          />
+        </form>
+      </Modal>
+
+      {/* edit proposal modal */}
+      <Modal open={!!editProposal} onClose={() => setEditProposal(null)} title={`Edit proposal v${editProposal?.versionNumber ?? ""}`}>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveEditProposal();
+          }}
+          className="flex flex-col gap-4"
+        >
+          <input
+            ref={editFileRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.[0]) uploadFile(e.target.files[0], setEditFileUrl);
+              e.target.value = "";
+            }}
+          />
+          <Field label="Proposal link" hint="নতুন version-এর link এখানে বসাও — banner + সব জায়গায় আপডেট হয়ে যাবে">
+            <Input value={editLink} onChange={(e) => setEditLink(e.target.value)} placeholder="https://notion.so/… বা https://drive.google.com/…" />
+          </Field>
+          <div>
+            <p className="mb-1 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">Attached file</p>
+            {editFileUrl ? (
+              <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-[13px] font-medium text-emerald-400">
+                <FileText className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">{editFileUrl}</span>
+                <button type="button" onClick={() => setEditFileUrl("")} className="shrink-0 font-bold text-rose-400 hover:underline">Remove</button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => editFileRef.current?.click()}
+                disabled={uploading}
+                className="flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-4 text-[14px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
+              >
+                <Upload className="size-4" />
+                {uploading ? "Uploading…" : "Replace / attach file (PDF)"}
+              </button>
+            )}
+          </div>
+          <Field label="Status">
+            <Select value={editStatus} onChange={(e) => setEditStatus(e.target.value)}>
+              {["DRAFT", "SENT", "ACCEPTED", "REJECTED"].map((s) => (
+                <option key={s} value={s}>{label(s)}</option>
+              ))}
+            </Select>
+          </Field>
+          <FormActions
+            busy={false}
+            cancel={() => setEditProposal(null)}
+            submitLabel="Save changes"
           />
         </form>
       </Modal>
 
       {/* dup warning */}
       <Modal open={!!dupWarn} onClose={() => setDupWarn(null)} title="Possible duplicate">
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-[14px] leading-relaxed text-muted-foreground">
           নিম্নোক্ত সক্রিয় lead-এর সাথে contact মিলে গেছে:
         </p>
         <ul className="mt-3 flex flex-col gap-1.5">
           {dupWarn?.map((w) => (
-            <li key={w.name} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-400">
+            <li key={w.name} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[14px] font-semibold text-amber-400">
               ⚠ {w.name}
             </li>
           ))}
         </ul>
         <div className="mt-5 flex justify-end">
-          <button onClick={() => setDupWarn(null)} className="rounded-xl bg-brand-gradient px-4 py-2 text-[12.5px] font-bold text-white">
+          <button onClick={() => setDupWarn(null)} className="rounded-xl bg-brand-gradient px-4 py-2 text-[14px] font-bold text-white">
             Understood
           </button>
         </div>
@@ -2932,14 +3477,14 @@ export default function PulsePage() {
 
       {/* delete confirm */}
       <Modal open={!!deleteLead} onClose={() => setDeleteLead(null)} title="Delete lead?">
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-[14px] leading-relaxed text-muted-foreground">
           {deleteLead?.name} চিরতরে মুছে যাবে — activities, proposals, meetings সহ। এটা undo করা যাবে না।
         </p>
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={() => setDeleteLead(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+          <button onClick={() => setDeleteLead(null)} className="rounded-xl border border-border px-4 py-2 text-[14px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             Cancel
           </button>
-          <button onClick={deleteLeadFn} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02]">
+          <button onClick={deleteLeadFn} className="rounded-xl bg-rose-500 px-4 py-2 text-[14px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02]">
             Delete
           </button>
         </div>
@@ -2951,7 +3496,7 @@ export default function PulsePage() {
 function EditField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-1 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="mb-1 text-[12px] font-bold tracking-wide text-muted-foreground uppercase">{label}</p>
       {children}
     </div>
   );

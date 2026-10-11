@@ -3,6 +3,7 @@ import { FollowUpStatus, Lead, LeadPriority, LeadStage, Prisma } from "@prisma/c
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { TasksService } from "../tasks/tasks.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import {
   AddActivityDto,
   ConvertLeadDto,
@@ -64,7 +65,8 @@ export class PulseService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
-    private readonly tasks: TasksService
+    private readonly tasks: TasksService,
+    private readonly notifications: NotificationsService
   ) {}
 
   // ── Action → task automation (meetings & follow-ups) ────────────────────
@@ -420,6 +422,17 @@ export class PulseService {
     if (duplicates.length) {
       await this.audit("DUPLICATE_WARNING", lead.id, { matches: duplicates.map((d) => d.name) });
     }
+    if (dto.assignedToId && dto.assignedToId !== userId) {
+      try {
+        await this.notifications.create(
+          dto.assignedToId,
+          "LEAD_ASSIGNED",
+          "New lead assigned",
+          `"${lead.name}"${lead.company ? ` (${lead.company})` : ""} was assigned to you.`,
+          "/pulse"
+        );
+      } catch {}
+    }
     await this.invalidateSummary();
     return { ...updated, duplicateWarnings: duplicates };
   }
@@ -509,6 +522,30 @@ export class PulseService {
         },
       });
       await this.audit("LEAD_STAGE_CHANGED", id, { from: lead.stage, to: dto.stage });
+      if (dto.stage === "WON") {
+        try {
+          await this.notifications.notifyRole(
+            "Owner",
+            "LEAD_ASSIGNED",
+            "🎉 Deal won",
+            `"${updated.name}"${updated.company ? ` (${updated.company})` : ""} just closed.`,
+            "/pulse",
+            userId
+          );
+        } catch {}
+      }
+    }
+    const reassigned = dto.assignedToId !== undefined && dto.assignedToId !== lead.assignedToId;
+    if (reassigned && dto.assignedToId && dto.assignedToId !== userId) {
+      try {
+        await this.notifications.create(
+          dto.assignedToId,
+          "LEAD_ASSIGNED",
+          "Lead reassigned to you",
+          `"${updated.name}"${updated.company ? ` (${updated.company})` : ""} was assigned to you.`,
+          "/pulse"
+        );
+      } catch {}
     }
     await this.invalidateSummary();
     return this.detail(id);
@@ -631,6 +668,7 @@ export class PulseService {
         meetings: { orderBy: { scheduledAt: "desc" } },
         followUps: { orderBy: { date: "desc" } },
         notesList: { include: { createdBy: { select: { name: true } } }, orderBy: { createdAt: "desc" } },
+        attachments: { include: { uploadedBy: { select: { name: true } } }, orderBy: { createdAt: "desc" } },
         lostReason: true,
         client: { select: { id: true, companyName: true } },
         projects: { select: { id: true, name: true, status: true } },
@@ -698,6 +736,17 @@ export class PulseService {
       detail: `${meeting.title} (${meeting.type}) — ${scheduled.toISOString()}${meeting.meetingLink ? ` — ${meeting.meetingLink}` : ""}`,
     });
     await this.audit("MEETING_SCHEDULED", id, { meetingTitle: dto.title, at: scheduled.toISOString(), taskCreated: !!createdTask });
+    if (lead.assignedToId && lead.assignedToId !== createdById) {
+      try {
+        await this.notifications.create(
+          lead.assignedToId,
+          "MEETING_SCHEDULED",
+          "Meeting scheduled",
+          `"${meeting.title}" with ${lead.name} — ${scheduled.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}.`,
+          "/pulse"
+        );
+      } catch {}
+    }
     await this.invalidateSummary();
     return { ...meeting, createdTask };
   }
@@ -800,6 +849,17 @@ export class PulseService {
       },
     });
     await this.audit("FOLLOW_UP_SCHEDULED", leadId, { date: dto.date, taskCreated: !!createdTask });
+    if (lead.assignedToId) {
+      try {
+        await this.notifications.create(
+          lead.assignedToId,
+          "FOLLOWUP_SCHEDULED",
+          "Follow-up scheduled",
+          `${lead.name} — ${new Date(dto.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}${dto.notes ? ` · ${dto.notes}` : ""}`,
+          "/pulse"
+        );
+      } catch {}
+    }
     await this.invalidateSummary();
     return { ...followUp, createdTask };
   }
@@ -876,6 +936,50 @@ export class PulseService {
     return { deleted: true };
   }
 
+  // ── Attachments (reference files) ───────────────────────────────────────
+  async addAttachment(
+    leadId: string,
+    file: Express.Multer.File,
+    title?: string,
+    userId?: string
+  ) {
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead) throw new NotFoundException("Lead not found");
+    if (!file) throw new Error("No file uploaded");
+
+    const attachment = await this.prisma.leadAttachment.create({
+      data: {
+        leadId,
+        title: title?.trim() || null,
+        fileUrl: `/api/pulse/uploads/${file.filename}`,
+        filename: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        uploadedById: userId,
+      },
+      include: { uploadedBy: { select: { name: true } } },
+    });
+    await this.prisma.leadActivity.create({
+      data: {
+        leadId,
+        type: "ATTACHMENT",
+        content: `Attachment uploaded: ${file.originalname}${title?.trim() ? ` (${title.trim()})` : ""}`,
+        loggedById: userId,
+      },
+    });
+    await this.audit("LEAD_ATTACHMENT_ADDED", leadId, { filename: file.originalname });
+    return attachment;
+  }
+
+  async removeAttachment(leadId: string, attachmentId: string) {
+    const attachment = await this.prisma.leadAttachment.findFirst({
+      where: { id: attachmentId, leadId },
+    });
+    if (!attachment) throw new NotFoundException("Attachment not found");
+    await this.prisma.leadAttachment.delete({ where: { id: attachmentId } });
+    return { deleted: true };
+  }
+
   // ── Categories (user-defined) ───────────────────────────────────────────
   async listCategories() {
     return this.cache.wrap("pulse:categories", 300, () =>
@@ -902,6 +1006,21 @@ export class PulseService {
   }
 
   // ── Proposals ───────────────────────────────────────────────────────────
+  // Move an early-stage lead to PROPOSAL_SENT on first send (never backwards,
+  // never touches WON/LOST).
+  private async advanceStageOnSend(leadId: string) {
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId }, select: { stage: true } });
+    if (lead && ["NEW", "CONTACTED", "QUALIFIED"].includes(lead.stage)) {
+      await this.prisma.lead.update({
+        where: { id: leadId },
+        data: { stage: "PROPOSAL_SENT", stageEnteredAt: new Date(), lastContactedAt: new Date() },
+      });
+      await this.invalidateSummary();
+    } else {
+      await this.prisma.lead.update({ where: { id: leadId }, data: { lastContactedAt: new Date() } });
+    }
+  }
+
   async addProposal(id: string, dto: CreateProposalDto) {
     const lead = await this.prisma.lead.findUnique({ where: { id } });
     if (!lead) throw new NotFoundException("Lead not found");
@@ -910,16 +1029,22 @@ export class PulseService {
       where: { leadId: id },
       orderBy: { versionNumber: "desc" },
     });
+    const status = dto.status === "SENT" ? "SENT" : "DRAFT";
     const proposal = await this.prisma.proposal.create({
       data: {
         leadId: id,
         versionNumber: (last?.versionNumber ?? 0) + 1,
         fileUrl: dto.fileUrl,
         portalLink: dto.portalLink,
-        status: "DRAFT",
+        status,
+        sentDate: status === "SENT" ? new Date() : undefined,
       },
     });
     await this.audit("PROPOSAL_CREATED", id, { version: proposal.versionNumber });
+    if (status === "SENT") {
+      await this.advanceStageOnSend(id);
+      await this.audit("PROPOSAL_SENT", id, { version: proposal.versionNumber });
+    }
     return proposal;
   }
 
@@ -929,19 +1054,35 @@ export class PulseService {
     });
     if (!proposal) throw new NotFoundException("Proposal not found");
 
+    const firstSend = dto.status === "SENT" && !proposal.sentDate;
     const updated = await this.prisma.proposal.update({
       where: { id: proposalId },
       data: {
         status: dto.status,
         fileUrl: dto.fileUrl,
         portalLink: dto.portalLink,
-        sentDate: dto.status === "SENT" && !proposal.sentDate ? new Date() : undefined,
+        sentDate: firstSend ? new Date() : undefined,
       },
     });
     if (dto.status === "SENT" || dto.status === "ACCEPTED") {
-      await this.prisma.lead.update({ where: { id: leadId }, data: { lastContactedAt: new Date() } });
+      await this.advanceStageOnSend(leadId);
+    }
+    if (firstSend) {
+      await this.audit("PROPOSAL_SENT", leadId, { version: proposal.versionNumber });
     }
     return updated;
+  }
+
+  async markProposalViewed(leadId: string, proposalId: string) {
+    const proposal = await this.prisma.proposal.findFirst({
+      where: { id: proposalId, leadId },
+      select: { id: true, viewed: true },
+    });
+    if (!proposal) throw new NotFoundException("Proposal not found");
+    if (!proposal.viewed) {
+      await this.prisma.proposal.update({ where: { id: proposalId }, data: { viewed: true } });
+    }
+    return { viewed: true };
   }
 
   // ── CSV import / export ─────────────────────────────────────────────────

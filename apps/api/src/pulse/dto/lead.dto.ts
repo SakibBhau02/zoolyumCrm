@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUrl,
   Max,
   Min,
 } from "class-validator";
@@ -238,8 +239,12 @@ export class CreateProposalDto {
   fileUrl?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUrl({ require_protocol: false }, { message: "Proposal link must be a valid URL" })
   portalLink?: string;
+
+  @IsOptional()
+  @IsEnum(PROPOSAL_STATUSES)
+  status?: (typeof PROPOSAL_STATUSES)[number];
 }
 
 export class UpdateProposalDto {
@@ -252,7 +257,7 @@ export class UpdateProposalDto {
   fileUrl?: string;
 
   @IsOptional()
-  @IsString()
+  @IsUrl({ require_protocol: false }, { message: "Proposal link must be a valid URL" })
   portalLink?: string;
 }
 

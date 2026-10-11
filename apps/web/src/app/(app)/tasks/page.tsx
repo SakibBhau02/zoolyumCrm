@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { motion } from "framer-motion";
 import {
   AlarmClock, Archive, ArrowUp, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
-  Copy, ExternalLink, FileText, Flame, GitBranch, Link2, ListTodo, MessageSquare, Minus, MoreHorizontal, Paperclip, Play,
+  Copy, ExternalLink, FileText, Flame, FolderKanban, GitBranch, Link2, ListTodo, MessageSquare, Minus, MoreHorizontal, Paperclip, Play,
   Plus, RefreshCw, Search, ShieldAlert, Smile, Timer, Trash2, Upload, UserRound, X, Zap,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -335,9 +335,11 @@ function FragmentRow({ t, i, expanded, hasChildren, childrenList, onToggleExpand
   onToggleExpand: () => void; selected: boolean; onSelect: () => void; onOpen: () => void; onChanged: () => void;
   renderChild: (c: TaskRow, ci: number) => React.ReactNode;
 }) {
+  const overdue = t.dueDate && t.status !== "DONE" && localKey(t.dueDate) < todayKey();
+  const dueLabel = t.dueDate ? formatDay(t.dueDate) : "—";
   return (
     <>
-      <Tr index={i} onClick={onOpen} className="cursor-pointer">
+      <Tr index={i} onClick={onOpen} className="cursor-pointer group">
         <Td>
           <div className="flex items-center gap-1">
             <input type="checkbox" checked={selected} onChange={(e) => { e.stopPropagation(); onSelect(); }} className="size-3.5 accent-primary" />
@@ -349,22 +351,37 @@ function FragmentRow({ t, i, expanded, hasChildren, childrenList, onToggleExpand
           </div>
         </Td>
         <Td>
-          <div className="flex items-center gap-1.5">
-            <p className="max-w-56 truncate font-medium">{t.title}</p>
-            {t.isBlocked && <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-bold text-rose-400">BLOCKED</span>}
-            {t.parentTaskId && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">subtask</span>}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5">
+              <p className="max-w-56 truncate font-semibold leading-none">{t.title}</p>
+              {t.isBlocked && <span className="shrink-0 rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-bold text-rose-400">BLOCKED</span>}
+              {t.parentTaskId && <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">subtask</span>}
+              {t.isClientVisible && <span className="shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[9px] font-bold text-sky-400">client</span>}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {t.project?.name ? <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground"><FolderKanban className="size-2.5" />{t.project.name}</span> : <span className="text-[10px] text-muted-foreground/50">No project</span>}
+              {t.dueDate && <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold", overdue ? "bg-rose-500/15 text-rose-400" : "bg-muted text-muted-foreground")}><CalendarDays className="size-2.5" />{dueLabel}</span>}
+              {(t.estimatedHours != null || t.actualHours != null) && <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-primary"><Timer className="size-2.5" />{Number(t.actualHours ?? 0).toFixed(1)}/{t.estimatedHours ?? "—"}h</span>}
+              <span className="hidden items-center gap-1 text-[10px] tabular-nums text-muted-foreground group-hover:inline-flex"><MessageSquare className="size-2.5" />{t._count?.comments ?? 0} · <Timer className="size-2.5" />{t._count?.timeLogs ?? 0}{t.subtaskCount ? <> · <ListTodo className="size-2.5" />{t.subtaskCount}</> : null}</span>
+            </div>
           </div>
         </Td>
-        <Td>{t.taskType ? <span className={cn("rounded-full border px-2 py-0.5 text-[9.5px] font-bold capitalize", TYPE_TONES[t.taskType] ?? TYPE_TONES.general)}>{t.taskType}</span> : <span className="text-muted-foreground/50">—</span>}</Td>
+        <Td>{t.taskType ? <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9.5px] font-bold capitalize", TYPE_TONES[t.taskType] ?? TYPE_TONES.general)}><span className="size-1.5 rounded-full bg-current opacity-60" />{t.taskType}</span> : <span className="text-muted-foreground/50">—</span>}</Td>
         <Td><StatusBadge status={t.status} /></Td>
         <Td>
           <Select value={t.priority} onChange={(e) => { e.stopPropagation(); apiFetch(`/tasks/${t.id}`, { method: "PATCH", body: JSON.stringify({ priority: e.target.value }) }).then(() => onChanged()).catch(() => {}); }} className="!w-28 !py-1" onClick={(e) => e.stopPropagation()}>
             {PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}
           </Select>
         </Td>
-        <Td className={cn("font-medium tabular-nums", t.status !== "DONE" && t.dueDate && localKey(t.dueDate) < todayKey() ? "text-rose-500" : "text-muted-foreground")}>{formatDay(t.dueDate)}</Td>
-        <Td className="text-muted-foreground">{t.assignedTo?.name ?? "Unassigned"}</Td>
-        <Td className="text-muted-foreground">{t.project?.name ?? "—"}</Td>
+        <Td className={cn("font-medium tabular-nums text-[12px]", overdue ? "text-rose-500" : "text-muted-foreground")}>{dueLabel}</Td>
+        <Td>
+          <div className="flex items-center gap-2">
+            {t.assignedTo?.name ? <><Avatar name={t.assignedTo.name} size="size-6" /><span className="max-w-24 truncate text-[12px] font-medium">{t.assignedTo.name}</span></> : <span className="flex items-center gap-1.5 text-muted-foreground"><span className="flex size-6 items-center justify-center rounded-full border border-dashed border-border"><UserRound className="size-3" /></span>Unassigned</span>}
+          </div>
+        </Td>
+        <Td>
+          {t.project?.name ? <span className="inline-flex max-w-28 items-center gap-1.5 truncate rounded-full border border-border/60 bg-card px-2.5 py-1 text-[11px] font-semibold"><FolderKanban className="size-3 shrink-0 text-muted-foreground" />{t.project.name}</span> : <span className="text-muted-foreground">—</span>}
+        </Td>
       </Tr>
       {expanded && hasChildren && childrenList.map((c, ci) => renderChild(c, ci))}
     </>
@@ -429,15 +446,17 @@ export default function TasksPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"overview" | "subtasks" | "comments" | "time" | "deps" | "files">("overview");
   useEffect(() => {
-    if (!selectedId) { setDetail(null); setTab("overview"); return; }
+    if (!selectedId) { setDetail(null); setDetailError(null); setTab("overview"); return; }
     let cancelled = false;
     setDetailLoading(true);
+    setDetailError(null);
     apiFetch<TaskDetail>(`/tasks/${selectedId}`)
       .then((d) => !cancelled && setDetail(d))
-      .catch((e) => !cancelled && setSelectedId(null))
+      .catch((e) => { if (!cancelled) { setDetailError(e.message ?? "Failed to load"); setDetail(null); } })
       .finally(() => !cancelled && setDetailLoading(false));
     return () => { cancelled = true; };
   }, [selectedId, refresh]);
@@ -860,31 +879,49 @@ export default function TasksPage() {
 
   const taskCard = (t: TaskRow) => {
     const overdue = t.dueDate && t.status !== "DONE" && localKey(t.dueDate) < todayKey();
+    const progress = t.estimatedHours ? Math.min(100, (Number(t.actualHours ?? 0) / Math.max(1, Number(t.estimatedHours))) * 100) : null;
     return (
       <div key={t.id} draggable onDragStart={() => setDragId(t.id)} onDragEnd={() => setDragId(null)}
         onClick={() => setSelectedId(t.id)}
-        className={cn("relative cursor-pointer rounded-xl border bg-card p-3 transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10", overdue ? "border-rose-500/40" : "border-border/60", dragId === t.id && "opacity-40")}>
+        className={cn("group relative cursor-pointer overflow-hidden rounded-xl border bg-card p-3 transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/10", overdue ? "border-rose-500/30 bg-rose-500/[0.03]" : "border-border/60", dragId === t.id && "opacity-40")}>
+        {/* Project breadcrumb — at-a-glance */}
+        <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground">
+          <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5", t.project?.name ? "border-border/60 bg-muted/40" : "border-dashed border-border bg-transparent")}>
+            <FolderKanban className="size-2.5" />{t.project?.name ?? "No project"}
+          </span>
+          <span className="ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold capitalize" style={{ borderColor: "var(--border)" }}><span className={cn("size-1.5 rounded-full", TYPE_TONES[t.taskType ?? "general"]?.includes("rose") ? "bg-rose-400" : TYPE_TONES[t.taskType ?? "general"]?.includes("primary") ? "bg-primary" : "bg-muted-foreground")} />{t.taskType ?? "general"}</span>
+        </div>
         <div className="flex items-start justify-between gap-2">
-          <p className="min-w-0 truncate text-[12.5px] font-bold">{t.title}</p>
-          <button onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === t.id ? null : t.id); }} className="shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted"><MoreHorizontal className="size-3.5" /></button>
+          <p className="min-w-0 line-clamp-2 flex-1 text-[12.5px] font-bold leading-snug">{t.title}</p>
+          <button onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === t.id ? null : t.id); }} className="shrink-0 rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted group-hover:text-foreground"><MoreHorizontal className="size-3.5" /></button>
         </div>
         {cardMenu(t)}
-        {t.description && <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{t.description}</p>}
+        {t.description && <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground/80">{t.description}</p>}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          {t.priority && <span className={cn("rounded-full border px-1.5 py-0.5 text-[9px] font-bold", PRIORITY_TONES[t.priority] ?? PRIORITY_TONES.MEDIUM)}>{t.priority}</span>}
-          {t.taskType && <span className={cn("rounded-full border px-1.5 py-0.5 text-[9px] font-bold capitalize", TYPE_TONES[t.taskType] ?? TYPE_TONES.general)}>{t.taskType}</span>}
+          {t.priority && <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold tracking-wide", PRIORITY_TONES[t.priority] ?? PRIORITY_TONES.MEDIUM)}>{t.priority}</span>}
           {dueBadge(t)}
-          {t.isBlocked && <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[9px] font-bold text-rose-400">BLOCKED</span>}
-          {t.parentTaskId && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">subtask</span>}
+          {t.isBlocked && <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[9px] font-bold text-rose-400">BLOCKED</span>}
+          {t.isClientVisible && <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-[9px] font-bold text-sky-400">client</span>}
+          {t.parentTaskId && <span className="rounded-full bg-muted px-2 py-0.5 text-[9px] font-semibold text-muted-foreground">subtask</span>}
         </div>
+        {/* Hours progress — hierarchy */}
+        {(t.estimatedHours != null || t.actualHours != null) && progress !== null && (
+          <div className="mt-2.5 flex items-center gap-2">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+              <div className={cn("h-full rounded-full transition-all", Number(t.actualHours ?? 0) > Number(t.estimatedHours ?? 0) ? "bg-rose-500" : "bg-primary")} style={{ width: `${progress}%` }} />
+            </div>
+            <span className="shrink-0 text-[10px] font-bold tabular-nums text-muted-foreground">{Number(t.actualHours ?? 0).toFixed(1)}/{t.estimatedHours ?? "—"}h</span>
+          </div>
+        )}
         <div className="mt-2.5 flex items-center justify-between gap-2">
           <div className="flex min-w-0 flex-wrap gap-1">
-            {(t.tags ?? []).slice(0, 3).map((tag) => <span key={tag} className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary">{tag}</span>)}
+            {(t.tags ?? []).slice(0, 2).map((tag) => <span key={tag} className="rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-semibold text-primary">#{tag}</span>)}
+            {(t.tags ?? []).length > 2 && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">+{(t.tags ?? []).length - 2}</span>}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <span className="flex items-center gap-0.5 text-[10px] tabular-nums text-muted-foreground"><MessageSquare className="size-3" />{t._count?.comments ?? 0}</span>
-            <span className="flex items-center gap-0.5 text-[10px] tabular-nums text-muted-foreground"><Timer className="size-3" />{t._count?.timeLogs ?? 0}</span>
-            {(t.subtaskCount ?? 0) > 0 && <span className="flex items-center gap-0.5 text-[10px] tabular-nums text-muted-foreground"><ListTodo className="size-3" />{t.subtaskCount}</span>}
+            <span className="flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-muted-foreground"><MessageSquare className="size-3" />{t._count?.comments ?? 0}</span>
+            <span className="flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-muted-foreground"><Timer className="size-3" />{t._count?.timeLogs ?? 0}</span>
+            {(t.subtaskCount ?? 0) > 0 && <span className="flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-muted-foreground"><ListTodo className="size-3" />{t.subtaskCount}</span>}
             {assigneeStack(t)}
           </div>
         </div>
@@ -1353,31 +1390,49 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
       <TemplateModal open={tplOpen} onClose={() => setTplOpen(false)} onSaved={() => { notify("Template created"); setAux((a) => a + 1); }} />
       <AutomationModal open={autoOpen} onClose={() => setAutoOpen(false)} users={users} onSaved={() => { notify("Rule added"); setAux((a) => a + 1); }} />
 
-      <Drawer
+      <Modal
         open={!!selectedId}
         onClose={() => setSelectedId(null)}
+        size="xl"
         title={
-          detailLoading ? <p className="text-[15px] font-semibold">Loading…</p>
+          detailLoading ? <p className="text-[17px] font-semibold">Loading…</p>
             : detail ? (
               <div className="min-w-0">
-                <p className="truncate font-heading text-[15px] font-semibold">{detail.title}</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{detail.project?.name ?? "No project"} · {label(detail.status)}</p>
+                <div className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5"><FolderKanban className="size-3" />{detail.project?.name ?? "No project"}</span>
+                  <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold capitalize", TYPE_TONES[detail.taskType ?? "general"])}>{detail.taskType ?? "general"}</span>
+                  <StatusBadge status={detail.status} />
+                </div>
+                <p className="mt-2 font-heading text-[20px] font-bold leading-tight tracking-tight">{detail.title}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">Created {timeAgo(detail.createdAt)} {detail.reporter?.name ? `· by ${detail.reporter.name}` : ""} {detail.dueDate ? `· Due ${formatDate(detail.dueDate)}` : ""}</p>
               </div>
             ) : null
         }
       >
         {detailLoading ? (
           <div className="flex flex-col gap-3">{[...Array(8)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}</div>
+        ) : detailError ? (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-6 text-center">
+            <p className="text-[13px] font-bold text-rose-600">{detailError}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">Only assignee, creator, PM/Admin can view this task.</p>
+            <Btn variant="outline" onClick={() => setSelectedId(null)} className="mt-3">Close</Btn>
+          </div>
         ) : !detail ? null : (
+          (() => { const canFull = (detail as any)._permissions?.canEditFull ?? false; const canProgress = (detail as any)._permissions?.canEditProgress ?? false; return (
           <div className="flex flex-col gap-5">
+            {!canFull && (
+              <div className={cn("rounded-xl border px-3 py-2.5 text-[11px] font-semibold", canProgress ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-rose-500/30 bg-rose-500/10 text-rose-600")}>
+                {canProgress ? "You can only update progress, time logs and comments. Full edit restricted to creator / PM / Admin." : "View only — you don't have edit permission."}
+              </div>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <Segmented value={detail.status} onChange={changeStatus} options={STATUS_OPTS} />
+              <div className={cn(!canProgress && "pointer-events-none opacity-50")}><Segmented value={detail.status} onChange={canProgress ? changeStatus : (()=>{})} options={STATUS_OPTS} /></div>
               <div className="flex items-center gap-1.5">
-                <Select value={detail.priority} onChange={(e) => patchDetail({ priority: e.target.value }, "Priority updated")} className="!w-28 !py-1.5">{PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}</Select>
+                <Select value={detail.priority} onChange={(e) => canFull && patchDetail({ priority: e.target.value }, "Priority updated")} disabled={!canFull} className="!w-28 !py-1.5">{PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}</Select>
                 <button onClick={() => copyLink(detail.id)} title="Copy link" className="flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Link2 className="size-3.5" /></button>
-                <button onClick={cloneTask} title="Clone task" className="flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Copy className="size-3.5" /></button>
-                <button onClick={archiveTask} title="Archive task" className="flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Archive className="size-3.5" /></button>
-                <button onClick={() => deleteTask(detail.id)} title="Delete task" className="flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"><Trash2 className="size-3.5" /></button>
+                <button onClick={canFull ? cloneTask : undefined} disabled={!canFull} title={canFull ? "Clone task" : "Only creator/PM can clone"} className={cn("flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", !canFull && "opacity-40 cursor-not-allowed")}><Copy className="size-3.5" /></button>
+                <button onClick={canFull ? archiveTask : undefined} disabled={!canFull} title={canFull ? "Archive task" : "Only creator/PM can archive"} className={cn("flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", !canFull && "opacity-40 cursor-not-allowed")}><Archive className="size-3.5" /></button>
+                <button onClick={canFull ? () => deleteTask(detail.id) : undefined} disabled={!canFull} title={canFull ? "Delete task" : "Only creator/PM can delete"} className={cn("flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400", !canFull && "opacity-40 cursor-not-allowed")}><Trash2 className="size-3.5" /></button>
               </div>
             </div>
 
@@ -1390,7 +1445,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
             )}
 
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={detail.taskType ?? "general"} onChange={(e) => patchDetail({ taskType: e.target.value }, "Type updated")} className="!w-36 !py-1.5">{TASK_TYPES.map((t) => (<option key={t} value={t}>{t}</option>))}</Select>
+              <Select value={detail.taskType ?? "general"} onChange={(e) => canFull && patchDetail({ taskType: e.target.value }, "Type updated")} disabled={!canFull} className="!w-36 !py-1.5">{TASK_TYPES.map((t) => (<option key={t} value={t}>{t}</option>))}</Select>
               <div className="ml-auto flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
                 <span className="tabular-nums">{Number(detail.actualHours ?? 0).toFixed(1)}h actual</span>
                 <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
@@ -1401,35 +1456,35 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Project"><Select value={detail.projectId ?? ""} onChange={(e) => patchDetail({ projectId: e.target.value || null }, "Project updated")} className="!py-1.5"><option value="">None</option>{(projects ?? []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</Select></Field>
-              <Field label="Assignee"><Select value={detail.assignedToId ?? ""} onChange={(e) => patchDetail({ assignedToId: e.target.value || null }, "Assignee updated")} className="!py-1.5"><option value="">Unassigned</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
-              <Field label="Reporter"><Select value={detail.reporterId ?? ""} onChange={(e) => patchDetail({ reporterId: e.target.value || null }, "Reporter updated")} className="!py-1.5"><option value="">None</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
-              <Field label="Start date"><Input type="date" value={detail.startDate?.slice(0, 10) ?? ""} onChange={(e) => patchDetail({ startDate: e.target.value || null }, "Start date updated")} /></Field>
-              <Field label="Due date"><Input type="date" value={detail.dueDate?.slice(0, 10) ?? ""} onChange={(e) => patchDetail({ dueDate: e.target.value || null }, "Due date updated")} /></Field>
-              <Field label="Estimated hours"><Input type="number" min={0} step={0.5} value={detail.estimatedHours ?? ""} onChange={(e) => patchDetail({ estimatedHours: e.target.value ? Number(e.target.value) : null }, "Hours updated")} /></Field>
+              <Field label="Project"><Select value={detail.projectId ?? ""} onChange={(e) => canFull && patchDetail({ projectId: e.target.value || null }, "Project updated")} disabled={!canFull} className="!py-1.5"><option value="">None</option>{(projects ?? []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</Select></Field>
+              <Field label="Assignee"><Select value={detail.assignedToId ?? ""} onChange={(e) => canFull && patchDetail({ assignedToId: e.target.value || null }, "Assignee updated")} disabled={!canFull} className="!py-1.5"><option value="">Unassigned</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
+              <Field label="Reporter"><Select value={detail.reporterId ?? ""} onChange={(e) => canFull && patchDetail({ reporterId: e.target.value || null }, "Reporter updated")} disabled={!canFull} className="!py-1.5"><option value="">None</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
+              <Field label="Start date"><Input type="date" value={detail.startDate?.slice(0, 10) ?? ""} onChange={(e) => canFull && patchDetail({ startDate: e.target.value || null }, "Start date updated")} disabled={!canFull} /></Field>
+              <Field label="Due date"><Input type="date" value={detail.dueDate?.slice(0, 10) ?? ""} onChange={(e) => canFull && patchDetail({ dueDate: e.target.value || null }, "Due date updated")} disabled={!canFull} /></Field>
+              <Field label="Estimated hours"><Input type="number" min={0} step={0.5} value={detail.estimatedHours ?? ""} onChange={(e) => canFull && patchDetail({ estimatedHours: e.target.value ? Number(e.target.value) : null }, "Hours updated")} disabled={!canFull} /></Field>
             </div>
 
             <div>
-              <span className="text-[11.5px] font-semibold text-muted-foreground">Additional assignees</span>
+              <span className="text-[11.5px] font-semibold text-muted-foreground">Additional assignees { !canFull && <span className="ml-1 text-[10px] text-amber-600">(creator/PM only)</span>}</span>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {users.filter((u) => u.id !== detail.assignedToId).map((u) => {
                   const has = ((detail.assignees ?? []) as any[]).some((a: any) => a.id === u.id);
                   return (
-                    <button key={u.id} onClick={() => patchDetail({ assignees: has ? ((detail.assignees ?? []) as any[]).filter((a: any) => a.id !== u.id) : [...((detail.assignees ?? []) as any[]), { id: u.id, name: u.name }] }, has ? "Assignee removed" : "Assignee added")}
-                      className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors", has ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>{u.name}</button>
+                    <button key={u.id} disabled={!canFull} onClick={() => canFull && patchDetail({ assignees: has ? ((detail.assignees ?? []) as any[]).filter((a: any) => a.id !== u.id) : [...((detail.assignees ?? []) as any[]), { id: u.id, name: u.name }] }, has ? "Assignee removed" : "Assignee added")}
+                      className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors", has ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground", !canFull && "opacity-40 cursor-not-allowed")}>{u.name}</button>
                   );
                 })}
               </div>
             </div>
 
-            <Field label="Tags" hint="Comma separated"><Input defaultValue={(detail.tags ?? []).join(", ")} onBlur={(e) => patchDetail({ tags: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }, "Tags updated")} placeholder="design, urgent" /></Field>
+            <Field label="Tags" hint={canFull ? "Comma separated" : "View only — creator/PM can edit"}><Input disabled={!canFull} defaultValue={(detail.tags ?? []).join(", ")} onBlur={(e) => canFull && patchDetail({ tags: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }, "Tags updated")} placeholder="design, urgent" /></Field>
 
             <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
-              <label className="flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-muted-foreground">
-                <input type="checkbox" checked={!!detail.isRecurring} onChange={(e) => patchDetail({ isRecurring: e.target.checked }, e.target.checked ? "Recurring on — next occurrence is created when this is completed" : "Recurring off")} className="size-3.5 accent-primary" /> Recurring
+              <label className={cn("flex items-center gap-2 text-[12px] font-semibold", canFull ? "cursor-pointer text-muted-foreground" : "cursor-not-allowed opacity-50 text-muted-foreground")}>
+                <input type="checkbox" disabled={!canFull} checked={!!detail.isRecurring} onChange={(e) => canFull && patchDetail({ isRecurring: e.target.checked }, e.target.checked ? "Recurring on — next occurrence is created when this is completed" : "Recurring off")} className="size-3.5 accent-primary" /> Recurring
               </label>
               {detail.isRecurring && (
-                <Select value={detail.recurrenceSchedule ?? "weekly"} onChange={(e) => patchDetail({ recurrenceSchedule: e.target.value }, "Schedule updated")} className="!w-32 !py-1">
+                <Select value={detail.recurrenceSchedule ?? "weekly"} onChange={(e) => canFull && patchDetail({ recurrenceSchedule: e.target.value }, "Schedule updated")} disabled={!canFull} className="!w-32 !py-1">
                   {["daily", "weekly", "monthly", "quarterly", "yearly"].map((s) => (<option key={s} value={s}>{s}</option>))}
                 </Select>
               )}
@@ -1460,10 +1515,10 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
             {tab === "subtasks" && (
               <div className="flex flex-col gap-2">
                 <div className="flex flex-wrap gap-2">
-                  <Input value={subTitle} onChange={(e) => setSubTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addSubtask()} placeholder="Add a subtask…" className="flex-1" />
-                  <Select value={subAssignee} onChange={(e) => setSubAssignee(e.target.value)} className="!w-36"><option value="">Assignee</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select>
-                  <Input type="date" value={subDue} onChange={(e) => setSubDue(e.target.value)} className="!w-36" />
-                  <Btn variant="primary" onClick={addSubtask}><Plus className="size-3.5" /></Btn>
+                  <Input value={subTitle} onChange={(e) => setSubTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addSubtask()} placeholder="Add a subtask…" className="flex-1" disabled={!canFull} />
+                  <Select value={subAssignee} onChange={(e) => setSubAssignee(e.target.value)} className="!w-36" disabled={!canFull}><option value="">Assignee</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select>
+                  <Input type="date" value={subDue} onChange={(e) => setSubDue(e.target.value)} className="!w-36" disabled={!canFull} />
+                  <Btn variant="primary" onClick={addSubtask} disabled={!canFull}><Plus className="size-3.5" /></Btn>
                 </div>
                 {(detail.subtasks ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No subtasks — break this task down.</p>}
                 {(detail.subtasks ?? []).map((s, i) => (
@@ -1490,8 +1545,8 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
             {tab === "comments" && (
               <div className="flex flex-col gap-3">
                 <div className="flex gap-2">
-                  <Textarea value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder="Write a comment…" className="min-h-16" />
-                  <Btn variant="primary" onClick={() => postComment()}>Post</Btn>
+                  <Textarea value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder={canProgress || canFull ? "Write a comment…" : "View only — cannot comment"} className="min-h-16" disabled={!canProgress && !canFull} />
+                  <Btn variant="primary" onClick={() => postComment()} disabled={!canProgress && !canFull}>Post</Btn>
                 </div>
                 {(detail.comments ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No comments yet.</p>}
                 {(detail.comments ?? []).map((c) => (
@@ -1508,19 +1563,19 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                     <Timer className="size-4 shrink-0 text-primary" />
                     <span className="font-mono text-[16px] font-bold tabular-nums">{fmtElapsed(elapsed)}</span>
                   </div>
-                  {timerOn ? <Btn variant="primary" onClick={stopTimer}>Stop & log</Btn> : <Btn variant="outline" onClick={startTimer}><Play className="size-3.5" /> Start timer</Btn>}
+                  {timerOn ? <Btn variant="primary" onClick={stopTimer} disabled={!canProgress && !canFull}>Stop & log</Btn> : <Btn variant="outline" onClick={startTimer} disabled={!canProgress && !canFull}><Play className="size-3.5" /> Start timer</Btn>}
                   <span className="ml-auto text-[10.5px] font-semibold text-muted-foreground">{Number(detail.actualHours ?? 0).toFixed(1)}h total logged</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <Field label="Date"><Input type="date" value={logDate} onChange={(e) => setLogDate(e.target.value)} /></Field>
-                  <Field label="Hours"><Input type="number" min={0} step={0.25} value={logHours} onChange={(e) => setLogHours(e.target.value)} placeholder="1.5" /></Field>
-                  <Field label="Note"><Input value={logDesc} onChange={(e) => setLogDesc(e.target.value)} placeholder="Optional" /></Field>
+                  <Field label="Date"><Input type="date" value={logDate} onChange={(e) => setLogDate(e.target.value)} disabled={!canProgress && !canFull} /></Field>
+                  <Field label="Hours"><Input type="number" min={0} step={0.25} value={logHours} onChange={(e) => setLogHours(e.target.value)} placeholder="1.5" disabled={!canProgress && !canFull} /></Field>
+                  <Field label="Note"><Input value={logDesc} onChange={(e) => setLogDesc(e.target.value)} placeholder="Optional" disabled={!canProgress && !canFull} /></Field>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <label className="flex cursor-pointer items-center gap-2 text-[12px] font-semibold text-muted-foreground">
-                    <input type="checkbox" checked={logBillable} onChange={(e) => setLogBillable(e.target.checked)} className="size-3.5 accent-primary" /> Billable
+                  <label className={cn("flex items-center gap-2 text-[12px] font-semibold", canProgress || canFull ? "cursor-pointer text-muted-foreground" : "cursor-not-allowed opacity-50 text-muted-foreground")}>
+                    <input type="checkbox" checked={logBillable} onChange={(e) => (canProgress || canFull) && setLogBillable(e.target.checked)} disabled={!canProgress && !canFull} className="size-3.5 accent-primary" /> Billable
                   </label>
-                  <Btn variant="primary" onClick={addTimeLog}><Plus className="size-3.5" /> Add log</Btn>
+                  <Btn variant="primary" onClick={addTimeLog} disabled={!canProgress && !canFull}><Plus className="size-3.5" /> Add log</Btn>
                 </div>
                 {(detail.timeLogs ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No time logged yet.</p>}
                 {(detail.timeLogs ?? []).map((l) => (
@@ -1542,13 +1597,13 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
             {tab === "deps" && (
               <div className="flex flex-col gap-2">
                 <div className="flex gap-2">
-                  <Select value={depType} onChange={(e) => setDepType(e.target.value)} className="!w-32">
+                  <Select value={depType} onChange={(e) => setDepType(e.target.value)} className="!w-32" disabled={!canFull}>
                     <option value="blocked-by">blocked by</option>
                     <option value="blocks">blocks</option>
                     <option value="related">related to</option>
                   </Select>
-                  <Select value={depId} onChange={(e) => setDepId(e.target.value)}><option value="">Pick a task…</option>{(tasks ?? []).filter((t) => t.id !== detail.id).map((t) => (<option key={t.id} value={t.id}>{t.title}</option>))}</Select>
-                  <Btn variant="primary" onClick={addDependency}><Link2 className="size-3.5" /> Add</Btn>
+                  <Select value={depId} onChange={(e) => setDepId(e.target.value)} disabled={!canFull}><option value="">Pick a task…</option>{(tasks ?? []).filter((t) => t.id !== detail.id).map((t) => (<option key={t.id} value={t.id}>{t.title}</option>))}</Select>
+                  <Btn variant="primary" onClick={addDependency} disabled={!canFull}><Link2 className="size-3.5" /> Add</Btn>
                 </div>
                 {(detail.dependencies ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No dependencies — this task can start anytime.</p>}
                 {(detail.dependencies ?? []).map((d) => (
@@ -1583,8 +1638,8 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
               <div className="flex flex-col gap-4">
                 <div>
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="text-[11.5px] font-semibold text-muted-foreground">Attachments ({(detail.attachments ?? []).length})</span>
-                    <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 rounded-xl border border-dashed border-border px-3 py-1.5 text-[11.5px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"><Upload className="size-3.5" /> Upload</button>
+                    <span className="text-[11.5px] font-semibold text-muted-foreground">Attachments ({(detail.attachments ?? []).length}) { !canFull && <span className="ml-1 text-[10px] text-amber-600">(view only)</span>}</span>
+                    <button disabled={!canFull} onClick={() => canFull && fileRef.current?.click()} className={cn("flex items-center gap-1.5 rounded-xl border border-dashed border-border px-3 py-1.5 text-[11.5px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground", !canFull && "opacity-40 cursor-not-allowed") }><Upload className="size-3.5" /> Upload</button>
                     <input ref={fileRef} type="file" className="hidden" onChange={pickFile} />
                   </div>
                   {(detail.attachments ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No attachments.</p>}
@@ -1597,7 +1652,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                           <p className="text-[10.5px] text-muted-foreground">{att.size}{att.uploadedByName ? ` · ${att.uploadedByName}` : ""}</p>
                         </div>
                         <a href={att.url} target="_blank" rel="noreferrer" title="Open" className="rounded-lg p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"><ExternalLink className="size-3.5" /></a>
-                        <button onClick={() => removeAttachment(att.id)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"><Trash2 className="size-3.5" /></button>
+                        <button disabled={!canFull} onClick={() => canFull && removeAttachment(att.id)} className={cn("rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400", !canFull && "opacity-40 cursor-not-allowed")}><Trash2 className="size-3.5" /></button>
                       </div>
                     ))}
                   </div>
@@ -1605,9 +1660,9 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                 <div>
                   <span className="mb-2 block text-[11.5px] font-semibold text-muted-foreground">Reference links ({(detail.referenceLinks ?? []).length})</span>
                   <div className="flex gap-2">
-                    <Input value={linkTitle} onChange={(e) => setLinkTitle(e.target.value)} placeholder="Title (optional)" />
-                    <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLink()} placeholder="https://…" />
-                    <Btn variant="primary" onClick={addLink}><Plus className="size-3.5" /></Btn>
+                    <Input value={linkTitle} onChange={(e) => setLinkTitle(e.target.value)} placeholder="Title (optional)" disabled={!canFull} />
+                    <Input value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addLink()} placeholder="https://…" disabled={!canFull} />
+                    <Btn variant="primary" onClick={addLink} disabled={!canFull}><Plus className="size-3.5" /></Btn>
                   </div>
                   {(detail.referenceLinks ?? []).length === 0 && <p className="mt-2 text-[11.5px] text-muted-foreground">No links — add design docs, PRs, requirements…</p>}
                   <div className="mt-1.5 flex flex-col gap-1.5">
@@ -1616,7 +1671,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                         <Link2 className="size-3.5 shrink-0 text-muted-foreground" />
                         <p className="min-w-0 flex-1 truncate text-[12px] font-medium">{l.title}</p>
                         <a href={l.url} target="_blank" rel="noreferrer" className="rounded-lg p-1 text-muted-foreground transition-colors hover:text-foreground"><ExternalLink className="size-3.5" /></a>
-                        <button onClick={() => removeLink(l.id)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"><Trash2 className="size-3.5" /></button>
+                        <button disabled={!canFull} onClick={() => canFull && removeLink(l.id)} className={cn("rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400", !canFull && "opacity-40 cursor-not-allowed")}><Trash2 className="size-3.5" /></button>
                       </div>
                     ))}
                   </div>
@@ -1624,16 +1679,16 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                 <div>
                   <span className="mb-2 block text-[11.5px] font-semibold text-muted-foreground">Custom fields ({(detail.customFields ?? []).length})</span>
                   <div className="flex gap-2">
-                    <Input value={cfKey} onChange={(e) => setCfKey(e.target.value)} placeholder="Key, e.g. severity" />
-                    <Input value={cfValue} onChange={(e) => setCfValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addField()} placeholder="Value" />
-                    <Btn variant="primary" onClick={addField}><Plus className="size-3.5" /></Btn>
+                    <Input value={cfKey} onChange={(e) => setCfKey(e.target.value)} placeholder="Key, e.g. severity" disabled={!canFull} />
+                    <Input value={cfValue} onChange={(e) => setCfValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addField()} placeholder="Value" disabled={!canFull} />
+                    <Btn variant="primary" onClick={addField} disabled={!canFull}><Plus className="size-3.5" /></Btn>
                   </div>
                   {(detail.customFields ?? []).length === 0 && <p className="mt-2 text-[11.5px] text-muted-foreground">No custom fields.</p>}
                   <div className="mt-1.5 flex flex-col gap-1.5">
                     {((detail.customFields ?? []) as any[]).map((f) => (
                       <div key={f.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2">
                         <p className="min-w-0 truncate text-[12px] font-medium"><span className="font-bold text-primary">{f.key}</span><span className="mx-1.5 text-muted-foreground/50">·</span>{f.value || "—"}</p>
-                        <button onClick={() => removeField(f.id)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"><Trash2 className="size-3.5" /></button>
+                        <button disabled={!canFull} onClick={() => canFull && removeField(f.id)} className={cn("rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400", !canFull && "opacity-40 cursor-not-allowed")}><Trash2 className="size-3.5" /></button>
                       </div>
                     ))}
                   </div>
@@ -1641,8 +1696,8 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
               </div>
             )}
           </div>
-        )}
-      </Drawer>
+        )})())}
+      </Modal>
     </div>
   );
 }

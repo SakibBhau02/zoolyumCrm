@@ -71,8 +71,8 @@ export class TasksController {
   }
 
   @Get(":id")
-  detail(@Param("id") id: string) {
-    return this.tasks.detail(id);
+  detail(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.tasks.detail(id, user);
   }
 
   @Post()
@@ -82,27 +82,27 @@ export class TasksController {
 
   @Patch(":id")
   update(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
-    return this.tasks.update(id, body, user?.name);
+    return this.tasks.update(id, body, user);
   }
 
   @Delete(":id")
-  remove(@Param("id") id: string) {
-    return this.tasks.remove(id);
+  remove(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.tasks.remove(id, user);
   }
 
   @Post(":id/clone")
-  clone(@Param("id") id: string) {
-    return this.tasks.clone(id);
+  clone(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.tasks.clone(id, user);
   }
 
   @Patch(":id/status")
   updateStatus(@Param("id") id: string, @Body() body: { status: string }, @CurrentUser() user: any) {
-    return this.tasks.updateStatus(id, body.status as any, user?.name);
+    return this.tasks.updateStatus(id, body.status as any, user);
   }
 
   @Post(":id/comments")
   addComment(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
-    return this.tasks.addComment(id, { ...body, authorId: user?.sub });
+    return this.tasks.addComment(id, { ...body, authorId: user?.sub }, user);
   }
 
   @Patch(":id/comments/:commentId/reactions")
@@ -126,22 +126,22 @@ export class TasksController {
   }
 
   @Post(":id/time-logs")
-  logTime(@Param("id") id: string, @Body() body: any) {
-    return this.tasks.logTime(id, body);
+  logTime(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+    return this.tasks.logTime(id, body, user);
   }
 
   @Delete(":id/time-logs/:logId")
-  removeTimeLog(@Param("id") id: string, @Param("logId") logId: string) {
-    return this.tasks.removeTimeLog(id, logId);
+  removeTimeLog(@Param("id") id: string, @Param("logId") logId: string, @CurrentUser() user: any) {
+    return this.tasks.removeTimeLog(id, logId, user);
   }
 
   @Post(":id/time-log")
-  logTimeLegacy(@Param("id") id: string, @Body() body: any) {
-    return this.tasks.logTime(id, body);
+  logTimeLegacy(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+    return this.tasks.logTime(id, body, user);
   }
 
   @Delete(":id/time-log/:logId")
-  removeTimeLogLegacy(@Param("id") id: string, @Param("logId") logId: string) {
-    return this.tasks.removeTimeLog(id, logId);
+  removeTimeLogLegacy(@Param("id") id: string, @Param("logId") logId: string, @CurrentUser() user: any) {
+    return this.tasks.removeTimeLog(id, logId, user);
   }
 }

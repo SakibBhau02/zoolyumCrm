@@ -3,18 +3,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  AlertTriangle, Banknote, Calendar, CheckCircle2, ChevronRight, CircleDollarSign, Download, Eye, Facebook, FileArchive,
-  FileSpreadsheet, FileText, Globe, HandCoins, Image, Instagram, LayoutGrid, Linkedin, Link2, List, Pencil, Plus, ReceiptText, RefreshCw,
-  Rocket, Search, Send, SquareKanban, Trash2, Upload, UploadCloud, Users, Wallet, Workflow, X,
+  AlertTriangle, Banknote, Calendar, CheckCircle2, ChevronRight, CircleDollarSign, ClipboardList, Download, Eye, Facebook, FileArchive,
+  FileSpreadsheet, FileText, Globe, HandCoins, History, Image, Instagram, LayoutGrid, Linkedin, Link2, List, Music2, Pencil, Plus, ReceiptText, RefreshCw,
+  Rocket, Search, Send, SquareKanban, Trash2, Twitter, Upload, UploadCloud, Users, Wallet, Workflow, X, Youtube,
 } from "lucide-react";
 import { apiFetch, API_URL, getToken } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { formatBDT, formatDate, timeAgo } from "@/lib/format";
+import type { ProjectDeliverable, ProjectReport } from "@/lib/types";
 import { Avatar, EmptyState, FadeIn, PageHeader, SectionTitle, SkeletonBlock, StatCard, StatusBadge, cn } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { ProgressRing } from "@/components/charts";
 import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
 import { TaskFormModal } from "@/components/tasks/task-form-modal";
+import { useAuth } from "@/lib/auth";
+import { InvoiceDetailModal } from "../capital/_components/invoice-detail-modal";
 
 const PROJECT_STATUSES = ["PLANNING", "ACTIVE", "PAUSED", "COMPLETED", "ARCHIVED"];
 const HEALTH_STATUSES = ["ON_TRACK", "AT_RISK", "DELAYED"];
@@ -25,6 +28,11 @@ const BILLING_INTERVALS = ["7-days", "15-days", "30-days", "monthly"];
 const PAYMENT_STATUSES = ["PENDING", "PARTIAL", "PAID", "OVERDUE"];
 const EXPENSE_CATEGORIES = ["AD_SPEND", "FREELANCER", "PRODUCTION", "SALARY", "SOFTWARE", "RENT", "MARKETING", "TRAVEL", "BANK_CHARGE", "MISC"];
 const label = (v: string) => v.replace(/_/g, " ").toLowerCase();
+
+// stored file URLs are API-relative ("/api/flow/uploads/…") — resolve to the API origin
+function absoluteUrl(url: string) {
+  return url.startsWith("/api/") ? `${API_URL.replace(/\/api\/?$/, "")}${url}` : url;
+}
 
 const STATUS_STYLE: Record<string, string> = {
   PLANNING: "border-sky-500/30 bg-sky-500/10 text-sky-400",
@@ -86,6 +94,11 @@ interface ProjectDetail extends ProjectRow {
     id: string; title: string; status: string; priority: string;
     dueDate: string | null; assignedTo: { name: string } | null;
   }[];
+  deliverables: ProjectDeliverable[];
+  reports: ProjectReport[];
+  reportFrequency?: string | null;
+  reportMode?: string | null;
+  nextReportDate?: string | null;
   teamMembers?: any[]; risks?: any[];
   _count?: { tasks: number; files: number; milestones: number };
 }
@@ -118,7 +131,7 @@ function ProjectModal({
     startDate: "", targetEndDate: "", billingType: "ONE_TIME", recurringInterval: "30-days",
     nextBillingDate: "", monthlyRate: "", totalBilled: "", paymentStatus: "PENDING",
     description: "",
-    projectLink: "", websiteUrl: "", socialLinks: { facebook: "", linkedin: "", instagram: "" } as { facebook: string; linkedin: string; instagram: string },
+    projectLink: "", websiteUrl: "", socialLinks: { facebook: "", linkedin: "", instagram: "", youtube: "", tiktok: "", x: "" } as { facebook: string; linkedin: string; instagram: string; youtube: string; tiktok: string; x: string },
     briefLink: "", driveLink: "", researchLink: "", team: [] as string[],
   });
   const [busy, setBusy] = useState(false);
@@ -154,7 +167,7 @@ function ProjectModal({
         paymentStatus: editing.paymentStatus ?? "PENDING",
         description: (editing as any).description ?? "",
         projectLink: (editing as any).projectLink ?? "", websiteUrl: (editing as any).websiteUrl ?? "",
-        socialLinks: { facebook: sl.facebook ?? "", linkedin: sl.linkedin ?? "", instagram: sl.instagram ?? "" },
+        socialLinks: { facebook: sl.facebook ?? "", linkedin: sl.linkedin ?? "", instagram: sl.instagram ?? "", youtube: sl.youtube ?? "", tiktok: sl.tiktok ?? "", x: sl.x ?? "" },
         briefLink: editing.briefLink ?? "", driveLink: editing.driveLink ?? "", researchLink: editing.researchLink ?? "",
         team: editing.team ?? [],
       });
@@ -169,7 +182,7 @@ function ProjectModal({
         startDate: "", targetEndDate: "", billingType: "ONE_TIME", recurringInterval: "30-days",
         nextBillingDate: "", monthlyRate: "", totalBilled: "", paymentStatus: "PENDING",
         description: "",
-        projectLink: "", websiteUrl: "", socialLinks: { facebook: "", linkedin: "", instagram: "" },
+        projectLink: "", websiteUrl: "", socialLinks: { facebook: "", linkedin: "", instagram: "", youtube: "", tiktok: "", x: "" },
         briefLink: "", driveLink: "", researchLink: "", team: [],
       });
       setRefs(null);
@@ -237,7 +250,7 @@ function ProjectModal({
     if (f.description && f.description.length > 2000) return setErr("Description is too long (max 2000)");
     setBusy(true);
     setErr(null);
-    const social = (f.socialLinks.facebook || f.socialLinks.linkedin || f.socialLinks.instagram) ? { facebook: f.socialLinks.facebook.trim() || undefined, linkedin: f.socialLinks.linkedin.trim() || undefined, instagram: f.socialLinks.instagram.trim() || undefined } : undefined;
+    const social = (f.socialLinks.facebook || f.socialLinks.linkedin || f.socialLinks.instagram || f.socialLinks.youtube || f.socialLinks.tiktok || f.socialLinks.x) ? { facebook: f.socialLinks.facebook.trim() || undefined, linkedin: f.socialLinks.linkedin.trim() || undefined, instagram: f.socialLinks.instagram.trim() || undefined, youtube: f.socialLinks.youtube.trim() || undefined, tiktok: f.socialLinks.tiktok.trim() || undefined, x: f.socialLinks.x.trim() || undefined } : undefined;
     const amountNum = f.amount ? Number(f.amount) : null;
     const body: any = {
       name: f.name.trim(), clientId: f.clientId, status: f.status, priority: f.priority,
@@ -436,6 +449,26 @@ function ProjectModal({
               </div>
             </Field>
           </div>
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="YouTube">
+              <div className="relative">
+                <Youtube className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={f.socialLinks.youtube} onChange={(e) => setF({ ...f, socialLinks: { ...f.socialLinks, youtube: e.target.value } })} placeholder="https://youtube.com/@..." className="pl-9" />
+              </div>
+            </Field>
+            <Field label="TikTok">
+              <div className="relative">
+                <Music2 className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={f.socialLinks.tiktok} onChange={(e) => setF({ ...f, socialLinks: { ...f.socialLinks, tiktok: e.target.value } })} placeholder="https://tiktok.com/@..." className="pl-9" />
+              </div>
+            </Field>
+            <Field label="X / Twitter">
+              <div className="relative">
+                <Twitter className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={f.socialLinks.x} onChange={(e) => setF({ ...f, socialLinks: { ...f.socialLinks, x: e.target.value } })} placeholder="https://x.com/..." className="pl-9" />
+              </div>
+            </Field>
+          </div>
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Brief link">
               <Input value={f.briefLink} onChange={(e) => setF({ ...f, briefLink: e.target.value })} placeholder="https://…" />
@@ -556,8 +589,11 @@ function ProjectModal({
 function ProjectFinancePanel({ finance, loading, onInvoice, onExpense }: { finance: any; loading: boolean; onInvoice: () => void; onExpense: () => void }) {
   const invoices = finance?.invoices ?? [];
   const expenses = finance?.expenses ?? [];
+  // professional invoice view (same modal as Capital) — view-only from Flow
+  const [selInv, setSelInv] = useState<string | null>(null);
   return (
     <div className="flex flex-col gap-4">
+      <InvoiceDetailModal selectedId={selInv} onClose={() => setSelInv(null)} onEdit={() => setSelInv(null)} />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-border/60 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Invoiced</p>
@@ -610,8 +646,14 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense }: { finan
               <tr><td colSpan={6} className="px-5 py-6"><EmptyState title="No invoices for this project" hint="Create an invoice to start billing this project." /></td></tr>
             )}
             {invoices.map((inv: any, i: number) => (
-              <Tr key={inv.id} index={i}>
-                <Td className="font-medium tabular-nums">{inv.invoiceNumber}</Td>
+              <Tr key={inv.id} index={i} onClick={() => setSelInv(inv.id)} className="cursor-pointer transition-colors hover:bg-muted/40">
+                <Td>
+                  <span className="font-medium tabular-nums">{inv.invoiceNumber}</span>
+                  {inv.invoiceType === "ADVANCE" && (
+                    <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Adv</span>
+                  )}
+                  {inv.title && <span className="block text-[10.5px] font-normal text-muted-foreground">{inv.title}</span>}
+                </Td>
                 <Td><StatusBadge status={inv.status} /></Td>
                 <Td className="text-right font-semibold tabular-nums">{formatBDT(inv.amount)}</Td>
                 <Td className="text-right tabular-nums text-emerald-500">{formatBDT(inv.paid)}</Td>
@@ -650,11 +692,55 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense }: { finan
 
 function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolean; project: any; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState({ description: "", amount: "", dueDate: "", notes: "" });
+  const [fin, setFin] = useState<any | null>(null);
+  const [pct, setPct] = useState("");
+  const lastAuto = useRef<string | null>(null);
+  const lastPct = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    if (open) setF({ description: "", amount: "", dueDate: "", notes: "" });
+    if (!open) return;
+    // project name comes pre-filled; amount follows once billing status arrives
+    setF({ description: project?.name ?? "", amount: "", dueDate: "", notes: "" });
+    setFin(null);
+    setPct("");
+    lastAuto.current = null;
+    lastPct.current = null;
+    if (project?.id) apiFetch<any>(`/capital/projects/${project.id}/finance`).then(setFin).catch(() => {});
   }, [open]);
+  const projectValue = Number(project?.amount ?? project?.budgetAmount ?? fin?.project?.budgetAmount ?? 0);
+  // auto-fill the REMAINING project balance — only while the amount is still untouched
+  useEffect(() => {
+    if (!open || !fin || f.amount || !project) return;
+    if ((project.billingType ?? "ONE_TIME") !== "ONE_TIME") return;
+    const remaining = Math.max(Math.round((projectValue - (fin.totalInvoiced ?? 0)) * 100) / 100, 0);
+    if (remaining > 0) {
+      lastAuto.current = String(remaining);
+      setF((prev) => (prev.amount ? prev : { ...prev, amount: String(remaining) }));
+    }
+  }, [fin]);
+  // milestone billing: type a % of the project value → amount auto-calculated
+  const applyPct = (v: string) => {
+    setPct(v);
+    const p = Number(v);
+    if (!project || !(p > 0) || p > 100 || !(projectValue > 0)) return;
+    if ((project.billingType ?? "ONE_TIME") !== "ONE_TIME") return;
+    if (f.amount && f.amount !== lastAuto.current) return; // user typed — don't clobber
+    const amount = Math.round((projectValue * p) / 100 * 100) / 100;
+    const pctLabel = String(Number(v));
+    // if the description is our own previous % label, refresh it too (1 → 10 → 100)
+    const prevAutoDesc = lastPct.current ? `${lastPct.current}% Advance — ${project.name}` : null;
+    lastAuto.current = String(amount);
+    lastPct.current = pctLabel;
+    setF((prev) => ({
+      ...prev,
+      amount: String(amount),
+      description:
+        !prev.description || prev.description === project.name || prev.description === prevAutoDesc
+          ? `${pctLabel}% Advance — ${project.name}`
+          : prev.description,
+    }));
+  };
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!f.description.trim() || !f.amount || Number(f.amount) <= 0) return setErr("Description and amount are required");
@@ -684,7 +770,36 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
   return (
     <Modal open={open} onClose={onClose} title={`Create invoice — ${project?.name ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
+        {fin && (
+          <div className="rounded-xl bg-muted/40 px-3 py-2.5 text-[12px]">
+            <div className="flex justify-between"><span className="text-muted-foreground">Project value</span><span className="font-bold tabular-nums">{formatBDT(Number(project?.amount ?? project?.budgetAmount ?? fin.project?.budgetAmount ?? 0))}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Billed so far</span><span className="font-medium tabular-nums">{formatBDT(fin.totalInvoiced ?? 0)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(fin.collected ?? 0)}</span></div>
+            <div className="flex justify-between border-t border-border/60 pt-1"><span className="font-bold">Remaining</span><span className="font-bold tabular-nums">{formatBDT(Math.max(Number(project?.amount ?? project?.budgetAmount ?? fin.project?.budgetAmount ?? 0) - (fin.totalInvoiced ?? 0), 0))}</span></div>
+          </div>
+        )}
         <Field label="Line description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Monthly retainer — August" autoFocus /></Field>
+        {(project?.billingType ?? "ONE_TIME") === "ONE_TIME" && projectValue > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="relative w-28">
+              <Input type="number" min={0} max={100} step="any" value={pct} onChange={(e) => applyPct(e.target.value)} placeholder="50" className="pr-7" />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] font-bold text-muted-foreground">%</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {Number(pct) > 0 && Number(pct) <= 100
+                ? <span>Advance <span className="font-bold tabular-nums text-foreground">{formatBDT(Math.round((projectValue * Number(pct)) / 100 * 100) / 100)}</span> of {formatBDT(projectValue)}</span>
+                : "Milestone % of project value"}
+            </p>
+          </div>
+        )}
+        {Number(pct) > 0 && Number(pct) <= 100 && f.amount && f.amount !== lastAuto.current && (
+          <p className="-mt-2 text-[11px] text-amber-600 dark:text-amber-400">Amount was edited by hand — clear it to apply the % again.</p>
+        )}
+        {fin && Number(pct) > 0 && Number(pct) <= 100 && Math.round((projectValue * Number(pct)) / 100 * 100) / 100 > Math.max(projectValue - (fin.totalInvoiced ?? 0), 0) && (
+          <p className="-mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+            {String(Number(pct))}% of full value ({formatBDT(projectValue)}) exceeds the remaining {formatBDT(Math.max(projectValue - (fin.totalInvoiced ?? 0), 0))} — {formatBDT(fin.totalInvoiced ?? 0)} already billed.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Amount (BDT) *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="25000" /></Field>
           <Field label="Due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
@@ -698,6 +813,8 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
 }
 
 function ProjectExpenseModal({ open, project, bankAccounts, onClose, onSaved }: { open: boolean; project: any; bankAccounts: any[]; onClose: () => void; onSaved: () => void }) {
+  const { user } = useAuth();
+  const canDirect = ["Owner", "Finance", "Admin", "HR/Admin", "CONTROL"].includes(user?.role ?? "");
   const [f, setF] = useState({ description: "", amount: "", category: "MISC", date: new Date().toISOString().slice(0, 10), bankAccountId: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -712,7 +829,7 @@ function ProjectExpenseModal({ open, project, bankAccounts, onClose, onSaved }: 
     try {
       await apiFetch("/capital/expenses", {
         method: "POST",
-        body: JSON.stringify({ description: f.description.trim(), amount: Number(f.amount), category: f.category, date: f.date || undefined, projectId: project.id, bankAccountId: f.bankAccountId || undefined }),
+        body: JSON.stringify({ description: f.description.trim(), amount: Number(f.amount), category: f.category, date: f.date || undefined, projectId: project.id, clientId: project.clientId ?? project.client?.id ?? undefined, bankAccountId: f.bankAccountId || undefined, approvalStatus: canDirect ? "APPROVED" : "PENDING" }),
       });
       onSaved();
       onClose();
@@ -725,13 +842,23 @@ function ProjectExpenseModal({ open, project, bankAccounts, onClose, onSaved }: 
   return (
     <Modal open={open} onClose={onClose} title={`Add expense — ${project?.name ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
+        {(project?.client?.companyName || project?.clientId) && (
+          <p className="rounded-xl bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground">
+            Project expense{project?.client?.companyName ? ` · ${project.client.companyName}` : ""} — what kind of cost is recorded via Category below.
+          </p>
+        )}
         <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Google Ads — August" autoFocus /></Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Amount (BDT) *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="8000" /></Field>
-          <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{label(c)}</option>)}</Select></Field>
+          <Field label="Category *"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{label(c)}</option>)}</Select></Field>
           <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
           <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{(bankAccounts ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.accountName}</option>)}</Select></Field>
         </div>
+        {canDirect ? (
+          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11.5px] text-emerald-600 dark:text-emerald-400">Posts to bank & ledger immediately.</p>
+        ) : (
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-600 dark:text-amber-400">Sends a request — admin approves it in Expenses before accounts update.</p>
+        )}
         {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add expense" />
       </form>
@@ -802,7 +929,7 @@ export default function FlowPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailTab, setDetailTab] = useState<"overview" | "milestones" | "files" | "discussions" | "tasks" | "finance" | "references">("overview");
+  const [detailTab, setDetailTab] = useState<"overview" | "deliverables" | "tasks" | "milestones" | "files" | "discussions" | "finance" | "reports" | "references">("overview");
   const [finance, setFinance] = useState<any | null>(null);
   const [finLoading, setFinLoading] = useState(false);
   const [finInvOpen, setFinInvOpen] = useState(false);
@@ -847,6 +974,21 @@ export default function FlowPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  // deliverables + reports state
+  const [dvTitle, setDvTitle] = useState("");
+  const [dvDesc, setDvDesc] = useState("");
+  const [dvBusy, setDvBusy] = useState(false);
+  const [dvEditId, setDvEditId] = useState<string | null>(null);
+  const [dvEditTasks, setDvEditTasks] = useState<Set<string>>(new Set());
+  const [repBusy, setRepBusy] = useState(false);
+  const [repNotesEdit, setRepNotesEdit] = useState<string | null>(null);
+  const [repNotesDraft, setRepNotesDraft] = useState<string | null>(null);
+  // glimpse description inline edit
+  const [descEdit, setDescEdit] = useState(false);
+  const [descDraft, setDescDraft] = useState("");
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [descBusy, setDescBusy] = useState(false);
 
   const reload = useCallback(() => setRefresh((r) => r + 1), []);
   const notify = (m: string) => {
@@ -956,8 +1098,8 @@ export default function FlowPage() {
 
   const stats = useMemo(() => {
     const list = projects ?? [];
-    const budget = list.reduce((s, p) => s + (p.budgetAmount ?? 0), 0);
-    const spent = list.reduce((s, p) => s + (p.spentAmount ?? p.budgetSpent ?? 0), 0);
+    const budget = list.reduce((s, p) => s + Number(p.budgetAmount ?? (p as any).amount ?? 0), 0);
+    const spent = list.reduce((s, p) => s + Number(p.spentAmount ?? (p as any).budgetSpent ?? 0), 0);
     return {
       total: overview?.totalProjects ?? list.length,
       active: overview?.active ?? list.filter((p) => p.status === "ACTIVE").length,
@@ -995,6 +1137,22 @@ export default function FlowPage() {
       reload();
     } catch (e: any) {
       notify(e.message ?? "Update failed");
+    }
+  };
+
+  const saveDescription = async () => {
+    if (!detail) return;
+    setDescBusy(true);
+    try {
+      await apiFetch(`/flow/projects/${detail.id}`, { method: "PATCH", body: JSON.stringify({ description: descDraft.trim() || null }) });
+      setDetail({ ...detail, description: descDraft.trim() || null });
+      setDescEdit(false);
+      notify("Description updated");
+      reload();
+    } catch (e: any) {
+      notify(e.message ?? "Update failed");
+    } finally {
+      setDescBusy(false);
     }
   };
 
@@ -1267,6 +1425,93 @@ export default function FlowPage() {
       setBulkSelected(new Set());
       reload();
     } catch (e: any) { notify(e.message ?? "Bulk assign failed"); } finally { setBulkBusy(false); }
+  };
+
+  // ── Deliverables + Reports handlers ──────────────────────────────
+  const addDeliverable = async () => {
+    if (!detail || !dvTitle.trim()) return;
+    setDvBusy(true);
+    try {
+      await apiFetch(`/flow/projects/${detail.id}/deliverables`, {
+        method: "POST",
+        body: JSON.stringify({ title: dvTitle.trim(), description: dvDesc.trim() || undefined }),
+      });
+      setDvTitle("");
+      setDvDesc("");
+      notify("Deliverable added");
+      reload();
+    } catch (e: any) { notify(e.message ?? "Failed"); } finally { setDvBusy(false); }
+  };
+
+  const setDeliverableStatus = async (dv: ProjectDeliverable, status: string) => {
+    if (!detail) return;
+    try {
+      await apiFetch(`/flow/deliverables/${dv.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      notify(`Deliverable marked ${label(status)}`);
+      reload();
+    } catch (e: any) { notify(e.message ?? "Failed"); }
+  };
+
+  const saveDeliverableTasks = async (dv: ProjectDeliverable) => {
+    if (!detail) return;
+    setDvBusy(true);
+    try {
+      await apiFetch(`/flow/deliverables/${dv.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ taskIds: Array.from(dvEditTasks) }),
+      });
+      setDvEditId(null);
+      notify("Tasks linked to deliverable");
+      reload();
+    } catch (e: any) { notify(e.message ?? "Failed"); } finally { setDvBusy(false); }
+  };
+
+  const deleteDeliverable = async (dv: ProjectDeliverable) => {
+    if (!detail) return;
+    try {
+      await apiFetch(`/flow/deliverables/${dv.id}`, { method: "DELETE" });
+      notify("Deliverable removed");
+      reload();
+    } catch (e: any) { notify(e.message ?? "Failed"); }
+  };
+
+  const generateReportNow = async () => {
+    if (!detail) return;
+    setRepBusy(true);
+    try {
+      await apiFetch(`/flow/projects/${detail.id}/reports/generate`, { method: "POST", body: JSON.stringify({}) });
+      notify("Report generated");
+      reload();
+    } catch (e: any) { notify(e.message ?? "Failed"); } finally { setRepBusy(false); }
+  };
+
+  const saveReportNotes = async (r: ProjectReport) => {
+    if (!detail) return;
+    try {
+      await apiFetch(`/flow/reports/${r.id}`, { method: "PATCH", body: JSON.stringify({ pmNotes: repNotesDraft ?? "" }) });
+      setRepNotesEdit(null);
+      setRepNotesDraft(null);
+      notify("Report notes saved");
+      reload();
+    } catch (e: any) { notify(e.message ?? "Failed"); }
+  };
+
+  const setReportStatus = async (r: ProjectReport, status: string) => {
+    if (!detail) return;
+    try {
+      await apiFetch(`/flow/reports/${r.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      notify(status === "SENT" ? "Report sent" : `Report marked ${label(status)}`);
+      reload();
+    } catch (e: any) { notify(e.message ?? "Failed"); }
+  };
+
+  const deleteReport = async (r: ProjectReport) => {
+    if (!detail) return;
+    try {
+      await apiFetch(`/flow/reports/${r.id}`, { method: "DELETE" });
+      notify("Report deleted");
+      reload();
+    } catch (e: any) { notify(e.message ?? "Failed"); }
   };
 
   const riskBar = (score: number | null) => {
@@ -1664,14 +1909,30 @@ export default function FlowPage() {
       <Modal
         open={!!selectedId}
         onClose={() => setSelectedId(null)}
-        size="xl"
+        size="2xl"
         title={
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             <Avatar name={detail?.client?.companyName ?? "?"} />
             <div className="min-w-0">
               <h3 className="truncate font-heading text-[17px] font-semibold">{detail?.name ?? "Project"}</h3>
-              <p className="truncate text-[11px] text-muted-foreground">{detail?.client?.companyName ?? ""}{detail?.uid ? ` � ${detail.uid}` : ""}{detail?.code ? ` � ${detail.code}` : ""}</p>
+              <p className="truncate text-[11px] text-muted-foreground">{detail?.client?.companyName ?? ""}{detail?.uid ? ` · ${detail.uid}` : ""}</p>
             </div>
+            {detail && (
+              <div className="ml-auto flex min-w-0 items-center gap-2">
+                <Avatar name={detail.assignedPm?.name ?? "?"} size="size-7" />
+                <Select
+                  value={detail.assignedPm?.id ?? ""}
+                  onChange={(e) => assignPm(e.target.value)}
+                  className={cn("!w-40 !py-1.5 text-[11.5px]", pmBusy ? "opacity-50" : "")}
+                  title="Project Manager"
+                >
+                  <option value="">Unassigned</option>
+                  {(managers ?? []).map((e) => (
+                    <option key={e.id} value={e.id}>{e.name}</option>
+                  ))}
+                </Select>
+              </div>
+            )}
           </div>
         }
       >
@@ -1680,207 +1941,315 @@ export default function FlowPage() {
             {[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}
           </div>
         ) : !detail ? null : (
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Status</span>
-              <Segmented options={PROJECT_STATUSES.map((s) => ({ value: s, label: label(s) }))} value={detail.status} onChange={(v) => patchProject({ status: v })} />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Health</span>
-              <Segmented options={HEALTH_STATUSES.map((h) => ({ value: h, label: label(h) }))} value={detail.healthStatus} onChange={(v) => patchProject({ healthStatus: v })} />
-            </div>
-            <div className="flex flex-wrap items-center gap-2.5 rounded-2xl border border-border/60 p-3">
-              <Avatar name={detail.assignedPm?.name ?? "?"} size="size-9" />
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-bold tracking-wide text-muted-foreground uppercase">Project Manager</p>
-                <Select
-                  value={detail.assignedPm?.id ?? ""}
-                  onChange={(e) => assignPm(e.target.value)}
-                  className={cn("!mt-0.5", pmBusy ? "opacity-50" : "")}
-                >
-                  <option value="">Unassigned</option>
-                  {(managers ?? []).map((e) => (
-                    <option key={e.id} value={e.id}>{e.name}</option>
-                  ))}
-                </Select>
+          <div className="flex flex-col gap-4">
+            {/* ── status pipeline — click to move ── */}
+            <section className="rounded-2xl border border-border/60 bg-muted/10 p-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Status — click to move</p>
+                {detail.status === "COMPLETED" && <span className="text-[10px] font-semibold text-emerald-400">delivered ✓</span>}
+                {detail.status === "ARCHIVED" && <span className="text-[10px] font-semibold text-muted-foreground">archived</span>}
               </div>
-              {detail.priority && (
-                <span className={cn("rounded-full border px-2.5 py-1 text-[10.5px] font-bold uppercase", PRIORITY_STYLE[detail.priority])}>{label(detail.priority)}</span>
-              )}
-              {detail.category && (
-                <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 text-[10.5px] font-semibold text-muted-foreground">{detail.category}</span>
-              )}
-              {detail.paymentStatus && <StatusBadge status={detail.paymentStatus} />}
-              {(detail as any).projectLink && (
-                <a href={(detail as any).projectLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10.5px] font-bold text-primary transition-colors hover:bg-primary/20">
-                  <Globe className="size-3" /> live
-                </a>
-              )}
-              {(detail as any).websiteUrl && (
-                <a href={(detail as any).websiteUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[10.5px] font-bold text-sky-400 transition-colors hover:bg-sky-500/20">
-                  <Link2 className="size-3" /> website
-                </a>
-              )}
-              {(detail as any).socialLinks?.facebook && (
-                <a href={(detail as any).socialLinks.facebook} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[10.5px] font-bold text-sky-500 transition-colors hover:bg-sky-500/20">
-                  <Facebook className="size-3" /> fb
-                </a>
-              )}
-              {(detail as any).socialLinks?.linkedin && (
-                <a href={(detail as any).socialLinks.linkedin} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-600/30 bg-sky-600/10 px-2.5 py-1 text-[10.5px] font-bold text-sky-600 transition-colors hover:bg-sky-600/20">
-                  <Linkedin className="size-3" /> in
-                </a>
-              )}
-              {(detail as any).socialLinks?.instagram && (
-                <a href={(detail as any).socialLinks.instagram} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-1 text-[10.5px] font-bold text-pink-500 transition-colors hover:bg-pink-500/20">
-                  <Instagram className="size-3" /> ig
-                </a>
-              )}
-              {(detail.briefLink || detail.driveLink || detail.researchLink) && (
-                <div className="flex items-center gap-1.5">
+              <div className="mt-2.5 flex items-center gap-1 overflow-x-auto pb-0.5">
+                {(["PLANNING", "ACTIVE", "COMPLETED"] as const).map((s, i, arr) => {
+                  const order = ["PLANNING", "ACTIVE", "COMPLETED"];
+                  const curIdx = order.indexOf(detail.status);
+                  const isCurrent = detail.status === s;
+                  const isDone = curIdx >= 0 && i < curIdx && detail.status !== "PAUSED";
+                  return (
+                    <div key={s} className="flex items-center gap-1">
+                      {i > 0 && <div className={cn("h-0.5 w-4 shrink-0 rounded-full sm:w-6", isDone ? "bg-primary/50" : "bg-border")} />}
+                      <button
+                        onClick={() => patchProject({ status: s })}
+                        className={cn(
+                          "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10.5px] font-bold transition-colors",
+                          isCurrent && s === "COMPLETED" && "border-primary bg-primary text-primary-foreground shadow-sm",
+                          isCurrent && s !== "COMPLETED" && "border-primary bg-primary text-primary-foreground shadow-sm",
+                          !isCurrent && isDone && "border-primary/30 bg-primary/10 text-primary",
+                          !isCurrent && !isDone && "border-border bg-card text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                        )}
+                      >
+                        {isDone && !isCurrent && <CheckCircle2 className="size-3" />}
+                        {label(s)}
+                      </button>
+                    </div>
+                  );
+                })}
+                {detail.status === "PAUSED" ? (
+                  <button
+                    onClick={() => patchProject({ status: "ACTIVE" })}
+                    className="ml-2 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-500/40 bg-amber-500 text-[10.5px] font-bold text-white shadow-sm"
+                  >
+                    paused — resume?
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => patchProject({ status: "PAUSED" })}
+                    className="ml-2 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[10.5px] font-bold text-amber-400 transition-colors hover:bg-amber-500/20"
+                  >
+                    hold
+                  </button>
+                )}
+                {detail.status !== "ARCHIVED" && (
+                  <button
+                    onClick={() => patchProject({ status: "ARCHIVED" })}
+                    className="ml-1 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-card px-2.5 py-1 text-[10.5px] font-bold text-muted-foreground transition-colors hover:bg-muted/60"
+                    title="Archive project"
+                  >
+                    archive
+                  </button>
+                )}
+              </div>
+            </section>
+
+            {/* ── KPI strip ── */}
+            <section className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/40 lg:grid-cols-6">
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Progress</p>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <div className="h-1 w-10 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, detail.progress ?? 0)}%` }} />
+                  </div>
+                  <span className="text-[12px] font-bold tabular-nums">{detail.progress ?? 0}%</span>
+                </div>
+                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{detail.tasksCompleted ?? 0}/{detail.tasksTotal ?? detail.tasks.length} tasks</p>
+              </div>
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Budget</p>
+                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">{(detail as any).amount != null || detail.budgetAmount != null ? formatBDT((detail as any).amount ?? detail.budgetAmount) : "—"}</p>
+                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent · {budgetPct(detail)}%</p>
+              </div>
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Invoiced</p>
+                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">{formatBDT(finance?.totalInvoiced ?? detail.totalBilled)}</p>
+                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{finance?.invoices?.length ?? 0} invoices</p>
+              </div>
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Collected</p>
+                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums text-emerald-400">{formatBDT(finance?.collected ?? 0)}</p>
+                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{detail.paymentStatus ? label(detail.paymentStatus) : "—"}</p>
+              </div>
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Outstanding</p>
+                <p className={cn("mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-400" : "text-emerald-400")}>{formatBDT(finance?.outstanding)}</p>
+                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{finance?.expensesTotal ? `${formatBDT(finance.expensesTotal)} exp` : "no expenses"}</p>
+              </div>
+              <div className="bg-card px-3.5 py-2.5">
+                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">{detail.billingType === "RECURRING" ? "Next billing" : "Due"}</p>
+                {(() => {
+                  if (detail.billingType === "RECURRING" && detail.nextBillingDate) {
+                    return <p className="mt-0.5 truncate text-[12.5px] font-bold text-primary">{formatDate(detail.nextBillingDate)}</p>;
+                  }
+                  if (!detail.targetEndDate) return <p className="mt-0.5 text-[12.5px] font-semibold text-muted-foreground/60">no date</p>;
+                  const overdue = new Date(detail.targetEndDate).getTime() < Date.now() && detail.status !== "COMPLETED";
+                  return (
+                    <p className={cn("mt-0.5 truncate text-[12.5px] font-bold", overdue ? "text-rose-400" : "text-foreground")}>
+                      {overdue ? "overdue · " : ""}{formatDate(detail.targetEndDate)}
+                    </p>
+                  );
+                })()}
+                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">start {formatDate(detail.startDate)}</p>
+              </div>
+            </section>
+
+            {/* ── project glimpse — what is this project ── */}
+            <section className="rounded-2xl border border-border/60 bg-muted/10 p-4">
+              {/* chips: type, category, billing, priority, health */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {detail.type && (
+                  <span className="rounded-full border border-primary/40 bg-primary/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-primary">{label(detail.type)}</span>
+                )}
+                {detail.category && (
+                  <span className="rounded-full border border-border bg-card px-2.5 py-1 text-[10px] font-bold text-foreground">{detail.category}</span>
+                )}
+                {detail.billingType && (
+                  <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
+                    {label(detail.billingType)}{detail.recurringInterval ? ` · ${detail.recurringInterval}` : ""}
+                  </span>
+                )}
+                {detail.priority && (
+                  <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase", PRIORITY_STYLE[detail.priority])}>{label(detail.priority)}</span>
+                )}
+                <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase", detail.healthStatus === "ON_TRACK" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : detail.healthStatus === "AT_RISK" ? "border-amber-500/30 bg-amber-500/10 text-amber-400" : "border-rose-500/30 bg-rose-500/10 text-rose-400")}>
+                  {label(detail.healthStatus)}
+                </span>
+              </div>
+
+              {/* description — inline editable */}
+              <div className="mt-2.5">
+                {descEdit ? (
+                  <div className="flex flex-col gap-1.5">
+                    <Textarea
+                      value={descDraft}
+                      onChange={(e) => setDescDraft(e.target.value)}
+                      placeholder="What is this project about? Scope, goals, commitments…"
+                      autoFocus
+                      className="min-h-16"
+                    />
+                    <div className="flex justify-end gap-1.5">
+                      <button onClick={() => setDescEdit(false)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-muted-foreground transition-colors hover:bg-muted">Cancel</button>
+                      <button onClick={saveDescription} disabled={descBusy} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-[11px] font-bold text-white disabled:opacity-60">{descBusy ? "Saving…" : "Save"}</button>
+                    </div>
+                  </div>
+                ) : (detail as any).description ? (
+                  <div className="group/desc">
+                    <p className={cn("text-[12.5px] leading-relaxed text-muted-foreground whitespace-pre-wrap", !descExpanded && "line-clamp-3")}>
+                      {(detail as any).description}
+                    </p>
+                    <div className="mt-1 flex items-center gap-2">
+                      {(detail as any).description.length > 140 && (
+                        <button onClick={() => setDescExpanded((v) => !v)} className="text-[10.5px] font-bold text-primary hover:underline">
+                          {descExpanded ? "show less" : "read more"}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setDescEdit(true); setDescDraft((detail as any).description ?? ""); }}
+                        className="hidden items-center gap-1 text-[10.5px] font-bold text-muted-foreground transition-colors hover:text-foreground group-hover/desc:flex"
+                      >
+                        <Pencil className="size-3" /> edit
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setDescEdit(true); setDescDraft(""); }}
+                    className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:underline"
+                  >
+                    <Plus className="size-3.5" /> add description — what is this project about?
+                  </button>
+                )}
+              </div>
+
+              {/* channels — client web & social */}
+              <div className="mt-3 border-t border-border/50 pt-3">
+                <p className="mb-1.5 text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Channels — web &amp; social</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(detail as any).websiteUrl && (
+                    <a href={(detail as any).websiteUrl} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-bold text-sky-400 transition-colors hover:bg-sky-500/20" title={(detail as any).websiteUrl}>
+                      <Globe className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).websiteUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
+                    </a>
+                  )}
+                  {(detail as any).projectLink && (
+                    <a href={(detail as any).projectLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary transition-colors hover:bg-primary/20" title={(detail as any).projectLink}>
+                      <Globe className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">live · {(detail as any).projectLink.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
+                    </a>
+                  )}
+                  {(detail as any).socialLinks?.facebook && (
+                    <a href={(detail as any).socialLinks.facebook} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-2.5 py-1.5 text-[11px] font-bold text-blue-500 transition-colors hover:bg-blue-500/20" title={(detail as any).socialLinks.facebook}>
+                      <Facebook className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.facebook.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
+                    </a>
+                  )}
+                  {(detail as any).socialLinks?.instagram && (
+                    <a href={(detail as any).socialLinks.instagram} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-pink-500/30 bg-pink-500/10 px-2.5 py-1.5 text-[11px] font-bold text-pink-500 transition-colors hover:bg-pink-500/20" title={(detail as any).socialLinks.instagram}>
+                      <Instagram className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.instagram.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
+                    </a>
+                  )}
+                  {(detail as any).socialLinks?.linkedin && (
+                    <a href={(detail as any).socialLinks.linkedin} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-sky-600/30 bg-sky-600/10 px-2.5 py-1.5 text-[11px] font-bold text-sky-400 transition-colors hover:bg-sky-600/20" title={(detail as any).socialLinks.linkedin}>
+                      <Linkedin className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.linkedin.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
+                    </a>
+                  )}
+                  {(detail as any).socialLinks?.youtube && (
+                    <a href={(detail as any).socialLinks.youtube} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-bold text-red-400 transition-colors hover:bg-red-500/20" title={(detail as any).socialLinks.youtube}>
+                      <Youtube className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.youtube.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
+                    </a>
+                  )}
+                  {(detail as any).socialLinks?.tiktok && (
+                    <a href={(detail as any).socialLinks.tiktok} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-2.5 py-1.5 text-[11px] font-bold text-teal-300 transition-colors hover:bg-teal-500/20" title={(detail as any).socialLinks.tiktok}>
+                      <Music2 className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.tiktok.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
+                    </a>
+                  )}
+                  {(detail as any).socialLinks?.x && (
+                    <a href={(detail as any).socialLinks.x} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-border bg-muted/60 px-2.5 py-1.5 text-[11px] font-bold text-foreground transition-colors hover:bg-muted" title={(detail as any).socialLinks.x}>
+                      <Twitter className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.x.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
+                    </a>
+                  )}
                   {detail.briefLink && (
-                    <a href={detail.briefLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10.5px] font-bold text-primary transition-colors hover:bg-primary/20">
-                      <FileText className="size-3" /> brief
+                    <a href={detail.briefLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary transition-colors hover:bg-primary/20" title={detail.briefLink}>
+                      <FileText className="size-3.5 shrink-0" /> brief
                     </a>
                   )}
                   {detail.driveLink && (
-                    <a href={detail.driveLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-2.5 py-1 text-[10.5px] font-bold text-sky-400 transition-colors hover:bg-sky-500/20">
-                      <FileArchive className="size-3" /> drive
+                    <a href={detail.driveLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-bold text-sky-400 transition-colors hover:bg-sky-500/20" title={detail.driveLink}>
+                      <FileArchive className="size-3.5 shrink-0" /> drive
                     </a>
                   )}
                   {detail.researchLink && (
-                    <a href={detail.researchLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[10.5px] font-bold text-emerald-400 transition-colors hover:bg-emerald-500/20">
-                      <Search className="size-3" /> research
+                    <a href={detail.researchLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-400 transition-colors hover:bg-emerald-500/20" title={detail.researchLink}>
+                      <Search className="size-3.5 shrink-0" /> research
                     </a>
                   )}
+                  {!(detail as any).websiteUrl && !(detail as any).projectLink && !(detail as any).socialLinks?.facebook && !(detail as any).socialLinks?.instagram && !(detail as any).socialLinks?.linkedin && !(detail as any).socialLinks?.youtube && !(detail as any).socialLinks?.tiktok && !(detail as any).socialLinks?.x && (
+                    <button onClick={() => setEditTarget(detail)} className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
+                      <Plus className="size-3" /> add channels — website, social pages
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
+            </section>
+
+            {/* ── tabs ── */}
+            <div className="-mx-1 flex gap-0.5 overflow-x-auto border-b border-border/60 px-1">
+              {([
+                { id: "overview", name: "Overview", icon: LayoutGrid },
+                { id: "deliverables", name: "Deliverables", icon: ClipboardList, count: detail.deliverables?.length ?? 0 },
+                { id: "tasks", name: "Tasks", icon: SquareKanban, count: detail.tasks.length },
+                { id: "milestones", name: "Milestones", icon: Calendar, count: detail.milestones.length },
+                { id: "files", name: "Files", icon: FileText, count: detail.files.length },
+                { id: "finance", name: "Finance", icon: Wallet, count: finance?.invoices?.length ?? 0 },
+                { id: "reports", name: "Reports", icon: History, count: detail.reports?.length ?? 0 },
+                { id: "discussions", name: "Discussion", icon: Send },
+                { id: "references", name: "Docs & Links", icon: FileArchive, count: references?.length },
+              ] as { id: typeof detailTab; name: string; icon: typeof LayoutGrid; count?: number }[]).map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setDetailTab(t.id)}
+                  className={cn(
+                    "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 text-[11.5px] font-semibold transition-colors",
+                    detailTab === t.id ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <t.icon className="size-3.5" />
+                  {t.name}
+                  {t.count != null && t.count > 0 && (
+                    <span className="rounded-full bg-muted px-1.5 py-px text-[9px] font-bold tabular-nums text-muted-foreground">{t.count}</span>
+                  )}
+                  {detailTab === t.id && (
+                    <motion.span layoutId="flow-detail-tab" className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-primary" />
+                  )}
+                </button>
+              ))}
             </div>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <div className="rounded-2xl border border-border/60 p-3.5">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Budget</p>
-                <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{(detail as any).amount != null || detail.budgetAmount != null ? formatBDT((detail as any).amount ?? detail.budgetAmount) : "—"}</p>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className={`h-full rounded-full ${budgetPct(detail) >= 90 ? "bg-rose-500" : budgetPct(detail) >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, budgetPct(detail))}%` }} />
-                </div>
-                <p className="mt-1 text-[10px] text-muted-foreground">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent � {budgetPct(detail)}%</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 p-3.5">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Progress</p>
-                <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{detail.progress != null ? `${detail.progress}%` : "—"}</p>
-                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, detail.progress ?? 0)}%` }} />
-                </div>
-                <p className="mt-1 text-[10px] text-muted-foreground">{(detail.tasksCompleted ?? 0)}/{detail.tasksTotal ?? detail.tasks.length} tasks done</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 p-3.5">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Invoiced</p>
-                <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{formatBDT(finance?.totalInvoiced ?? detail.totalBilled)}</p>
-                <p className="mt-2 text-[10px] text-muted-foreground">{formatBDT(finance?.collected ?? 0)} collected</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 p-3.5">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Outstanding</p>
-                <p className={cn("mt-0.5 font-heading text-[16px] font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-400" : "text-emerald-400")}>{formatBDT(finance?.outstanding)}</p>
-                <p className="mt-2 text-[10px] text-muted-foreground">{finance?.expensesTotal ? `${formatBDT(finance.expensesTotal)} expenses` : "No expenses yet"}</p>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-border/60 p-4">
-              <p className="mb-3 flex items-center gap-1.5 text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">
-                <AlertTriangle className="size-3.5" /> Risk profile
-              </p>
-              <div className="flex flex-wrap items-end gap-3">
-                <Field label="Score (0–100)">
-                  <Input type="number" min={0} max={100} value={riskScore} onChange={(e) => setRiskScore(e.target.value)} className="!w-28" />
-                </Field>
-                <Field label="Driver">
-                  <Input value={riskDriver} onChange={(e) => setRiskDriver(e.target.value)} placeholder="Scope creep, key-person risk…" className="!min-w-52" />
-                </Field>
-                <Btn variant="outline" onClick={saveRisk} className={riskBusy ? "opacity-50" : ""}>
-                  <RefreshCw className="size-3.5" /> Save
-                </Btn>
-              </div>
-              {detail.riskDriver && (
-                <p className="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] font-semibold text-amber-400">
-                  <AlertTriangle className="size-3.5" /> {detail.riskDriver}
-                </p>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <Fact label="Client" value={detail.client.companyName} />
-              <Fact label="Start" value={formatDate(detail.startDate)} />
-              <Fact label="Target" value={formatDate(detail.targetEndDate)} />
-              <Fact label="Budget" value={formatBDT((detail as any).amount ?? detail.budgetAmount)} />
-              <Fact label="Amount" value={formatBDT((detail as any).amount ?? detail.budgetAmount)} />
-              <Fact label="Spent" value={formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} />
-              <Fact label="Progress" value={detail.progress != null ? `${detail.progress}%` : "—"} />
-              <Fact label="PM" value={detail.assignedPm?.name ?? "—"} />
-              <Fact label="Tasks" value={`${detail.tasksCompleted ?? detail.tasks.length}/${detail.tasksTotal ?? detail.tasks.length}`} />
-              <Fact label="Category" value={detail.category || "—"} />
-              <Fact label="Priority" value={detail.priority ? label(detail.priority) : "—"} />
-              <Fact label="Billing" value={detail.billingType ? `${label(detail.billingType)}${detail.recurringInterval ? ` � ${detail.recurringInterval}` : ""}` : "—"} />
-              <Fact label="Next billing" value={detail.nextBillingDate ? formatDate(detail.nextBillingDate) : "—"} />
-              <Fact label="Payment" value={detail.paymentStatus ? label(detail.paymentStatus) : "—"} />
-              <Fact label="Total billed" value={formatBDT(detail.totalBilled)} />
-              <Fact label="Project Link" value={(detail as any).projectLink ?? "—"} />
-              <Fact label="Website" value={(detail as any).websiteUrl ?? "—"} />
-              <Fact label="Social" value={(detail as any).socialLinks ? [ (detail as any).socialLinks.facebook, (detail as any).socialLinks.linkedin, (detail as any).socialLinks.instagram ].filter(Boolean).join(" � ") || "—" : "—"} />
-            </div>
-            {((detail as any).projectLink || (detail as any).websiteUrl || (detail as any).socialLinks) && (
-              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 p-3">
-                {(detail as any).projectLink && <a href={(detail as any).projectLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-[11.5px] font-bold text-primary hover:bg-primary/20"><Globe className="size-3.5" /> {(detail as any).projectLink}</a>}
-                {(detail as any).websiteUrl && <a href={(detail as any).websiteUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-[11.5px] font-bold text-sky-500 hover:bg-sky-500/20"><Link2 className="size-3.5" /> {(detail as any).websiteUrl}</a>}
-                {(detail as any).socialLinks?.facebook && <a href={(detail as any).socialLinks.facebook} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[11px] font-bold text-blue-500"><Facebook className="size-3.5" /> Facebook</a>}
-                {(detail as any).socialLinks?.linkedin && <a href={(detail as any).socialLinks.linkedin} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-600/30 bg-sky-600/10 px-2.5 py-1 text-[11px] font-bold text-sky-600"><Linkedin className="size-3.5" /> LinkedIn</a>}
-                {(detail as any).socialLinks?.instagram && <a href={(detail as any).socialLinks.instagram} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-1 text-[11px] font-bold text-pink-500"><Instagram className="size-3.5" /> Instagram</a>}
-              </div>
-            )}
-            <Segmented
-              options={[
-                { value: "overview", label: "Overview" },
-                { value: "milestones", label: `Milestones (${detail.milestones.length})` },
-                { value: "files", label: `Files (${detail.files.length})` },
-                { value: "discussions", label: "Discussions" },
-                { value: "tasks", label: `Tasks (${detail.tasks.length})` },
-                { value: "finance", label: `Finance (${finance?.invoices?.length ?? 0})` },
-                { value: "references", label: `References & Research` },
-              ]}
-              value={detailTab as any}
-              onChange={setDetailTab as any}
-            />
             {detailTab === "overview" && (
               <div className="flex flex-col gap-5">
-                {/* description */}
-                {(detail as any).description && (
-                  <section className="rounded-2xl border border-border/60 bg-muted/20 p-4">
-                    <h4 className="mb-1.5 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase"><FileText className="size-3.5" /> Description</h4>
-                    <p className="text-[12.5px] leading-relaxed text-muted-foreground whitespace-pre-wrap">{(detail as any).description}</p>
-                  </section>
-                )}
-                {/* project overview links pills */}
-                {((detail as any).projectLink || (detail as any).websiteUrl || (detail as any).socialLinks?.facebook || (detail as any).socialLinks?.linkedin || (detail as any).socialLinks?.instagram) && (
-                  <section className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/60 p-3">
-                    {(detail as any).projectLink && <a href={(detail as any).projectLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11.5px] font-bold text-primary hover:bg-primary/20"><Globe className="size-3.5" /> Project Live</a>}
-                    {(detail as any).websiteUrl && <a href={(detail as any).websiteUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-[11.5px] font-bold text-sky-500 hover:bg-sky-500/20"><Link2 className="size-3.5" /> Website</a>}
-                    {(detail as any).socialLinks?.facebook && <a href={(detail as any).socialLinks.facebook} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-1 text-[11px] font-bold text-blue-500"><Facebook className="size-3.5" /> Facebook</a>}
-                    {(detail as any).socialLinks?.linkedin && <a href={(detail as any).socialLinks.linkedin} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-600/30 bg-sky-600/10 px-2.5 py-1 text-[11px] font-bold text-sky-600"><Linkedin className="size-3.5" /> LinkedIn</a>}
-                    {(detail as any).socialLinks?.instagram && <a href={(detail as any).socialLinks.instagram} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-pink-500/30 bg-pink-500/10 px-2.5 py-1 text-[11px] font-bold text-pink-500"><Instagram className="size-3.5" /> Instagram</a>}
-                  </section>
-                )}
-                {/* amount vs budgetAmount */}
-                {((detail as any).amount != null || detail.budgetAmount != null) && (
-                  <section className="rounded-2xl border border-border/60 p-3">
-                    <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase"><CircleDollarSign className="size-3.5" /> Amount vs Budget</h4>
-                    <div className="flex items-center justify-between text-[12px]">
-                      <span className="font-semibold tabular-nums">{formatBDT((detail as any).amount ?? detail.budgetAmount)} — amount</span>
-                      <span className="text-muted-foreground tabular-nums">budget {formatBDT(detail.budgetAmount)}</span>
-                      <span className="font-bold tabular-nums">{budgetPct(detail)}% spent</span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-                      <div className={`h-full rounded-full ${budgetPct(detail) >= 90 ? "bg-rose-500" : budgetPct(detail) >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${budgetPct(detail)}%` }} />
-                    </div>
-                    <p className="mt-1.5 text-[10.5px] text-muted-foreground">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent � {formatBDT((detail as any).amount ?? detail.budgetAmount)} total</p>
-                  </section>
-                )}
+                {/* health & risk — compact editor */}
+                <section className="rounded-2xl border border-border/60 p-4">
+                  <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                      <AlertTriangle className="size-3.5" /> Health &amp; risk
+                    </h4>
+                    <Select value={detail.healthStatus} onChange={(e) => patchProject({ healthStatus: e.target.value })} className="!w-36 !py-1.5 text-[11px]">
+                      {HEALTH_STATUSES.map((h) => (
+                        <option key={h} value={h}>{label(h)}</option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <Field label="Risk score (0–100)">
+                      <Input type="number" min={0} max={100} value={riskScore} onChange={(e) => setRiskScore(e.target.value)} className="!w-28" />
+                    </Field>
+                    <Field label="Risk driver">
+                      <Input value={riskDriver} onChange={(e) => setRiskDriver(e.target.value)} placeholder="Scope creep, key-person risk…" className="!min-w-52" />
+                    </Field>
+                    <Btn variant="outline" onClick={saveRisk} className={riskBusy ? "opacity-50" : ""}>
+                      <RefreshCw className="size-3.5" /> Save
+                    </Btn>
+                  </div>
+                  {detail.riskDriver && (
+                    <p className="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] font-semibold text-amber-400">
+                      <AlertTriangle className="size-3.5" /> {detail.riskDriver}
+                    </p>
+                  )}
+                </section>
                 {/* Gantt-like milestone bars */}
                 {detail.milestones && detail.milestones.length > 0 && (
                   <section className="rounded-2xl border border-border/60 p-3">
@@ -1925,7 +2294,7 @@ export default function FlowPage() {
                           <div className="mt-1 flex items-center gap-2">
                             <StatusBadge status={detail.sourceProposal.status} />
                             {detail.sourceProposal.fileUrl && (
-                              <a href={detail.sourceProposal.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
+                              <a href={absoluteUrl(detail.sourceProposal.fileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
                                 <FileText className="size-3" /> file
                               </a>
                             )}
@@ -1956,23 +2325,6 @@ export default function FlowPage() {
                     </div>
                   </section>
                 )}
-                {((detail as any).amount ?? detail.budgetAmount) ? (
-                  <section>
-                    <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
-                      <Wallet className="size-3.5" /> Budget
-                    </h4>
-                    <div className="rounded-xl border border-border/60 p-3">
-                      <div className="flex items-center justify-between text-[12px]">
-                        <span className="font-semibold tabular-nums">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent</span>
-                        <span className="text-muted-foreground tabular-nums">of {formatBDT((detail as any).amount ?? detail.budgetAmount)}</span>
-                        <span className="font-bold tabular-nums">{budgetPct(detail)}%</span>
-                      </div>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-                        <div className={`h-full rounded-full ${budgetPct(detail) >= 90 ? "bg-rose-500" : budgetPct(detail) >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${budgetPct(detail)}%` }} />
-                      </div>
-                    </div>
-                  </section>
-                ) : null}
                 {detail.risks && detail.risks.length > 0 && (
                   <section>
                     <h4 className="mb-2 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">Risks</h4>
@@ -1986,6 +2338,212 @@ export default function FlowPage() {
                       ))}
                     </div>
                   </section>
+                )}
+              </div>
+            )}
+            {/* ── tab: deliverables ── */}
+            {detailTab === "deliverables" && (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-2 rounded-2xl border border-border/60 p-3 sm:flex-row">
+                  <Input value={dvTitle} onChange={(e) => setDvTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addDeliverable()} placeholder="Deliverable — e.g. 30-sec brand film, 12 social creatives…" className="flex-1" />
+                  <Input value={dvDesc} onChange={(e) => setDvDesc(e.target.value)} placeholder="Detail (optional)" className="flex-1" />
+                  <Btn variant="primary" onClick={addDeliverable} className={dvBusy ? "opacity-50" : ""}>
+                    <Plus className="size-3.5" /> Add
+                  </Btn>
+                </div>
+                <p className="text-[10.5px] text-muted-foreground">
+                  Deliverables are the commitments from the proposal — link tasks to them and completed tasks auto-mark the deliverable delivered. This list feeds Reports.
+                </p>
+                {!detail.deliverables?.length ? (
+                  <EmptyState title="No deliverables yet" hint="Add what was promised in the proposal — reports auto-populate from this list." />
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {detail.deliverables.map((dv) => (
+                      <div key={dv.id} className="rounded-xl border border-border/60 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={cn(
+                            "size-2 shrink-0 rounded-full",
+                            dv.status === "DELIVERED" ? "bg-emerald-500" : dv.status === "IN_PROGRESS" ? "bg-amber-400" : "bg-muted-foreground/30"
+                          )} />
+                          <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{dv.title}</p>
+                          {!!dv.tasks?.length && (
+                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9.5px] font-bold text-muted-foreground">
+                              {dv.tasks.filter((t) => t.status === "DONE").length}/{dv.tasks.length} tasks
+                            </span>
+                          )}
+                          {dv.status === "DELIVERED" ? (
+                            <button onClick={() => setDeliverableStatus(dv, "PENDING")} className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9.5px] font-bold text-emerald-400 transition-colors hover:bg-emerald-500/25" title="Reopen">
+                              delivered
+                            </button>
+                          ) : (
+                            <button onClick={() => setDeliverableStatus(dv, "DELIVERED")} className="rounded-full bg-muted px-2 py-0.5 text-[9.5px] font-bold text-muted-foreground transition-colors hover:bg-emerald-500/15 hover:text-emerald-400" title="Mark delivered">
+                              mark delivered
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              if (dvEditId === dv.id) { setDvEditId(null); return; }
+                              setDvEditId(dv.id);
+                              setDvEditTasks(new Set((dv.tasks ?? []).map((t) => t.id)));
+                            }}
+                            className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            title="Link tasks"
+                          >
+                            <Link2 className="size-3.5" />
+                          </button>
+                          <button onClick={() => deleteDeliverable(dv)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400" title="Delete">
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                        {dv.description && <p className="mt-1 pl-4 text-[11px] text-muted-foreground">{dv.description}</p>}
+                        {dvEditId === dv.id && (
+                          <div className="mt-2 rounded-lg border border-border/60 bg-muted/30 p-2">
+                            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Linked tasks (completion auto-updates deliverable)</p>
+                            {!detail.tasks.length ? (
+                              <p className="text-[11px] text-muted-foreground">No tasks in this project yet — create tasks in the Tasks tab first.</p>
+                            ) : (
+                              <>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {detail.tasks.map((t) => {
+                                    const on = dvEditTasks.has(t.id);
+                                    return (
+                                      <button
+                                        key={t.id}
+                                        onClick={() => setDvEditTasks((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
+                                          return next;
+                                        })}
+                                        className={cn(
+                                          "rounded-full border px-2 py-0.5 text-[10.5px] font-semibold transition-colors",
+                                          on ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:text-foreground"
+                                        )}
+                                      >
+                                        {t.title}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <div className="mt-2 flex justify-end">
+                                  <Btn variant="primary" className="!px-3 !py-1.5 text-[11px]" onClick={() => saveDeliverableTasks(dv)} disabled={dvBusy}>
+                                    Save links
+                                  </Btn>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* ── tab: reports ── */}
+            {detailTab === "reports" && (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/60 p-3">
+                  <div>
+                    <p className="text-[11.5px] font-bold">Progress reports</p>
+                    <p className="text-[10.5px] text-muted-foreground">
+                      Completed deliverables + billing snapshot auto-populate · PM notes editable
+                      {detail.reportMode === "AUTOMATIC" && detail.reportFrequency ? ` · auto ${detail.reportFrequency}` : " · manual"}
+                    </p>
+                  </div>
+                  <Btn variant="primary" onClick={generateReportNow} className={repBusy ? "opacity-50" : ""}>
+                    <Plus className="size-3.5" /> {repBusy ? "Generating…" : "Generate report"}
+                  </Btn>
+                </div>
+                {!detail.reports?.length ? (
+                  <EmptyState title="No reports yet" hint="Generate a report — completed deliverables and pending items are pulled automatically." />
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    {detail.reports.map((r) => (
+                      <div key={r.id} className="rounded-2xl border border-border/60 p-3.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="min-w-0 flex-1 truncate text-[12.5px] font-bold">{r.title}</p>
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 text-[9.5px] font-bold",
+                            r.status === "DRAFT" ? "bg-muted text-muted-foreground"
+                              : r.status === "FINAL" ? "bg-sky-500/15 text-sky-400"
+                                : "bg-emerald-500/15 text-emerald-400"
+                          )}>
+                            {label(r.status)}
+                          </span>
+                          {r.status !== "SENT" && (
+                            <button onClick={() => setReportStatus(r, "SENT")} className="rounded-lg px-2 py-1 text-[10.5px] font-bold text-emerald-400 transition-colors hover:bg-emerald-500/10" title="Mark sent to client">
+                              send
+                            </button>
+                          )}
+                          <button onClick={() => deleteReport(r)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400" title="Delete report">
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground">
+                          {formatDate(r.periodStart)} – {formatDate(r.periodEnd)} · generated {timeAgo(r.createdAt)}{r.generatedBy?.name ? ` by ${r.generatedBy.name}` : ""}
+                          {r.sentAt ? ` · sent ${timeAgo(r.sentAt)}` : ""}
+                        </p>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2.5">
+                            <p className="text-[9.5px] font-bold uppercase tracking-wide text-emerald-400">Delivered ({r.completed.length})</p>
+                            {r.completed.length ? (
+                              <ul className="mt-1 flex flex-col gap-0.5">
+                                {r.completed.map((c) => (
+                                  <li key={c.deliverableId} className="flex items-center gap-1 text-[11.5px]">
+                                    <CheckCircle2 className="size-3 shrink-0 text-emerald-400" /> {c.title}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="mt-1 text-[11px] text-muted-foreground">Nothing delivered in this period.</p>
+                            )}
+                          </div>
+                          <div className="rounded-xl border border-border/60 bg-muted/30 p-2.5">
+                            <p className="text-[9.5px] font-bold uppercase tracking-wide text-muted-foreground">Pending ({r.pending.length})</p>
+                            {r.pending.length ? (
+                              <ul className="mt-1 flex flex-col gap-0.5">
+                                {r.pending.map((c) => (
+                                  <li key={c.deliverableId} className="flex items-center gap-1 text-[11.5px] text-muted-foreground">
+                                    <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" /> {c.title}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="mt-1 text-[11px] text-emerald-400">All deliverables done ✓</p>
+                            )}
+                          </div>
+                        </div>
+                        {r.billing && (
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 rounded-xl bg-muted/40 px-2.5 py-1.5 text-[10.5px] text-muted-foreground">
+                            <span>Billing — invoiced <span className="font-bold text-foreground">{formatBDT(r.billing.invoiced)}</span></span>
+                            <span>collected <span className="font-bold text-emerald-400">{formatBDT(r.billing.collected)}</span></span>
+                            <span>outstanding <span className="font-bold text-amber-400">{formatBDT(r.billing.outstanding)}</span></span>
+                          </div>
+                        )}
+                        {repNotesEdit === r.id ? (
+                          <div className="mt-2 flex flex-col gap-1.5">
+                            <Textarea value={repNotesEdit === r.id ? (repNotesDraft ?? r.pmNotes ?? "") : ""} onChange={(e) => setRepNotesDraft(e.target.value)} placeholder="PM notes / next steps (client-facing)…" className="min-h-16" />
+                            <div className="flex justify-end gap-1.5">
+                              <button onClick={() => { setRepNotesEdit(null); setRepNotesDraft(null); }} className="rounded-lg px-2 py-1 text-[11px] font-bold text-muted-foreground hover:bg-muted">Cancel</button>
+                              <button onClick={() => saveReportNotes(r)} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-[11px] font-bold text-white">Save</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-2">
+                            {r.pmNotes ? (
+                              <p className="rounded-xl bg-muted/30 px-2.5 py-1.5 text-[11.5px] text-muted-foreground whitespace-pre-wrap" title="Click to edit" onClick={() => { setRepNotesEdit(r.id); setRepNotesDraft(r.pmNotes); }}>
+                                <span className="font-bold text-foreground">PM notes: </span>{r.pmNotes}
+                              </p>
+                            ) : (
+                              <button onClick={() => { setRepNotesEdit(r.id); setRepNotesDraft(""); }} className="text-[11px] font-bold text-primary hover:underline">
+                                + add PM notes
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -2045,7 +2603,7 @@ export default function FlowPage() {
                       {f.approvalStatus !== "REVISION_REQUESTED" && (
                         <button onClick={() => setApproval(f.id, "REVISION_REQUESTED")} className="rounded-lg px-2 py-1 text-[10.5px] font-bold text-amber-400 transition-colors hover:bg-amber-500/10">revise</button>
                       )}
-                      <a href={f.fileUrl} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Download">
+                      <a href={absoluteUrl(f.fileUrl)} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Download">
                         <Download className="size-3.5" />
                       </a>
                       <button onClick={() => deleteFile(f.id)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400">
@@ -2145,75 +2703,150 @@ export default function FlowPage() {
                     onInvoice={() => setFinInvOpen(true)}
                     onExpense={() => setFinExpOpen(true)}
                   />
+                  {/* payment ledger */}
+                  {!!finance?.payments?.length && (
+                    <section>
+                      <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                        <HandCoins className="size-3.5" /> Payment ledger
+                      </h4>
+                      <div className="overflow-hidden rounded-xl border border-border/60">
+                        <table className="w-full text-left">
+                          <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            <tr>
+                              <th className="px-3 py-2 font-bold">Date</th>
+                              <th className="px-3 py-2 font-bold">Amount</th>
+                              <th className="px-3 py-2 font-bold">Method</th>
+                              <th className="px-3 py-2 font-bold">Invoice</th>
+                              <th className="px-3 py-2 font-bold">Reference</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {finance.payments.map((p: any) => (
+                              <tr key={p.id} className="border-t border-border/40">
+                                <td className="px-3 py-2 text-[11.5px] font-semibold">{formatDate(p.paymentDate)}</td>
+                                <td className="px-3 py-2 text-[11.5px] font-bold tabular-nums text-emerald-400">{formatBDT(p.amount)}</td>
+                                <td className="px-3 py-2 text-[11.5px]">{label(p.paymentMethod)}</td>
+                                <td className="px-3 py-2 text-[11.5px] font-mono text-[10.5px]">{p.invoiceNumber}</td>
+                                <td className="px-3 py-2 text-[11px] text-muted-foreground">{p.referenceId ?? p.notes ?? "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
                 </div>
               ) : (
                 <EmptyState title="Finance data unavailable" hint="Could not load project finance." />
               ))}
             {detailTab === "references" && (
               <div className="flex flex-col gap-4">
-                {/* top bar: Upload File + Add Drive Link */}
-                <div className="flex flex-col gap-3 rounded-2xl border border-border/60 p-3 sm:flex-row sm:items-end sm:justify-between">
-                  <div className="flex flex-col gap-2">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Upload File</p>
-                    <div className="flex items-center gap-2">
-                      <Btn variant="outline" onClick={() => refFileRef.current?.click()} className={refUploading ? "opacity-50" : ""}>
-                        <UploadCloud className="size-3.5" /> {refUploading ? "Uploading…" : "Upload File"}
-                      </Btn>
-                      <input ref={refFileRef} type="file" className="hidden" onChange={onPickRefFile} />
-                      <span className="text-[11px] text-muted-foreground">→ creates reference with fileUrl</span>
+                {/* proposal — source of the project */}
+                {detail.sourceProposal && (
+                  <section className="rounded-2xl border border-primary/30 bg-primary/5 p-3.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <FileText className="size-4 text-primary" />
+                      <p className="text-[12.5px] font-bold">Proposal v{detail.sourceProposal.versionNumber}</p>
+                      <StatusBadge status={detail.sourceProposal.status} />
+                      {detail.sourceProposal.sentDate && (
+                        <span className="text-[10.5px] text-muted-foreground">sent {formatDate(detail.sourceProposal.sentDate)}</span>
+                      )}
+                      <div className="ml-auto flex items-center gap-2">
+                        {detail.sourceProposal.fileUrl && (
+                          <a href={absoluteUrl(detail.sourceProposal.fileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-card px-2.5 py-1 text-[10.5px] font-bold text-primary transition-colors hover:bg-primary/10">
+                            <FileText className="size-3" /> PDF ↗
+                          </a>
+                        )}
+                        {detail.sourceProposal.portalLink && (
+                          <a href={detail.sourceProposal.portalLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-card px-2.5 py-1 text-[10.5px] font-bold text-sky-400 transition-colors hover:bg-sky-500/10">
+                            <Link2 className="size-3" /> portal ↗
+                          </a>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex flex-1 flex-col gap-2 sm:ml-6">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Add Drive Link</p>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                      <Field label="Title *"><Input value={refTitle} onChange={(e) => setRefTitle(e.target.value)} placeholder="Brand assets" className="!w-36" /></Field>
-                      <Field label="URL *"><Input value={refUrl} onChange={(e) => setRefUrl(e.target.value)} placeholder="https://drive.google.com/..." className="!w-64" /></Field>
-                      <Field label="Type"><Select value={refType} onChange={(e) => setRefType(e.target.value)} className="!w-28">{["DRIVE","NOTION","FIGMA","OTHER"].map((t)=><option key={t} value={t}>{t}</option>)}</Select></Field>
-                      <Btn variant="primary" onClick={addReferenceLink} className={refBusy ? "opacity-50" : ""}><Link2 className="size-3.5" /> Add</Btn>
+                    <p className="mt-1 text-[10.5px] text-muted-foreground">The proposal this project was confirmed from — deliverables were committed here.</p>
+                  </section>
+                )}
+
+                {/* upload + add link */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => refFileRef.current?.click()}
+                    disabled={refUploading}
+                    className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-6 text-[12px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
+                  >
+                    <UploadCloud className="size-5" />
+                    {refUploading ? "Uploading…" : "Upload PDF / document"}
+                    <span className="text-[10.5px] font-medium text-muted-foreground/70">proposal, brief, contract, assets — max 15MB</span>
+                  </button>
+                  <input ref={refFileRef} type="file" className="hidden" onChange={onPickRefFile} accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.zip" />
+                  <div className="flex flex-col gap-2 rounded-2xl border border-border/60 p-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Add link</p>
+                    <Input value={refTitle} onChange={(e) => setRefTitle(e.target.value)} placeholder="Title — e.g. Brand assets, Media plan" />
+                    <Input value={refUrl} onChange={(e) => setRefUrl(e.target.value)} placeholder="https://drive.google.com/… / Notion / Figma / any URL" />
+                    <div className="flex items-center gap-2">
+                      <Select value={refType} onChange={(e) => setRefType(e.target.value)} className="!w-32 !py-1.5 text-[11px]">
+                        {["DRIVE", "NOTION", "FIGMA", "OTHER"].map((t) => <option key={t} value={t}>{t}</option>)}
+                      </Select>
+                      <Btn variant="primary" onClick={addReferenceLink} className={refBusy ? "opacity-50" : ""}>
+                        <Link2 className="size-3.5" /> Add link
+                      </Btn>
                     </div>
                   </div>
                 </div>
+
+                {/* list */}
                 {refsLoading ? (
                   <div className="flex flex-col gap-2">{[...Array(4)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}</div>
                 ) : !references || references.length === 0 ? (
-                  <EmptyState title="No references yet" hint="Upload a file or add a drive link (Drive, Notion, Figma, or Other — tribal / national / drive links supported as url with type)." />
+                  <EmptyState title="No documents or links yet" hint="Upload the proposal PDF or add shared links — Drive, Notion, Figma, anything." />
                 ) : (
-                  <div className="overflow-auto rounded-xl border border-border/60">
-                    <table className="w-full text-left">
-                      <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-2 font-bold">Title</th>
-                          <th className="px-3 py-2 font-bold">URL</th>
-                          <th className="px-3 py-2 font-bold">Type</th>
-                          <th className="px-3 py-2 font-bold">File</th>
-                          <th className="px-3 py-2 font-bold">Uploaded By</th>
-                          <th className="px-3 py-2 font-bold text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {references.map((r: any) => (
-                          <tr key={r.id} className="border-t border-border/40 hover:bg-muted/30">
-                            <td className="px-3 py-2 text-[12.5px] font-semibold">{r.title}</td>
-                            <td className="max-w-[180px] truncate px-3 py-2 text-[11.5px]">{r.url ? <a href={r.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">{r.url.slice(0, 48)}</a> : <span className="text-muted-foreground">—</span>}</td>
-                            <td className="px-3 py-2"><span className="inline-flex rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[10px] font-bold uppercase">{r.type ?? "OTHER"}</span></td>
-                            <td className="px-3 py-2 text-[11.5px]">{r.fileUrl ? <a href={r.fileUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary hover:underline"><Download className="size-3.5" /> file</a> : <span className="text-muted-foreground">—</span>}</td>
-                            <td className="px-3 py-2 text-[11.5px] text-muted-foreground">{r.uploadedBy?.name ?? r.uploadedBy?.id ?? "—"}</td>
-                            <td className="px-3 py-2 text-right">
-                              <button onClick={() => deleteReference(r.id)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400" title="Delete reference">
-                                <Trash2 className="size-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {references.map((r: any) => {
+                      const isPdf = (r.fileUrl ?? "").toLowerCase().includes(".pdf");
+                      const isLink = !r.fileUrl && !!r.url;
+                      return (
+                        <div key={r.id} className="group flex items-center gap-2.5 rounded-xl border border-border/60 p-2.5">
+                          <span className={cn(
+                            "flex size-9 shrink-0 items-center justify-center rounded-lg border",
+                            isPdf ? "border-rose-500/30 bg-rose-500/10 text-rose-400"
+                              : isLink ? "border-sky-500/30 bg-sky-500/10 text-sky-400"
+                                : "border-border bg-muted/40 text-muted-foreground"
+                          )}>
+                            {isPdf ? <FileText className="size-4" /> : isLink ? <Link2 className="size-4" /> : <FileSpreadsheet className="size-4" />}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[12px] font-semibold" title={r.title}>{r.title}</p>
+                            <p className="truncate text-[10px] text-muted-foreground">
+                              {r.fileUrl ? "uploaded file" : r.url?.replace(/^https?:\/\/(www\.)?/, "")} · {r.uploadedBy?.name ?? "—"} · {timeAgo(r.createdAt)}
+                            </p>
+                          </div>
+                          <a
+                            href={absoluteUrl(r.fileUrl ?? r.url)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            title="Open"
+                          >
+                            <Download className="size-3.5" />
+                          </a>
+                          <button
+                            onClick={() => deleteReference(r.id)}
+                            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400 sm:opacity-0 sm:group-hover:opacity-100"
+                            title="Delete"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
-                <p className="text-[10.5px] text-muted-foreground">References support both <span className="font-semibold">Upload File</span> (via <code className="rounded bg-muted px-1">POST /flow/upload</code> → <code className="rounded bg-muted px-1">POST /flow/projects/:id/references {"{title, fileUrl}"}</code>) and <span className="font-semibold">Add Drive Link</span> (<code className="rounded bg-muted px-1">title* + url* + type → POST</code>). Tribal, national, drive links all stored as url with type.</p>
               </div>
             )}
             <div className="sticky bottom-0 -mx-6 -mb-6 mt-2 flex items-center justify-between gap-2 border-t border-border/60 bg-card px-6 py-3.5">
-              <span className="text-[11.5px] text-muted-foreground">{detail.milestones.length} milestones � {detail.files.length} files � {detail.tasks.length} tasks</span>
+              <span className="text-[11.5px] text-muted-foreground">{detail.milestones.length} milestones · {detail.files.length} files · {detail.tasks.length} tasks · {detail.deliverables?.length ?? 0} deliverables</span>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Btn variant="outline" onClick={() => setFinExpOpen(true)}>
                   <ReceiptText className="size-3.5" /> Add Expense

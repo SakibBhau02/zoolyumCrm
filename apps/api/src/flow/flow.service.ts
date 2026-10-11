@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
+import { Cron } from "@nestjs/schedule";
 import { HealthStatus, ProjectStatus, ProjectType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -122,10 +123,28 @@ export class FlowService {
           include: { assignedTo: { select: { id: true, name: true } } },
           orderBy: { createdAt: "asc" },
         },
+        deliverables: {
+          include: { tasks: { select: { id: true, title: true, status: true } } },
+          orderBy: { sortOrder: "asc" },
+        },
+        reports: {
+          include: { generatedBy: { select: { name: true } } },
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
     if (!project) throw new Error("Project not found");
-    return project;
+    // derive deliverable status from linked tasks (manual status kept when no tasks)
+    const deliverables = project.deliverables.map((d) => {
+      if (!d.tasks.length) return d;
+      const done = d.tasks.filter((t) => t.status === "DONE").length;
+      const active = d.tasks.filter((t) => t.status === "IN_PROGRESS" || t.status === "REVIEW").length;
+      const status = done === d.tasks.length ? "DELIVERED" : done > 0 || active > 0 ? "IN_PROGRESS" : "PENDING";
+      return { ...d, status };
+    });
+    const tasksTotal = project.tasks.length;
+    const tasksCompleted = project.tasks.filter((t) => t.status === "DONE").length;
+    return { ...project, deliverables, tasksTotal, tasksCompleted };
   }
 
   async create(body: any) {
@@ -175,12 +194,24 @@ export class FlowService {
         riskDriver: body.riskDriver ?? undefined,
       },
     });
-    await this.notifications.broadcast(
-      "project_update",
-      "New Project Created",
-      `New project "${project.name}" has been created.`,
-      "/flow"
-    );
+    try {
+      if (project.assignedPmId) {
+        await this.notifications.create(
+          project.assignedPmId,
+          "PROJECT_ASSIGNED",
+          "Project assigned to you",
+          `You are now PM of "${project.name}".`,
+          "/flow"
+        );
+      }
+      await this.notifications.notifyRole(
+        "Owner",
+        "PROJECT_UPDATE",
+        "New Project Created",
+        `New project "${project.name}" has been created.`,
+        "/flow"
+      );
+    } catch {}
     await this.invalidateProjects();
     return project;
   }
@@ -193,7 +224,7 @@ export class FlowService {
       "name", "type", "templateId", "assignedPmId", "status", "healthStatus", "clientId",
       "category", "priority", "progress", "team", "billingType", "recurringInterval",
       "monthlyRate", "totalBilled", "paymentStatus", "briefLink", "driveLink", "researchLink",
-      "riskScore", "riskDriver",
+      "riskScore", "riskDriver", "reportFrequency", "reportMode",
     ]) {
       if (body[field] !== undefined) data[field] = body[field];
     }
@@ -216,6 +247,11 @@ export class FlowService {
     if (body.nextBillingDate !== undefined) data.nextBillingDate = body.nextBillingDate ? new Date(body.nextBillingDate) : null;
     else if (body.recurringInterval !== undefined && (body.startDate !== undefined || body.recurringInterval === null)) {
       data.nextBillingDate = body.recurringInterval === null ? null : this.nextBillingDate(body.startDate ?? existing.startDate.toISOString(), body.recurringInterval);
+    }
+    if (body.nextReportDate !== undefined) data.nextReportDate = body.nextReportDate ? new Date(body.nextReportDate) : null;
+    else if (body.reportFrequency !== undefined && body.reportMode === "AUTOMATIC") {
+      const days = body.reportFrequency === "15-days" ? 15 : 30;
+      data.nextReportDate = new Date(Date.now() + days * 86400000);
     }
     const result = await this.prisma.project.update({ where: { id }, data });
     // auto invoice hooks
@@ -558,5 +594,216 @@ export class FlowService {
 
   async templates() {
     return this.prisma.projectTemplate.findMany();
+  }
+
+  // ── Deliverables (proposal commitments) ──────────────────────────────
+  async addDeliverable(
+    projectId: string,
+    dto: { title: string; description?: string; taskIds?: string[] }
+  ) {
+    await this.ensureProject(projectId);
+    const last = await this.prisma.projectDeliverable.findFirst({
+      where: { projectId },
+      orderBy: { sortOrder: "desc" },
+    });
+    const d = await this.prisma.projectDeliverable.create({
+      data: {
+        projectId,
+        title: dto.title.trim(),
+        description: dto.description,
+        sortOrder: (last?.sortOrder ?? 0) + 1,
+        ...(dto.taskIds?.length
+          ? { tasks: { connect: dto.taskIds.map((id) => ({ id })) } }
+          : {}),
+      },
+      include: { tasks: { select: { id: true, title: true, status: true } } },
+    });
+    await this.invalidateProjects();
+    return d;
+  }
+
+  async updateDeliverable(
+    deliverableId: string,
+    dto: { title?: string; description?: string; status?: string; taskIds?: string[] }
+  ) {
+    const existing = await this.prisma.projectDeliverable.findUnique({
+      where: { id: deliverableId },
+    });
+    if (!existing) throw new NotFoundException("Deliverable not found");
+    const data: any = {};
+    if (dto.title !== undefined) data.title = dto.title.trim();
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.status !== undefined) {
+      data.status = dto.status;
+      data.completedAt = dto.status === "DELIVERED" ? new Date() : null;
+    }
+    if (dto.taskIds !== undefined) {
+      data.tasks = { set: dto.taskIds.map((id) => ({ id })) };
+    }
+    const d = await this.prisma.projectDeliverable.update({
+      where: { id: deliverableId },
+      data,
+      include: { tasks: { select: { id: true, title: true, status: true } } },
+    });
+    await this.invalidateProjects();
+    return d;
+  }
+
+  async removeDeliverable(deliverableId: string) {
+    await this.prisma.projectDeliverable.delete({ where: { id: deliverableId } }).catch(() => {
+      throw new NotFoundException("Deliverable not found");
+    });
+    await this.invalidateProjects();
+    return { ok: true };
+  }
+
+  // ── Reports (auto-populated from deliverables + tasks) ───────────────
+  async generateReport(
+    projectId: string,
+    dto: { periodStart?: string; periodEnd?: string; pmNotes?: string },
+    userId?: string
+  ) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        deliverables: { include: { tasks: true }, orderBy: { sortOrder: "asc" } },
+        invoices: { include: { lineItems: true, payments: true } },
+      },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+
+    const end = dto.periodEnd ? new Date(dto.periodEnd) : new Date();
+    const start = dto.periodStart
+      ? new Date(dto.periodStart)
+      : new Date(end.getTime() - 30 * 86400000);
+
+    const deriveStatus = (d: (typeof project.deliverables)[number]) => {
+      if (!d.tasks.length) return d.status;
+      const done = d.tasks.filter((t) => t.status === "DONE").length;
+      const active = d.tasks.filter((t) => t.status === "IN_PROGRESS" || t.status === "REVIEW").length;
+      return done === d.tasks.length ? "DELIVERED" : done > 0 || active > 0 ? "IN_PROGRESS" : "PENDING";
+    };
+
+    const completed: any[] = [];
+    const pending: any[] = [];
+    for (const d of project.deliverables) {
+      const status = deriveStatus(d);
+      if (status === "DELIVERED") {
+        completed.push({
+          deliverableId: d.id,
+          title: d.title,
+          completedAt: d.completedAt ?? end.toISOString(),
+          tasksDone: d.tasks.filter((t) => t.status === "DONE").length,
+          tasksTotal: d.tasks.length,
+        });
+      } else {
+        pending.push({ deliverableId: d.id, title: d.title, status });
+      }
+    }
+
+    // billing snapshot for the period
+    const activeInv = project.invoices.filter((i) => i.status !== "CANCELLED" && i.status !== "VOID");
+    const invoiced = activeInv.reduce(
+      (s, i) => s + i.lineItems.reduce((x, l) => x + Number(l.amount), 0),
+      0
+    );
+    const collected = activeInv.reduce((s, i) => s + i.payments.reduce((x, p) => x + Number(p.amount), 0), 0);
+
+    const title =
+      project.reportFrequency === "15-days"
+        ? `Progress report — ${start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} to ${end.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
+        : `Progress report — ${start.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`;
+
+    const report = await this.prisma.projectReport.create({
+      data: {
+        projectId,
+        title,
+        periodStart: start,
+        periodEnd: end,
+        pmNotes: dto.pmNotes,
+        generatedById: userId,
+        completed,
+        pending,
+        billing: { invoiced, collected, outstanding: Math.max(invoiced - collected, 0) },
+      },
+      include: { generatedBy: { select: { name: true } } },
+    });
+    try {
+      if (project.assignedPmId && project.assignedPmId !== userId) {
+        await this.notifications.create(
+          project.assignedPmId,
+          "REPORT_READY",
+          "Report generated",
+          `Report "${report.title}" generated for ${project.name}.`,
+          "/flow"
+        );
+      }
+    } catch {}
+    await this.invalidateProjects();
+    return report;
+  }
+
+  async listReports(projectId: string) {
+    await this.ensureProject(projectId);
+    return this.prisma.projectReport.findMany({
+      where: { projectId },
+      include: { generatedBy: { select: { name: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  async updateReport(
+    reportId: string,
+    dto: { pmNotes?: string; status?: string }
+  ) {
+    const existing = await this.prisma.projectReport.findUnique({ where: { id: reportId } });
+    if (!existing) throw new NotFoundException("Report not found");
+    const data: any = {};
+    if (dto.pmNotes !== undefined) data.pmNotes = dto.pmNotes;
+    if (dto.status !== undefined) {
+      data.status = dto.status;
+      if (dto.status === "SENT") data.sentAt = new Date();
+    }
+    return this.prisma.projectReport.update({
+      where: { id: reportId },
+      data,
+      include: { generatedBy: { select: { name: true } } },
+    });
+  }
+
+  async removeReport(reportId: string) {
+    await this.prisma.projectReport.delete({ where: { id: reportId } }).catch(() => {
+      throw new NotFoundException("Report not found");
+    });
+    return { ok: true };
+  }
+
+  // ── Scheduled report generation (recurring projects, AUTOMATIC mode) ──
+  @Cron("30 2 * * *")
+  async handleScheduledReports() {
+    const due = await this.prisma.project.findMany({
+      where: {
+        reportMode: "AUTOMATIC",
+        reportFrequency: { not: null },
+        OR: [{ nextReportDate: { lte: new Date() } }, { nextReportDate: null }],
+        status: { in: ["PLANNING", "ACTIVE", "PAUSED"] },
+      },
+      select: { id: true, reportFrequency: true, nextReportDate: true },
+    });
+    let created = 0;
+    for (const p of due) {
+      const end = new Date();
+      const start = p.nextReportDate
+        ? new Date(p.nextReportDate)
+        : new Date(end.getTime() - 30 * 86400000);
+      await this.generateReport(p.id, { periodStart: start.toISOString(), periodEnd: end.toISOString() });
+      const days = p.reportFrequency === "15-days" ? 15 : 30;
+      await this.prisma.project.update({
+        where: { id: p.id },
+        data: { nextReportDate: new Date(end.getTime() + days * 86400000) },
+      });
+      created++;
+    }
+    return { created };
   }
 }

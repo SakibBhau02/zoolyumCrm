@@ -10,7 +10,6 @@ import {
   IsOptional,
   IsString,
   IsUrl,
-  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -24,7 +23,8 @@ export class CreateProjectDto {
   @MaxLength(120)
   name!: string;
 
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   clientId!: string;
 
   @IsOptional()
@@ -125,7 +125,7 @@ export class CreateProjectDto {
   nextBillingDate?: string;
 
   @IsOptional()
-  @IsUUID()
+  @IsString()
   assignedPmId?: string;
 
   @IsOptional()

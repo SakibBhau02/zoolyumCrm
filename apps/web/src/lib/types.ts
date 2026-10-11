@@ -100,6 +100,7 @@ export interface Lead {
   meetings?: LeadMeeting[];
   followUps?: LeadFollowUp[];
   notesList?: LeadNote[];
+  attachments?: LeadAttachment[];
   latestActivity?: LeadActivity | null;
   latestProposal?: Proposal | null;
   nextMeeting?: LeadMeeting | null;
@@ -145,6 +146,17 @@ export interface LeadNote {
   createdBy: { name: string } | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LeadAttachment {
+  id: string;
+  title: string | null;
+  fileUrl: string;
+  filename: string;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  uploadedBy: { name: string } | null;
+  createdAt: string;
 }
 
 export interface LeadCategory {
@@ -331,6 +343,39 @@ export interface Project {
     fileUrl: string | null; portalLink: string | null; sentDate: string | null;
   } | null;
   _count?: { tasks: number; milestones: number };
+}
+
+export type DeliverableStatus = "PENDING" | "IN_PROGRESS" | "DELIVERED";
+
+export interface ProjectDeliverable {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string | null;
+  sortOrder: number;
+  status: DeliverableStatus;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  tasks?: { id: string; title: string; status: string }[];
+}
+
+export type ReportStatus = "DRAFT" | "FINAL" | "SENT";
+
+export interface ProjectReport {
+  id: string;
+  projectId: string;
+  title: string;
+  periodStart: string;
+  periodEnd: string;
+  status: ReportStatus;
+  completed: { deliverableId: string; title: string; completedAt: string; tasksDone?: number; tasksTotal?: number }[];
+  pending: { deliverableId: string; title: string; status?: string }[];
+  billing: { invoiced: number; collected: number; outstanding: number } | null;
+  pmNotes: string | null;
+  generatedBy: { name: string } | null;
+  createdAt: string;
+  sentAt: string | null;
 }
 
 export interface Task {
