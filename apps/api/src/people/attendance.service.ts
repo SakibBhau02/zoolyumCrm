@@ -32,6 +32,69 @@ export class AttendanceService {
     return { status, checkIn, checkOut, minutesLate: Math.max(0, inMin - limitMin) };
   }
 
+  // ── Work-hours engine ──────────────────────────────────────────────
+  // checkIn/checkOut times existed but no duration was ever computed, so the
+  // page could never answer "how long did they work". Everything below derives
+  // from first-punch → last-punch per day (single shift model, no breaks).
+  private expectedMinutes(emp: any, policy: any): number {
+    const diff = minutesOf(emp.shiftEnd ?? policy.shiftEnd) - minutesOf(emp.shiftStart ?? policy.shiftStart);
+    return diff > 0 ? diff : 0;
+  }
+
+  private dayHours(
+    checkIn: Date | null,
+    checkOut: Date | null,
+    expected: number,
+    threshold: number,
+    now = new Date()
+  ): { worked: number; overtime: number; undertime: number; open: boolean } {
+    if (!checkIn) return { worked: 0, overtime: 0, undertime: 0, open: false };
+    // No checkout yet = still inside; hours-so-far instead of zero.
+    const end = checkOut ?? now;
+    const worked = Math.max(0, Math.round((end.getTime() - checkIn.getTime()) / 60000));
+    const extra = worked - expected;
+    return {
+      worked,
+      overtime: extra >= threshold ? extra : 0,
+      undertime: checkOut && worked < expected ? expected - worked : 0,
+      open: !checkOut,
+    };
+  }
+
+  /** Month (default) or trailing-N-days / explicit from→to window. Future days excluded. */
+  private resolveDays(query: { month?: string; days?: string; from?: string; to?: string }): string[] {
+    const today = dateStrDhaka(new Date());
+    if (query.from && query.to) {
+      const out: string[] = [];
+      const d = new Date(`${query.from}T00:00:00.000Z`);
+      const end = new Date(`${query.to}T00:00:00.000Z`);
+      let guard = 0;
+      while (d <= end && guard++ < 366) {
+        out.push(d.toISOString().slice(0, 10));
+        d.setUTCDate(d.getUTCDate() + 1);
+      }
+      return out.filter((x) => x <= today);
+    }
+    if (query.days) {
+      const n = Math.min(90, Math.max(1, parseInt(String(query.days), 10) || 30));
+      const out: string[] = [];
+      const d = new Date(`${today}T00:00:00.000Z`);
+      for (let i = n - 1; i >= 0; i--) {
+        const x = new Date(d);
+        x.setUTCDate(x.getUTCDate() - i);
+        out.push(x.toISOString().slice(0, 10));
+      }
+      return out;
+    }
+    return dhakaDaysInMonth(query.month ?? today.slice(0, 7)).filter((x) => x <= today);
+  }
+
+  private rangeBounds(days: string[]) {
+    const start = dhakaDayRange(days[0]).start;
+    const end = dhakaDayRange(days[days.length - 1]).end;
+    return { start, end };
+  }
+
   async attendancePolicy() {
     return this.prisma.attendancePolicy.upsert({
       where: { id: "default" },
@@ -42,7 +105,7 @@ export class AttendanceService {
 
   async updateAttendancePolicy(body: any) {
     const data: any = {};
-    for (const f of ["weeklyOffDays", "graceMinutes", "shiftStart", "shiftEnd", "halfDayCutoff", "lateLadder", "dailyRateDivisor", "proRataEnabled"]) {
+    for (const f of ["weeklyOffDays", "graceMinutes", "shiftStart", "shiftEnd", "halfDayCutoff", "lateLadder", "dailyRateDivisor", "proRataEnabled", "overtimeThresholdMinutes"]) {
       if (body[f] !== undefined) data[f] = body[f];
     }
     return this.prisma.attendancePolicy.update({ where: { id: "default" }, data });
@@ -322,11 +385,12 @@ export class AttendanceService {
     return updated;
   }
 
-  async attendanceReport(month: string) {
-    const days = dhakaDaysInMonth(month);
-    const start = dhakaDayRange(days[0]).start;
-    const end = dhakaDayRange(days[days.length - 1]).end;
+  async attendanceReport(query: { month?: string; days?: string; from?: string; to?: string }) {
+    const days = this.resolveDays(query);
+    if (!days.length) return [];
+    const { start, end } = this.rangeBounds(days);
     const policy = await this.attendancePolicy();
+    const threshold = policy.overtimeThresholdMinutes ?? 30;
     const [employees, holidays, leaves, attendance, punches] = await Promise.all([
       this.prisma.employee.findMany({ where: { employmentStatus: "ACTIVE" } }),
       this.prisma.holiday.findMany({ select: { date: true } }),
@@ -342,8 +406,10 @@ export class AttendanceService {
       const empAtt = attendance.filter((a) => a.employeeId === emp.id);
       const empPunches = punches.filter((p) => p.employeeId === emp.id);
       const empLeaves = leaves.filter((l) => l.employeeId === emp.id);
+      const expected = this.expectedMinutes(emp, policy);
       let workingDays = 0, weekOffDays = 0, holidayDays = 0, leaveDays = 0;
       let present = 0, late = 0, halfDay = 0, absent = 0, lateMinutes = 0;
+      let workedMinutes = 0, expectedMinutes = 0, overtimeMinutes = 0, undertimeMinutes = 0, daysCounted = 0;
       for (const dstr of days) {
         if (dstr > todayStr) break;
         if (off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)))) { weekOffDays++; continue; }
@@ -357,6 +423,17 @@ export class AttendanceService {
         else if (st === "HALF_DAY") halfDay++;
         else if (st === "ABSENT") absent++;
         else present++;
+        // hours: stored times win, otherwise first→last punch of the day
+        const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
+        const co = att?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
+        if (ci) {
+          const h = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold);
+          workedMinutes += h.worked;
+          expectedMinutes += expected;
+          overtimeMinutes += h.overtime;
+          undertimeMinutes += h.undertime;
+          daysCounted++;
+        }
       }
       const basic = Number(emp.salary ?? 0);
       const divisor = policy.dailyRateDivisor === 0 ? Math.max(workingDays, 1) : policy.dailyRateDivisor;
@@ -368,6 +445,10 @@ export class AttendanceService {
         employeeId: emp.id, name: emp.name, roleTitle: emp.roleTitle, department: emp.department ?? null,
         workingDays, weekOffDays, holidayDays, leaveDays,
         present, late, halfDay, absent, lateMinutes,
+        // hours (new): totals across counted days + per-day average
+        workedMinutes, expectedMinutes, overtimeMinutes, undertimeMinutes,
+        daysCounted,
+        avgWorkedMinutes: daysCounted ? Math.round(workedMinutes / daysCounted) : 0,
         divisor, dailyRate: Math.round(daily * 100) / 100,
         lateDeductionDays: lateDays,
         lateDeduction: Math.round(lateDays * daily * 100) / 100,
@@ -378,10 +459,10 @@ export class AttendanceService {
     return rows.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async lateList(month: string) {
-    const days = dhakaDaysInMonth(month);
-    const start = dhakaDayRange(days[0]).start;
-    const end = dhakaDayRange(days[days.length - 1]).end;
+  async lateList(query: { month?: string; days?: string; from?: string; to?: string }) {
+    const days = this.resolveDays(query);
+    if (!days.length) return [];
+    const { start, end } = this.rangeBounds(days);
     const [records, punches, employees, policy] = await Promise.all([
       this.prisma.attendance.findMany({
         where: { status: "LATE", date: { gte: start, lt: end } },
@@ -437,10 +518,10 @@ export class AttendanceService {
     return result;
   }
 
-  async attendanceMonth(month: string) {
-    const days = dhakaDaysInMonth(month);
-    const start = dhakaDayRange(days[0]).start;
-    const end = dhakaDayRange(days[days.length - 1]).end;
+  async attendanceMonth(query: { month?: string; days?: string; from?: string; to?: string }) {
+    const days = this.resolveDays(query);
+    if (!days.length) return [];
+    const { start, end } = this.rangeBounds(days);
     const records = await this.prisma.attendance.findMany({
       where: { date: { gte: start, lt: end } },
       include: { employee: { select: { id: true, name: true, roleTitle: true, department: true } } },
@@ -490,7 +571,7 @@ export class AttendanceService {
   }
 
   // ── Employee attendance profile (month view + history) ───────────────
-  async employeeAttendance(employeeId: string, month: string) {
+  async employeeAttendance(employeeId: string, query: { month?: string; days?: string; from?: string; to?: string }) {
     const emp = await this.prisma.employee.findUnique({
       where: { id: employeeId },
       select: {
@@ -499,10 +580,14 @@ export class AttendanceService {
       },
     });
     if (!emp) throw new NotFoundException("Employee not found");
-    const days = dhakaDaysInMonth(month);
-    const start = dhakaDayRange(days[0]).start;
-    const end = dhakaDayRange(days[days.length - 1]).end;
+    const days = this.resolveDays(query);
+    if (!days.length) {
+      return { employee: emp, range: query, summary: {}, days: [], leaves: [] };
+    }
+    const { start, end } = this.rangeBounds(days);
     const policy = await this.attendancePolicy();
+    const threshold = policy.overtimeThresholdMinutes ?? 30;
+    const expected = this.expectedMinutes(emp, policy);
     const [holidays, leaves, attendance, punches] = await Promise.all([
       this.prisma.holiday.findMany({ select: { date: true, name: true } }),
       this.prisma.leaveRequest.findMany({ where: { employeeId, status: "APPROVED", startDate: { lt: new Date(end.getTime() + 86400000) }, endDate: { gte: start } } }),
@@ -516,7 +601,7 @@ export class AttendanceService {
     const shiftStart = emp.shiftStart ?? policy.shiftStart;
     const grace = emp.graceMinutes ?? policy.graceMinutes;
     const dayList: any[] = [];
-    const summary = { working: 0, present: 0, late: 0, halfDay: 0, absent: 0, leave: 0, off: 0, holiday: 0, lateMinutes: 0 };
+    const summary = { working: 0, present: 0, late: 0, halfDay: 0, absent: 0, leave: 0, off: 0, holiday: 0, lateMinutes: 0, workedMinutes: 0, expectedMinutes: 0, overtimeMinutes: 0, undertimeMinutes: 0 };
     for (const dstr of days) {
       const isFuture = dstr > todayStr;
       const isOff = off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)));
@@ -525,6 +610,7 @@ export class AttendanceService {
       const att = attendance.find((a) => dateStrDhaka(a.date) === dstr);
       const dayPunches = punches.filter((p) => dateStrDhaka(p.punchTime) === dstr);
       let kind: string;
+      let hours: { worked: number; overtime: number; undertime: number; open: boolean } | null = null;
       if (isFuture) kind = "future";
       else if (isOff) { kind = "off"; summary.off++; }
       else if (isHoliday) { kind = "holiday"; summary.holiday++; }
@@ -540,6 +626,15 @@ export class AttendanceService {
         } else if (st === "HALF_DAY") { kind = "half"; summary.halfDay++; }
         else if (st === "ABSENT") { kind = "absent"; summary.absent++; }
         else { kind = "present"; summary.present++; }
+        const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
+        const co = att?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
+        if (ci) {
+          hours = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold);
+          summary.workedMinutes += hours.worked;
+          summary.expectedMinutes += expected;
+          summary.overtimeMinutes += hours.overtime;
+          summary.undertimeMinutes += hours.undertime;
+        }
       }
       dayList.push({
         date: dstr,
@@ -547,14 +642,19 @@ export class AttendanceService {
         status: att?.status ?? null,
         checkIn: att?.checkInTime ? new Date(att.checkInTime).toISOString() : (dayPunches[0] ? new Date(dayPunches[0].punchTime).toISOString() : null),
         checkOut: att?.checkOutTime ? new Date(att.checkOutTime).toISOString() : (dayPunches.length > 1 ? new Date(dayPunches[dayPunches.length - 1].punchTime).toISOString() : null),
+        workedMinutes: hours?.worked ?? null,
+        overtimeMinutes: hours?.overtime ?? null,
+        undertimeMinutes: hours?.undertime ?? null,
+        stillInside: hours?.open ?? false,
         punches: dayPunches.length,
         leave: onLeave,
         holiday: isHoliday ? holidayName.get(dstr) ?? true : false,
       });
     }
     return {
-      employee: { ...emp, shiftStart, graceMinutes: grace },
-      month,
+      employee: { ...emp, shiftStart, graceMinutes: grace, expectedMinutes: expected },
+      range: { from: days[0], to: days[days.length - 1], count: days.length },
+      month: query.month ?? null,
       summary,
       days: dayList,
       leaves: leaves.map((l) => ({ id: l.id, leaveType: l.leaveType, startDate: l.startDate, endDate: l.endDate })),
@@ -629,6 +729,144 @@ export class AttendanceService {
       else if (a.status === "ABSENT") counts.absent++;
     }
     return { date: dstr, total: employees.length, mine, counts };
+  }
+
+  // ── Live board: who is in right now ─────────────────────────────────
+  // todayStatus() only returns counts + the caller's own row. This returns one
+  // row per active employee so the attendance page can show a live floor view.
+  async liveBoard() {
+    const now = new Date();
+    const dstr = dateStrDhaka(now);
+    const { start, end } = dhakaDayRange(dstr);
+    const policy = await this.attendancePolicy();
+    const threshold = policy.overtimeThresholdMinutes ?? 30;
+    const [employees, todayAttendance, todaysPunches] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: { employmentStatus: "ACTIVE" },
+        select: { id: true, name: true, roleTitle: true, department: true, shiftStart: true, shiftEnd: true, graceMinutes: true },
+      }),
+      this.prisma.attendance.findMany({
+        where: { date: new Date(`${dstr}T00:00:00.000Z`) },
+      }),
+      this.prisma.punchLog.findMany({
+        where: { employeeId: { not: null }, punchTime: { gte: start, lt: end } },
+        orderBy: { punchTime: "asc" },
+      }),
+    ]);
+    const attByEmp = new Map(todayAttendance.map((a) => [a.employeeId, a]));
+    const rows = employees.map((emp) => {
+      const a = attByEmp.get(emp.id);
+      const dayPunches = todaysPunches.filter((p) => p.employeeId === emp.id);
+      const ci = a?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
+      const co = a?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
+      const expected = this.expectedMinutes(emp, policy);
+      const h = ci ? this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, now) : null;
+      const shiftStart = emp.shiftStart ?? policy.shiftStart;
+      const grace = emp.graceMinutes ?? policy.graceMinutes;
+      const minutesLate = ci ? Math.max(0, minutesOf(toHHmmDhaka(new Date(ci))) - (minutesOf(shiftStart) + grace)) : null;
+      const state = !ci ? "not_in" : !co ? "inside" : "left";
+      return {
+        employeeId: emp.id,
+        name: emp.name,
+        roleTitle: emp.roleTitle,
+        department: emp.department,
+        status: a?.status ?? (ci ? "PRESENT" : null),
+        state,
+        checkIn: ci ? new Date(ci).toISOString() : null,
+        checkOut: co ? new Date(co).toISOString() : null,
+        hoursSoFarMinutes: h?.worked ?? null,
+        overtimeMinutes: h?.overtime ?? 0,
+        minutesLate,
+        punches: dayPunches.length,
+      };
+    });
+    const inside = rows.filter((r) => r.state === "inside").length;
+    const left = rows.filter((r) => r.state === "left").length;
+    return {
+      date: dstr,
+      total: rows.length,
+      inside,
+      left,
+      notIn: rows.length - inside - left,
+      rows: rows.sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  }
+
+  // ── Trends & anomalies over a trailing window ──────────────────────────
+  // Habitual latecomers and absence streaks, so HR sees patterns instead of
+  // scrolling daily rows. Thresholds are deliberately simple and documented.
+  async attendanceTrends(query: { month?: string; days?: string; from?: string; to?: string }) {
+    // default window is trailing 30 days; explicit month / days= / from→to wins
+    const days = this.resolveDays(
+      query.month || query.days || (query.from && query.to) ? query : { days: "30" }
+    );
+    if (!days.length) return { range: null, rows: [] };
+    const { start, end } = this.rangeBounds(days);
+    const policy = await this.attendancePolicy();
+    const threshold = policy.overtimeThresholdMinutes ?? 30;
+    const [employees, holidays, leaves, attendance, punches] = await Promise.all([
+      this.prisma.employee.findMany({ where: { employmentStatus: "ACTIVE" } }),
+      this.prisma.holiday.findMany({ select: { date: true } }),
+      this.prisma.leaveRequest.findMany({ where: { status: "APPROVED", startDate: { lt: new Date(end.getTime() + 86400000) }, endDate: { gte: start } } }),
+      this.prisma.attendance.findMany({ where: { date: { gte: start, lt: end } } }),
+      this.prisma.punchLog.findMany({ where: { employeeId: { not: null }, punchTime: { gte: start, lt: end } } }),
+    ]);
+    const holidaySet = new Set(holidays.map((h) => h.date));
+    const rows = employees.map((emp) => {
+      const off = this.offDaysFor(emp, policy);
+      const empAtt = attendance.filter((a) => a.employeeId === emp.id);
+      const empPunches = punches.filter((p) => p.employeeId === emp.id);
+      const empLeaves = leaves.filter((l) => l.employeeId === emp.id);
+      const expected = this.expectedMinutes(emp, policy);
+      let late = 0, absent = 0, worked = 0, overtime = 0, counted = 0;
+      let streak = 0; // current run of consecutive missed working days (absent or late), most recent first
+      let streakOpen = true;
+      for (let i = days.length - 1; i >= 0; i--) {
+        const dstr = days[i];
+        if (off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)))) continue;
+        if (holidaySet.has(dstr)) continue;
+        if (empLeaves.some((l) => dstr >= dateStrDhaka(l.startDate) && dstr <= dateStrDhaka(l.endDate))) continue;
+        const att = empAtt.find((a) => dateStrDhaka(a.date) === dstr);
+        const dayPunches = empPunches.filter((p) => dateStrDhaka(p.punchTime) === dstr).sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
+        const st = att?.status ?? this.computeDayStatus(emp, dayPunches, policy).status;
+        const missed = st === "ABSENT" || st === "LATE";
+        if (streakOpen) {
+          if (missed) streak++;
+          else streakOpen = false;
+        }
+        if (st === "LATE") late++;
+        else if (st === "ABSENT") absent++;
+        const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
+        const co = att?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
+        if (ci) {
+          const h = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold);
+          worked += h.worked;
+          overtime += h.overtime;
+          counted++;
+        }
+      }
+      const flags: string[] = [];
+      if (late >= 3) flags.push(`habitual late (${late})`);
+      if (streak >= 2) flags.push(`miss streak ×${streak}`);
+      if (absent >= 3) flags.push(`frequent absent (${absent})`);
+      return {
+        employeeId: emp.id,
+        name: emp.name,
+        roleTitle: emp.roleTitle,
+        department: emp.department ?? null,
+        late,
+        absent,
+        workedMinutes: worked,
+        overtimeMinutes: overtime,
+        avgWorkedMinutes: counted ? Math.round(worked / counted) : 0,
+        currentMissStreak: streak,
+        flags,
+      };
+    });
+    return {
+      range: { from: days[0], to: days[days.length - 1], count: days.length },
+      rows: rows.sort((a, b) => b.flags.length - a.flags.length || b.late - a.late || b.absent - a.absent),
+    };
   }
 
   // ── Fingerprint devices ────────────────────────────────────────────

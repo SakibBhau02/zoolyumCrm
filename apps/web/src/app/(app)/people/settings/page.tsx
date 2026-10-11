@@ -62,6 +62,7 @@ export default function SettingsPage() {
               <Field label="Shift end (HH:MM)"><Input value={f.shiftEnd} onChange={(e) => setF({ ...f, shiftEnd: e.target.value })} placeholder="18:00" /></Field>
               <Field label="Late grace (minutes)"><Input type="number" min={0} value={f.graceMinutes} onChange={(e) => setF({ ...f, graceMinutes: e.target.value })} placeholder="15" /></Field>
               <Field label="Half-day cutoff (HH:MM)"><Input value={f.halfDayCutoff} onChange={(e) => setF({ ...f, halfDayCutoff: e.target.value })} placeholder="12:00" /></Field>
+              <Field label="Overtime threshold (minutes)" hint="Extra time below this is ignored"><Input type="number" min={0} value={f.overtimeThresholdMinutes ?? 30} onChange={(e) => setF({ ...f, overtimeThresholdMinutes: Number(e.target.value) })} placeholder="30" /></Field>
             </div>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
               <Field label="Daily rate divisor">

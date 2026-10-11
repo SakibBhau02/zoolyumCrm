@@ -59,8 +59,13 @@ export class PeopleController {
   }
 
   @Get("attendance")
-  attendanceMonth(@Query("month") month: string) {
-    return this.attendance.attendanceMonth(month);
+  attendanceMonth(
+    @Query("month") month?: string,
+    @Query("days") days?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string
+  ) {
+    return this.attendance.attendanceMonth({ month, days, from, to });
   }
 
   @Get("attendance/summary")
@@ -74,9 +79,15 @@ export class PeopleController {
   }
 
   @Get("attendance/employee/:id")
-  employeeAttendance(@Param("id") id: string, @Query("month") month?: string) {
-    const m = month && /^\d{4}-\d{2}$/.test(month) ? month : new Date().toISOString().slice(0, 7);
-    return this.attendance.employeeAttendance(id, m);
+  employeeAttendance(
+    @Param("id") id: string,
+    @Query("month") month?: string,
+    @Query("days") days?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string
+  ) {
+    const m = month && /^\d{4}-\d{2}$/.test(month) ? month : undefined;
+    return this.attendance.employeeAttendance(id, { month: m, days, from, to });
   }
 
   @Post("attendance")
@@ -100,13 +111,38 @@ export class PeopleController {
   }
 
   @Get("attendance/report")
-  attendanceReport(@Query("month") month: string) {
-    return this.attendance.attendanceReport(month);
+  attendanceReport(
+    @Query("month") month?: string,
+    @Query("days") days?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string
+  ) {
+    return this.attendance.attendanceReport({ month, days, from, to });
+  }
+
+  @Get("attendance/live")
+  attendanceLive() {
+    return this.attendance.liveBoard();
+  }
+
+  @Get("attendance/trends")
+  attendanceTrends(
+    @Query("month") month?: string,
+    @Query("days") days?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string
+  ) {
+    return this.attendance.attendanceTrends({ month, days, from, to });
   }
 
   @Get("attendance/late-list")
-  lateList(@Query("month") month: string) {
-    return this.attendance.lateList(month);
+  lateList(
+    @Query("month") month?: string,
+    @Query("days") days?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string
+  ) {
+    return this.attendance.lateList({ month, days, from, to });
   }
 
   @Get("attendance/devices")

@@ -68,7 +68,7 @@ export class PayrollService {
     const employees = await this.prisma.employee.findMany({ where: { employmentStatus: "ACTIVE" } });
     const existing = await this.prisma.payrollRecord.findMany({ where: { period }, select: { employeeId: true } });
     const existingIds = new Set(existing.map((e) => e.employeeId));
-    const report = await this.attendance.attendanceReport(period);
+    const report = await this.attendance.attendanceReport({ month: period });
     const reportMap = new Map(report.map((r) => [r.employeeId, r]));
     const days = dhakaDaysInMonth(period);
     const mStart = dhakaDayRange(days[0]).start;
@@ -173,7 +173,7 @@ export class PayrollService {
     });
     if (!rec) throw new NotFoundException("Payroll record not found");
     if (rec.status === "PAID") throw new BadRequestException("Already paid out — edit manually instead of recomputing");
-    const report = await this.attendance.attendanceReport(rec.period);
+    const report = await this.attendance.attendanceReport({ month: rec.period });
     const rep = report.find((r) => r.employeeId === rec.employeeId);
     if (!rep) throw new BadRequestException("No attendance data for this employee and period");
     const daily = rep.dailyRate ?? 0;

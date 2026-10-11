@@ -1358,16 +1358,19 @@ model Holiday {
 }
 
 model AttendancePolicy {
-  id               String   @id @default("default")
-  weeklyOffDays    String[] @default(["FRIDAY", "SATURDAY"])
-  graceMinutes     Int      @default(15)
-  shiftStart       String   @default("10:00")
-  shiftEnd         String   @default("18:00")
-  halfDayCutoff    String   @default("12:00")
-  lateLadder       Json     @default("[{\"lates\":3,\"days\":1},{\"lates\":6,\"days\":2},{\"lates\":9,\"days\":3}]")
-  dailyRateDivisor Int      @default(26) // 0 = auto (actual working days in month)
-  proRataEnabled   Boolean  @default(false)
-  updatedAt        DateTime @default(now()) @updatedAt
+  id                       String   @id @default("default")
+  weeklyOffDays            String[] @default(["FRIDAY", "SATURDAY"])
+  graceMinutes             Int      @default(15)
+  shiftStart               String   @default("10:00")
+  shiftEnd                 String   @default("18:00")
+  halfDayCutoff            String   @default("12:00")
+  lateLadder               Json     @default("[{\"lates\":3,\"days\":1},{\"lates\":6,\"days\":2},{\"lates\":9,\"days\":3}]")
+  // Extra minutes beyond shift end below this are ignored (early/late noise),
+  // at or above it they count as overtime. User asked for threshold-based OT.
+  overtimeThresholdMinutes Int      @default(30)
+  dailyRateDivisor         Int      @default(26) // 0 = auto (actual working days in month)
+  proRataEnabled           Boolean  @default(false)
+  updatedAt                DateTime @default(now()) @updatedAt
 }
 
 model PunchLog {
