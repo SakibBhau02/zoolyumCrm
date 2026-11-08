@@ -3,8 +3,8 @@
 **Date:** 2026-11-08
 **Commit audited:** `d1ec533` (master)
 **Scope:** `apps/api/src/flow/*`, `apps/web/src/components/flow/*`, `apps/web/src/app/(app)/flow/*`, Prisma `Project` domain, and integrations with Scoring / Capital / Portal / Tasks / Notifications.
-**Method:** static code review + data-flow tracing + contract matching (UI ↔ API ↔ schema).
-**Not done:** no runtime mutation, no DB writes, no app boot. Findings are code-evidence based.
+**Method:** static code review + data-flow tracing + contract matching (UI ↔ API ↔ schema), followed by a read-mostly runtime probe against the live API (section 6). The probe created one throwaway project and removed every record it made.
+**Not done:** no source changes, no destructive action on existing data, no browser/Lighthouse pass.
 
 ---
 
@@ -17,6 +17,8 @@ The risk is **not** in the aesthetics. It is in three places:
 1. **Silent contract failures** between the UI and the API (file approval is a no-op; file name/size never persist; two features are unreachable dead code).
 2. **Derived-state ambiguity** — "progress" has four different definitions depending on which screen you look at, and the client-facing report bills a lifetime total while claiming a period.
 3. **Destructive operations without governance** — a hard project delete detaches invoices and expenses from project reporting, with no audit trail, no role gate, and an error handler that reports every failure as 404.
+
+All three were reproduced against the running API on 2026-11-08 (section 6): the file-add route returns 404, approval returns 200 without changing anything, a 7-day report bills a 60-day-old invoice, and deleting a project leaves its invoice alive with `projectId = null`.
 
 ### Scorecard
 
@@ -80,19 +82,22 @@ project-wizard ─┘   (2855 LOC)     │                       ├→ CacheSer
 - Controller reads `body.status` — `apps/api/src/flow/flow.controller.ts:248-250`
 - With `status === undefined`, Prisma's `update` ignores the field and returns 200.
 
-**Impact:** approval workflow is non-functional while the UI reports success. Client-delivery gating is broken silently.
+**Impact:** approval workflow is non-functional while the UI reports success. Client-delivery gating is broken silently. **Runtime-confirmed:** the UI payload returned `200` and left `approvalStatus = PENDING`; the controller payload (`{ status }`) returned `200` and set `APPROVED` — the mismatch is the only defect.
 
 **Fix:** align the payload (pick one name), add a DTO, assert the returned row actually changed.
 
-### FLW-02 · File name and size never persist
+### FLW-02 · File upload metadata is never saved — the endpoint the UI calls does not exist
+
+Runtime-confirmed root cause: the UI posts to `POST /flow/projects/:id/files` (`flow-workspace.tsx:1064-1067`), but the controller only exposes `POST /files` (`flow.controller.ts:242`). The request returns **404**, so no file row is ever created from the upload button.
+
+Even when the correct endpoint is used, the row cannot carry a name or size:
 
 - `ProjectFile` has no `name` / `size` / `mimeType` columns — `apps/api/prisma/schema.prisma:755-769`
-- UI posts `{ name, size }` — `flow-workspace.tsx:1064-1067`
 - UI renders `f.fileName ?? f.name ?? "file"` — `flow-workspace.tsx:2540`
 
-**Impact:** every attachment is displayed as "file" with size "—". `milestoneId` is a bare string with no relation to `Milestone`, so nothing stops dangling references.
+**Impact:** every attachment is displayed as "file" with size "—"; uploaded files never appear at all until someone notices and inserts them by hand. `milestoneId` is a bare string with no relation to `Milestone`, so nothing stops dangling references.
 
-**Fix:** migration adding `fileName`, `size`, `mimeType`; optional `Milestone` relation; backfill from the upload response.
+**Fix:** add the missing route (or point the UI at `POST /files`); migration adding `fileName`, `size`, `mimeType`; optional `Milestone` relation; backfill from the upload response.
 
 ### FLW-03 · Hard delete detaches financial records
 
@@ -245,7 +250,30 @@ Additionally, the wizard lets a user type a manual `progress` (`project-wizard.t
 
 ---
 
-## 6. UI / UX assessment
+## 6. Runtime verification — 2026-11-08
+
+The API was already running on `:4000` (web on `:3000`), with `zoolyum-postgres` and `zoolyum-redis` healthy. The probe logged in as the Owner, created one throwaway project (`QA-…`), exercised the endpoints the UI actually calls, then removed every record it created. Post-run check: **0 leftover QA projects, 0 leftover QA invoices.**
+
+| ID | Probe | Expected | Observed | Verdict |
+|---|---|---|---|---|
+| FLW-24 | `GET /flow/overview` | `onTimeRate` present | keys: `totalProjects, active, byStatus, byHealth, avgRisk, completion` | **Bug confirmed** |
+| FLW-09a | `PATCH` project `{reportMode:"AUTOMATIC", reportFrequency:"15-days"}` | value persisted | `200`, but `reportMode` stayed `MANUAL`, `reportFrequency = null` | **Bug confirmed** — whitelist strips the fields |
+| FLW-09b | `GET /flow/templates` | `projectType` / `defaultStatus` | keys: `id, name, description, benchmarkDurationDays, benchmarkHours, defaultTaskList` | **Bug confirmed** — wizard reads fields that do not exist |
+| FLW-02a | `POST /flow/projects/:id/files` (the UI call) | 2xx | `404 Cannot POST …/files` | **Bug confirmed** — metadata never saved |
+| FLW-02b | `POST /flow/files` (the real route) | name/size stored | `201`; row keys have no `name`/`size`/`mimeType` | **Bug confirmed** — columns absent |
+| FLW-01 | `PATCH /flow/files/:id/approval {approvalStatus}` | `APPROVED` | `200`, `approvalStatus = PENDING` | **Bug confirmed** — silent no-op |
+| FLW-01b | same route with `{status:"APPROVED"}` | `APPROVED` | `200`, `approvalStatus = APPROVED` | Pass — mismatch is the only defect |
+| FLW-06 | `GET /api/flow/uploads/<uuid>--qa-proof.png` with no token | 401/403 | `200` | **Bug confirmed** — public download |
+| FLW-05 | Create a `DRAFT` invoice dated 60 days ago, generate a report for the last 7 days | `invoiced = 0` | `invoiced = 1000`, `outstanding = 1000` | **Bug confirmed** — lifetime totals in a period report |
+| FLW-04 | Create a task, archive it, compare detail vs list | same count | detail `tasksTotal = 1`, list `tasksTotal = 0` | **Bug confirmed** — detail counts archived |
+| FLW-03 | Delete the QA project that holds a linked invoice | blocked or soft-deleted | `DELETE 200`; project read `404`; invoice still exists with `projectId = null` | **Confirmed** — financial row detached |
+| FLW-07 | `GET /flow/capacity` | bounded window parameter | no parameters accepted; 54h total across 10 employees, largest row 16h | **Inconclusive at runtime** (dataset too small); the defect is structural (all-time hours ÷ weekly target) |
+
+Consequence for the roadmap: FLW-02 is worse than a display issue and should be merged with FLW-01 as one file-lifecycle blocker; FLW-09a/09b are confirmed dead features, not theoretical ones.
+
+---
+
+## 7. UI / UX assessment
 
 ### Strengths
 
@@ -266,11 +294,11 @@ None of these are aesthetic defects — they are **contract drift** (dead fields
 
 ---
 
-## 7. Remediation roadmap
+## 8. Remediation roadmap
 
 ### Sprint 1 — Trust (3–4 days)
 
-1. FLW-01/02 — align the approval payload; add `fileName`/`size`/`mimeType`; link milestones.
+1. FLW-01/02 — add the missing `POST /flow/projects/:id/files` route (or repoint the UI), align the approval payload, add `fileName`/`size`/`mimeType`, link milestones.
 2. FLW-03 — soft delete + Owner/CONTROL gate + audit + correct error mapping.
 3. FLW-05 — period-filtered billing; remove fabricated completion dates.
 4. FLW-06 — signed/expiring download URLs or authenticated route.
@@ -295,7 +323,7 @@ None of these are aesthetic defects — they are **contract drift** (dead fields
 
 ---
 
-## 8. What is genuinely good
+## 9. What is genuinely good
 
 - Health override stored separately from the computed value, with a reason and the engine's reading kept visible — rare maturity.
 - `ProjectRiskLog` time series with per-factor snapshots makes backtesting and forecasting possible; the scoring service actually uses them.
@@ -305,7 +333,7 @@ None of these are aesthetic defects — they are **contract drift** (dead fields
 
 ---
 
-## 9. Limitations of this audit
+## 10. Limitations of this audit
 
 - No runtime verification: the app was not booted, no API calls were made, no Lighthouse or keyboard walkthrough was performed. Every finding cites code, but browser-observed behaviour may add or soften items.
 - The dual `ProjectTemplate` / `TaskTemplate` system and portal-side authorization depth deserve their own review.
@@ -313,13 +341,17 @@ None of these are aesthetic defects — they are **contract drift** (dead fields
 
 ---
 
-## 10. Verification checklist for the next pass
+## 11. Verification checklist
 
-- [ ] Create a project, add a file, approve it — confirm DB `approvalStatus` changes.
-- [ ] Upload a file, reload — confirm the name and size render.
-- [ ] Create a report spanning a partial month — confirm billing matches the period only.
-- [ ] Delete a project with invoices — confirm the intended financial behaviour.
-- [ ] Open a project on a 390px viewport — confirm the rail does not consume the pane.
-- [ ] Tab through the wizard — confirm focus stays inside the dialog and Escape does not lose data.
-- [ ] Change a project status in Kanban — confirm the header and the row agree on progress.
-- [ ] Enable automatic reports via API — confirm it is currently impossible (FLW-09).
+Run 2026-11-08 against the live API (results in section 6):
+
+- [x] Create a project, add a file, approve it — **fails**: the add-file route 404s and the approval payload is ignored.
+- [x] Upload a file, reload — **fails**: name/size columns do not exist.
+- [x] Create a report spanning a partial month — **fails**: a 60-day-old invoice appears in a 7-day report.
+- [x] Delete a project with invoices — **confirmed**: project hard-deleted, invoice detached (`projectId = null`).
+- [x] Enable automatic reports via API — **confirmed impossible**: the DTO strips the fields.
+- [ ] Open a project on a 390px viewport — not yet run (needs a browser pass).
+- [ ] Tab through the wizard — not yet run (needs a keyboard pass).
+- [ ] Change a project status in Kanban — not yet run (needs a browser pass).
+
+Remaining work for a full runtime pass: browser/viewport checks, keyboard walkthrough, and a Lighthouse/contrast audit. Everything reachable over HTTP has now been exercised.
