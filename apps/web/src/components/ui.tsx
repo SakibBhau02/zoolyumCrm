@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertCircle, ArrowLeft, Check, ChevronDown, X } from "lucide-react";
 import { cn } from "./shared";
@@ -352,6 +352,7 @@ export function Modal({
   size = "md",
   bodyClassName,
   bare = false,
+  closeOnBackdrop = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -373,25 +374,81 @@ export function Modal({
    * same record view is reachable at its own URL: same chrome, no backdrop.
    */
   bare?: boolean;
+  /**
+   * Forms with unsaved input pass `false` so a stray backdrop click cannot
+   * wipe the work in progress.
+   */
+  closeOnBackdrop?: boolean;
 }) {
+  const titleId = useId();
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const restoreFocus = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
-    if (!open || bare) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    if (!open) return;
+    restoreFocus.current = (document.activeElement as HTMLElement) ?? null;
+    const previousOverflow = document.body.style.overflow;
+    // A modal owns the viewport: background scroll and tab order both stop here.
+    document.body.style.overflow = "hidden";
+    const timer = window.setTimeout(() => {
+      const root = sheetRef.current;
+      if (!root) return;
+      const first = root.querySelector<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      (first ?? root).focus({ preventScroll: true });
+    }, 0);
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !bare) {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const root = sheetRef.current;
+      if (!root) return;
+      const items = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => el.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (active === first || !root.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !root.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+      restoreFocus.current?.focus?.({ preventScroll: true });
+    };
   }, [open, onClose, bare]);
 
   const isFull = size === "full";
 
   const sheet = (
     <motion.div
+      ref={sheetRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      tabIndex={-1}
       initial={bare ? false : { opacity: 0, scale: 0.96, y: 14 }}
       animate={bare ? undefined : { opacity: 1, scale: 1, y: 0 }}
       exit={bare ? undefined : { opacity: 0, scale: 0.96, y: 14 }}
       transition={{ duration: 0.22, ease: EASE }}
       onClick={(e) => e.stopPropagation()}
       className={cn(
-        "flex w-full flex-col overflow-hidden border border-border/60 bg-card",
+        "flex w-full flex-col overflow-hidden border border-border/60 bg-card outline-none",
         bare
           ? "h-[calc(100dvh-9.5rem)] min-h-[520px] rounded-2xl shadow-sm"
           : "shadow-2xl shadow-primary/10",
@@ -424,7 +481,7 @@ export function Modal({
                 {eyebrow}
               </p>
             )}
-            <h3 className="font-heading text-[17px] font-semibold leading-tight">{title}</h3>
+            <h3 id={titleId} className="font-heading text-[17px] font-semibold leading-tight">{title}</h3>
             {subtitle && (
               <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">{subtitle}</p>
             )}
@@ -470,7 +527,7 @@ export function Modal({
             "fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm",
             isFull ? "items-stretch p-0 sm:p-4 lg:p-6" : "items-center p-4"
           )}
-          onClick={onClose}
+          onClick={() => closeOnBackdrop && onClose()}
         >
           {sheet}
         </motion.div>

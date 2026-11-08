@@ -182,7 +182,7 @@ export class ReportingService {
     const [project, invoices, expenses] = await Promise.all([
       this.prisma.project.findUnique({
         where: { id: projectId },
-        select: { id: true, name: true, billingType: true, recurringInterval: true, nextBillingDate: true, monthlyRate: true, totalBilled: true, paymentStatus: true, budgetAmount: true },
+        select: { id: true, name: true, billingType: true, recurringInterval: true, nextBillingDate: true, monthlyRate: true, totalBilled: true, paymentStatus: true, budgetAmount: true, currency: true },
       }),
       this.prisma.invoice.findMany({
         where: { projectId },
@@ -207,7 +207,7 @@ export class ReportingService {
     const byCategory = new Map<string, number>();
     for (const e of approvedExpenses) byCategory.set(e.category, (byCategory.get(e.category) ?? 0) + Number(e.amount));
     return {
-      project: { id: project.id, name: project.name, billingType: project.billingType, recurringInterval: project.recurringInterval, nextBillingDate: project.nextBillingDate, monthlyRate: project.monthlyRate, totalBilled: project.totalBilled, paymentStatus: project.paymentStatus, budgetAmount: project.budgetAmount },
+      project: { id: project.id, name: project.name, billingType: project.billingType, recurringInterval: project.recurringInterval, nextBillingDate: project.nextBillingDate, monthlyRate: project.monthlyRate, totalBilled: project.totalBilled, paymentStatus: project.paymentStatus, budgetAmount: project.budgetAmount, currency: (project as any).currency ?? "BDT" },
       totalInvoiced,
       collected,
       outstanding,

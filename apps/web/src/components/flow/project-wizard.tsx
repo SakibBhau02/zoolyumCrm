@@ -134,6 +134,8 @@ export interface WizardProjectRow {
   priority?: string | null;
   category?: string | null;
   type?: string | null;
+  templateId?: string | null;
+  tasksTotal?: number;
   amount?: number | null;
   budgetAmount?: number | null;
   spentAmount?: number | null;
@@ -173,13 +175,16 @@ interface PersonLite {
 interface TemplateLite {
   id: string;
   name: string;
-  projectType?: string | null;
-  defaultStatus?: string | null;
+  description?: string | null;
+  benchmarkDurationDays?: number | null;
+  benchmarkHours?: number | null;
+  defaultTaskList?: string[] | null;
 }
 
 interface FormState {
   name: string;
   clientId: string;
+  templateId: string;
   status: string;
   priority: string;
   category: string;
@@ -216,6 +221,7 @@ interface MilestoneDraft {
 const blankForm = (): FormState => ({
   name: "",
   clientId: "",
+  templateId: "",
   status: "PLANNING",
   priority: "MEDIUM",
   category: "",
@@ -250,6 +256,7 @@ function formFromProject(p: WizardProjectRow): FormState {
   return {
     name: p.name ?? "",
     clientId: p.client?.id ?? "",
+    templateId: p.templateId ?? "",
     status: p.status ?? "PLANNING",
     priority: p.priority ?? "MEDIUM",
     category: p.category ?? "",
@@ -975,6 +982,7 @@ export function ProjectModal({
     const body: any = {
       name: f.name.trim(),
       clientId: f.clientId,
+      templateId: f.templateId || undefined,
       status: f.status,
       priority: f.priority,
       category: f.category.trim() || "General",
@@ -1078,7 +1086,18 @@ export function ProjectModal({
   const applyTemplate = (templateId: string) => {
     const t = (templates ?? []).find((x) => x.id === templateId);
     if (!t) return;
-    setF((p) => ({ ...p, type: t.projectType ?? p.type, status: t.defaultStatus ?? p.status }));
+    const days = Number(t.benchmarkDurationDays ?? 0);
+    setF((p) => {
+      const start = p.startDate || todayISO();
+      const target =
+        days > 0 ? new Date(new Date(start).getTime() + days * 86400000).toISOString().slice(0, 10) : p.targetEndDate;
+      return { ...p, templateId: t.id, targetEndDate: target };
+    });
+    setMilestoneHint(
+      days > 0
+        ? `${t.name}: ${days}-day benchmark applied · ${(t.defaultTaskList ?? []).length} starter tasks will be created`
+        : `${t.name} selected`
+    );
   };
 
   /* ── derived display ────────────────────────────────────────────────── */
@@ -1099,6 +1118,7 @@ export function ProjectModal({
       open={open}
       onClose={onClose}
       size="3xl"
+      closeOnBackdrop={false}
       bodyClassName="flex min-h-0 flex-col overflow-hidden !p-0"
       title={
         <div className="flex items-center gap-2.5">
@@ -1210,7 +1230,7 @@ export function ProjectModal({
                       action={
                         templates && templates.length > 0 && !isEditing ? (
                           <Select
-                            value=""
+                            value={f.templateId}
                             onChange={(e) => applyTemplate(e.target.value)}
                             className="!w-full !py-1.5 text-[11.5px] sm:!w-44"
                             aria-label="Start from template"
@@ -1540,26 +1560,34 @@ export function ProjectModal({
                             ))}
                           </div>
                         </FieldShell>
-                        <FieldShell label={`Progress — ${f.progress}%`} as="div">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="range"
-                              min={0}
-                              max={100}
-                              value={f.progress}
-                              onChange={(e) => set("progress", e.target.value)}
-                              className="h-2 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
-                            />
-                            <Input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={f.progress}
-                              onChange={(e) => set("progress", e.target.value)}
-                              className="!w-16 text-center tabular-nums"
-                            />
-                          </div>
-                        </FieldShell>
+                        {isEditing && (editing?.tasksTotal ?? 0) > 0 ? (
+                          <FieldShell label="Progress" hint="Derived from tasks — update task status instead." as="div">
+                            <p className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-[12px] font-semibold tabular-nums text-muted-foreground">
+                              {f.progress}% · {editing?.tasksTotal} tasks
+                            </p>
+                          </FieldShell>
+                        ) : (
+                          <FieldShell label={`Progress — ${f.progress}%`} as="div">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                value={f.progress}
+                                onChange={(e) => set("progress", e.target.value)}
+                                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+                              />
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={f.progress}
+                                onChange={(e) => set("progress", e.target.value)}
+                                className="!w-16 text-center tabular-nums"
+                              />
+                            </div>
+                          </FieldShell>
+                        )}
                       </div>
 
                       <p className="mt-3 flex items-start gap-1.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[10.5px] font-medium leading-relaxed text-amber-700 dark:text-amber-300">

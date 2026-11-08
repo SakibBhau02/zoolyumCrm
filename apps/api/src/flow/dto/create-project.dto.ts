@@ -174,13 +174,16 @@ export class CreateProjectDto {
   @Min(0)
   totalBilled?: number;
 
+  /** AUTOMATIC makes the nightly cron generate a report every `reportFrequency`. */
   @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  riskScore?: number;
+  @IsIn(["MANUAL", "AUTOMATIC"])
+  reportMode?: string;
 
   @IsOptional()
-  @IsString()
-  riskDriver?: string;
+  @IsIn(["15-days", "30-days"])
+  reportFrequency?: string;
+
+  @IsOptional()
+  @IsDateString()
+  nextReportDate?: string;
 }

@@ -355,3 +355,66 @@ Run 2026-11-08 against the live API (results in section 6):
 - [ ] Change a project status in Kanban — not yet run (needs a browser pass).
 
 Remaining work for a full runtime pass: browser/viewport checks, keyboard walkthrough, and a Lighthouse/contrast audit. Everything reachable over HTTP has now been exercised.
+
+---
+
+## 12. Remediation applied — `qa/flow-hardening`
+
+Every P0 and P1 item below is fixed and covered by the repeatable probe `npm run test:flow` (11/11 checks passing against the live API on 2026-11-08).
+
+### Critical
+
+| ID | Fix |
+|---|---|
+| FLW-01 | Controller accepts `status` **and** `approvalStatus`; the UI now sends the canonical field. Approval also records `approvedAt`. |
+| FLW-02 | Added `POST /flow/projects/:id/files` (the route the UI always called) plus `fileName`, `size`, `mimeType` columns and a real `Milestone` relation (migration `20261108141906_flow_file_metadata`). |
+| FLW-03 | Delete now requires Owner/CONTROL, refuses to run while live tasks, invoices, expenses, income, or vendor engagements exist (409 naming the blockers), deletes archived tasks with the project, removes blobs, writes an audit entry, and maps Prisma errors honestly (404 vs 409). |
+| FLW-04 | One progress authority: list, detail, portal cards and reports all derive from non-archived tasks; detail/list now agree. The wizard hides the manual slider when tasks exist. |
+| FLW-05 | Reports filter invoices by `issueDate` and payments by `paymentDate` inside the period; completion dates are no longer fabricated. |
+| FLW-06 | Uploads require a signed, expiring link (`FILE_URL_SECRET`, `FILE_URL_TTL_SEC`, default 15 min). Unsigned requests get 403. SVG uploads are no longer accepted. |
+
+### High
+
+| ID | Fix |
+|---|---|
+| FLW-07 | Capacity takes `from`/`to` (default rolling 4 weeks) and returns `capacityHours`, `totalHours`, `utilizationPct` and per-project share; the UI renders employee-level utilisation instead of all-time hours ÷ 40. |
+| FLW-08 | Bulk assign rejects tasks from another client (returned as `rejected`), recomputes stats for every affected project, and audits the move. |
+| FLW-09 | `reportMode`, `reportFrequency`, `nextReportDate` added to the DTO and surfaced in the Reports tab; templates now apply their benchmark duration and create their `defaultTaskList` tasks. |
+| FLW-10 | DTOs for files, approval, milestones, discussions, bulk assign, deliverables and reports; `fileUrl` restricted to uploads or http(s); milestone ownership validated. |
+| FLW-11 | Hardcoded role gates removed from granular endpoints (permission matrix governs); destructive delete kept behind Owner/CONTROL. |
+| FLW-12 | Scoring invalidates `flow:list:*` + `flow:overview` (the keys actually used). |
+| FLW-13 | `formatMoney(value, currency)` added; every project surface renders its own currency and the portfolio shows per-currency totals. |
+| FLW-14 | Modal now has `role="dialog"`, `aria-modal`, focus trap, initial focus, scroll lock, focus restore and an opt-out for backdrop clicks (the wizard uses it). Project cards and table rows are keyboard operable; the toast is a live region. |
+| FLW-15 | `writeSystemAudit` on project create/update/delete, file create/approval/delete, milestone/deliverable/report changes, bulk assign and CSV import. |
+| FLW-16 | `scripts/flow-verify.mjs` + `npm run test:flow`: 11 API-level regression checks (template, schedule, file, signature, approval, report period, progress, capacity, delete guard, clean delete, CSV). |
+
+### Medium
+
+- FLW-17: RFC-4180 CSV parser (quoted commas), single transaction, validated status/priority/dates, rescore + cache invalidation, audit.
+- FLW-18: task aggregation scoped to the page's project ids (the whole-table groupBy is gone). UI pagination is still not wired.
+- FLW-19: per-project error isolation, dedupe and a run lock on both crons.
+- FLW-20: `nextUid` uses `MAX(SUBSTRING(uid))` in SQL with a safe fallback.
+- FLW-21: manual progress ignored when tasks exist; client reassignment rescores the old and new client; finance cache invalidated when money fields change.
+- FLW-22: overview excludes archived projects/tasks; adds `onTimeRate`.
+- FLW-23: auto-invoice failures are logged, not swallowed.
+- FLW-24: `onTimeRate` is returned and rendered.
+- FLW-25: toasts are announced; server messages (now meaningful 409s) surface as-is.
+- FLW-28: file delete and project delete remove the stored blob.
+- FLW-30: mojibake arrow fixed, unused constants removed, tab state synced to `?tab=`, reference upload accepts only server-supported types.
+
+### Intentionally still open
+
+- **FLW-26 data scoping.** Flow has no per-project membership model; every role with FLOW view still sees the whole portfolio. This is a product decision (single-team workspace), not a bug to patch quietly.
+- **FLW-18 UI pagination.** The API accepts `page/pageSize`; the board still loads the filtered set client-side.
+- **FLW-27 logic extraction.** Money and currency are centralised; status/health colour maps still live in the component.
+- **FLW-29 currency conversion.** Totals are per-currency; no FX conversion is attempted.
+- **Browser pass.** Viewport, keyboard walkthrough and contrast audit remain outstanding.
+
+### Operational notes
+
+- Migration applied: `apps/api/prisma/migrations/20261108141906_flow_file_metadata`.
+- New optional env: `FILE_URL_SECRET` (falls back to `JWT_SECRET`) and `FILE_URL_TTL_SEC` (default 900).
+- Behaviour change: previously-public upload URLs now return 403 without a signature. Anything that stored a bare `/api/flow/uploads/...` link outside Flow must request a signed one.
+- Behaviour change: project delete returns 409 while dependencies exist instead of silently orphaning financial rows.
+
+

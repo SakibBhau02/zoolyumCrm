@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -23,10 +24,32 @@ import { Roles } from "../common/decorators/roles.decorator";
 import { CreateProjectDto } from "./dto/create-project.dto";
 import { UpdateProjectDto } from "./dto/update-project.dto";
 import { CreateReferenceDto } from "./dto/create-reference.dto";
+import {
+  AddDeliverableDto,
+  AddDiscussionDto,
+  AddFileDto,
+  AddMilestoneDto,
+  BulkAssignTasksDto,
+  GenerateReportDto,
+  SetFileApprovalDto,
+  UpdateDeliverableDto,
+  UpdateMilestoneDto,
+  UpdateReportDto,
+} from "./dto/flow-mutations.dto";
 import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
+import { signFileAccess, verifyFileAccess } from "../common/signed-url";
 import { RequirePermission, SkipPermission } from "../common/decorators/require-permission.decorator";
+
 const flowUploadDir = () => uploadsDir();
 
+/**
+ * Project workspace API.
+ *
+ * Access is the FLOW module permission: reads need `view`, every mutating verb
+ * needs `edit` (derived by PermissionsGuard). Destructive operations ask for an
+ * additional Owner/CONTROL role. File downloads are the one unauthenticated
+ * route; they carry a short-lived HMAC signature instead of a session.
+ */
 @RequirePermission("FLOW")
 @Controller("flow")
 export class FlowController {
@@ -59,23 +82,27 @@ export class FlowController {
   }
 
   @Post("projects")
-  create(@Body() dto: CreateProjectDto) {
-    return this.flow.create(dto);
+  create(@Body() dto: CreateProjectDto, @CurrentUser() user: AuthUser) {
+    return this.flow.create(dto, user?.sub);
   }
 
   @Patch("projects/:id")
-  update(@Param("id") id: string, @Body() dto: UpdateProjectDto) {
-    return this.flow.update(id, dto);
+  update(
+    @Param("id") id: string,
+    @Body() dto: UpdateProjectDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.update(id, dto, user?.sub);
   }
 
   @Delete("projects/:id")
-  remove(@Param("id") id: string) {
-    return this.flow.remove(id);
+  @Roles("Owner", "CONTROL")
+  remove(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.flow.remove(id, user?.sub);
   }
 
   // ── References & Research ──────────────────────────────────────────
   @Post("projects/:id/references")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
   createReference(
     @Param("id") id: string,
     @Body() dto: CreateReferenceDto,
@@ -90,54 +117,53 @@ export class FlowController {
   }
 
   @Patch("references/:id")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
   updateReference(@Param("id") id: string, @Body() dto: CreateReferenceDto) {
     return this.flow.updateReference(id, dto);
   }
 
   @Delete("references/:id")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
-  deleteReference(@Param("id") id: string) {
+  removeReference(@Param("id") id: string) {
     return this.flow.deleteReference(id);
   }
 
   @Post("projects/:id/tasks/bulk")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
-  bulkTasks(@Param("id") id: string, @Body() body: { taskIds: string[] }) {
-    return this.flow.bulkAssignTasks(id, body.taskIds);
+  bulkTasks(
+    @Param("id") id: string,
+    @Body() dto: BulkAssignTasksDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.bulkAssignTasks(id, dto.taskIds, user?.sub);
   }
 
   // ── Deliverables (proposal commitments) ─────────────────────────────
   @Post("projects/:id/deliverables")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
   addDeliverable(
     @Param("id") id: string,
-    @Body() dto: { title: string; description?: string; taskIds?: string[] }
+    @Body() dto: AddDeliverableDto,
+    @CurrentUser() user: AuthUser
   ) {
-    return this.flow.addDeliverable(id, dto);
+    return this.flow.addDeliverable(id, dto, user?.sub);
   }
 
   @Patch("deliverables/:id")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
   updateDeliverable(
     @Param("id") id: string,
-    @Body() dto: { title?: string; description?: string; status?: string; taskIds?: string[] }
+    @Body() dto: UpdateDeliverableDto,
+    @CurrentUser() user: AuthUser
   ) {
-    return this.flow.updateDeliverable(id, dto);
+    return this.flow.updateDeliverable(id, dto, user?.sub);
   }
 
   @Delete("deliverables/:id")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
-  removeDeliverable(@Param("id") id: string) {
-    return this.flow.removeDeliverable(id);
+  removeDeliverable(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.flow.removeDeliverable(id, user?.sub);
   }
 
   // ── Reports (auto-populated from deliverables) ──────────────────────
   @Post("projects/:id/reports/generate")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
   generateReport(
     @Param("id") id: string,
-    @Body() dto: { periodStart?: string; periodEnd?: string; pmNotes?: string },
+    @Body() dto: GenerateReportDto,
     @CurrentUser() user: AuthUser
   ) {
     return this.flow.generateReport(id, dto, user?.sub);
@@ -149,15 +175,17 @@ export class FlowController {
   }
 
   @Patch("reports/:id")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
-  updateReport(@Param("id") id: string, @Body() dto: { pmNotes?: string; status?: string }) {
-    return this.flow.updateReport(id, dto);
+  updateReport(
+    @Param("id") id: string,
+    @Body() dto: UpdateReportDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.updateReport(id, dto, user?.sub);
   }
 
   @Delete("reports/:id")
-  @Roles("Owner", "CONTROL", "PM", "Project Manager")
-  removeReport(@Param("id") id: string) {
-    return this.flow.removeReport(id);
+  removeReport(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.flow.removeReport(id, user?.sub);
   }
 
   @Get("projects/:id/discussions")
@@ -166,7 +194,10 @@ export class FlowController {
   }
 
   @Get("export")
-  async exportCsv(@Query() query: { q?: string; status?: string; clientId?: string; managerId?: string }, @Res() res: any) {
+  async exportCsv(
+    @Query() query: { q?: string; status?: string; clientId?: string; managerId?: string },
+    @Res() res: any
+  ) {
     const { filename, content } = await this.flow.exportCsv(query);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -175,29 +206,41 @@ export class FlowController {
 
   @Post("import")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 15 * 1024 * 1024 } }))
-  importCsv(@UploadedFile() file: Express.Multer.File) {
+  importCsv(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: AuthUser) {
     if (!file) throw new BadRequestException("No file uploaded");
-    return this.flow.importCsv(file.buffer);
+    return this.flow.importCsv(file.buffer, user?.sub);
   }
 
   @Post("projects/:id/discussions")
-  addDiscussion(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
-    return this.flow.addDiscussion(id, { ...body, authorId: user?.sub });
+  addDiscussion(
+    @Param("id") id: string,
+    @Body() dto: AddDiscussionDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.addDiscussion(id, { ...dto, authorId: user?.sub });
   }
 
   @Post("projects/:id/milestones")
-  addMilestone(@Param("id") id: string, @Body() body: any) {
-    return this.flow.addMilestone(id, body);
+  addMilestone(
+    @Param("id") id: string,
+    @Body() dto: AddMilestoneDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.addMilestone(id, dto, user?.sub);
   }
 
   @Patch("milestones/:id")
-  updateMilestone(@Param("id") id: string, @Body() body: any) {
-    return this.flow.updateMilestone(id, body);
+  updateMilestone(
+    @Param("id") id: string,
+    @Body() dto: UpdateMilestoneDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.updateMilestone(id, dto, user?.sub);
   }
 
   @Delete("milestones/:id")
-  deleteMilestone(@Param("id") id: string) {
-    return this.flow.deleteMilestone(id);
+  deleteMilestone(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.flow.deleteMilestone(id, user?.sub);
   }
 
   @Post("upload")
@@ -211,7 +254,16 @@ export class FlowController {
       }),
       limits: { fileSize: 15 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const allowed = ["application/pdf", "image/png", "image/jpeg", "image/webp", "application/zip", "application/x-zip-compressed", "image/svg+xml"];
+        // SVG is deliberately excluded: it can carry script and is served from
+        // the API origin. Convert to PNG instead.
+        const allowed = [
+          "application/pdf",
+          "image/png",
+          "image/jpeg",
+          "image/webp",
+          "application/zip",
+          "application/x-zip-compressed",
+        ];
         const ok = allowed.includes(file.mimetype);
         cb(ok ? null : new BadRequestException("Only pdf/image/zip files are allowed"), ok);
       },
@@ -219,16 +271,31 @@ export class FlowController {
   )
   upload(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException("No file uploaded");
-    return { fileUrl: `/api/flow/uploads/${file.filename}`, originalName: file.originalname, size: file.size };
+    return {
+      fileUrl: `/api/flow/uploads/${file.filename}`,
+      downloadUrl: signFileAccess(file.filename),
+      originalName: file.originalname,
+      fileName: file.originalname,
+      size: file.size,
+      mimeType: file.mimetype,
+    };
   }
 
   @Public()
   @Get("uploads/:filename")
-  serveUpload(@Param("filename") filename: string, @Res() res: any) {
+  serveUpload(
+    @Param("filename") filename: string,
+    @Query("exp") exp: string,
+    @Query("sig") sig: string,
+    @Res() res: any
+  ) {
     if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
       throw new BadRequestException("Invalid filename");
     }
     const safe = basename(sanitizeFilename(filename));
+    if (!verifyFileAccess(safe, exp, sig)) {
+      throw new ForbiddenException("This file link is invalid or has expired");
+    }
     const dir = flowUploadDir();
     const filePath = findUploadedFile(safe);
     // defense-in-depth: ensure resolved path stays inside an uploads dir
@@ -236,27 +303,49 @@ export class FlowController {
       throw new BadRequestException("Invalid filename");
     }
     res.setHeader("Content-Disposition", `attachment; filename="${safe}"`);
+    res.setHeader("Cache-Control", "private, max-age=60");
     return res.sendFile(filePath);
   }
 
+  /** Current contract: the project id lives in the path. */
+  @Post("projects/:id/files")
+  addProjectFile(
+    @Param("id") projectId: string,
+    @Body() dto: AddFileDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.addFile(projectId, dto, user?.sub);
+  }
+
+  /** Kept for older callers that still pass projectId in the body. */
   @Post("files")
-  addFile(@Body() body: any, @CurrentUser() user: any) {
-    return this.flow.addFile(body.projectId, { ...body, uploadedById: user?.sub });
+  addFile(
+    @Body() dto: AddFileDto & { projectId?: string },
+    @CurrentUser() user: AuthUser
+  ) {
+    if (!dto.projectId) throw new BadRequestException("projectId is required");
+    return this.flow.addFile(dto.projectId, dto, user?.sub);
   }
 
   @Patch("files/:id/approval")
-  setFileApproval(@Param("id") id: string, @Body() body: { status: string }) {
-    return this.flow.setFileApproval(id, body.status as any);
+  setFileApproval(
+    @Param("id") id: string,
+    @Body() dto: SetFileApprovalDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    const status = dto.status ?? dto.approvalStatus;
+    if (!status) throw new BadRequestException("status is required");
+    return this.flow.setFileApproval(id, status, user?.sub);
   }
 
   @Delete("files/:id")
-  deleteFile(@Param("id") id: string) {
-    return this.flow.deleteFile(id);
+  deleteFile(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.flow.deleteFile(id, user?.sub);
   }
 
   @Get("capacity")
-  capacity() {
-    return this.flow.capacity();
+  capacity(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.flow.capacity({ from, to });
   }
 
   @Get("templates")

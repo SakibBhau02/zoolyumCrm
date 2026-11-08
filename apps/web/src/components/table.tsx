@@ -58,9 +58,22 @@ export function Tr({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay: index * 0.04, ease: EASE }}
       onClick={onClick}
+      // A clickable row must also be reachable and operable from the keyboard.
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
       className={cn(
         "border-b border-border/40 transition-colors last:border-0 hover:bg-muted/60",
-        onClick && "cursor-pointer",
+        onClick && "cursor-pointer outline-none focus-visible:bg-muted/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40",
         className
       )}
     >

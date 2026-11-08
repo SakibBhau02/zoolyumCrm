@@ -1,11 +1,31 @@
-export function formatBDT(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return "৳0";
-  if (n >= 100000) {
-    const lakh = n / 100000;
-    return `৳${lakh.toFixed(lakh >= 10 ? 1 : 2)}L`;
+const CURRENCY_SYMBOL: Record<string, string> = {
+  BDT: "৳",
+  USD: "$",
+  SAR: "SAR ",
+  AED: "AED ",
+};
+
+/**
+ * Money with the project's own currency. `formatBDT` is kept as a thin
+ * BDT-specific wrapper so existing callers keep working, but a USD project must
+ * never be labelled with a taka sign.
+ */
+export function formatMoney(
+  n: number | string | null | undefined,
+  currency = "BDT"
+): string {
+  const value = Number(n);
+  if (n == null || Number.isNaN(value)) return `${CURRENCY_SYMBOL[currency] ?? ""}0`;
+  const symbol = CURRENCY_SYMBOL[currency] ?? `${currency} `;
+  if (currency === "BDT" && value >= 100000) {
+    const lakh = value / 100000;
+    return `${symbol}${lakh.toFixed(lakh >= 10 ? 1 : 2)}L`;
   }
-  if (n >= 1000) return `৳${Math.round(n).toLocaleString("en-US")}`;
-  return `৳${Math.round(n)}`;
+  return `${symbol}${Math.round(value).toLocaleString("en-US")}`;
+}
+
+export function formatBDT(n: number | null | undefined): string {
+  return formatMoney(n, "BDT");
 }
 
 export function formatNumber(n: number | null | undefined): string {

@@ -9,9 +9,9 @@ import {
 } from "lucide-react";
 import { apiFetch, API_URL, getToken } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
-import { formatBDT, formatDate, timeAgo } from "@/lib/format";
+import { formatMoney, formatDate, timeAgo } from "@/lib/format";
 import type { ProjectDeliverable, ProjectReport } from "@/lib/types";
-import { Avatar, EmptyState, FadeIn, PageHeader, SkeletonBlock, StatCard, StatusBadge, cn } from "@/components/shared";
+import { Avatar, EmptyState, FadeIn, PageHeader, SkeletonBlock, StatusBadge, cn } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { ProgressRing } from "@/components/charts";
 import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
@@ -26,6 +26,9 @@ const MILESTONE_STATUSES = ["PENDING", "IN_PROGRESS", "COMPLETED"];
 const CATEGORIES = ["Branding", "Web Development", "Video Production", "App Development", "Performance Marketing", "Influencer Marketing", "Content Retainer", "Social Media", "SEO", "Other"];
 const EXPENSE_CATEGORIES = ["AD_SPEND", "FREELANCER", "PRODUCTION", "SALARY", "SOFTWARE", "RENT", "MARKETING", "TRAVEL", "BANK_CHARGE", "MISC"];
 const label = (v: string) => v.replace(/_/g, " ").toLowerCase();
+/** Money in the project's own currency; falls back to BDT when unset. */
+const money = (value: unknown, currency?: string | null) =>
+  formatMoney(value as number | string | null | undefined, currency || "BDT");
 
 // stored file URLs are API-relative ("/api/flow/uploads/…") — resolve to the API origin
 function absoluteUrl(url: string) {
@@ -70,7 +73,6 @@ const PAYMENT_STYLE: Record<string, string> = {
   PAID: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
   OVERDUE: "border-rose-500/30 bg-rose-500/10 text-rose-400",
 };
-
 interface ProjectRow {
   id: string; uid?: string | null; name: string; code?: string | null; status: string; healthStatus: string;
   riskScore: number | null; riskDriver: string | null; budgetAmount: number | null;
@@ -108,6 +110,7 @@ interface ProjectDetail extends ProjectRow {
   milestones: { id: string; name: string; dueDate: string | null; status: string }[];
   files: {
     id: string; name?: string | null; fileName?: string | null; fileUrl: string;
+    downloadUrl?: string | null;
     uploadedAt: string; size?: number | null; uploadedBy: { name: string } | null;
     approvalStatus: string;
   }[];
@@ -130,11 +133,27 @@ interface ProjectDetail extends ProjectRow {
 }
 
 interface Discussion { id: string; content: string; createdAt: string; author?: { name: string } | null; portalUser?: { name: string } | null }
-interface CapacityRow { project: { id: string; name: string }; members: { employee: { id: string; name: string }; loggedHours: number; targetHours: number; utilizationPct: number }[] }
+interface CapacityRow {
+  id: string;
+  name: string;
+  roleTitle?: string | null;
+  department?: string | null;
+  totalHours: number;
+  capacityHours: number;
+  utilizationPct: number;
+  projects: {
+    projectId: string;
+    projectName: string;
+    client: string;
+    hours: number;
+    sharePct: number;
+  }[];
+}
 
-function ProjectFinancePanel({ finance, loading, onInvoice, onExpense }: { finance: any; loading: boolean; onInvoice: () => void; onExpense: () => void }) {
+function ProjectFinancePanel({ finance, loading, onInvoice, onExpense, currency }: { finance: any; loading: boolean; onInvoice: () => void; onExpense: () => void; currency?: string | null }) {
   const invoices = finance?.invoices ?? [];
   const expenses = finance?.expenses ?? [];
+  const cur = currency ?? finance?.project?.currency ?? "BDT";
   // professional invoice view (same modal as Capital) — view-only from Flow
   const [selInv, setSelInv] = useState<string | null>(null);
   return (
@@ -143,25 +162,25 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense }: { finan
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-border/60 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Invoiced</p>
-          <p className="mt-0.5 text-[14px] font-heading font-bold tabular-nums">{formatBDT(finance?.totalInvoiced)}</p>
+          <p className="mt-0.5 text-[14px] font-heading font-bold tabular-nums">{money(finance?.totalInvoiced, cur)}</p>
         </div>
         <div className="rounded-xl border border-border/60 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Collected</p>
-          <p className="mt-0.5 text-[14px] font-heading font-bold tabular-nums text-emerald-500">{formatBDT(finance?.collected)}</p>
+          <p className="mt-0.5 text-[14px] font-heading font-bold tabular-nums text-emerald-500">{money(finance?.collected, cur)}</p>
         </div>
         <div className="rounded-xl border border-border/60 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Outstanding</p>
-          <p className={cn("mt-0.5 text-[14px] font-heading font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-500" : "text-emerald-500")}>{formatBDT(finance?.outstanding)}</p>
+          <p className={cn("mt-0.5 text-[14px] font-heading font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-500" : "text-emerald-500")}>{money(finance?.outstanding, cur)}</p>
         </div>
         <div className="rounded-xl border border-border/60 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Expenses</p>
-          <p className="mt-0.5 text-[14px] font-heading font-bold tabular-nums text-rose-500">{formatBDT(finance?.expensesTotal)}</p>
+          <p className="mt-0.5 text-[14px] font-heading font-bold tabular-nums text-rose-500">{money(finance?.expensesTotal, cur)}</p>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Project profit</p>
-          <p className={cn("mt-0.5 text-[13px] font-heading font-bold tabular-nums", Number(finance?.profit ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500")}>{formatBDT(finance?.profit)}</p>
+          <p className={cn("mt-0.5 text-[13px] font-heading font-bold tabular-nums", Number(finance?.profit ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500")}>{money(finance?.profit, cur)}</p>
         </div>
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Margin</p>
@@ -201,9 +220,9 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense }: { finan
                   {inv.title && <span className="block text-[10.5px] font-normal text-muted-foreground">{inv.title}</span>}
                 </Td>
                 <Td><StatusBadge status={inv.status} /></Td>
-                <Td className="text-right font-semibold tabular-nums">{formatBDT(inv.amount)}</Td>
-                <Td className="text-right tabular-nums text-emerald-500">{formatBDT(inv.paid)}</Td>
-                <Td className={cn("text-right font-medium tabular-nums", inv.balance > 0 ? "text-amber-500" : "text-emerald-500")}>{formatBDT(inv.balance)}</Td>
+                <Td className="text-right font-semibold tabular-nums">{money(inv.amount, cur)}</Td>
+                <Td className="text-right tabular-nums text-emerald-500">{money(inv.paid, cur)}</Td>
+                <Td className={cn("text-right font-medium tabular-nums", inv.balance > 0 ? "text-amber-500" : "text-emerald-500")}>{money(inv.balance, cur)}</Td>
                 <Td className="text-muted-foreground">{formatDate(inv.dueDate)}</Td>
               </Tr>
             ))}
@@ -223,7 +242,7 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense }: { finan
               <Tr key={e.id} index={i}>
                 <Td className="font-medium">{e.description}</Td>
                 <Td className="text-muted-foreground">{label(e.category)}</Td>
-                <Td className="text-right font-semibold tabular-nums">{formatBDT(e.amount)}</Td>
+                <Td className="text-right font-semibold tabular-nums">{money(e.amount, cur)}</Td>
                 <Td className="text-muted-foreground">{formatDate(e.date)}</Td>
                 <Td><StatusBadge status={e.approvalStatus} /></Td>
                 <Td className="text-muted-foreground">{e.submittedBy ?? "—"}</Td>
@@ -318,10 +337,10 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
       <form onSubmit={save} className="flex flex-col gap-4">
         {fin && (
           <div className="rounded-xl bg-muted/40 px-3 py-2.5 text-[12px]">
-            <div className="flex justify-between"><span className="text-muted-foreground">Project value</span><span className="font-bold tabular-nums">{formatBDT(Number(project?.amount ?? project?.budgetAmount ?? fin.project?.budgetAmount ?? 0))}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Billed so far</span><span className="font-medium tabular-nums">{formatBDT(fin.totalInvoiced ?? 0)}</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(fin.collected ?? 0)}</span></div>
-            <div className="flex justify-between border-t border-border/60 pt-1"><span className="font-bold">Remaining</span><span className="font-bold tabular-nums">{formatBDT(Math.max(Number(project?.amount ?? project?.budgetAmount ?? fin.project?.budgetAmount ?? 0) - (fin.totalInvoiced ?? 0), 0))}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Project value</span><span className="font-bold tabular-nums">{money(Number(project?.amount ?? project?.budgetAmount ?? fin.project?.budgetAmount ?? 0))}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Billed so far</span><span className="font-medium tabular-nums">{money(fin.totalInvoiced ?? 0, project?.currency)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{money(fin.collected ?? 0, project?.currency)}</span></div>
+            <div className="flex justify-between border-t border-border/60 pt-1"><span className="font-bold">Remaining</span><span className="font-bold tabular-nums">{money(Math.max(Number(project?.amount ?? project?.budgetAmount ?? fin.project?.budgetAmount ?? 0) - (fin.totalInvoiced ?? 0), 0), project?.currency)}</span></div>
           </div>
         )}
         <Field label="Line description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Monthly retainer — August" autoFocus /></Field>
@@ -333,7 +352,7 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
             </div>
             <p className="text-[11px] text-muted-foreground">
               {Number(pct) > 0 && Number(pct) <= 100
-                ? <span>Advance <span className="font-bold tabular-nums text-foreground">{formatBDT(Math.round((projectValue * Number(pct)) / 100 * 100) / 100)}</span> of {formatBDT(projectValue)}</span>
+                ? <span>Advance <span className="font-bold tabular-nums text-foreground">{money(Math.round((projectValue * Number(pct)) / 100 * 100) / 100, project?.currency)}</span> of {money(projectValue, project?.currency)}</span>
                 : "Milestone % of project value"}
             </p>
           </div>
@@ -343,7 +362,7 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
         )}
         {fin && Number(pct) > 0 && Number(pct) <= 100 && Math.round((projectValue * Number(pct)) / 100 * 100) / 100 > Math.max(projectValue - (fin.totalInvoiced ?? 0), 0) && (
           <p className="-mt-2 text-[11px] text-amber-600 dark:text-amber-400">
-            {String(Number(pct))}% of full value ({formatBDT(projectValue)}) exceeds the remaining {formatBDT(Math.max(projectValue - (fin.totalInvoiced ?? 0), 0))} — {formatBDT(fin.totalInvoiced ?? 0)} already billed.
+            {String(Number(pct))}% of full value ({money(projectValue, project?.currency)}) exceeds the remaining {money(Math.max(projectValue - (fin.totalInvoiced ?? 0), 0), project?.currency)} — {money(fin.totalInvoiced ?? 0, project?.currency)} already billed.
           </p>
         )}
         <div className="grid grid-cols-2 gap-4">
@@ -633,6 +652,20 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
+  const selectDetailTab = useCallback(
+    (id: DetailTab) => {
+      setDetailTab(id);
+      if (!projectId) return;
+      // Keep the tab in the URL so a refresh or a shared link lands on the same
+      // pane; notification deep links add ?report=/?file= on top of this.
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("tab", id);
+      params.delete("report");
+      params.delete("file");
+      router.replace(`/flow/${projectId}?${params.toString()}`, { scroll: false });
+    },
+    [projectId, router, searchParams]
+  );
   // Notification deep links: /flow/<id>?tab=reports&report=<reportId>.
   const focusReport = projectId ? searchParams.get("report") : null;
   const focusFile = projectId ? searchParams.get("file") : null;
@@ -820,14 +853,27 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
 
   const stats = useMemo(() => {
     const list = projects ?? [];
-    const budget = list.reduce((s, p) => s + Number(p.budgetAmount ?? (p as any).amount ?? 0), 0);
-    const spent = list.reduce((s, p) => s + Number(p.spentAmount ?? (p as any).budgetSpent ?? 0), 0);
+    // Portfolio totals are per currency: adding USD and BDT produces a number
+    // that means nothing.
+    const totals = new Map<string, { budget: number; spent: number }>();
+    for (const p of list) {
+      const currency = p.currency || "BDT";
+      const entry = totals.get(currency) ?? { budget: 0, spent: 0 };
+      entry.budget += Number(p.budgetAmount ?? (p as any).amount ?? 0);
+      entry.spent += Number(p.spentAmount ?? (p as any).budgetSpent ?? 0);
+      totals.set(currency, entry);
+    }
+    const currencies = Array.from(totals.entries())
+      .map(([currency, v]) => ({ currency, ...v }))
+      .sort((a, b) => b.budget - a.budget);
     return {
       total: overview?.totalProjects ?? list.length,
       active: overview?.active ?? list.filter((p) => p.status === "ACTIVE").length,
       completed: list.filter((p) => p.status === "COMPLETED").length,
-      budget,
-      spent,
+      totals: currencies,
+      // A burn percentage only means something inside one currency.
+      budget: currencies.length === 1 ? currencies[0].budget : 0,
+      spent: currencies.length === 1 ? currencies[0].spent : 0,
       atRisk: (overview?.byHealth?.AT_RISK ?? 0) + (overview?.byHealth?.DELAYED ?? 0) || list.filter((p) => p.healthStatus === "AT_RISK" || p.healthStatus === "DELAYED").length,
     };
   }, [projects, overview]);
@@ -837,19 +883,13 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
     [filtered]
   );
 
-  const capRows = useMemo(
-    () =>
-      (capacity ?? []).flatMap((e: any) =>
-        (e.projects ?? []).map((p: any) => ({
-          employee: { id: e.id, name: e.name },
-          project: { id: p.projectId, name: p.projectName },
-          loggedHours: p.hours ?? 0,
-          targetHours: 40,
-          utilizationPct: ((p.hours ?? 0) / 40) * 100,
-        }))
-      ),
-    [capacity]
-  );
+  // Capacity is per employee and already windowed by the API (default: last
+  // 4 weeks). The old UI divided all-time hours by a 40h weekly target.
+  const capRows = useMemo(() => capacity ?? [], [capacity]);
+  const capWindow = useMemo(() => {
+    const first = (capacity ?? [])[0] as any;
+    return first?.capacityHours ? { capacityHours: first.capacityHours } : { capacityHours: 0 };
+  }, [capacity]);
 
   const patchProject = async (fields: any) => {
     if (!detail) return;
@@ -881,7 +921,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
   const patchStatus = async (p: ProjectRow, status: string) => {
     try {
       await apiFetch(`/flow/projects/${p.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
-      notify(`${p.name} ? ${label(status)}`);
+      notify(`${p.name} → ${label(status)}`);
       reload();
     } catch (e: any) {
       notify(e.message ?? "Update failed");
@@ -1028,7 +1068,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
 
   const setApproval = async (fileId: string, approvalStatus: string) => {
     try {
-      await apiFetch(`/flow/files/${fileId}/approval`, { method: "PATCH", body: JSON.stringify({ approvalStatus }) });
+      await apiFetch(`/flow/files/${fileId}/approval`, { method: "PATCH", body: JSON.stringify({ status: approvalStatus }) });
       notify(`File ${label(approvalStatus)}`);
       reload();
     } catch (e: any) {
@@ -1063,7 +1103,12 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
       if (!res.ok || !body?.fileUrl) throw new Error(body?.message ?? "Upload failed");
       await apiFetch(`/flow/projects/${detail.id}/files`, {
         method: "POST",
-        body: JSON.stringify({ name: body.originalName ?? file.name, fileUrl: body.fileUrl, size: body.size ?? file.size }),
+        body: JSON.stringify({
+          fileUrl: body.fileUrl,
+          fileName: body.fileName ?? body.originalName ?? file.name,
+          size: body.size ?? file.size,
+          mimeType: body.mimeType ?? file.type,
+        }),
       });
       notify("File uploaded");
       reload();
@@ -1155,8 +1200,12 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
     if (!detail || bulkSelected.size === 0) return;
     setBulkBusy(true);
     try {
-      await apiFetch(`/flow/projects/${detail.id}/tasks/bulk`, { method: "POST", body: JSON.stringify({ taskIds: Array.from(bulkSelected) }) });
-      notify(`${bulkSelected.size} task(s) assigned to ${detail.name}`);
+      const res = await apiFetch<{ count: number; rejected: string[] }>(`/flow/projects/${detail.id}/tasks/bulk`, {
+        method: "POST",
+        body: JSON.stringify({ taskIds: Array.from(bulkSelected) }),
+      });
+      const skipped = res?.rejected?.length ?? 0;
+      notify(`${res?.count ?? 0} task(s) assigned to ${detail.name}${skipped ? ` · ${skipped} skipped (another client)` : ""}`);
       setBulkOpen(false);
       setBulkSelected(new Set());
       reload();
@@ -1209,6 +1258,19 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
       notify("Deliverable removed");
       reload();
     } catch (e: any) { notify(e.message ?? "Failed"); }
+  };
+
+  const setReportSchedule = async (value: string) => {
+    const body =
+      value === "MANUAL"
+        ? { reportMode: "MANUAL" }
+        : { reportMode: "AUTOMATIC", reportFrequency: value };
+    await patchProject(body);
+    notify(
+      value === "MANUAL"
+        ? "Reports are manual now"
+        : `Reports will be generated every ${value.replace("-days", "")} days`
+    );
   };
 
   const generateReportNow = async () => {
@@ -1275,7 +1337,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
         <div className="h-1.5 w-10 overflow-hidden rounded-full bg-muted">
           <div className={`h-full rounded-full ${pct >= 90 ? "bg-rose-500" : pct >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} />
         </div>
-        <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{formatBDT(p.spentAmount ?? (p as any).budgetSpent ?? 0)} / {formatBDT((p as any).amount ?? p.budgetAmount)}</span>
+        <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{money(p.spentAmount ?? (p as any).budgetSpent ?? 0, p.currency)} / {money((p as any).amount ?? p.budgetAmount, p.currency)}</span>
       </div>
     );
   };
@@ -1305,8 +1367,17 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
       onDragStart={(e) => { setDragId(p.id); e.dataTransfer.effectAllowed = "move"; }}
       onDragEnd={() => setDragId(null)}
       onClick={() => openProject(p.id)}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open project ${p.name}`}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openProject(p.id);
+        }
+      }}
       className={cn(
-        "group rounded-2xl border bg-card p-3.5 transition-all",
+        "group rounded-2xl border bg-card p-3.5 text-left transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
         dragId === p.id ? "border-primary/50 opacity-40" : "border-border hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5",
         kanban && "cursor-grab active:cursor-grabbing"
       )}
@@ -1343,7 +1414,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
           ) : (
             <span className="text-[10px] text-muted-foreground">no team</span>
           )}
-          <span className="text-[10px] font-semibold tabular-nums text-muted-foreground">{formatBDT(p.spentAmount ?? p.budgetSpent ?? 0)} / {formatBDT(p.budgetAmount)}</span>
+          <span className="text-[10px] font-semibold tabular-nums text-muted-foreground">{money(p.spentAmount ?? p.budgetSpent ?? 0, p.currency)} / {money(p.budgetAmount, p.currency)}</span>
         </div>
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           <button onClick={(e) => { e.stopPropagation(); openProject(p.id); }} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="View">
@@ -1381,7 +1452,13 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
   return (
     <div>
       {flash && (
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[12.5px] font-medium text-white shadow-xl">
+        <motion.div
+          role="status"
+          aria-live="polite"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[12.5px] font-medium text-white shadow-xl"
+        >
           {flash}
         </motion.div>
       )}
@@ -1455,18 +1532,32 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
               <div className="flex items-baseline justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Budget burn</span>
                 <span className={cn("text-[11px] font-bold tabular-nums", stats.budget && stats.spent / stats.budget >= 0.9 ? "text-rose-500" : "text-muted-foreground")}>
-                  {stats.budget ? `${Math.round((stats.spent / stats.budget) * 100)}%` : "—"}
+                  {stats.totals.length === 1 && stats.budget ? `${Math.round((stats.spent / stats.budget) * 100)}%` : "—"}
                 </span>
               </div>
-              <p className="mt-1 font-heading text-[20px] font-bold tabular-nums">{formatBDT(stats.spent)}</p>
-              <p className="text-[10.5px] text-muted-foreground">of {formatBDT(stats.budget)} committed</p>
+              {stats.totals.length ? (
+                <div className="mt-1 flex flex-col gap-0.5">
+                  {stats.totals.map((t) => (
+                    <div key={t.currency} className="flex items-baseline justify-between gap-2">
+                      <span className="font-heading text-[17px] font-bold tabular-nums">{money(t.spent, t.currency)}</span>
+                      <span className="text-[10.5px] tabular-nums text-muted-foreground">of {money(t.budget, t.currency)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-1 font-heading text-[20px] font-bold tabular-nums">—</p>
+              )}
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
                   className={cn("h-full rounded-full", stats.budget && stats.spent / stats.budget >= 0.9 ? "bg-rose-500" : stats.budget && stats.spent / stats.budget >= 0.7 ? "bg-amber-400" : "bg-emerald-500")}
                   style={{ width: `${stats.budget ? Math.min(100, Math.round((stats.spent / stats.budget) * 100)) : 0}%` }}
                 />
               </div>
-              <p className="mt-2 text-[10px] text-muted-foreground">{formatBDT(Math.max(0, stats.budget - stats.spent))} remaining</p>
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                {stats.totals.length === 1
+                  ? `${money(Math.max(0, stats.budget - stats.spent), stats.totals[0].currency)} remaining`
+                  : `${stats.totals.length} currencies — totals shown per currency`}
+              </p>
             </div>
           </div>
           {stats.atRisk > 0 && (
@@ -1680,40 +1771,66 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             <EmptyState title={capErr} hint="Check your connection and try again." />
           ) : capRows.length ? (
             <FadeIn>
-              <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{capRows.length} assignments across {capacity?.length ?? 0} employees</span>}>
+              <TableShell
+                footer={
+                  <span className="text-[11.5px] text-muted-foreground">
+                    {capRows.length} active {capRows.length === 1 ? "person" : "people"} · {capWindow.capacityHours || 160}h capacity each (rolling 4 weeks)
+                  </span>
+                }
+              >
                 <table className="w-full">
                   <THead>
-                    <Th>Project</Th>
                     <Th>Member</Th>
+                    <Th>Projects</Th>
                     <Th>Logged</Th>
-                    <Th>Target</Th>
+                    <Th>Capacity</Th>
                     <Th>Utilization</Th>
                     <Th>Status</Th>
                   </THead>
                   <tbody>
-                    {capRows.map((m, i) => (
-                      <Tr key={`${m.project.id}-${m.employee.id}`} index={i}>
-                        <Td className="font-medium">{m.project.name}</Td>
+                    {capRows.map((e, i) => (
+                      <Tr key={e.id} index={i}>
                         <Td>
                           <div className="flex items-center gap-2.5">
-                            <Avatar name={m.employee.name} size="size-7" />
-                            <span className="font-medium">{m.employee.name}</span>
-                          </div>
-                        </Td>
-                        <Td className="font-semibold tabular-nums">{m.loggedHours}h</Td>
-                        <Td className="text-muted-foreground tabular-nums">{m.targetHours}h</Td>
-                        <Td>
-                          <div className="flex items-center gap-2.5">
-                            <ProgressRing value={Math.min(100, Math.max(0, m.utilizationPct ?? 0))} size={40} label={`${Math.round(m.utilizationPct ?? 0)}%`} />
-                            <span className="text-[11px] text-muted-foreground">{m.targetHours ? `${Math.round(((m.loggedHours ?? 0) / m.targetHours) * 100)}% of target` : "—"}</span>
+                            <Avatar name={e.name} size="size-7" />
+                            <div className="min-w-0">
+                              <p className="font-medium">{e.name}</p>
+                              <p className="text-[10.5px] text-muted-foreground">{e.roleTitle || e.department || "—"}</p>
+                            </div>
                           </div>
                         </Td>
                         <Td>
-                          {m.utilizationPct > 100 ? (
+                          {e.projects.length ? (
+                            <div className="flex max-w-[340px] flex-wrap gap-1">
+                              {e.projects.slice(0, 3).map((p) => (
+                                <span key={p.projectId} className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                                  {p.projectName} · {p.hours}h
+                                </span>
+                              ))}
+                              {e.projects.length > 3 && (
+                                <span className="text-[10px] font-semibold text-muted-foreground">+{e.projects.length - 3} more</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11.5px] text-muted-foreground">no logged time</span>
+                          )}
+                        </Td>
+                        <Td className="font-semibold tabular-nums">{e.totalHours}h</Td>
+                        <Td className="text-muted-foreground tabular-nums">{e.capacityHours}h</Td>
+                        <Td>
+                          <div className="flex items-center gap-2.5">
+                            <ProgressRing value={Math.min(100, Math.max(0, e.utilizationPct))} size={40} label={`${e.utilizationPct}%`} />
+                            <span className="text-[11px] text-muted-foreground">
+                              {e.capacityHours ? `${Math.round((e.totalHours / e.capacityHours) * 100)}% of capacity` : "—"}
+                            </span>
+                          </div>
+                        </Td>
+                        <Td>
+                          {e.utilizationPct > 100 ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400">
                               <AlertTriangle className="size-3" /> overbooked
                             </span>
-                          ) : m.utilizationPct >= 85 ? (
+                          ) : e.utilizationPct >= 85 ? (
                             <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400">near limit</span>
                           ) : (
                             <span className="text-[11.5px] text-muted-foreground">healthy</span>
@@ -1886,23 +2003,23 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
               </div>
               <div className="bg-card px-3.5 py-2.5">
                 <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Budget</p>
-                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">{(detail as any).amount != null || detail.budgetAmount != null ? formatBDT((detail as any).amount ?? detail.budgetAmount) : "—"}</p>
-                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent · {budgetPct(detail)}%</p>
+                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">{(detail as any).amount != null || detail.budgetAmount != null ? money((detail as any).amount ?? detail.budgetAmount, detail.currency) : "—"}</p>
+                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{money(detail.spentAmount ?? (detail as any).budgetSpent ?? 0, detail.currency)} spent · {budgetPct(detail)}%</p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
                 <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Invoiced</p>
-                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">{formatBDT(finance?.totalInvoiced ?? detail.totalBilled)}</p>
+                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">{money(finance?.totalInvoiced ?? detail.totalBilled, detail.currency)}</p>
                 <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{finance?.invoices?.length ?? 0} invoices</p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
                 <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Collected</p>
-                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums text-emerald-400">{formatBDT(finance?.collected ?? 0)}</p>
+                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums text-emerald-400">{money(finance?.collected ?? 0, detail.currency)}</p>
                 <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{detail.paymentStatus ? label(detail.paymentStatus) : "—"}</p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
                 <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Outstanding</p>
-                <p className={cn("mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-400" : "text-emerald-400")}>{formatBDT(finance?.outstanding)}</p>
-                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{finance?.expensesTotal ? `${formatBDT(finance.expensesTotal)} exp` : "no expenses"}</p>
+                <p className={cn("mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-400" : "text-emerald-400")}>{money(finance?.outstanding, detail.currency)}</p>
+                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{finance?.expensesTotal ? `${money(finance.expensesTotal, detail.currency)} exp` : "no expenses"}</p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
                 <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">{detail.billingType === "RECURRING" ? "Next billing" : "Due"}</p>
@@ -1938,7 +2055,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 ] as { id: typeof detailTab; name: string; icon: typeof LayoutGrid; count?: number }[]).map((t) => (
                   <button
                     key={t.id}
-                    onClick={() => setDetailTab(t.id)}
+                    onClick={() => selectDetailTab(t.id)}
                     className={cn(
                       "relative flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] font-semibold transition-colors",
                       detailTab === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -2212,7 +2329,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                       </div>
                       <div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase">Deal size</p>
-                        <p className="text-[12.5px] font-semibold tabular-nums">{formatBDT(detail.sourceLead.estimatedDealSize)}</p>
+                        <p className="text-[12.5px] font-semibold tabular-nums">{money(detail.sourceLead.estimatedDealSize, detail.currency)}</p>
                       </div>
                       <div>
                         <p className="text-[10px] font-bold text-muted-foreground uppercase">Contact</p>
@@ -2383,6 +2500,16 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   <Btn variant="primary" onClick={generateReportNow} className={repBusy ? "opacity-50" : ""}>
                     <Plus className="size-3.5" /> {repBusy ? "Generating…" : "Generate report"}
                   </Btn>
+                  <Select
+                    value={detail.reportMode === "AUTOMATIC" ? (detail.reportFrequency ?? "30-days") : "MANUAL"}
+                    onChange={(e) => setReportSchedule(e.target.value)}
+                    className="!w-44 !py-1.5 text-[11px]"
+                    title="Report cadence"
+                  >
+                    <option value="MANUAL">Manual only</option>
+                    <option value="15-days">Auto · every 15 days</option>
+                    <option value="30-days">Auto · every 30 days</option>
+                  </Select>
                 </div>
                 {!detail.reports?.length ? (
                   <EmptyState title="No reports yet" hint="Generate a report — completed deliverables and pending items are pulled automatically." />
@@ -2452,9 +2579,9 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                         </div>
                         {r.billing && (
                           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 rounded-xl bg-muted/40 px-2.5 py-1.5 text-[10.5px] text-muted-foreground">
-                            <span>Billing — invoiced <span className="font-bold text-foreground">{formatBDT(r.billing.invoiced)}</span></span>
-                            <span>collected <span className="font-bold text-emerald-400">{formatBDT(r.billing.collected)}</span></span>
-                            <span>outstanding <span className="font-bold text-amber-400">{formatBDT(r.billing.outstanding)}</span></span>
+                            <span>Billing — invoiced <span className="font-bold text-foreground">{money(r.billing.invoiced, detail.currency)}</span></span>
+                            <span>collected <span className="font-bold text-emerald-400">{money(r.billing.collected, detail.currency)}</span></span>
+                            <span>outstanding <span className="font-bold text-amber-400">{money(r.billing.outstanding, detail.currency)}</span></span>
                           </div>
                         )}
                         {repNotesEdit === r.id ? (
@@ -2537,7 +2664,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                         {fileIcon(f.fileName ?? f.name ?? "file.pdf")}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] font-semibold">{f.fileName ?? f.name ?? "file"}</p>
+                        <p className="truncate text-[12.5px] font-semibold">{f.fileName ?? (f as any).name ?? "file"}</p>
                         <p className="truncate text-[10.5px] text-muted-foreground">{fileSize(f.size)} · {f.uploadedBy?.name ?? "unknown"} · {timeAgo(f.uploadedAt)}</p>
                       </div>
                       <StatusBadge status={f.approvalStatus ?? "PENDING"} />
@@ -2547,7 +2674,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                       {f.approvalStatus !== "REVISION_REQUESTED" && (
                         <button onClick={() => setApproval(f.id, "REVISION_REQUESTED")} className="rounded-lg px-2 py-1 text-[10.5px] font-bold text-amber-400 transition-colors hover:bg-amber-500/10">revise</button>
                       )}
-                      <a href={absoluteUrl(f.fileUrl)} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Download">
+                      <a href={f.downloadUrl ?? absoluteUrl(f.fileUrl)} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Download">
                         <Download className="size-3.5" />
                       </a>
                       <button onClick={() => deleteFile(f.id)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400">
@@ -2633,8 +2760,8 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   <div className="rounded-xl border border-border/60 p-3">
                     <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase"><Wallet className="size-3.5" /> Budget burn</p>
                     <div className="flex items-center justify-between text-[11.5px]">
-                      <span className="font-semibold tabular-nums">{formatBDT(detail.spentAmount ?? (detail as any).budgetSpent ?? 0)} spent</span>
-                      <span className="text-muted-foreground tabular-nums">of {formatBDT((detail as any).amount ?? detail.budgetAmount ?? finance?.project?.budgetAmount)}</span>
+                      <span className="font-semibold tabular-nums">{money(detail.spentAmount ?? (detail as any).budgetSpent ?? 0, detail.currency)} spent</span>
+                      <span className="text-muted-foreground tabular-nums">of {money((detail as any).amount ?? detail.budgetAmount ?? finance?.project?.budgetAmount, detail.currency)}</span>
                       <span className="font-bold tabular-nums">{budgetPct(detail)}%</span>
                     </div>
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
@@ -2644,6 +2771,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   <ProjectFinancePanel
                     finance={finance}
                     loading={finLoading}
+                    currency={detail.currency}
                     onInvoice={() => setFinInvOpen(true)}
                     onExpense={() => setFinExpOpen(true)}
                   />
@@ -2668,7 +2796,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                             {finance.payments.map((p: any) => (
                               <tr key={p.id} className="border-t border-border/40">
                                 <td className="px-3 py-2 text-[11.5px] font-semibold">{formatDate(p.paymentDate)}</td>
-                                <td className="px-3 py-2 text-[11.5px] font-bold tabular-nums text-emerald-400">{formatBDT(p.amount)}</td>
+                                <td className="px-3 py-2 text-[11.5px] font-bold tabular-nums text-emerald-400">{money(p.amount, detail.currency)}</td>
                                 <td className="px-3 py-2 text-[11.5px]">{label(p.paymentMethod)}</td>
                                 <td className="px-3 py-2 text-[11.5px] font-mono text-[10.5px]">{p.invoiceNumber}</td>
                                 <td className="px-3 py-2 text-[11px] text-muted-foreground">{p.referenceId ?? p.notes ?? "—"}</td>
@@ -2722,9 +2850,9 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   >
                     <UploadCloud className="size-5" />
                     {refUploading ? "Uploading…" : "Upload PDF / document"}
-                    <span className="text-[10.5px] font-medium text-muted-foreground/70">proposal, brief, contract, assets — max 15MB</span>
+                    <span className="text-[10.5px] font-medium text-muted-foreground/70">PDF, image or zip — max 15MB</span>
                   </button>
-                  <input ref={refFileRef} type="file" className="hidden" onChange={onPickRefFile} accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.webp,.zip" />
+                  <input ref={refFileRef} type="file" className="hidden" onChange={onPickRefFile} accept=".pdf,.png,.jpg,.jpeg,.webp,.zip" />
                   <div className="flex flex-col gap-2 rounded-2xl border border-border/60 p-3">
                     <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Add link</p>
                     <Input value={refTitle} onChange={(e) => setRefTitle(e.target.value)} placeholder="Title — e.g. Brand assets, Media plan" />
@@ -2767,7 +2895,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                             </p>
                           </div>
                           <a
-                            href={absoluteUrl(r.fileUrl ?? r.url)}
+                            href={r.downloadUrl ?? absoluteUrl(r.fileUrl ?? r.url)}
                             target="_blank"
                             rel="noreferrer"
                             className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -2915,7 +3043,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
       />
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete project?">
         <p className="text-[12.5px] leading-relaxed text-muted-foreground">
-          {deleteTarget ? `This permanently deletes "${deleteTarget.name}" and its milestones, files, and discussions. Tasks referencing it will be orphaned — proceed carefully.` : ""}
+          {deleteTarget ? `This permanently deletes "${deleteTarget.name}" and its milestones, files, reports and discussions. Projects that still have tasks, invoices, expenses, income or vendor engagements are blocked — archive those instead.` : ""}
         </p>
         <div className="mt-6 flex justify-end gap-2">
           <button onClick={() => setDeleteTarget(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">

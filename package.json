@@ -19,6 +19,7 @@
     "build": "npm run build --prefix apps/api && npm run build --prefix apps/web",
     "typecheck": "npm run typecheck --prefix apps/api && npm run typecheck --prefix apps/web",
     "test:smoke": "node scripts/smoke.mjs",
+    "test:flow": "node scripts/flow-verify.mjs",
     "test:e2e": "npm run test:e2e --prefix apps/web",
     "check": "npm run typecheck && npm run test:smoke"
   },

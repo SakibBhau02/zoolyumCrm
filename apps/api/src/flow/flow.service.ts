@@ -1,17 +1,101 @@
-import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
-import { HealthStatus, ProjectStatus, ProjectType } from "@prisma/client";
+import { FileApprovalStatus, HealthStatus, ProjectStatus, TaskStatus } from "@prisma/client";
+import { unlink } from "fs/promises";
+import { join } from "path";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { CacheService } from "../cache/cache.service";
 import { CapitalService } from "../capital/capital.service";
 import { ScoringService } from "../scoring/scoring.service";
 import { CreateReferenceDto } from "./dto/create-reference.dto";
+import { CreateProjectDto } from "./dto/create-project.dto";
+import { UpdateProjectDto } from "./dto/update-project.dto";
+import {
+  AddDeliverableDto,
+  AddFileDto,
+  AddMilestoneDto,
+  GenerateReportDto,
+  UpdateDeliverableDto,
+  UpdateMilestoneDto,
+  UpdateReportDto,
+} from "./dto/flow-mutations.dto";
 import { advanceBillingDate } from "../common/billing-date";
 import { recomputeProjectStats } from "../common/project-stats";
+import { writeSystemAudit } from "../common/system-audit";
+import { signStoredFileUrl, uploadedFilename } from "../common/signed-url";
+import { findUploadedFile, uploadsRoot } from "../common/file-storage";
+
+const DAY = 86400000;
+
+const clampProgress = (value: unknown): number => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(100, Math.max(0, Math.round(n)));
+};
+
+const dayStart = (date: Date) => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+/** Minimal RFC-4180 parser: quoted cells, escaped quotes, CRLF, embedded commas. */
+export function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  const src = text.replace(/^\uFEFF/, "");
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else {
+          quoted = false;
+        }
+      } else {
+        cell += ch;
+      }
+      continue;
+    }
+    if (ch === '"') quoted = true;
+    else if (ch === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else if (ch !== "\r") {
+      cell += ch;
+    }
+  }
+  if (cell.length || row.length) {
+    row.push(cell);
+    rows.push(row);
+  }
+  return rows
+    .map((r) => r.map((c) => c.trim()))
+    .filter((r) => r.some((c) => c !== ""));
+}
 
 @Injectable()
 export class FlowService {
+  private readonly logger = new Logger(FlowService.name);
+  private reportsRunning = false;
+  private reconcileRunning = false;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
@@ -24,9 +108,15 @@ export class FlowService {
     return this.cache.wrap("flow:overview", 30, async () => {
       const [projects, tasks] = await Promise.all([
         this.prisma.project.findMany({
+          where: { status: { not: "ARCHIVED" } },
           select: { id: true, status: true, healthStatus: true, riskScore: true, budgetAmount: true, targetEndDate: true },
         }),
-        this.prisma.task.findMany({ select: { projectId: true, status: true } }),
+        // Archived tasks no longer describe live work; counting them made the
+        // header disagree with the board.
+        this.prisma.task.findMany({
+          where: { archivedAt: null, project: { status: { not: "ARCHIVED" } } },
+          select: { projectId: true, status: true },
+        }),
       ]);
       const byStatus: Record<string, number> = {};
       const byHealth: Record<string, number> = { ON_TRACK: 0, AT_RISK: 0, DELAYED: 0 };
@@ -36,78 +126,115 @@ export class FlowService {
       }
       const active = projects.filter((p) => ["PLANNING", "ACTIVE"].includes(p.status));
       const avgRisk = active.length ? Math.round(active.reduce((s, p) => s + (p.riskScore ?? 0), 0) / active.length) : 0;
-      const completion = projects.length
-        ? Math.round((tasks.filter((t) => t.status === "DONE").length / Math.max(tasks.length, 1)) * 100)
+      const completion = tasks.length
+        ? Math.round((tasks.filter((t) => t.status === "DONE").length / tasks.length) * 100)
         : 0;
-      return { totalProjects: projects.length, active: active.length, byStatus, byHealth, avgRisk, completion };
+      // A project is "on time" while its target date has not passed. That is
+      // the number the table footer renders; it was previously never returned.
+      const dated = projects.filter((p) => p.targetEndDate && !["COMPLETED", "ARCHIVED"].includes(p.status));
+      const onTimeRate = dated.length
+        ? Math.round((dated.filter((p) => new Date(p.targetEndDate!).getTime() >= Date.now()).length / dated.length) * 100)
+        : null;
+      return { totalProjects: projects.length, active: active.length, byStatus, byHealth, avgRisk, completion, onTimeRate };
     });
   }
 
-  async list(query: { q?: string; status?: string; health?: string; clientId?: string; managerId?: string; page?: string | number; pageSize?: string | number }) {
+  async list(query: {
+    q?: string;
+    status?: string;
+    health?: string;
+    clientId?: string;
+    managerId?: string;
+    page?: string | number;
+    pageSize?: string | number;
+  }) {
     return this.cache.wrapQuery("flow:list", query, 30, async () => {
       const where: any = {
-      ...(query.q
-        ? {
-            OR: [
-              { name: { contains: query.q, mode: "insensitive" } },
-              { client: { companyName: { contains: query.q, mode: "insensitive" } } },
-              { assignedPm: { name: { contains: query.q, mode: "insensitive" } } },
-            ],
-          }
-        : {}),
-      ...(query.status ? { status: query.status as ProjectStatus } : {}),
-      ...(query.health ? { healthStatus: query.health as HealthStatus } : {}),
-      ...(query.clientId ? { clientId: query.clientId } : {}),
-      ...(query.managerId ? { assignedPmId: query.managerId } : {}),
-    };
-    // Opt-in pagination: callers that pass `page` get { items, total, ... };
-    // existing callers keep the plain array they already expect.
-    const wantsPage = query.page !== undefined && query.page !== null && query.page !== "";
-    const page = Math.max(1, Number(query.page) || 1);
-    const pageSize = Math.min(200, Math.max(1, Number(query.pageSize) || 50));
+        ...(query.q
+          ? {
+              OR: [
+                { name: { contains: query.q, mode: "insensitive" } },
+                { client: { companyName: { contains: query.q, mode: "insensitive" } } },
+                { assignedPm: { name: { contains: query.q, mode: "insensitive" } } },
+                { uid: { contains: query.q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+        ...(query.status ? { status: query.status as ProjectStatus } : {}),
+        ...(query.health ? { healthStatus: query.health as HealthStatus } : {}),
+        ...(query.clientId ? { clientId: query.clientId } : {}),
+        ...(query.managerId ? { assignedPmId: query.managerId } : {}),
+      };
+      // Opt-in pagination: callers that pass `page` get { items, total, ... };
+      // existing callers keep the plain array they already expect.
+      const wantsPage = query.page !== undefined && query.page !== null && query.page !== "";
+      const page = Math.max(1, Number(query.page) || 1);
+      const pageSize = Math.min(200, Math.max(1, Number(query.pageSize) || 50));
 
-    const [projects, total, taskGroups] = await Promise.all([
-      this.prisma.project.findMany({
-        where,
-        include: {
-          client: { select: { id: true, companyName: true } },
-          assignedPm: { select: { id: true, name: true } },
-          _count: { select: { tasks: true, milestones: true } },
-        },
-        orderBy: [{ healthStatus: "asc" }, { createdAt: "desc" }],
-        ...(wantsPage ? { take: pageSize, skip: (page - 1) * pageSize } : {}),
-      }),
-      wantsPage ? this.prisma.project.count({ where }) : Promise.resolve(0),
-      // Aggregated in the database instead of pulling every task row into
-      // memory on each request (the list used to fetch all tasks, always).
-      this.prisma.task.groupBy({
-        by: ["projectId", "status"],
-        where: { projectId: { not: null }, archivedAt: null },
-        _count: { _all: true },
-      }),
-    ]);
-    const byProject: Record<string, { total: number; completed: number }> = {};
-    for (const g of taskGroups) {
-      if (!g.projectId) continue;
-      byProject[g.projectId] ??= { total: 0, completed: 0 };
-      byProject[g.projectId].total += g._count._all;
-      if (g.status === "DONE") byProject[g.projectId].completed += g._count._all;
-    }
-    const items = projects.map((p) => ({
-      ...p,
-      tasksTotal: byProject[p.id]?.total ?? 0,
-      tasksCompleted: byProject[p.id]?.completed ?? 0,
-    }));
-    return wantsPage ? { items, total, page, pageSize } : items;
+      const [projects, total] = await Promise.all([
+        this.prisma.project.findMany({
+          where,
+          include: {
+            client: { select: { id: true, companyName: true } },
+            assignedPm: { select: { id: true, name: true } },
+            _count: { select: { tasks: true, milestones: true } },
+          },
+          // Risk first: the board exists to surface projects that need attention.
+          orderBy: [{ healthStatus: "desc" }, { createdAt: "desc" }],
+          ...(wantsPage ? { take: pageSize, skip: (page - 1) * pageSize } : {}),
+        }),
+        wantsPage ? this.prisma.project.count({ where }) : Promise.resolve(0),
+      ]);
+
+      // Aggregate only the rows this page actually needs. The previous version
+      // grouped the entire task table on every list request.
+      const ids = projects.map((p) => p.id);
+      const taskGroups = ids.length
+        ? await this.prisma.task.groupBy({
+            by: ["projectId", "status"],
+            where: { projectId: { in: ids }, archivedAt: null },
+            _count: { _all: true },
+          })
+        : [];
+      const byProject: Record<string, { total: number; completed: number }> = {};
+      for (const g of taskGroups) {
+        if (!g.projectId) continue;
+        byProject[g.projectId] ??= { total: 0, completed: 0 };
+        byProject[g.projectId].total += g._count._all;
+        if (g.status === "DONE") byProject[g.projectId].completed += g._count._all;
+      }
+      const items = projects.map((p) => {
+        const stats = byProject[p.id] ?? { total: 0, completed: 0 };
+        return {
+          ...p,
+          // One progress authority: the task ratio. Manual values survive only
+          // for projects that have no tasks at all.
+          progress: stats.total ? Math.round((stats.completed / stats.total) * 100) : p.progress,
+          tasksTotal: stats.total,
+          tasksCompleted: stats.completed,
+        };
+      });
+      return wantsPage ? { items, total, page, pageSize } : items;
     });
   }
 
   async nextUid() {
-    const rows = await this.prisma.project.findMany({ select: { uid: true } });
-    const used = new Set(rows.map((r) => r.uid).filter(Boolean));
-    let n = 1;
-    while (used.has(`PJ-${String(n).padStart(4, "0")}`)) n++;
-    return `PJ-${String(n).padStart(4, "0")}`;
+    // MAX(...) in the database instead of scanning every project row per attempt.
+    try {
+      const rows = await this.prisma.$queryRaw<{ max: number | null }[]>`
+        SELECT MAX(CAST(SUBSTRING("uid" FROM 4) AS INTEGER)) AS max
+        FROM "Project"
+        WHERE "uid" LIKE 'PJ-%'
+      `;
+      const next = Number(rows?.[0]?.max ?? 0) + 1;
+      return `PJ-${String(next).padStart(4, "0")}`;
+    } catch {
+      const rows = await this.prisma.project.findMany({ select: { uid: true } });
+      const used = new Set(rows.map((r) => r.uid).filter(Boolean));
+      let n = 1;
+      while (used.has(`PJ-${String(n).padStart(4, "0")}`)) n++;
+      return `PJ-${String(n).padStart(4, "0")}`;
+    }
   }
 
   async managers() {
@@ -120,6 +247,7 @@ export class FlowService {
   /** id + name only, for pickers in modules that lack Flow permissions. */
   async projectLookup() {
     return this.prisma.project.findMany({
+      where: { status: { not: "ARCHIVED" } },
       select: { id: true, name: true, uid: true },
       orderBy: { name: "asc" },
       take: 500,
@@ -143,14 +271,23 @@ export class FlowService {
         sourceLead: { select: { id: true, name: true, company: true, source: true, vertical: true, estimatedDealSize: true, contactEmail: true, contactPhone: true } },
         sourceProposal: { select: { id: true, versionNumber: true, status: true, fileUrl: true, portalLink: true, sentDate: true } },
         milestones: { orderBy: { dueDate: "asc" } },
-        files: { include: { uploadedBy: { select: { name: true } } }, orderBy: { uploadedAt: "desc" } },
+        files: {
+          include: { uploadedBy: { select: { name: true } } },
+          orderBy: { uploadedAt: "desc" },
+        },
         riskLogs: { orderBy: { calculatedAt: "desc" }, take: 6 },
         tasks: {
+          where: { archivedAt: null },
           include: { assignedTo: { select: { id: true, name: true } } },
           orderBy: { createdAt: "asc" },
         },
         deliverables: {
-          include: { tasks: { select: { id: true, title: true, status: true } } },
+          include: {
+            tasks: {
+              where: { archivedAt: null },
+              select: { id: true, title: true, status: true },
+            },
+          },
           orderBy: { sortOrder: "asc" },
         },
         reports: {
@@ -170,10 +307,16 @@ export class FlowService {
     });
     const tasksTotal = project.tasks.length;
     const tasksCompleted = project.tasks.filter((t) => t.status === "DONE").length;
-    return { ...project, deliverables, tasksTotal, tasksCompleted };
+    const progress = tasksTotal ? Math.round((tasksCompleted / tasksTotal) * 100) : project.progress;
+    const files = project.files.map((f) => ({
+      ...f,
+      // The download route requires a signature; the UI uses this value.
+      downloadUrl: signStoredFileUrl(f.fileUrl),
+    }));
+    return { ...project, files, deliverables, progress, tasksTotal, tasksCompleted };
   }
 
-  async create(body: any) {
+  async create(body: CreateProjectDto, actorId?: string) {
     // amount sync — keep budgetAmount for compat
     let amount = body.amount;
     let budgetAmount = body.budgetAmount;
@@ -182,39 +325,59 @@ export class FlowService {
     } else if (budgetAmount !== undefined && budgetAmount !== null) {
       amount = budgetAmount;
     }
-    const data = {
-        clientId: body.clientId,
-        name: body.name,
-        description: body.description ?? undefined,
-        type: body.type ?? "FIXED",
-        templateId: body.templateId,
-        assignedPmId: body.assignedPmId,
-        amount: amount ?? undefined,
-        budgetAmount: budgetAmount ?? undefined,
-        spentAmount: body.spentAmount ?? undefined,
-        currency: body.currency ?? undefined,
-        category: body.category ?? "",
-        priority: body.priority ?? "MEDIUM",
-        progress: body.progress ?? 0,
-        team: body.team ?? [],
-        billingType: body.billingType ?? "ONE_TIME",
-        recurringInterval: body.recurringInterval,
-        nextBillingDate: body.nextBillingDate ?? this.nextBillingDate(body.startDate ?? new Date().toISOString(), body.recurringInterval),
-        monthlyRate: body.monthlyRate ?? undefined,
-        totalBilled: body.totalBilled ?? 0,
-        paymentStatus: body.paymentStatus ?? "PENDING",
-        projectLink: body.projectLink,
-        websiteUrl: body.websiteUrl,
-        socialLinks: body.socialLinks,
-        briefLink: body.briefLink,
-        driveLink: body.driveLink,
-        researchLink: body.researchLink,
-        startDate: body.startDate ? new Date(body.startDate) : new Date(),
-        targetEndDate: body.targetEndDate ? new Date(body.targetEndDate) : undefined,
-        status: body.status ?? undefined,
-        confidenceScore: body.confidenceScore ?? undefined,
-        // healthStatus / riskScore are derived by the scoring engine, never
-        // taken from the create payload.
+    const startDate = body.startDate ? new Date(body.startDate) : new Date();
+    const template = body.templateId
+      ? await this.prisma.projectTemplate.findUnique({ where: { id: body.templateId } })
+      : null;
+    const targetEndDate =
+      body.targetEndDate
+        ? new Date(body.targetEndDate)
+        : template?.benchmarkDurationDays
+          ? new Date(startDate.getTime() + template.benchmarkDurationDays * DAY)
+          : undefined;
+
+    const data: any = {
+      clientId: body.clientId,
+      name: body.name,
+      description: body.description ?? undefined,
+      type: body.type ?? "FIXED",
+      templateId: body.templateId,
+      assignedPmId: body.assignedPmId,
+      amount: amount ?? undefined,
+      budgetAmount: budgetAmount ?? undefined,
+      spentAmount: body.spentAmount ?? undefined,
+      currency: body.currency ?? undefined,
+      category: body.category ?? "",
+      priority: body.priority ?? "MEDIUM",
+      progress: body.progress ?? 0,
+      team: body.team ?? [],
+      billingType: body.billingType ?? "ONE_TIME",
+      recurringInterval: body.recurringInterval,
+      nextBillingDate: body.nextBillingDate ?? this.nextBillingDate(startDate.toISOString(), body.recurringInterval),
+      monthlyRate: body.monthlyRate ?? undefined,
+      totalBilled: body.totalBilled ?? 0,
+      paymentStatus: body.paymentStatus ?? "PENDING",
+      projectLink: body.projectLink,
+      websiteUrl: body.websiteUrl,
+      socialLinks: body.socialLinks,
+      briefLink: body.briefLink,
+      driveLink: body.driveLink,
+      researchLink: body.researchLink,
+      startDate,
+      targetEndDate,
+      status: body.status ?? undefined,
+      confidenceScore: body.confidenceScore ?? undefined,
+      reportMode: body.reportMode ?? "MANUAL",
+      reportFrequency: body.reportFrequency ?? null,
+      nextReportDate: body.nextReportDate ? new Date(body.nextReportDate) : undefined,
+      // Health is derived by the scoring engine. An explicit level becomes a
+      // stored override (with reason), exactly like the PATCH path.
+      ...(body.healthStatus && String(body.healthStatus) !== "AUTO"
+        ? {
+            healthStatusOverride: body.healthStatus,
+            healthOverrideReason: body.healthOverrideReason ?? "Set at creation",
+          }
+        : {}),
     };
 
     // `uid` is derived from "highest existing number + 1". Two concurrent
@@ -232,6 +395,29 @@ export class FlowService {
     if (!project) {
       throw new ConflictException("Could not allocate a project number - please try again");
     }
+
+    // Templates were previously cosmetic: the wizard read fields that do not
+    // exist. Applying the seeded task list here is the actual behaviour.
+    const templateTasks = Array.isArray(template?.defaultTaskList)
+      ? (template!.defaultTaskList as unknown[]).filter((t): t is string => typeof t === "string" && t.trim() !== "")
+      : [];
+    if (templateTasks.length) {
+      try {
+        await this.prisma.task.createMany({
+          data: templateTasks.map((title, index) => ({
+            projectId: project.id,
+            title: title.trim(),
+            status: TaskStatus.TODO,
+            priority: "MEDIUM" as const,
+            sortOrder: index,
+          })),
+        });
+        await recomputeProjectStats(this.prisma, project.id).catch(() => {});
+      } catch (e: any) {
+        this.logger.warn(`Template tasks for project ${project.id} failed: ${e?.message ?? e}`);
+      }
+    }
+
     try {
       if (project.assignedPmId) {
         await this.notifications.create(
@@ -249,24 +435,43 @@ export class FlowService {
         `New project "${project.name}" has been created.`,
         `/flow/${project.id}`
       );
-    } catch {}
+    } catch (e: any) {
+      this.logger.warn(`Project notifications failed for ${project.id}: ${e?.message ?? e}`);
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId,
+      action: "flow.project.create",
+      entityType: "Project",
+      entityId: project.id,
+      after: { name: project.name, uid: project.uid, clientId: project.clientId, status: project.status },
+    });
     await this.rescore(project.id, project.clientId);
     await this.invalidateProjects();
     return (await this.prisma.project.findUnique({ where: { id: project.id } })) ?? project;
   }
 
-  async update(id: string, body: any) {
+  async update(id: string, body: UpdateProjectDto, actorId?: string) {
     const existing = await this.prisma.project.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Project not found");
+
     const data: any = {};
     for (const field of [
       "name", "type", "templateId", "assignedPmId", "status", "clientId",
-      "category", "priority", "progress", "team", "billingType", "recurringInterval",
+      "category", "priority", "team", "billingType", "recurringInterval",
       "monthlyRate", "totalBilled", "paymentStatus", "briefLink", "driveLink", "researchLink",
       "confidenceScore", "reportFrequency", "reportMode",
     ]) {
-      if (body[field] !== undefined) data[field] = body[field];
+      const value = (body as any)[field];
+      if (value !== undefined) data[field] = value;
     }
+
+    // Progress is a derived value whenever the project has live tasks. Letting
+    // a form overwrite it is how the board and the task list drifted apart.
+    if (body.progress !== undefined) {
+      const liveTasks = await this.prisma.task.count({ where: { projectId: id, archivedAt: null } });
+      if (liveTasks === 0) data.progress = clampProgress(body.progress);
+    }
+
     // Health is computed, not typed. A PM can still override it, but the
     // override is stored separately (with a reason) so the engine's own reading
     // stays visible and a later "clear override" restores it.
@@ -274,7 +479,7 @@ export class FlowService {
       data.healthStatusOverride = null;
       data.healthOverrideReason = null;
     } else if (body.healthStatus !== undefined) {
-      if (!body.healthStatus || body.healthStatus === "AUTO") {
+      if (!body.healthStatus || String(body.healthStatus) === "AUTO") {
         data.healthStatusOverride = null;
         data.healthOverrideReason = null;
       } else {
@@ -302,19 +507,52 @@ export class FlowService {
     else if (body.recurringInterval !== undefined && (body.startDate !== undefined || body.recurringInterval === null)) {
       data.nextBillingDate = body.recurringInterval === null ? null : this.nextBillingDate(body.startDate ?? existing.startDate.toISOString(), body.recurringInterval);
     }
-    if (body.nextReportDate !== undefined) data.nextReportDate = body.nextReportDate ? new Date(body.nextReportDate) : null;
-    else if (body.reportFrequency !== undefined && body.reportMode === "AUTOMATIC") {
-      const days = body.reportFrequency === "15-days" ? 15 : 30;
-      data.nextReportDate = new Date(Date.now() + days * 86400000);
+
+    // Recurring report schedule: switching to AUTOMATIC needs a concrete next
+    // date, otherwise the cron either never fires or fires every night.
+    const reportMode = (data.reportMode ?? existing.reportMode) as string;
+    const reportFrequency = (data.reportFrequency ?? existing.reportFrequency) as string | null;
+    if (body.nextReportDate !== undefined) {
+      data.nextReportDate = body.nextReportDate ? new Date(body.nextReportDate) : null;
+    } else if (data.reportMode !== undefined || data.reportFrequency !== undefined) {
+      if (reportMode === "MANUAL") {
+        data.nextReportDate = null;
+      } else if (reportMode === "AUTOMATIC" && reportFrequency) {
+        const days = reportFrequency === "15-days" ? 15 : 30;
+        data.nextReportDate = new Date(Date.now() + days * DAY);
+      }
     }
+
     const result = await this.prisma.project.update({ where: { id }, data });
     // auto invoice hooks
     try {
       await this.handleAutoInvoice(existing as any, result as any);
-    } catch {
-      // do not fail status transition if invoice creation fails
+    } catch (e: any) {
+      // A finance hook must not fail the status transition, but silence here
+      // meant a missing draft invoice was never noticed.
+      this.logger.warn(`Auto-invoice for project ${id} failed: ${e?.message ?? e}`);
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId,
+      action: "flow.project.update",
+      entityType: "Project",
+      entityId: id,
+      before: {
+        name: existing.name, status: existing.status, clientId: existing.clientId,
+        amount: existing.amount, healthStatusOverride: existing.healthStatusOverride,
+      },
+      after: {
+        name: result.name, status: result.status, clientId: result.clientId,
+        amount: result.amount, healthStatusOverride: result.healthStatusOverride,
+      },
+    });
+    if (existing.clientId !== result.clientId) {
+      await this.rescore(id, existing.clientId);
     }
     await this.rescore(id, result.clientId);
+    if (existing.amount?.toString() !== result.amount?.toString() || existing.currency !== result.currency) {
+      await this.cache.del(`capital:project-finance:${id}`);
+    }
     await this.invalidateProjects();
     return (await this.prisma.project.findUnique({ where: { id } })) ?? result;
   }
@@ -327,20 +565,20 @@ export class FlowService {
   private async rescore(projectId: string, clientId?: string | null) {
     try {
       await this.scoring.recomputeProject(projectId);
-    } catch {
-      /* scoring must never fail a project write */
+    } catch (e: any) {
+      this.logger.warn(`Project rescore failed for ${projectId}: ${e?.message ?? e}`);
     }
     if (clientId) {
       try {
         await this.scoring.recomputeClient(clientId);
-      } catch {
-        /* same */
+      } catch (e: any) {
+        this.logger.warn(`Client rescore failed for ${clientId}: ${e?.message ?? e}`);
       }
     }
   }
 
   private async handleAutoInvoice(prev: any, next: any) {
-    const dueDate = new Date(Date.now() + 14 * 86400000);
+    const dueDate = new Date(Date.now() + 14 * DAY);
     // PLANNING|PAUSED → ACTIVE (start) — only if totalBilled == 0 and amount>0, DRAFT
     const isStart = (prev.status === "PLANNING" || prev.status === "PAUSED") && next.status === "ACTIVE";
     if (isStart) {
@@ -385,17 +623,83 @@ export class FlowService {
     }
   }
 
-  async remove(id: string) {
-    const existing = await this.prisma.project.findUnique({ where: { id }, select: { clientId: true } });
-    await this.prisma.project.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException("Project not found");
+  async remove(id: string, actorId?: string) {
+    const existing = await this.prisma.project.findUnique({
+      where: { id },
+      select: {
+        id: true, name: true, uid: true, clientId: true, status: true,
+        files: { select: { fileUrl: true } },
+      },
     });
-    // The client's "at-risk projects" factor just changed.
-    if (existing?.clientId) {
+    if (!existing) throw new NotFoundException("Project not found");
+
+    // Invoices and expenses survive a project delete (their projectId is
+    // nullable), which silently removed them from project reporting. Refuse the
+    // delete instead of detaching financial history.
+    const [invoices, expenses, incomes, engagements, tasks] = await Promise.all([
+      this.prisma.invoice.count({ where: { projectId: id } }),
+      this.prisma.expense.count({ where: { projectId: id } }),
+      this.prisma.manualIncome.count({ where: { projectId: id } }),
+      this.prisma.vendorEngagement.count({ where: { projectId: id } }),
+      // Archived tasks are the exception: they are retired records, and the
+      // board filters them out, so they cannot block a delete the user can
+      // never resolve. They are removed with the project below.
+      this.prisma.task.count({ where: { projectId: id, archivedAt: null } }),
+    ]);
+    const blockers = [
+      invoices ? `${invoices} invoice(s)` : null,
+      expenses ? `${expenses} expense(s)` : null,
+      incomes ? `${incomes} income record(s)` : null,
+      engagements ? `${engagements} vendor engagement(s)` : null,
+      tasks ? `${tasks} task(s)` : null,
+    ].filter(Boolean);
+    if (blockers.length) {
+      throw new ConflictException(
+        `This project still has ${blockers.join(", ")}. Archive it instead, or detach those records first.`
+      );
+    }
+
+    try {
+      await this.prisma.task.deleteMany({ where: { projectId: id, archivedAt: { not: null } } });
+      await this.prisma.project.delete({ where: { id } });
+    } catch (err: any) {
+      if (err?.code === "P2025") throw new NotFoundException("Project not found");
+      if (err?.code === "P2003") {
+        throw new ConflictException("This project is referenced by other records and cannot be deleted");
+      }
+      throw err;
+    }
+
+    // Remove the blobs too: a deleted row used to leave the file on disk forever.
+    for (const f of existing.files) {
+      const name = uploadedFilename(f.fileUrl);
+      if (!name) continue;
+      const candidates = new Set([
+        join(uploadsRoot(), name),
+        join(process.cwd(), "uploads", name),
+        findUploadedFile(name),
+      ]);
+      for (const candidate of candidates) {
+        try {
+          await unlink(candidate);
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+
+    await writeSystemAudit(this.prisma, {
+      actorId,
+      action: "flow.project.delete",
+      entityType: "Project",
+      entityId: id,
+      before: { name: existing.name, uid: existing.uid, clientId: existing.clientId, status: existing.status },
+    });
+    if (existing.clientId) {
       try {
         await this.scoring.recomputeClient(existing.clientId);
-      } catch {
-        /* scoring must never fail a delete */
+      } catch (e: any) {
+        this.logger.warn(`Client rescore after delete failed: ${e?.message ?? e}`);
       }
     }
     await this.invalidateProjects();
@@ -409,9 +713,13 @@ export class FlowService {
     return p;
   }
 
+  private withSignedDownload<T extends { fileUrl?: string | null }>(row: T): T & { downloadUrl: string | null } {
+    return { ...row, downloadUrl: signStoredFileUrl(row.fileUrl) };
+  }
+
   async createReference(projectId: string, dto: CreateReferenceDto, userId?: string) {
     await this.ensureProject(projectId);
-    return this.prisma.projectReference.create({
+    const created = await this.prisma.projectReference.create({
       data: {
         projectId,
         title: dto.title,
@@ -422,45 +730,95 @@ export class FlowService {
       },
       include: { uploadedBy: { select: { id: true, name: true } } },
     });
+    await writeSystemAudit(this.prisma, {
+      actorId: userId,
+      action: "flow.reference.create",
+      entityType: "ProjectReference",
+      entityId: created.id,
+      after: { projectId, title: created.title },
+    });
+    return this.withSignedDownload(created);
   }
 
   async listReferences(projectId: string) {
     await this.ensureProject(projectId);
-    return this.prisma.projectReference.findMany({
+    const rows = await this.prisma.projectReference.findMany({
       where: { projectId },
       include: { uploadedBy: { select: { id: true, name: true } } },
       orderBy: { createdAt: "desc" },
     });
+    return rows.map((r) => this.withSignedDownload(r));
   }
 
-  async updateReference(id: string, dto: Partial<CreateReferenceDto>) {
+  async updateReference(id: string, dto: Partial<CreateReferenceDto>, userId?: string) {
     const data: any = {};
     if (dto.title !== undefined) data.title = dto.title;
     if (dto.url !== undefined) data.url = dto.url;
     if (dto.type !== undefined) data.type = dto.type;
     if (dto.fileUrl !== undefined) data.fileUrl = dto.fileUrl;
-    return this.prisma.projectReference.update({ where: { id }, data }).catch(() => {
+    try {
+      const updated = await this.prisma.projectReference.update({ where: { id }, data });
+      await writeSystemAudit(this.prisma, {
+        actorId: userId, action: "flow.reference.update", entityType: "ProjectReference", entityId: id,
+      });
+      return this.withSignedDownload(updated);
+    } catch {
       throw new NotFoundException("Reference not found");
-    });
+    }
   }
 
-  async deleteReference(id: string) {
-    await this.prisma.projectReference.delete({ where: { id } }).catch(() => {
+  async deleteReference(id: string, userId?: string) {
+    try {
+      await this.prisma.projectReference.delete({ where: { id } });
+    } catch {
       throw new NotFoundException("Reference not found");
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId: userId, action: "flow.reference.delete", entityType: "ProjectReference", entityId: id,
     });
     return { ok: true };
   }
 
-  async bulkAssignTasks(projectId: string, taskIds: string[]) {
-    await this.ensureProject(projectId);
-    if (!taskIds?.length) return { count: 0 };
-    const res = await this.prisma.task.updateMany({
-      where: { id: { in: taskIds } },
-      data: { projectId },
+  async bulkAssignTasks(projectId: string, taskIds: string[], userId?: string) {
+    const target = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true, clientId: true },
     });
-    await this.cache.delPattern("tasks:list:*");
-    await this.cache.del("tasks:stats");
-    return res;
+    if (!target) throw new NotFoundException("Project not found");
+    if (!taskIds?.length) return { count: 0, rejected: [] as string[] };
+
+    // Moving a task across clients would leak work (and budgets) between
+    // accounts. Only unassigned tasks or tasks from the same client qualify.
+    const tasks = await this.prisma.task.findMany({
+      where: { id: { in: taskIds } },
+      select: { id: true, projectId: true, project: { select: { clientId: true } } },
+    });
+    const allowed = tasks.filter(
+      (t) => !t.projectId || t.project?.clientId === target.clientId
+    );
+    const rejected = tasks.filter(
+      (t) => t.projectId && t.project?.clientId !== target.clientId
+    ).map((t) => t.id);
+    const affected = new Set<string>([target.id]);
+    for (const t of allowed) if (t.projectId) affected.add(t.projectId);
+
+    const res = allowed.length
+      ? await this.prisma.task.updateMany({ where: { id: { in: allowed.map((t) => t.id) } }, data: { projectId } })
+      : { count: 0 };
+
+    for (const pid of affected) {
+      await recomputeProjectStats(this.prisma, pid).catch(() => {});
+      await this.rescore(pid, pid === target.id ? target.clientId : undefined);
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId: userId,
+      action: "flow.tasks.bulk-assign",
+      entityType: "Project",
+      entityId: projectId,
+      after: { assigned: res.count, rejected },
+    });
+    await this.invalidateProjects();
+    return { count: res.count, rejected };
   }
 
   private async invalidateProjects() {
@@ -470,17 +828,18 @@ export class FlowService {
     await this.cache.delPattern("tasks:list:*");
     await this.cache.del("dashboard:overview");
     await this.cache.del("insight:overview");
+    await this.cache.delPattern("capital:project-finance:*");
   }
 
   // ── CSV export / import ──────────────────────────────────────────────
-  private statusMap(v: string): string {
+  private statusMap(v: string): ProjectStatus {
     const s = v.trim().toLowerCase();
     if (s === "planning") return "PLANNING";
     if (s === "in-progress" || s === "in progress" || s === "active" || s === "review") return "ACTIVE";
     if (s === "completed" || s === "done") return "COMPLETED";
     if (s === "on-hold" || s === "on hold" || s === "paused") return "PAUSED";
     if (s === "archived") return "ARCHIVED";
-    return v.toUpperCase();
+    return "PLANNING";
   }
 
   private csvCell(v: unknown): string {
@@ -501,8 +860,8 @@ export class FlowService {
         [
           p.uid, p.name, p.client?.companyName ?? "", p.category ?? "", p.status, p.priority ?? "MEDIUM",
           p.progress ?? 0, Number(p.budgetAmount ?? 0), Number(p.spentAmount ?? 0),
-          p.startDate ? p.startDate.toISOString().slice(0, 10) : "",
-          p.targetEndDate ? p.targetEndDate.toISOString().slice(0, 10) : "",
+          p.startDate ? new Date(p.startDate).toISOString().slice(0, 10) : "",
+          p.targetEndDate ? new Date(p.targetEndDate).toISOString().slice(0, 10) : "",
           p.billingType, p.recurringInterval ?? "", p.assignedPm?.name ?? "", p.paymentStatus ?? "PENDING",
         ].map((v) => this.csvCell(v)).join(",")
       );
@@ -511,13 +870,10 @@ export class FlowService {
     return { filename, content: lines.join("\n") };
   }
 
-  async importCsv(buffer: Buffer) {
-    const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    if (lines.length < 2) return { imported: 0, skipped: [], total: lines.length - 1 };
-    const parse = (line: string) =>
-      line.split(",").map((c) => c.replace(/^"|"$/g, "").replace(/""/g, '"').trim());
-    const header = parse(lines[0]).map((h) => h.toLowerCase());
+  async importCsv(buffer: Buffer, actorId?: string) {
+    const rows = parseCsv(buffer.toString("utf8"));
+    if (rows.length < 2) return { imported: 0, skipped: [], errors: [], total: 0 };
+    const header = rows[0].map((h) => h.toLowerCase());
     const col = (name: string) => header.indexOf(name);
     const idx = {
       name: col("name"), client: col("client"), category: col("category"), status: col("status"),
@@ -532,99 +888,217 @@ export class FlowService {
     ]);
     const clientByName = new Map(clients.map((c) => [c.companyName.toLowerCase(), c.id]));
     const userByName = new Map(users.map((u) => [u.name.toLowerCase(), u.id]));
-    let imported = 0;
+    const date = (v: string) => {
+      if (!v) return undefined;
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? undefined : d;
+    };
+
     const skipped: string[] = [];
-    for (const line of lines.slice(1)) {
-      const c = parse(line);
-      const get = (i: number) => (i >= 0 ? c[i] ?? "" : "");
+    const errors: { row: number; reason: string }[] = [];
+    const payloads: any[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const c = rows[i];
+      const get = (index: number) => (index >= 0 ? c[index] ?? "" : "");
       const name = get(idx.name);
       const clientName = get(idx.client);
       const clientId = clientByName.get(clientName.toLowerCase());
       if (!name || !clientId) {
-        skipped.push(name || clientName || "unknown");
+        skipped.push(name || clientName || `row ${i + 1}`);
         continue;
       }
       const billingType = get(idx.billingType).toLowerCase() === "recurring" ? "RECURRING" : "ONE_TIME";
-      const interval = get(idx.recurringInterval);
-      const startDate = get(idx.startDate) || new Date().toISOString().slice(0, 10);
-      await this.prisma.project.create({
-        data: {
-          uid: await this.nextUid(),
-          clientId,
-          name,
-          category: get(idx.category) || "General",
-          status: this.statusMap(get(idx.status)) as ProjectStatus,
-          priority: get(idx.priority).toUpperCase() || "MEDIUM",
-          progress: Math.min(100, Math.max(0, Number(get(idx.progress)) || 0)),
-          budgetAmount: Number(get(idx.budget)) || 0,
-          spentAmount: Number(get(idx.spent)) || 0,
-          startDate: new Date(startDate),
-          targetEndDate: get(idx.dueDate) ? new Date(get(idx.dueDate)) : undefined,
-          billingType,
-          recurringInterval: billingType === "RECURRING" ? (interval || "30-days") : undefined,
-          nextBillingDate: billingType === "RECURRING" ? this.nextBillingDate(startDate, interval || "30-days") : undefined,
-          assignedPmId: userByName.get(get(idx.projectManager).toLowerCase()),
-          paymentStatus: get(idx.paymentStatus).toUpperCase() || "PENDING",
-        },
+      const interval = get(idx.recurringInterval) || "30-days";
+      const startDate = date(get(idx.startDate)) ?? new Date();
+      const priority = get(idx.priority).toUpperCase();
+      payloads.push({
+        clientId,
+        name,
+        category: get(idx.category) || "General",
+        status: this.statusMap(get(idx.status)),
+        priority: ["LOW", "MEDIUM", "HIGH", "URGENT"].includes(priority) ? priority : "MEDIUM",
+        progress: clampProgress(get(idx.progress)),
+        budgetAmount: Number(get(idx.budget)) || 0,
+        spentAmount: Number(get(idx.spent)) || 0,
+        startDate,
+        targetEndDate: date(get(idx.dueDate)),
+        billingType,
+        recurringInterval: billingType === "RECURRING" ? interval : undefined,
+        nextBillingDate: billingType === "RECURRING" ? this.nextBillingDate(startDate.toISOString(), interval) : undefined,
+        assignedPmId: userByName.get(get(idx.projectManager).toLowerCase()),
+        paymentStatus: get(idx.paymentStatus).toUpperCase() || "PENDING",
       });
-      imported++;
     }
-    return { imported, skipped, total: lines.length - 1 };
+
+    // One transaction: a bad row must not leave a half-imported file behind.
+    let uid = Number((await this.nextUid()).slice(3));
+    const createdIds = await this.prisma.$transaction(async (tx) => {
+      const ids: string[] = [];
+      for (const payload of payloads) {
+        const created = await tx.project.create({
+          data: { ...payload, uid: `PJ-${String(uid++).padStart(4, "0")}` },
+          select: { id: true },
+        });
+        ids.push(created.id);
+      }
+      return ids;
+    });
+    const imported = createdIds.length;
+
+    for (const createdId of createdIds) {
+      const project = await this.prisma.project.findUnique({
+        where: { id: createdId },
+        select: { clientId: true },
+      });
+      await recomputeProjectStats(this.prisma, createdId).catch(() => {});
+      if (project?.clientId) {
+        await this.rescore(createdId, project.clientId);
+      }
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId,
+      action: "flow.projects.import",
+      entityType: "Project",
+      entityId: "batch",
+      after: { imported, skipped: skipped.length, errors: errors.length },
+    });
+    await this.invalidateProjects();
+    return { imported, skipped, errors, total: rows.length - 1 };
   }
 
   // ── Milestones ───────────────────────────────────────────────────────
-  async addMilestone(projectId: string, body: { name: string; dueDate?: string; clientVisible?: boolean }) {
-    return this.prisma.milestone.create({
+  async addMilestone(projectId: string, body: AddMilestoneDto, actorId?: string) {
+    await this.ensureProject(projectId);
+    const milestone = await this.prisma.milestone.create({
       data: {
         projectId,
         name: body.name,
         dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
+        status: body.status ?? "PENDING",
         clientVisible: body.clientVisible ?? false,
       },
     });
+    await writeSystemAudit(this.prisma, {
+      actorId,
+      action: "flow.milestone.create",
+      entityType: "Milestone",
+      entityId: milestone.id,
+      after: { projectId, name: milestone.name, dueDate: milestone.dueDate },
+    });
+    return milestone;
   }
 
-  async updateMilestone(id: string, body: any) {
+  async updateMilestone(id: string, body: UpdateMilestoneDto, actorId?: string) {
     const data: any = {};
     for (const field of ["name", "status", "clientVisible"]) {
-      if (body[field] !== undefined) data[field] = body[field];
+      if ((body as any)[field] !== undefined) data[field] = (body as any)[field];
     }
     if (body.dueDate !== undefined) data.dueDate = body.dueDate ? new Date(body.dueDate) : null;
-    if (body.status === "COMPLETED" && !body.completedAt) data.completedAt = new Date();
-    return this.prisma.milestone.update({ where: { id }, data }).catch(() => {
-      throw new NotFoundException("Milestone not found");
-    });
+    if (body.status === "COMPLETED") {
+      data.completedAt = body.completedAt ? new Date(body.completedAt) : new Date();
+    } else if (body.status !== undefined) {
+      data.completedAt = null;
+    }
+    try {
+      const updated = await this.prisma.milestone.update({ where: { id }, data });
+      await writeSystemAudit(this.prisma, {
+        actorId, action: "flow.milestone.update", entityType: "Milestone", entityId: id,
+        after: { status: updated.status, dueDate: updated.dueDate },
+      });
+      return updated;
+    } catch (err: any) {
+      if (err?.code === "P2025") throw new NotFoundException("Milestone not found");
+      throw err;
+    }
   }
 
-  async deleteMilestone(id: string) {
-    await this.prisma.milestone.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException("Milestone not found");
+  async deleteMilestone(id: string, actorId?: string) {
+    try {
+      await this.prisma.milestone.delete({ where: { id } });
+    } catch (err: any) {
+      if (err?.code === "P2025") throw new NotFoundException("Milestone not found");
+      throw err;
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId, action: "flow.milestone.delete", entityType: "Milestone", entityId: id,
     });
     return { ok: true };
   }
 
   // ── Files ────────────────────────────────────────────────────────────
-  async addFile(projectId: string, body: { fileUrl: string; milestoneId?: string; uploadedById?: string }) {
-    return this.prisma.projectFile.create({
+  async addFile(projectId: string, body: AddFileDto, actorId?: string) {
+    await this.ensureProject(projectId);
+    if (body.milestoneId) {
+      const milestone = await this.prisma.milestone.findFirst({
+        where: { id: body.milestoneId, projectId },
+        select: { id: true },
+      });
+      if (!milestone) throw new BadRequestException("Milestone does not belong to this project");
+    }
+    const created = await this.prisma.projectFile.create({
       data: {
         projectId,
         fileUrl: body.fileUrl,
+        fileName: body.fileName,
+        size: body.size,
+        mimeType: body.mimeType,
         milestoneId: body.milestoneId,
-        uploadedById: body.uploadedById,
+        uploadedById: actorId,
       },
       include: { uploadedBy: { select: { name: true } } },
     });
-  }
-
-  async setFileApproval(fileId: string, status: "PENDING" | "APPROVED" | "REVISION_REQUESTED") {
-    return this.prisma.projectFile.update({ where: { id: fileId }, data: { approvalStatus: status } }).catch(() => {
-      throw new NotFoundException("File not found");
+    await writeSystemAudit(this.prisma, {
+      actorId, action: "flow.file.create", entityType: "ProjectFile", entityId: created.id,
+      after: { projectId, fileName: created.fileName, size: created.size },
     });
+    return { ...created, downloadUrl: signStoredFileUrl(created.fileUrl) };
   }
 
-  async deleteFile(fileId: string) {
-    await this.prisma.projectFile.delete({ where: { id: fileId } }).catch(() => {
-      throw new NotFoundException("File not found");
+  async setFileApproval(fileId: string, status: FileApprovalStatus, actorId?: string) {
+    try {
+      const updated = await this.prisma.projectFile.update({
+        where: { id: fileId },
+        data: { approvalStatus: status, approvedAt: status === "APPROVED" ? new Date() : null },
+      });
+      await writeSystemAudit(this.prisma, {
+        actorId, action: "flow.file.approval", entityType: "ProjectFile", entityId: fileId,
+        after: { approvalStatus: updated.approvalStatus },
+      });
+      return { ...updated, downloadUrl: signStoredFileUrl(updated.fileUrl) };
+    } catch (err: any) {
+      if (err?.code === "P2025") throw new NotFoundException("File not found");
+      throw err;
+    }
+  }
+
+  async deleteFile(fileId: string, actorId?: string) {
+    let removed: { fileUrl: string } | null = null;
+    try {
+      removed = await this.prisma.projectFile.delete({
+        where: { id: fileId },
+        select: { fileUrl: true },
+      });
+    } catch (err: any) {
+      if (err?.code === "P2025") throw new NotFoundException("File not found");
+      throw err;
+    }
+    const name = uploadedFilename(removed?.fileUrl);
+    if (name) {
+      const candidates = new Set([
+        join(uploadsRoot(), name),
+        join(process.cwd(), "uploads", name),
+        findUploadedFile(name),
+      ]);
+      for (const candidate of candidates) {
+        try {
+          await unlink(candidate);
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId, action: "flow.file.delete", entityType: "ProjectFile", entityId: fileId,
     });
     return { ok: true };
   }
@@ -639,6 +1113,7 @@ export class FlowService {
   }
 
   async addDiscussion(projectId: string, body: { content: string; authorId?: string }) {
+    await this.ensureProject(projectId);
     return this.prisma.clientComment.create({
       data: { projectId, content: body.content, authorId: body.authorId },
       include: { author: { select: { id: true, name: true } } },
@@ -646,33 +1121,57 @@ export class FlowService {
   }
 
   // ── Capacity planner ─────────────────────────────────────────────────
-  async capacity() {
-    const employees = await this.prisma.employee.findMany({
-      where: { employmentStatus: "ACTIVE" },
-      select: { id: true, name: true, roleTitle: true, department: true, skillTags: true },
-    });
-    const timeLogs = await this.prisma.timeLog.findMany({
-      where: { employeeId: { not: null } },
-      select: { employeeId: true, hours: true, task: { select: { projectId: true } } },
-    });
-    const projects = await this.prisma.project.findMany({
-      select: { id: true, name: true, client: { select: { companyName: true } }, status: true },
-    });
+  async capacity(range: { from?: string; to?: string } = {}) {
+    const end = range.to ? new Date(range.to) : new Date();
+    const start = range.from ? new Date(range.from) : new Date(end.getTime() - 28 * DAY);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+      throw new BadRequestException("Invalid capacity window");
+    }
+    const windowDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY));
+    const capacityHours = Math.round((windowDays / 7) * 40 * 10) / 10;
+
+    const [employees, timeLogs, projects] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: { employmentStatus: "ACTIVE" },
+        select: { id: true, name: true, roleTitle: true, department: true, skillTags: true },
+      }),
+      this.prisma.timeLog.findMany({
+        where: { employeeId: { not: null }, date: { gte: start, lte: end } },
+        select: { employeeId: true, hours: true, task: { select: { projectId: true } } },
+      }),
+      this.prisma.project.findMany({
+        where: { status: { not: "ARCHIVED" } },
+        select: { id: true, name: true, client: { select: { companyName: true } } },
+      }),
+    ]);
+    const projectById = new Map(projects.map((p) => [p.id, p]));
     const byEmployee: Record<string, Record<string, number>> = {};
     for (const l of timeLogs) {
-      const pid = l.task?.projectId ?? "unassigned";
       if (!l.employeeId) continue;
+      const pid = l.task?.projectId ?? "unassigned";
       byEmployee[l.employeeId] ??= {};
       byEmployee[l.employeeId][pid] = (byEmployee[l.employeeId][pid] ?? 0) + Number(l.hours);
     }
     return employees.map((e) => {
       const alloc = byEmployee[e.id] ?? {};
+      const totalHours = Math.round(Object.values(alloc).reduce((s, h) => s + h, 0) * 10) / 10;
       return {
         ...e,
-        projects: Object.entries(alloc).map(([pid, hours]) => {
-          const p = projects.find((x) => x.id === pid);
-          return { projectId: pid, projectName: p?.name ?? "General", client: p?.client.companyName ?? "—", hours: Math.round(hours * 10) / 10 };
-        }),
+        totalHours,
+        capacityHours,
+        utilizationPct: capacityHours > 0 ? Math.round((totalHours / capacityHours) * 100) : 0,
+        projects: Object.entries(alloc)
+          .map(([pid, hours]) => {
+            const p = projectById.get(pid);
+            return {
+              projectId: pid,
+              projectName: p?.name ?? "General",
+              client: p?.client.companyName ?? "—",
+              hours: Math.round(hours * 10) / 10,
+              sharePct: totalHours > 0 ? Math.round((hours / totalHours) * 100) : 0,
+            };
+          })
+          .sort((a, b) => b.hours - a.hours),
       };
     });
   }
@@ -682,11 +1181,18 @@ export class FlowService {
   }
 
   // ── Deliverables (proposal commitments) ──────────────────────────────
-  async addDeliverable(
-    projectId: string,
-    dto: { title: string; description?: string; taskIds?: string[] }
-  ) {
+  private async assertTasksInProject(projectId: string, taskIds: string[]) {
+    if (!taskIds.length) return;
+    const found = await this.prisma.task.count({ where: { id: { in: taskIds }, projectId } });
+    if (found !== taskIds.length) {
+      throw new BadRequestException("One or more tasks do not belong to this project");
+    }
+  }
+
+  async addDeliverable(projectId: string, dto: AddDeliverableDto, actorId?: string) {
     await this.ensureProject(projectId);
+    const taskIds = dto.taskIds ?? [];
+    await this.assertTasksInProject(projectId, taskIds);
     const last = await this.prisma.projectDeliverable.findFirst({
       where: { projectId },
       orderBy: { sortOrder: "desc" },
@@ -697,20 +1203,19 @@ export class FlowService {
         title: dto.title.trim(),
         description: dto.description,
         sortOrder: (last?.sortOrder ?? 0) + 1,
-        ...(dto.taskIds?.length
-          ? { tasks: { connect: dto.taskIds.map((id) => ({ id })) } }
-          : {}),
+        ...(taskIds.length ? { tasks: { connect: taskIds.map((id) => ({ id })) } } : {}),
       },
       include: { tasks: { select: { id: true, title: true, status: true } } },
+    });
+    await writeSystemAudit(this.prisma, {
+      actorId, action: "flow.deliverable.create", entityType: "ProjectDeliverable", entityId: d.id,
+      after: { projectId, title: d.title },
     });
     await this.invalidateProjects();
     return d;
   }
 
-  async updateDeliverable(
-    deliverableId: string,
-    dto: { title?: string; description?: string; status?: string; taskIds?: string[] }
-  ) {
+  async updateDeliverable(deliverableId: string, dto: UpdateDeliverableDto, actorId?: string) {
     const existing = await this.prisma.projectDeliverable.findUnique({
       where: { id: deliverableId },
     });
@@ -723,6 +1228,7 @@ export class FlowService {
       data.completedAt = dto.status === "DELIVERED" ? new Date() : null;
     }
     if (dto.taskIds !== undefined) {
+      await this.assertTasksInProject(existing.projectId, dto.taskIds);
       data.tasks = { set: dto.taskIds.map((id) => ({ id })) };
     }
     const d = await this.prisma.projectDeliverable.update({
@@ -730,13 +1236,22 @@ export class FlowService {
       data,
       include: { tasks: { select: { id: true, title: true, status: true } } },
     });
+    await writeSystemAudit(this.prisma, {
+      actorId, action: "flow.deliverable.update", entityType: "ProjectDeliverable", entityId: deliverableId,
+      after: { status: d.status },
+    });
     await this.invalidateProjects();
     return d;
   }
 
-  async removeDeliverable(deliverableId: string) {
-    await this.prisma.projectDeliverable.delete({ where: { id: deliverableId } }).catch(() => {
+  async removeDeliverable(deliverableId: string, actorId?: string) {
+    try {
+      await this.prisma.projectDeliverable.delete({ where: { id: deliverableId } });
+    } catch {
       throw new NotFoundException("Deliverable not found");
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId, action: "flow.deliverable.delete", entityType: "ProjectDeliverable", entityId: deliverableId,
     });
     await this.invalidateProjects();
     return { ok: true };
@@ -751,8 +1266,10 @@ export class FlowService {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       include: {
-        deliverables: { include: { tasks: true }, orderBy: { sortOrder: "asc" } },
-        invoices: { include: { lineItems: true, payments: true } },
+        deliverables: {
+          include: { tasks: { where: { archivedAt: null } } },
+          orderBy: { sortOrder: "asc" },
+        },
       },
     });
     if (!project) throw new NotFoundException("Project not found");
@@ -760,7 +1277,10 @@ export class FlowService {
     const end = dto.periodEnd ? new Date(dto.periodEnd) : new Date();
     const start = dto.periodStart
       ? new Date(dto.periodStart)
-      : new Date(end.getTime() - 30 * 86400000);
+      : new Date(end.getTime() - 30 * DAY);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      throw new BadRequestException("Invalid report period");
+    }
 
     const deriveStatus = (d: (typeof project.deliverables)[number]) => {
       if (!d.tasks.length) return d.status;
@@ -777,7 +1297,9 @@ export class FlowService {
         completed.push({
           deliverableId: d.id,
           title: d.title,
-          completedAt: d.completedAt ?? end.toISOString(),
+          // Never invent a completion date: a client-facing report must not
+          // claim a delivery happened on the period boundary.
+          completedAt: d.completedAt ? d.completedAt.toISOString() : null,
           tasksDone: d.tasks.filter((t) => t.status === "DONE").length,
           tasksTotal: d.tasks.length,
         });
@@ -786,13 +1308,24 @@ export class FlowService {
       }
     }
 
-    // billing snapshot for the period
-    const activeInv = project.invoices.filter((i) => i.status !== "CANCELLED" && i.status !== "VOID");
-    const invoiced = activeInv.reduce(
+    // Billing snapshot for the period — this used to sum the project's entire
+    // invoice history while the title claimed a 15/30-day window.
+    const invoices = await this.prisma.invoice.findMany({
+      where: {
+        projectId,
+        issueDate: { gte: start, lte: end },
+        status: { notIn: ["CANCELLED", "VOID"] },
+      },
+      include: {
+        lineItems: true,
+        payments: { where: { paymentDate: { gte: start, lte: end } } },
+      },
+    });
+    const invoiced = invoices.reduce(
       (s, i) => s + i.lineItems.reduce((x, l) => x + Number(l.amount), 0),
       0
     );
-    const collected = activeInv.reduce((s, i) => s + i.payments.reduce((x, p) => x + Number(p.amount), 0), 0);
+    const collected = invoices.reduce((s, i) => s + i.payments.reduce((x, p) => x + Number(p.amount), 0), 0);
 
     const title =
       project.reportFrequency === "15-days"
@@ -823,7 +1356,13 @@ export class FlowService {
           `/flow/${projectId}?tab=reports&report=${report.id}`
         );
       }
-    } catch {}
+    } catch (e: any) {
+      this.logger.warn(`Report notification failed for ${projectId}: ${e?.message ?? e}`);
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId: userId, action: "flow.report.generate", entityType: "ProjectReport", entityId: report.id,
+      after: { projectId, start, end },
+    });
     await this.invalidateProjects();
     return report;
   }
@@ -839,7 +1378,8 @@ export class FlowService {
 
   async updateReport(
     reportId: string,
-    dto: { pmNotes?: string; status?: string }
+    dto: { pmNotes?: string; status?: string },
+    actorId?: string
   ) {
     const existing = await this.prisma.projectReport.findUnique({ where: { id: reportId } });
     if (!existing) throw new NotFoundException("Report not found");
@@ -849,56 +1389,95 @@ export class FlowService {
       data.status = dto.status;
       if (dto.status === "SENT") data.sentAt = new Date();
     }
-    return this.prisma.projectReport.update({
+    const updated = await this.prisma.projectReport.update({
       where: { id: reportId },
       data,
       include: { generatedBy: { select: { name: true } } },
     });
+    await writeSystemAudit(this.prisma, {
+      actorId, action: "flow.report.update", entityType: "ProjectReport", entityId: reportId,
+      after: { status: updated.status },
+    });
+    return updated;
   }
 
-  async removeReport(reportId: string) {
-    await this.prisma.projectReport.delete({ where: { id: reportId } }).catch(() => {
+  async removeReport(reportId: string, actorId?: string) {
+    try {
+      await this.prisma.projectReport.delete({ where: { id: reportId } });
+    } catch {
       throw new NotFoundException("Report not found");
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId, action: "flow.report.delete", entityType: "ProjectReport", entityId: reportId,
     });
     return { ok: true };
   }
 
-  // ── Scheduled report generation (recurring projects, AUTOMATIC mode) ──
+  // ── Scheduled stats reconciliation ───────────────────────────────────
   @Cron("15 3 * * *")
   async reconcileProjectStats() {
-    // Self-healing sweep: any drift introduced by a direct DB edit, an import
-    // or a failed hook is corrected overnight so the board and finance agree.
-    const projects = await this.prisma.project.findMany({ select: { id: true } });
-    for (const p of projects) {
-      await recomputeProjectStats(this.prisma, p.id).catch(() => {});
+    if (this.reconcileRunning) return { updated: 0, skipped: "already running" };
+    this.reconcileRunning = true;
+    try {
+      const projects = await this.prisma.project.findMany({ select: { id: true } });
+      let updated = 0;
+      for (const p of projects) {
+        try {
+          await recomputeProjectStats(this.prisma, p.id);
+          updated++;
+        } catch (e: any) {
+          this.logger.warn(`Stats reconcile failed for ${p.id}: ${e?.message ?? e}`);
+        }
+      }
+      return { updated };
+    } finally {
+      this.reconcileRunning = false;
     }
-    return { updated: projects.length };
   }
 
+  // ── Scheduled report generation (recurring projects, AUTOMATIC mode) ──
   @Cron("30 2 * * *")
-  async handleScheduledReports() {    const due = await this.prisma.project.findMany({
-      where: {
-        reportMode: "AUTOMATIC",
-        reportFrequency: { not: null },
-        OR: [{ nextReportDate: { lte: new Date() } }, { nextReportDate: null }],
-        status: { in: ["PLANNING", "ACTIVE", "PAUSED"] },
-      },
-      select: { id: true, reportFrequency: true, nextReportDate: true },
-    });
-    let created = 0;
-    for (const p of due) {
-      const end = new Date();
-      const start = p.nextReportDate
-        ? new Date(p.nextReportDate)
-        : new Date(end.getTime() - 30 * 86400000);
-      await this.generateReport(p.id, { periodStart: start.toISOString(), periodEnd: end.toISOString() });
-      const days = p.reportFrequency === "15-days" ? 15 : 30;
-      await this.prisma.project.update({
-        where: { id: p.id },
-        data: { nextReportDate: new Date(end.getTime() + days * 86400000) },
+  async handleScheduledReports() {
+    if (this.reportsRunning) return { created: 0, skipped: "already running" };
+    this.reportsRunning = true;
+    try {
+      const due = await this.prisma.project.findMany({
+        where: {
+          reportMode: "AUTOMATIC",
+          reportFrequency: { not: null },
+          OR: [{ nextReportDate: { lte: new Date() } }, { nextReportDate: null }],
+          status: { in: ["PLANNING", "ACTIVE", "PAUSED"] },
+        },
+        select: { id: true, reportFrequency: true, nextReportDate: true },
       });
-      created++;
+      let created = 0;
+      for (const p of due) {
+        try {
+          const end = new Date();
+          const start = p.nextReportDate ? new Date(p.nextReportDate) : new Date(end.getTime() - 30 * DAY);
+          // Dedupe: a previous run may have created the report and failed to
+          // advance the cursor. Never send the same period twice.
+          const already = await this.prisma.projectReport.findFirst({
+            where: { projectId: p.id, periodStart: { gte: dayStart(start) }, periodEnd: { lte: end } },
+            select: { id: true },
+          });
+          if (!already) {
+            await this.generateReport(p.id, { periodStart: start.toISOString(), periodEnd: end.toISOString() });
+            created++;
+          }
+          const days = p.reportFrequency === "15-days" ? 15 : 30;
+          await this.prisma.project.update({
+            where: { id: p.id },
+            data: { nextReportDate: new Date(end.getTime() + days * DAY) },
+          });
+        } catch (e: any) {
+          // One broken project must not stop the rest of the portfolio.
+          this.logger.warn(`Scheduled report failed for ${p.id}: ${e?.message ?? e}`);
+        }
+      }
+      return { created };
+    } finally {
+      this.reportsRunning = false;
     }
-    return { created };
   }
 }
