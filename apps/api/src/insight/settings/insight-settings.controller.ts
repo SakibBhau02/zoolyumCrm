@@ -2,7 +2,9 @@ import { Body, Controller, Get, Patch } from "@nestjs/common";
 import { InsightSettingsService } from "./insight-settings.service";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
+import { RequirePermission } from "../../common/decorators/require-permission.decorator";
 
+@RequirePermission("INSIGHT")
 @Controller("insight/settings")
 export class InsightSettingsController {
   constructor(private readonly svc: InsightSettingsService) {}

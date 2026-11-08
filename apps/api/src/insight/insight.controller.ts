@@ -1,7 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { InsightService } from "./insight.service";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
+import { RequirePermission } from "../common/decorators/require-permission.decorator";
 
+@RequirePermission("INSIGHT")
 @Controller("insight")
 export class InsightController {
   constructor(private readonly insight: InsightService) {}

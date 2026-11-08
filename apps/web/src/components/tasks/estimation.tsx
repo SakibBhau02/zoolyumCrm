@@ -97,6 +97,7 @@ export function EstimationPanel({ refreshKey, employees }: { refreshKey: number;
           <TrendingUp className="size-3" /> Overall {pct(overall)} vs estimate — {overallBias}
         </span>
         <select
+          aria-label="Filter estimation report by employee"
           value={empFilter}
           onChange={(e) => setEmpFilter(e.target.value)}
           className="ml-auto rounded-xl border border-border bg-card px-2.5 py-1.5 text-[11.5px] font-semibold outline-none focus:border-primary/40"

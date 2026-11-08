@@ -6,7 +6,11 @@ import { PortalController } from "./portal.controller";
 import { PortalClientService } from "./portal-client.service";
 import { PortalClientController } from "./portal-client.controller";
 import { PortalAuthGuard } from "./portal-auth.guard";
+import { PortalAccessService } from "./portal-access.service";
+import { PortalAdsService } from "./portal-ads.service";
+import { TelegramService } from "./telegram.service";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { TelegramModule } from "../telegram/telegram.module";
 
 @Module({
   imports: [
@@ -19,8 +23,9 @@ import { NotificationsModule } from "../notifications/notifications.module";
       }),
     }),
     NotificationsModule,
+    TelegramModule,
   ],
   controllers: [PortalController, PortalClientController],
-  providers: [PortalService, PortalClientService, PortalAuthGuard],
+  providers: [PortalService, PortalClientService, PortalAuthGuard, PortalAccessService, PortalAdsService, TelegramService],
 })
 export class PortalModule {}

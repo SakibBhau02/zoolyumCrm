@@ -22,6 +22,7 @@ import { findUploadedFile, uploadsDir } from "../common/file-storage";
 const pulseUploadDir = () => uploadsDir();
 import {
   AddActivityDto,
+  BulkUpdateLeadsDto,
   ConvertLeadDto,
   CreateCategoryDto,
   CreateFollowUpDto,
@@ -29,12 +30,17 @@ import {
   CreateMeetingDto,
   CreateProposalDto,
   MarkLostDto,
+  QuickLogDto,
+  SnoozeLeadDto,
   UpdateFollowUpDto,
+  UpdateFollowUpStatusDto,
   UpdateLeadDto,
   UpdateMeetingDto,
   UpdateProposalDto,
 } from "./dto/lead.dto";
+import { RequirePermission } from "../common/decorators/require-permission.decorator";
 
+@RequirePermission("PULSE")
 @Controller("pulse")
 export class PulseController {
   constructor(private readonly pulse: PulseService) {}
@@ -42,6 +48,39 @@ export class PulseController {
   @Get("summary")
   summary() {
     return this.pulse.summary();
+  }
+
+  /** Live lead-intake rules (Control → Lead Rules owns the toggles). */
+  @Get("rules")
+  rules() {
+    return this.pulse.getLeadRules();
+  }
+
+  /** Duplicate pre-check while the Add Lead form is still open. */
+  @Get("duplicates")
+  duplicates(
+    @Query()
+    query: { phone?: string; email?: string; company?: string; name?: string; excludeId?: string }
+  ) {
+    return this.pulse.checkDuplicates(query);
+  }
+
+  /** Re-run the rule engine over every stored lead (retro hygiene). */
+  @Post("audit")
+  audit() {
+    return this.pulse.auditLeads();
+  }
+
+  /** Everything that needs a human today, bucketed by urgency. */
+  @Get("worklist")
+  worklist(@Query() query: { ownerId?: string; mine?: string }, @CurrentUser() user: AuthUser) {
+    return this.pulse.worklist(query, user?.sub);
+  }
+
+  /** Complete / miss a follow-up straight from the Today queue. */
+  @Patch("follow-ups/:id/status")
+  setFollowUpStatus(@Param("id") id: string, @Body() dto: UpdateFollowUpStatusDto) {
+    return this.pulse.setFollowUpStatus(id, dto.status);
   }
 
   @Get("export")
@@ -92,6 +131,24 @@ export class PulseController {
     return this.pulse.create(dto, user?.sub);
   }
 
+  /** Bulk stage / owner / priority / tag changes from the pipeline. */
+  @Post("leads/bulk")
+  bulkUpdate(@Body() dto: BulkUpdateLeadsDto, @CurrentUser() user: AuthUser) {
+    return this.pulse.bulkUpdate(dto, user?.sub);
+  }
+
+  /** The primary write path from Today: one touch + its outcome + next step. */
+  @Post("leads/:id/quick-log")
+  quickLog(@Param("id") id: string, @Body() dto: QuickLogDto, @CurrentUser() user: AuthUser) {
+    return this.pulse.quickLog(id, dto, user?.sub);
+  }
+
+  /** Push the open follow-up forward N days. */
+  @Post("leads/:id/snooze")
+  snooze(@Param("id") id: string, @Body() dto: SnoozeLeadDto) {
+    return this.pulse.snooze(id, dto.days);
+  }
+
   @Patch("leads/:id")
   update(@Param("id") id: string, @Body() dto: UpdateLeadDto, @CurrentUser() user: AuthUser) {
     return this.pulse.update(id, dto, user?.sub);
@@ -140,6 +197,16 @@ export class PulseController {
   @Delete("leads/:id/meetings/:meetingId")
   removeMeeting(@Param("id") id: string, @Param("meetingId") meetingId: string) {
     return this.pulse.removeMeeting(id, meetingId);
+  }
+
+  /** Mark one invitee as ATTENDED / NO_SHOW — feeds per-employee meeting stats. */
+  @Patch("meetings/:meetingId/attendees/:employeeId")
+  setMeetingAttendance(
+    @Param("meetingId") meetingId: string,
+    @Param("employeeId") employeeId: string,
+    @Body() body: { status: "INVITED" | "ATTENDED" | "NO_SHOW" }
+  ) {
+    return this.pulse.setMeetingAttendance(meetingId, employeeId, body.status);
   }
 
   // ── Proposals ───────────────────────────────────────────────────────────

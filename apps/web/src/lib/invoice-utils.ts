@@ -14,6 +14,7 @@ export type InvoiceTotals = {
   shipping: number;
   grand: number;
   paid: number;
+  refunded: number;
   balance: number;
 };
 
@@ -65,16 +66,19 @@ export function invoiceTotals(inv: {
   taxRate?: any;
   discountRate?: any;
   shippingFee?: any;
-  payments?: { amount?: any }[] | null;
+  payments?: { amount?: any; type?: string | null }[] | null;
 }): InvoiceTotals {
   const subtotal = (inv.lineItems ?? []).reduce((s, l) => s + num(l.amount), 0);
   const tax = inv.taxApplicable && num(inv.taxRate) ? (subtotal * num(inv.taxRate)) / 100 : 0;
   const discount = num(inv.discountRate) ? (subtotal * num(inv.discountRate)) / 100 : 0;
   const shipping = num(inv.shippingFee);
   const grand = Math.max(0, subtotal + tax - discount + shipping);
-  const paid = (inv.payments ?? []).reduce((s, p) => s + num(p.amount), 0);
+  const payments = inv.payments ?? [];
+  // Refunds hand money back — they subtract from collected, matching the API.
+  const paid = payments.reduce((s, p) => s + (p.type === "REFUND" ? -num(p.amount) : num(p.amount)), 0);
+  const refunded = payments.filter((p) => p.type === "REFUND").reduce((s, p) => s + num(p.amount), 0);
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  return { subtotal: r2(subtotal), tax: r2(tax), discount: r2(discount), shipping: r2(shipping), grand: r2(grand), paid: r2(paid), balance: r2(Math.max(grand - paid, 0)) };
+  return { subtotal: r2(subtotal), tax: r2(tax), discount: r2(discount), shipping: r2(shipping), grand: r2(grand), paid: r2(paid), refunded: r2(refunded), balance: r2(Math.max(grand - paid, 0)) };
 }
 
 export const INVOICE_TEMPLATES = [

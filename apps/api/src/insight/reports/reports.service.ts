@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CacheService } from "../../cache/cache.service";
 import { InsightSettingsService } from "../settings/insight-settings.service";
@@ -298,7 +298,8 @@ export class ReportsService {
   async comparison(query:any){
     const from=new Date(query.from), to=new Date(query.to);
     const compareFrom=new Date(query.compareFrom), compareTo=new Date(query.compareTo);
-    if(isNaN(from.getTime())||isNaN(to.getTime())||isNaN(compareFrom.getTime())||isNaN(compareTo.getTime())) throw new Error("from/to/compareFrom/compareTo required as ISO dates");
+    if(isNaN(from.getTime())||isNaN(to.getTime())||isNaN(compareFrom.getTime())||isNaN(compareTo.getTime()))
+      throw new BadRequestException("from, to, compareFrom and compareTo are required as ISO dates (YYYY-MM-DD)");
     const base:any={ adSetId: null, adId: null };
     if(query.clientId) base.clientId=query.clientId;
     if(query.provider) base.provider=query.provider.toUpperCase();
@@ -306,7 +307,7 @@ export class ReportsService {
       this.prisma.adInsight.findMany({ where:{ ...base, date:{ gte:from,lte:to }}}),
       this.prisma.adInsight.findMany({ where:{ ...base, date:{ gte:compareFrom,lte:compareTo }}}),
     ]);
-    const sum=(arr:any[])=> ({ spend:arr.reduce((s,i)=>s+Number(i.spend),0), imp:arr.reduce((s,i)=>s+i.impressions,0), clk:arr.reduce((s,i)=>s+i.clicks,0), conv:arr.reduce((s,i)=>s+i.conversions,0), rev:arr.reduce((s,i)=>s+Number(i.conversionValue??0),0)});
+    const sum=(arr:any[])=> ({ spend:Math.round(arr.reduce((s,i)=>s+Number(i.spend),0)*100)/100, imp:arr.reduce((s,i)=>s+i.impressions,0), clk:arr.reduce((s,i)=>s+i.clicks,0), conv:arr.reduce((s,i)=>s+i.conversions,0), rev:Math.round(arr.reduce((s,i)=>s+Number(i.conversionValue??0),0)*100)/100});
     const c=sum(curr), p=sum(prev);
     const pct=(a:number,b:number)=> b? Math.round(((a-b)/b)*10000)/100 : null;
     return {
@@ -368,7 +369,7 @@ export class ReportsService {
 
   async taskReport(taskId:string){
     const task = await this.prisma.task.findUnique({ where:{ id:taskId }, select:{ id:true, title:true, status:true, createdAt:true }});
-    if(!task) throw new Error("Task not found");
+    if(!task) throw new NotFoundException("Task not found");
     // before/after metrics: use task createdAt vs now — stub: compare 7 days before task creation vs 7 days after
     const beforeFrom=new Date(task.createdAt.getTime()-7*86400000), beforeTo=new Date(task.createdAt);
     const afterFrom=new Date(task.createdAt), afterTo=new Date(Date.now());

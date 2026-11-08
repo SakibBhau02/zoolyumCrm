@@ -66,6 +66,28 @@ export class CacheService implements OnModuleDestroy {
     this.mem.set(key, { value: raw, expiresAt: Date.now() + ttlSeconds * 1000 });
   }
 
+  /**
+   * Atomic counter with a rolling expiry, used by the rate limiter.
+   * Redis INCR keeps the count shared across API instances; the in-memory
+   * fallback keeps a single-instance deployment working without Redis.
+   */
+  async incr(key: string, ttlSeconds: number): Promise<number> {
+    if (this.ready()) {
+      const count = await this.redis!.incr(key);
+      if (count === 1) await this.redis!.expire(key, ttlSeconds);
+      return count;
+    }
+    const now = Date.now();
+    const entry = this.mem.get(key);
+    if (!entry || entry.expiresAt <= now) {
+      this.mem.set(key, { value: "1", expiresAt: now + ttlSeconds * 1000 });
+      return 1;
+    }
+    const next = Number(entry.value) + 1;
+    this.mem.set(key, { value: String(next), expiresAt: entry.expiresAt });
+    return next;
+  }
+
   async del(key: string): Promise<void> {
     if (this.ready()) {
       await this.redis!.del(key);
@@ -74,8 +96,7 @@ export class CacheService implements OnModuleDestroy {
     this.mem.delete(key);
   }
 
-  async delPattern(pattern: string): Promise<void> {
-    // wrapQuery stores the empty-query list under the BARE prefix (no hash
+  async delPattern(pattern: string): Promise<void> {    // wrapQuery stores the empty-query list under the BARE prefix (no hash
     // suffix), which `prefix:*` never matches — so always drop the bare key
     // too, otherwise unfiltered lists stay stale for the full TTL.
     const bare = pattern.endsWith(":*") ? pattern.slice(0, -2) : null;
@@ -92,6 +113,17 @@ export class CacheService implements OnModuleDestroy {
     if (bare) this.mem.delete(bare);
     const re = new RegExp("^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*") + "$");
     for (const key of this.mem.keys()) if (re.test(key)) this.mem.delete(key);
+  }
+
+  /** Health probe: "redis" when the shared cache is live, "memory" for fallback. */
+  async ping(): Promise<"redis" | "memory" | "down"> {
+    if (!this.redis) return "memory";
+    try {
+      const pong = await this.redis.ping();
+      return pong === "PONG" ? "redis" : "down";
+    } catch {
+      return "down";
+    }
   }
 
   async wrap<T>(key: string, ttlSeconds: number, fn: () => Promise<T>): Promise<T> {

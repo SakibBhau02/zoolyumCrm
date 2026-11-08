@@ -1,25 +1,41 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
+/** 0–10 stored score → 1 decimal 0–5 star rating (null when ungraded). */
+const scoreToStars = (v: any): number | null => {
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.round((n / 2) * 10) / 10;
+};
+
 @Injectable()
 export class PerformanceService {
   constructor(private readonly prisma: PrismaService) {}
 
   async reviews() {
-    return this.prisma.performanceReview.findMany({
+    const rows = await this.prisma.performanceReview.findMany({
       include: { employee: { select: { id: true, name: true } }, reviewedBy: { select: { id: true, name: true } } },
       orderBy: { createdAt: "desc" },
     });
+    // The table stores 0–10 scores; the product speaks 1–5 stars. Normalise here
+    // so every client renders the same number instead of guessing.
+    return rows.map((r) => ({
+      ...r,
+      rating: scoreToStars(r.managerScore ?? r.selfScore),
+    }));
   }
 
   async createReview(body: any) {
+    // Accept either the raw 0–10 scores or a 1–5 star rating from the UI.
+    const managerScore = body.managerScore ?? (body.overallRating != null ? Number(body.overallRating) * 2 : null);
     return this.prisma.performanceReview.create({
       data: {
         employeeId: body.employeeId,
         reviewPeriod: body.reviewPeriod,
         status: body.status ?? "PENDING",
         selfScore: body.selfScore ?? null,
-        managerScore: body.managerScore ?? null,
+        managerScore,
         goalsSet: body.goalsSet ?? [],
         objectiveSignals: body.objectiveSignals ?? {},
         reviewedById: body.reviewedById ?? null,
@@ -32,7 +48,10 @@ export class PerformanceService {
     for (const f of ["reviewPeriod", "status", "selfScore", "managerScore", "goalsSet", "objectiveSignals"]) {
       if (body[f] !== undefined) data[f] = body[f];
     }
-    if (body.reviewedAt !== undefined || (body.managerScore !== undefined && body.managerScore !== null)) {
+    if (body.overallRating !== undefined && body.managerScore === undefined) {
+      data.managerScore = body.overallRating === null ? null : Number(body.overallRating) * 2;
+    }
+    if (body.reviewedAt !== undefined || (body.managerScore !== undefined && body.managerScore !== null) || (body.overallRating !== undefined && body.overallRating !== null)) {
       data.reviewedAt = body.reviewedAt ? new Date(body.reviewedAt) : new Date();
     }
     return this.prisma.performanceReview.update({ where: { id }, data }).catch(() => {

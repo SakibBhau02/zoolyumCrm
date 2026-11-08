@@ -376,14 +376,24 @@ export function InvoiceDetailModal({
               <Btn variant="outline" onClick={() => detail && setInstOpen(true)}>
                 <Wallet className="size-3.5" /> Installments
               </Btn>
-              <Btn variant="outline" onClick={() => detail && setCnOpen(true)}>
+              <Btn
+                variant="outline"
+                onClick={() => detail && detail.status !== "DRAFT" && setCnOpen(true)}
+                disabled={detail?.status === "DRAFT"}
+                title={detail?.status === "DRAFT" ? "Issue the invoice before crediting or refunding it" : undefined}
+              >
                 <HandCoins className="size-3.5" /> Credit / Refund
               </Btn>
               <Btn variant="outline" onClick={() => detail && setRemOpen((v) => !v)}>
                 <Bell className="size-3.5" /> Remind
               </Btn>
               <div className="ml-auto">
-                <Btn variant="primary" onClick={() => balance > 0 && setPayOpen(true)} disabled={balance <= 0}>
+                <Btn
+                  variant="primary"
+                  onClick={() => balance > 0 && detail?.status !== "DRAFT" && setPayOpen(true)}
+                  disabled={balance <= 0 || detail?.status === "DRAFT"}
+                  title={detail?.status === "DRAFT" ? "Issue the invoice before recording a payment" : undefined}
+                >
                   <Plus className="size-3.5" /> Record Payment
                 </Btn>
               </div>
@@ -814,13 +824,18 @@ export function InvoiceDetailModal({
       <CreditNoteModal invoice={detail} open={cnOpen} onClose={() => setCnOpen(false)} onSaved={() => { setCnOpen(false); reload(); notify("Credit note created"); }} />
       <InstallmentModal invoice={detail} open={instOpen} onClose={() => setInstOpen(false)} onSaved={() => { setInstOpen(false); reload(); notify("Installment plan set"); }} />
       <Modal open={printOpen} onClose={() => setPrintOpen(false)} title={`Print preview — ${detail?.invoiceNumber ?? ""}`} size="2xl">
-        <div className="no-print mb-3 flex items-center justify-end gap-2">
+        <div className="no-print mb-3 flex flex-wrap items-center justify-end gap-2">
+          {/* The preview used to offer Print only — anyone who wanted a file
+              had to back out and find the button on the detail sheet. */}
+          <Btn variant="outline" onClick={doPdf} disabled={pdfBusy}>
+            <FileDown className="size-3.5" /> {pdfBusy ? "Exporting…" : "Download PDF"}
+          </Btn>
           <Btn variant="primary" onClick={() => window.print()}>
             <Printer className="size-3.5" /> Print
           </Btn>
         </div>
         {detail && (
-          <div className="max-h-[70vh] overflow-auto rounded-xl border border-border/60 bg-slate-100 p-4 dark:bg-black/40">
+          <div className="invoice-print-host max-h-[70vh] overflow-auto rounded-xl border border-border/60 bg-slate-100 p-4 print:max-h-none print:overflow-visible print:border-0 print:bg-white print:p-0 dark:bg-black/40">
             <InvoicePrintView detail={detail} totals={{ subtotal: total, tax, discount, shipping, grand, paid, balance }} projBalance={projBalance?.project && !projBalance?.reason ? projBalance : null} branding={branding} shareUrl={shareLink} />
           </div>
         )}

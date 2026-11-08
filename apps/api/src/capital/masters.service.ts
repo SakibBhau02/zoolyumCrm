@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -48,7 +48,7 @@ export class MastersService {
   async deleteVendor(id: string) {
     const existing = await this.prisma.vendor.findUnique({ where: { id }, include: { _count: { select: { expenses: true } } } }).catch(() => null);
     if (!existing) throw new NotFoundException("Vendor not found");
-    if (existing._count.expenses > 0) throw new Error("Vendor has expenses — deactivate instead of deleting");
+    if (existing._count.expenses > 0) throw new ConflictException("Vendor has expenses - deactivate instead of deleting");
     return this.prisma.vendor.delete({ where: { id } });
   }
 
@@ -77,7 +77,7 @@ export class MastersService {
   async deleteAccount(id: string) {
     const existing = await this.prisma.account.findUnique({ where: { id }, include: { _count: { select: { expenses: true } } } }).catch(() => null);
     if (!existing) throw new NotFoundException("Account not found");
-    if (existing._count.expenses > 0) throw new Error("Account has transactions — deactivate instead of deleting");
+    if (existing._count.expenses > 0) throw new ConflictException("Account has transactions - deactivate instead of deleting");
     return this.prisma.account.update({ where: { id }, data: { isActive: false } });
   }
 

@@ -1,14 +1,16 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { FileText, Pencil, Play, RefreshCw, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FileText, Pencil, Play, RefreshCw, Trash2, Wallet } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatBDT } from "@/lib/format";
-import { Avatar, StatusBadge, cn } from "@/components/shared";
+import { Avatar, CardShell, EmptyState, StatusBadge, cn } from "@/components/shared";
 import { Btn, Td, Tr } from "@/components/table";
 import { Field, FormActions, Input, Modal } from "@/components/ui";
 import { label, monthNow } from "../_components/constants";
 import { DataTable, Toast, useList, useToast } from "../_components/hooks";
+import { Pager, RowCheck, TableToolbar, useTable } from "../_components/table-kit";
+import { PeopleHero } from "../_components/hero";
 
 function EditPayrollModal({ record, onClose, onSaved, notify }: { record: any; onClose: () => void; onSaved: () => void; notify: (m: string) => void }) {
   const [f, setF] = useState({ basicSalary: "", allowances: "", bonus: "", lateDeduction: "", halfDayDeduction: "", absentDeduction: "", unpaidLeaveDeduction: "" });
@@ -132,6 +134,46 @@ export default function PayrollPage() {
   const [runBusy, setRunBusy] = useState(false);
   const [editRec, setEditRec] = useState<any | null>(null);
   const { flash, notify } = useToast();
+  const { data: status } = useList<any>("/people/payroll/status", refresh);
+  // Opening payroll on a fresh month usually means "where did my records go?".
+  // If the selected period is empty but an earlier period has data, show that
+  // one once (the month picker still lets you go anywhere).
+  const jumped = useRef(false);
+  useEffect(() => {
+    if (jumped.current || loading || !status?.period) return;
+    if ((records ?? []).length === 0 && status.period !== period) {
+      jumped.current = true;
+      setPeriod(status.period);
+    }
+  }, [loading, records, status, period]);
+
+  const table = useTable<any>(records, { keys: (r) => [r.employee?.name, r.status, r.period], pageSize: 8 });
+  const [selected, setSelected] = useState<string[]>([]);
+  const toggle = (id: string, on: boolean) => setSelected((s) => (on ? [...new Set([...s, id])] : s.filter((x) => x !== id)));
+  const allOnPage = table.paged.length > 0 && table.paged.every((r: any) => selected.includes(r.id));
+  const setPageSelection = (on: boolean) => {
+    const ids = table.paged.map((r: any) => r.id);
+    setSelected((s) => (on ? [...new Set([...s, ...ids])] : s.filter((x) => !ids.includes(x))));
+  };
+
+  /** Bulk status change — one PATCH per record, all in flight together. */
+  const bulkSetStatus = async (target: "FINALIZED" | "PAID") => {
+    const ids = selected.filter(Boolean);
+    if (!ids.length) return;
+    if (target === "PAID" && !window.confirm(`Mark ${ids.length} record(s) as paid? This posts salary expenses to finance.`)) return;
+    setRunBusy(true);
+    let ok = 0;
+    for (const id of ids) {
+      try {
+        await apiFetch(`/people/payroll/${id}`, { method: "PATCH", body: JSON.stringify({ status: target }) });
+        ok++;
+      } catch { /* reported below */ }
+    }
+    notify(`${ok}/${ids.length} marked ${label(target)}`);
+    setSelected([]);
+    setRunBusy(false);
+    reload();
+  };
   const run = async (e: React.FormEvent) => {
     e.preventDefault();
     setRunBusy(true);
@@ -168,19 +210,72 @@ export default function PayrollPage() {
   return (
     <div>
       <Toast flash={flash} />
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="!w-44" />
-        <Btn variant="primary" onClick={() => setRunOpen(true)}><Play className="size-3.5" /> Run Payroll</Btn>
-      </div>
+      <PeopleHero
+        icon={<Wallet className="size-4" />}
+        title="Payroll"
+        subtitle={`${period} · salary minus attendance deductions`}
+        stats={[
+          { label: "Records", value: (records ?? []).length },
+          { label: "Net", value: formatBDT((records ?? []).reduce((s: number, r: any) => s + Number(r.netPay ?? 0), 0)), tone: "emerald" },
+          { label: "Paid", value: (records ?? []).filter((r: any) => r.status === "PAID").length, tone: "sky" },
+          { label: "Draft", value: (records ?? []).filter((r: any) => r.status === "DRAFT").length, tone: "amber" },
+          { label: "Finalized", value: (records ?? []).filter((r: any) => r.status === "FINALIZED").length, tone: "violet" },
+        ]}
+        actions={
+          <div className="flex items-center gap-1.5">
+            <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="!w-36 !py-1 text-[11.5px]" />
+            <Btn variant="primary" onClick={() => setRunOpen(true)} className="!px-2.5 !py-1.5 text-[11px]"><Play className="size-3.5" /> Run</Btn>
+          </div>
+        }
+      />
+      <div className="mt-2">
+      {!loading && !error && (records ?? []).length === 0 ? (
+        <CardShell>
+          <EmptyState
+            title={`No payroll records for ${period}`}
+            hint="Payroll is generated from salary minus attendance deductions (late ladder, half-day LOP, absents, unpaid leave). Run it once and finalize when the numbers look right."
+          />
+          <div className="mt-4 flex justify-center">
+            <Btn variant="primary" onClick={() => setRunOpen(true)}><Play className="size-3.5" /> Run payroll for {period}</Btn>
+          </div>
+        </CardShell>
+      ) : (
+      <>
+      <TableToolbar
+        q={table.q}
+        onQ={table.setQ}
+        placeholder="Search employee or status…"
+        count={`${table.total} record${table.total === 1 ? "" : "s"} · ${period}`}
+        right={
+          selected.length > 0 ? (
+            <>
+              <span className="text-[11.5px] font-semibold text-foreground">{selected.length} selected</span>
+              <Btn variant="outline" onClick={() => void bulkSetStatus("FINALIZED")} disabled={runBusy} className="!py-1.5">Finalize selected</Btn>
+              <Btn variant="primary" onClick={() => void bulkSetStatus("PAID")} disabled={runBusy} className="!py-1.5">Mark paid</Btn>
+              <Btn variant="ghost" onClick={() => setSelected([])} className="!py-1.5">Clear</Btn>
+            </>
+          ) : null
+        }
+      />
       <DataTable
         loading={loading}
         error={error}
         onRetry={reload}
         skeleton={6}
-        footer={<span className="text-[11.5px] text-muted-foreground">{period} · {(records ?? []).length} records</span>}
-cols={["Employee", "Basic salary", "Allow. + Bonus", "Late", "Half-day", "Absent", "Unpaid leave", "Net pay", "Status", "Actions"]}
-        rows={(records ?? []).map((r: any, i: number) => (
+        footer={<Pager page={table.page} pages={table.pages} onPage={table.setPage} total={table.total} pageSize={8} label="records" />}
+        cols={[
+          <span key="sel" className="inline-flex">
+            <RowCheck
+              checked={allOnPage}
+              label="Select all on this page"
+              onChange={(v) => setPageSelection(v)}
+            />
+          </span>,
+          "Employee", "Basic salary", "Allow. + Bonus", "Late", "Half-day", "Absent", "Unpaid leave", "Net pay", "Status", "Actions",
+        ]}
+        rows={table.paged.map((r: any, i: number) => (
           <Tr key={r.id} index={i}>
+            <Td><RowCheck checked={selected.includes(r.id)} label={`Select ${r.employee?.name ?? "record"}`} onChange={(v) => toggle(r.id, v)} /></Td>
             <Td><div className="flex items-center gap-2.5"><Avatar name={r.employee?.name} /><div><p className="font-medium"><Link href={`/people/attendance/${r.employee?.id}`} className="hover:text-primary hover:underline">{r.employee?.name}</Link></p><p className="text-[11px] text-muted-foreground">{r.employee?.roleTitle}{r.employee?.department ? ` · ${r.employee.department}` : ""}</p></div></div></Td>
             <Td className="font-semibold tabular-nums">{formatBDT(r.basicSalary != null ? Number(r.basicSalary) : null)}</Td>
             <Td className="tabular-nums text-emerald-600 dark:text-emerald-400">{(Number(r.allowances ?? 0) || Number(r.bonus ?? 0)) ? `+${formatBDT(Number(r.allowances ?? 0) + Number(r.bonus ?? 0))}` : "—"}</Td>
@@ -209,6 +304,9 @@ cols={["Employee", "Basic salary", "Allow. + Bonus", "Late", "Half-day", "Absent
           </Tr>
         ))}
       />
+      </>
+      )}
+      </div>
       <EditPayrollModal record={editRec} onClose={() => setEditRec(null)} onSaved={reload} notify={notify} />
       <Modal open={runOpen} onClose={() => setRunOpen(false)} title="Run payroll">
         <form onSubmit={run} className="flex flex-col gap-4">

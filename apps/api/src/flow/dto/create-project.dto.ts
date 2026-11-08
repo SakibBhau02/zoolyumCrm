@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsIn,
@@ -88,6 +89,23 @@ export class CreateProjectDto {
   @IsOptional()
   @IsEnum(HealthStatus)
   healthStatus?: HealthStatus;
+
+  /** Free-text reason stored with a manual health override. */
+  @IsOptional()
+  @IsString()
+  healthOverrideReason?: string;
+
+  /** Set true to drop a manual override and go back to the computed level. */
+  @IsOptional()
+  @IsBoolean()
+  clearHealthOverride?: boolean;
+
+  /** PM's 1-5 confidence, the subjective input to the project score. */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  confidenceScore?: number;
 
   @IsOptional()
   @IsEnum(ProjectType)

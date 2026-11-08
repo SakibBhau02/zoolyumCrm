@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { CapitalService } from "../capital/capital.service";
@@ -14,12 +14,42 @@ export class PayrollService {
     private readonly attendance: AttendanceService
   ) {}
 
-  async payslip(id: string) {
+  /**
+   * Compact status for the page header: the newest period that actually has
+   * records, plus how far it got through DRAFT → FINALIZED → PAID. The header
+   * used to hard-code "Payroll: July finalized", which was simply untrue.
+   */
+  async status() {
+    const last = await this.prisma.payrollRecord.findFirst({ orderBy: { period: "desc" }, select: { period: true } });
+    if (!last) return { period: null, status: null, count: 0, totalNet: 0, breakdown: [] as { status: string; count: number }[] };
+    const [agg, byStatus] = await Promise.all([
+      this.prisma.payrollRecord.aggregate({ where: { period: last.period }, _count: { _all: true }, _sum: { netPay: true } }),
+      this.prisma.payrollRecord.groupBy({ by: ["status"], where: { period: last.period }, _count: { _all: true } }),
+    ]);
+    const breakdown = byStatus.map((s) => ({ status: s.status, count: s._count._all }));
+    const status = breakdown.length === 1 ? breakdown[0].status : breakdown.some((b) => b.status === "DRAFT") ? "IN_PROGRESS" : "MIXED";
+    return {
+      period: last.period,
+      status,
+      count: agg._count._all,
+      totalNet: Number(agg._sum.netPay ?? 0),
+      breakdown,
+    };
+  }
+
+  async payslip(id: string, user?: any) {
     const record = await this.prisma.payrollRecord.findUnique({
       where: { id },
       include: { employee: { select: { id: true, name: true, roleTitle: true, department: true, salary: true, joinDate: true } } },
     });
     if (!record) throw new NotFoundException("Payroll record not found");
+    // Ownership gate: HR sees everyone, an employee sees only their own slip.
+    if (user && !/owner|hr|admin/i.test(user.role ?? "")) {
+      const self = await this.prisma.employee.findFirst({ where: { user: { id: user.sub } }, select: { id: true } });
+      if (!self || self.id !== record.employeeId) {
+        throw new ForbiddenException("You can only open your own payslip");
+      }
+    }
     const branding = await this.prisma.brandingConfig.findFirst();
     return { record, employee: record.employee, company: { name: "Zoolyum OS", branding: branding ?? null } };
   }
@@ -35,8 +65,7 @@ export class PayrollService {
     });
   }
 
-  private appendAudit(existing: any, entry: any) {
-    const trail = Array.isArray(existing?.auditTrail) ? existing.auditTrail : [];
+  private appendAudit(existing: any, entry: any) {    const trail = Array.isArray(existing?.auditTrail) ? existing.auditTrail : [];
     return [...trail, entry];
   }
 

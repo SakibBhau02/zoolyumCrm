@@ -1,11 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Info } from "lucide-react";
+import { ArrowRight, CalendarDays, Check, Info, ListChecks, Paperclip, SlidersHorizontal } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/components/shared";
-import { Field, FormActions, Input, Modal, Select, Textarea } from "@/components/ui";
+import {
+  ChipGroup,
+  Collapsible,
+  CountBadge,
+  Field,
+  FieldLabel,
+  FormActions,
+  FormError,
+  FormSection,
+  Input,
+  Modal,
+  Select,
+  Textarea,
+  Toggle,
+} from "@/components/ui";
 import { ProjectContextPanel } from "@/components/tasks/project-context";
+import {
+  TASK_STATUS_OPTS as STATUS_OPTS,
+  PRIORITIES,
+  PRIORITY_META,
+  TASK_TYPES,
+  TASK_TYPE_META,
+  label,
+} from "@/components/tasks/domain";
 
 export type TaskRow = {
   id: string;
@@ -52,17 +74,23 @@ export type TaskRow = {
 export type UserLite = { id: string; name: string; roleTitle?: string };
 export type ProjectLite = { id: string; name: string };
 
-export const STATUS_OPTS = [
-  { value: "BACKLOG", label: "Backlog" },
-  { value: "TODO", label: "To Do" },
-  { value: "IN_PROGRESS", label: "In Progress" },
-  { value: "IN_REVIEW", label: "In Review" },
-  { value: "BLOCKED", label: "Blocked" },
-  { value: "DONE", label: "Done" },
+// Status/priority/type vocabulary is owned by ./domain — re-exported here so
+// existing imports of this module keep working.
+export { STATUS_OPTS, PRIORITIES, TASK_TYPES, label };
+
+/** Local YYYY-MM-DD for the quick due-date chips. */
+function dayFromNow(days: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+const DUE_PRESETS = [
+  { label: "Today", days: 0 },
+  { label: "Tomorrow", days: 1 },
+  { label: "Next week", days: 7 },
 ];
-export const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"];
-export const TASK_TYPES = ["general", "bug", "feature", "improvement", "research", "design", "documentation"];
-export const label = (v?: string) => (v ?? "").replace(/_/g, " ").toLowerCase();
 
 export function TaskFormModal({ open, onClose, initial, tasks, users, projects, onSaved, projectId }: {
   open: boolean; onClose: () => void; initial?: TaskRow | null;
@@ -78,7 +106,22 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
     attachments: [] as { id: string; name: string; url: string; size: string; type: string }[],
   });
   const [busy, setBusy] = useState(false);
+  const [titleErr, setTitleErr] = useState<string | null>(null);
+  const [descErr, setDescErr] = useState<string | null>(null);
   const [me, setMe] = useState<{ id: string; name: string } | null>(null);
+
+  /**
+   * Department → allowed task types. Rules are authored at /tasks/setup and
+   * enforced server-side too; this only narrows the dropdown so people don't
+   * pick something the API will reject.
+   */
+  const [typeRules, setTypeRules] = useState<{ department: string; taskTypes: string[] }[]>([]);
+  useEffect(() => {
+    if (!open || typeRules.length) return;
+    apiFetch<{ department: string; taskTypes: string[] }[]>("/people/task-type-rules")
+      .then((r) => setTypeRules(Array.isArray(r) ? r : []))
+      .catch(() => setTypeRules([]));
+  }, [open, typeRules.length]);
 
   useEffect(() => {
     // used only for the "X assigns this to Y" preview line
@@ -91,6 +134,8 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
   useEffect(() => {
     if (!open) return;
     setErr(null);
+    setTitleErr(null);
+    setDescErr(null);
     setF(initial
       ? {
         title: initial.title, description: initial.description ?? "", projectId: initial.projectId ?? "",
@@ -113,12 +158,36 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
         referenceLinks: [], customFields: [], attachments: [],
       });
   }, [open, initial, projectId]);
+
+  /**
+   * Task types the selected assignee's department permits. Empty rule = all
+   * types. An employee's department comes from the roster the page already
+   * passes in via `users` (which may not carry it), so fall back to the
+   * unrestricted list when we can't resolve it.
+   */
+  const allowedTypes = (() => {
+    const dept = (users as any[]).find((u) => u.id === f.assignedToId)?.department as string | undefined;
+    if (!dept) return TASK_TYPES as unknown as string[];
+    const rule = typeRules.find((r) => r.department.toLowerCase() === dept.toLowerCase());
+    if (!rule || rule.taskTypes.length === 0) return TASK_TYPES as unknown as string[];
+    // Keep the current value visible while editing an older task.
+    const base = rule.taskTypes as string[];
+    return base.includes(f.taskType) ? base : [...base, f.taskType];
+  })();
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!f.title.trim()) { setErr("Title is required"); return; }
+    if (!f.title.trim()) {
+      setTitleErr("Give the task a clear, action-shaped title");
+      return;
+    }
+    setTitleErr(null);
     // Handing work to someone without a brief is how tasks come back wrong.
     // Enforced on create only so pre-existing thin tasks stay editable.
-    if (!editing && !f.description.trim()) { setErr("Description is required so the assignee knows what to do"); return; }
+    if (!editing && !f.description.trim()) {
+      setDescErr("The assignee needs to know what done looks like");
+      return;
+    }
+    setDescErr(null);
     setBusy(true);
     setErr(null);
     try {
@@ -146,113 +215,357 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
     } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   const toggleExtra = (id: string) => setF({ ...f, extraAssignees: f.extraAssignees.includes(id) ? f.extraAssignees.filter((x) => x !== id) : [...f.extraAssignees, id] });
-  return (
-    <Modal open={open} onClose={onClose} title={editing ? "Edit task" : "New task"} size="lg">
-      <form onSubmit={save} className="flex flex-col gap-4">
-        <Field label="Title *"><Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Ship the onboarding flow" autoFocus /></Field>
-        <Field label="Description *" hint={editing ? undefined : "The assignee needs to know what done looks like"}>
-          <Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="What needs to happen, and what does done look like?" />
-        </Field>
+  const assigneeName = users.find((u) => u.id === f.assignedToId)?.name;
+  const extraCount = f.referenceLinks.length + f.attachments.length + f.customFields.length;
 
-        {/*
-          Hand-off line: who is giving this task, and to whom. Reporter is set
-          server-side from the logged-in user, so this is a preview, not a picker.
-        */}
-        {f.assignedToId && (
-          <div className="flex items-center gap-2 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2.5">
-            <Info className="size-3.5 shrink-0 text-primary" />
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-[11.5px]">
-              <span className="font-bold text-primary">{me?.name ?? "You"}</span>
-              <span className="text-muted-foreground">assign this to</span>
-              <span className="font-bold">{users.find((u) => u.id === f.assignedToId)?.name ?? "—"}</span>
-              <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
-              <span className="text-muted-foreground">
-                only {(users.find((u) => u.id === f.assignedToId)?.name ?? "the assignee")} can change status; you and the PM can edit the brief
-              </span>
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      icon={<ListChecks className="size-4" />}
+      title={editing ? "Edit task" : "New task"}
+      subtitle={
+        editing
+          ? "Change the brief, the owner or the schedule — status history is kept."
+          : "Say what needs to happen and who owns it. Everything else is optional."
+      }
+      size="lg"
+      footer={
+        <FormActions
+          formId="task-form"
+          busy={busy}
+          cancel={onClose}
+          submitLabel={editing ? "Save changes" : "Create task"}
+          submitIcon={<Check className="size-3.5" />}
+          hint={f.dueDate ? `Due ${new Date(f.dueDate).toLocaleDateString()}` : "Fields marked * are required"}
+        />
+      }
+    >
+      <form id="task-form" onSubmit={save} className="flex flex-col gap-5">
+        <FormError>{err}</FormError>
+        {/* ── 1. The brief. This is the whole task in two fields. ── */}
+        <div className="flex flex-col gap-3.5">
+          <Field label="What needs to happen?" required error={titleErr}>
+            <Input
+              value={f.title}
+              onChange={(e) => {
+                setF({ ...f, title: e.target.value });
+                if (titleErr) setTitleErr(null);
+              }}
+              placeholder="Ship the onboarding flow"
+              autoFocus
+              className="!py-2.5 !text-[14px] font-medium"
+            />
+          </Field>
+          <Field
+            label="Brief"
+            required={!editing}
+            error={descErr}
+            hint={editing ? undefined : "The assignee needs to know what done looks like"}
+          >
+            <Textarea
+              value={f.description}
+              onChange={(e) => {
+                setF({ ...f, description: e.target.value });
+                if (descErr) setDescErr(null);
+              }}
+              placeholder="What needs to happen, and what does done look like?"
+              className="!min-h-24"
+            />
+          </Field>
+        </div>
+
+        {/* ── 2. Owner, deadline and urgency. ── */}
+        <FormSection icon={<CalendarDays className="size-3.5" />} title="Owner & schedule">
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+            <Field label="Assignee" hint={f.assignedToId ? "Only they can move this to Done" : "Leave empty to keep it unassigned"}>
+              <Select value={f.assignedToId} onChange={(e) => setF({ ...f, assignedToId: e.target.value })}>
+                <option value="">Unassigned</option>
+                {users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}
+              </Select>
+            </Field>
+            <Field label="Project">
+              <Select value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })} disabled={!!projectId}>
+                <option value="">No project</option>
+                {projects.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+              </Select>
+            </Field>
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel>Due date</FieldLabel>
+              <Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} />
+              <div className="flex flex-wrap gap-1">
+                {DUE_PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => setF({ ...f, dueDate: dayFromNow(p.days) })}
+                    className={cn(
+                      "rounded-md border px-2 py-0.5 text-[10.5px] font-semibold transition-colors",
+                      f.dueDate === dayFromNow(p.days)
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border text-muted-foreground hover:border-primary/25 hover:text-foreground"
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel>Priority</FieldLabel>
+              <ChipGroup
+                value={f.priority}
+                onChange={(v) => setF({ ...f, priority: v })}
+                options={PRIORITIES.map((p) => ({
+                  value: p,
+                  label: PRIORITY_META[p].label,
+                  tone: PRIORITY_META[p].tone,
+                }))}
+                size="sm"
+              />
             </div>
           </div>
-        )}
+
+          {/* Hand-off line: who is giving this task, and to whom. Reporter is set
+              server-side from the logged-in user, so this is a preview, not a picker. */}
+          {f.assignedToId && (
+            <div className="mt-3.5 flex items-center gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] px-3 py-2.5">
+              <Info className="size-3.5 shrink-0 text-primary" />
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-[11.5px]">
+                <span className="font-bold text-primary">{me?.name ?? "You"}</span>
+                <span className="text-muted-foreground">assigns this to</span>
+                <span className="font-bold">{assigneeName ?? "—"}</span>
+                <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  only {assigneeName ?? "the assignee"} can change status; you and the PM can edit the brief
+                </span>
+              </div>
+            </div>
+          )}
+        </FormSection>
 
         {/* Project context: the brief, research and files behind this work */}
-        <ProjectContextPanel projectId={f.projectId || null} compact />
+        {f.projectId && <ProjectContextPanel projectId={f.projectId} compact />}
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Project"><Select value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })} disabled={!!projectId}><option value="">No project</option>{projects.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</Select></Field>
-          <Field label="Status"><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>{STATUS_OPTS.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}</Select></Field>
-          <Field label="Priority"><Select value={f.priority} onChange={(e) => setF({ ...f, priority: e.target.value })}>{PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}</Select></Field>
-          <Field label="Type"><Select value={f.taskType} onChange={(e) => setF({ ...f, taskType: e.target.value })}>{TASK_TYPES.map((t) => (<option key={t} value={t}>{t}</option>))}</Select></Field>
-          <Field label="Assignee"><Select value={f.assignedToId} onChange={(e) => setF({ ...f, assignedToId: e.target.value })}><option value="">Unassigned</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
-          <Field label="Start date"><Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} /></Field>
-          <Field label="Due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
-          <Field label="Estimated hours"><Input type="number" min={0} step={0.5} value={f.estimatedHours} onChange={(e) => setF({ ...f, estimatedHours: e.target.value })} placeholder="4" /></Field>
-          <Field label="Tags" hint="Comma separated"><Input value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} placeholder="design, urgent" /></Field>
-          <Field label="Parent task"><Select value={f.parentTaskId} onChange={(e) => setF({ ...f, parentTaskId: e.target.value })}><option value="">None (top level)</option>{tasks.filter((t) => t.id !== initial?.id && (!projectId || t.projectId === projectId)).map((t) => (<option key={t.id} value={t.id}>{t.title}</option>))}</Select></Field>
-        </div>
-        <div>
-          <span className="text-[11.5px] font-semibold text-muted-foreground">Additional assignees</span>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {users.filter((u) => u.id !== f.assignedToId).map((u) => (
-              <button key={u.id} type="button" onClick={() => toggleExtra(u.id)} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors", f.extraAssignees.includes(u.id) ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>{u.name}</button>
-            ))}
+        {/* ── 3. Advanced, folded away. ── */}
+        <Collapsible
+          icon={<SlidersHorizontal className="size-3.5" />}
+          title="Scheduling & details"
+          hint="Status, type, estimate, tags, collaboration"
+          badge={
+            (f.startDate ? 1 : 0) + (f.estimatedHours ? 1 : 0) + (f.tags ? 1 : 0) + (f.extraAssignees.length ? 1 : 0) > 0 ? (
+              <CountBadge>{(f.startDate ? 1 : 0) + (f.estimatedHours ? 1 : 0) + (f.tags ? 1 : 0) + (f.extraAssignees.length ? 1 : 0)}</CountBadge>
+            ) : undefined
+          }
+        >
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+            <Field label="Status">
+              <Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
+                {STATUS_OPTS.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
+              </Select>
+            </Field>
+            <Field label="Type">
+              <Select value={f.taskType} onChange={(e) => setF({ ...f, taskType: e.target.value })}>
+                {allowedTypes.map((t) => (
+                  <option key={t} value={t}>
+                    {(TASK_TYPE_META as Record<string, { label: string }>)[t]?.label ??
+                      t.replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Start date">
+              <Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} />
+            </Field>
+            <Field label="Estimated hours">
+              <Input type="number" min={0} step={0.5} value={f.estimatedHours} onChange={(e) => setF({ ...f, estimatedHours: e.target.value })} placeholder="4" />
+            </Field>
+            <Field label="Tags" hint="Comma separated">
+              <Input value={f.tags} onChange={(e) => setF({ ...f, tags: e.target.value })} placeholder="design, urgent" />
+            </Field>
+            <Field label="Parent task">
+              <Select value={f.parentTaskId} onChange={(e) => setF({ ...f, parentTaskId: e.target.value })}>
+                <option value="">None (top level)</option>
+                {tasks.filter((t) => t.id !== initial?.id && (!projectId || t.projectId === projectId)).map((t) => (
+                  <option key={t.id} value={t.id}>{t.title}</option>
+                ))}
+              </Select>
+            </Field>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <label className="flex items-center gap-2 text-[12px] font-semibold text-muted-foreground">
-            <input type="checkbox" checked={f.isClientVisible} onChange={(e) => setF({ ...f, isClientVisible: e.target.checked })} className="size-3.5 accent-primary" /> Client visible
-          </label>
-          <label className="flex items-center gap-2 text-[12px] font-semibold text-muted-foreground">
-            <input type="checkbox" checked={f.isRecurring} onChange={(e) => setF({ ...f, isRecurring: e.target.checked })} className="size-3.5 accent-primary" /> Recurring
-          </label>
+
+          <div className="mt-3.5">
+            <FieldLabel>Additional assignees</FieldLabel>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {users.filter((u) => u.id !== f.assignedToId).map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => toggleExtra(u.id)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                    f.extraAssignees.includes(u.id)
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {u.name}
+                </button>
+              ))}
+              {users.filter((u) => u.id !== f.assignedToId).length === 0 && (
+                <span className="text-[11px] text-muted-foreground/70">No other team members.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3.5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <Toggle
+              checked={f.isClientVisible}
+              onChange={(v) => setF({ ...f, isClientVisible: v })}
+              label="Client visible"
+              hint="Shows in the client portal"
+            />
+            <Toggle
+              checked={f.isRecurring}
+              onChange={(v) => setF({ ...f, isRecurring: v })}
+              label="Recurring task"
+              hint="Re-creates itself on a schedule"
+            />
+          </div>
           {f.isRecurring && (
-            <Select value={f.recurrenceSchedule} onChange={(e) => setF({ ...f, recurrenceSchedule: e.target.value })} className="!w-32">
-              {["daily", "weekly", "monthly", "quarterly", "yearly"].map((s) => (<option key={s} value={s}>{s}</option>))}
-            </Select>
+            <Field label="Repeat" className="mt-3.5">
+              <Select value={f.recurrenceSchedule} onChange={(e) => setF({ ...f, recurrenceSchedule: e.target.value })}>
+                {["daily", "weekly", "monthly", "quarterly", "yearly"].map((s) => (
+                  <option key={s} value={s}>{s.replace(/^./, (c) => c.toUpperCase())}</option>
+                ))}
+              </Select>
+            </Field>
           )}
-        </div>
+        </Collapsible>
 
-        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
-          <span className="text-[11.5px] font-bold text-muted-foreground">Reference Links — visible to assignee (enterprise)</span>
-          {f.referenceLinks.map((l, i) => (
-            <div key={l.id} className="flex items-center gap-2">
-              <Input value={l.title} onChange={(e) => setF({ ...f, referenceLinks: f.referenceLinks.map((x, xi) => xi===i ? { ...x, title: e.target.value } : x) })} placeholder="Title" className="!w-32" />
-              <Input value={l.url} onChange={(e) => setF({ ...f, referenceLinks: f.referenceLinks.map((x, xi) => xi===i ? { ...x, url: e.target.value } : x) })} placeholder="https://..." className="flex-1" />
-              <button type="button" onClick={() => setF({ ...f, referenceLinks: f.referenceLinks.filter((_, xi) => xi!==i) })} className="flex size-7 items-center justify-center rounded-lg text-rose-400 hover:bg-rose-500/10">×</button>
-            </div>
-          ))}
-          <button type="button" onClick={() => setF({ ...f, referenceLinks: [...f.referenceLinks, { id: `l${Date.now()}`, title: "", url: "" }] })} className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-[11px] font-bold text-primary hover:border-primary/40">+ Add reference link</button>
-          {f.referenceLinks.length===0 && <p className="text-[11px] text-muted-foreground/70">No links — add Figma, Drive, PR links. Assignee will see these in detail.</p>}
-        </div>
+        <Collapsible
+          icon={<Paperclip className="size-3.5" />}
+          title="References, files & custom fields"
+          hint="Anything the assignee needs to do this without asking"
+          badge={extraCount > 0 ? <CountBadge>{extraCount}</CountBadge> : undefined}
+        >
+          <div className="flex flex-col gap-2">
+            <FieldLabel>Reference links</FieldLabel>
+            {f.referenceLinks.map((l, i) => (
+              <div key={l.id} className="flex items-center gap-2">
+                <Input
+                  value={l.title}
+                  onChange={(e) => setF({ ...f, referenceLinks: f.referenceLinks.map((x, xi) => xi === i ? { ...x, title: e.target.value } : x) })}
+                  placeholder="Title"
+                  className="!w-28 shrink-0"
+                />
+                <Input
+                  value={l.url}
+                  onChange={(e) => setF({ ...f, referenceLinks: f.referenceLinks.map((x, xi) => xi === i ? { ...x, url: e.target.value } : x) })}
+                  placeholder="https://…"
+                  className="min-w-0 flex-1"
+                />
+                <button
+                  type="button"
+                  aria-label="Remove link"
+                  onClick={() => setF({ ...f, referenceLinks: f.referenceLinks.filter((_, xi) => xi !== i) })}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-lg text-rose-400 transition-colors hover:bg-rose-500/10"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setF({ ...f, referenceLinks: [...f.referenceLinks, { id: `l${Date.now()}`, title: "", url: "" }] })}
+              className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-[11px] font-bold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              + Add reference link
+            </button>
+            {f.referenceLinks.length === 0 && (
+              <p className="text-[11px] text-muted-foreground/70">No links yet — Figma, Drive, PR links all work.</p>
+            )}
+          </div>
 
-        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
-          <span className="text-[11.5px] font-bold text-muted-foreground">Attachments — visible to assignee</span>
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border bg-card px-3 py-2 text-[11px] font-semibold text-muted-foreground hover:border-primary/40 hover:text-foreground">
-            <input type="file" className="hidden" onChange={(e) => {
-              const file=e.target.files?.[0]; if(!file) return; const reader=new FileReader(); reader.onload=()=>{ setF({...f, attachments:[...f.attachments, { id:`a${Date.now()}`, name:file.name, url:String(reader.result), size:file.size<1024? `${file.size} B` : file.size<1048576? `${Math.round(file.size/1024)} KB` : `${(file.size/1048576).toFixed(1)} MB`, type:file.type }] as any}); }; reader.readAsDataURL(file); e.target.value="";
-            }} /> + Upload file (assignee will see)
-          </label>
-          {f.attachments.map((a, i) => (
-            <div key={a.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-card px-3 py-1.5 text-[11px]">
-              <span className="truncate font-medium">{a.name} · {a.size}</span>
-              <button type="button" onClick={() => setF({ ...f, attachments: f.attachments.filter((_, xi) => xi!==i) })} className="text-rose-400">×</button>
-            </div>
-          ))}
-          {f.attachments.length===0 && <p className="text-[11px] text-muted-foreground/70">No files yet.</p>}
-        </div>
+          <div className="mt-4 flex flex-col gap-2 border-t border-border/60 pt-3.5">
+            <FieldLabel>Attachments</FieldLabel>
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border bg-card px-3 py-2 text-[11px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground">
+              <Paperclip className="size-3" />
+              Upload a file the assignee will see
+              <input
+                type="file"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    setF({
+                      ...f,
+                      attachments: [...f.attachments, {
+                        id: `a${Date.now()}`,
+                        name: file.name,
+                        url: String(reader.result),
+                        size: file.size < 1024 ? `${file.size} B` : file.size < 1048576 ? `${Math.round(file.size / 1024)} KB` : `${(file.size / 1048576).toFixed(1)} MB`,
+                        type: file.type,
+                      }] as any,
+                    });
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {f.attachments.map((a, i) => (
+              <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-1.5 text-[11px]">
+                <span className="truncate font-medium">{a.name} · {a.size}</span>
+                <button
+                  type="button"
+                  aria-label="Remove attachment"
+                  onClick={() => setF({ ...f, attachments: f.attachments.filter((_, xi) => xi !== i) })}
+                  className="shrink-0 text-rose-400"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            {f.attachments.length === 0 && <p className="text-[11px] text-muted-foreground/70">No files yet.</p>}
+          </div>
 
-        <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3">
-          <span className="text-[11.5px] font-bold text-muted-foreground">Custom Fields — visible to assignee</span>
-          {f.customFields.map((c, i) => (
-            <div key={c.id} className="flex items-center gap-2">
-              <Input value={c.key} onChange={(e) => setF({ ...f, customFields: f.customFields.map((x, xi) => xi===i ? { ...x, key: e.target.value } : x) })} placeholder="Key (e.g. severity)" className="!w-32" />
-              <Input value={c.value} onChange={(e) => setF({ ...f, customFields: f.customFields.map((x, xi) => xi===i ? { ...x, value: e.target.value } : x) })} placeholder="Value" className="flex-1" />
-              <button type="button" onClick={() => setF({ ...f, customFields: f.customFields.filter((_, xi) => xi!==i) })} className="flex size-7 items-center justify-center rounded-lg text-rose-400 hover:bg-rose-500/10">×</button>
-            </div>
-          ))}
-          <button type="button" onClick={() => setF({ ...f, customFields: [...f.customFields, { id:`cf${Date.now()}`, key: "", value: "" }] })} className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-[11px] font-bold text-primary hover:border-primary/40">+ Add custom field</button>
-        </div>
-
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
-        <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Create task"} />
+          <div className="mt-4 flex flex-col gap-2 border-t border-border/60 pt-3.5">
+            <FieldLabel>Custom fields</FieldLabel>
+            {f.customFields.map((c, i) => (
+              <div key={c.id} className="flex items-center gap-2">
+                <Input
+                  value={c.key}
+                  onChange={(e) => setF({ ...f, customFields: f.customFields.map((x, xi) => xi === i ? { ...x, key: e.target.value } : x) })}
+                  placeholder="Key (e.g. severity)"
+                  className="!w-32 shrink-0"
+                />
+                <Input
+                  value={c.value}
+                  onChange={(e) => setF({ ...f, customFields: f.customFields.map((x, xi) => xi === i ? { ...x, value: e.target.value } : x) })}
+                  placeholder="Value"
+                  className="min-w-0 flex-1"
+                />
+                <button
+                  type="button"
+                  aria-label="Remove custom field"
+                  onClick={() => setF({ ...f, customFields: f.customFields.filter((_, xi) => xi !== i) })}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-lg text-rose-400 transition-colors hover:bg-rose-500/10"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setF({ ...f, customFields: [...f.customFields, { id: `cf${Date.now()}`, key: "", value: "" }] })}
+              className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-[11px] font-bold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5"
+            >
+              + Add custom field
+            </button>
+          </div>
+        </Collapsible>
       </form>
     </Modal>
   );

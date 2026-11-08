@@ -4,7 +4,7 @@ async function openFirstInvoice(page: import("@playwright/test").Page) {
   await page.goto("/login");
   await page.getByPlaceholder("you@zoolyum.com").fill("sakib@zoolyum.com");
   await page.getByPlaceholder("••••••••").fill("zoolyum123");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL(/\/dashboard/);
 
   await page.goto("/capital/invoices");

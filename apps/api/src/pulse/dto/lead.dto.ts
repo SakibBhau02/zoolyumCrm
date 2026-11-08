@@ -26,6 +26,21 @@ import {
 
 const ACTIVITY_TYPES = ["CALL", "EMAIL", "MEETING", "NOTE", "WHATSAPP", "LINKEDIN"] as const;
 const PROPOSAL_STATUSES = ["DRAFT", "SENT", "ACCEPTED", "REJECTED"] as const;
+/**
+ * What came out of a touch, not just that a touch happened. Drives the
+ * follow-up cockpit: `NO_ANSWER` means try again, `INTERESTED` means push the
+ * stage, `NOT_INTERESTED` is the honest exit.
+ */
+const OUTCOMES = [
+  "CONNECTED",
+  "NO_ANSWER",
+  "LEFT_MESSAGE",
+  "INTERESTED",
+  "NEEDS_INFO",
+  "CALLBACK_REQUESTED",
+  "MEETING_BOOKED",
+  "NOT_INTERESTED",
+] as const;
 
 export class CreateLeadDto {
   @IsString()
@@ -102,6 +117,10 @@ export class CreateLeadDto {
   @IsOptional()
   @IsString()
   assignedToId?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
 
   @IsOptional()
   @IsString()
@@ -188,6 +207,10 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsString()
   assignedToId?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
 
   @IsOptional()
   @IsString()
@@ -395,3 +418,104 @@ export class ConvertLeadDto {
   @Max(100)
   healthScore?: number;
 }
+
+/* ── Follow-up workflow ──────────────────────────────────────────────────── */
+
+/**
+ * One call, WhatsApp, email or meeting — logged with its outcome and the next
+ * step in a single request. This is the primary write path from the Today
+ * cockpit; it keeps the lead's agenda, activity history and stage in sync.
+ */
+export class QuickLogDto {
+  @IsEnum(ACTIVITY_TYPES)
+  type!: (typeof ACTIVITY_TYPES)[number];
+
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @IsOptional()
+  @IsEnum(OUTCOMES)
+  outcome?: (typeof OUTCOMES)[number];
+
+  /** When the next touch should happen. Omit to keep the current plan. */
+  @IsOptional()
+  @IsISO8601()
+  nextFollowUpAt?: string;
+
+  /**
+   * Explicitly drop the open plan ("No next step"). Omit the date AND set this
+   * to true to clear every scheduled follow-up, instead of silently keeping it.
+   */
+  @IsOptional()
+  @IsBoolean()
+  clearNextStep?: boolean;
+
+  /** Forward stage moves only — the service refuses to walk a lead backwards. */
+  @IsOptional()
+  @IsEnum(LeadStage)
+  stage?: LeadStage;
+
+  @IsOptional()
+  @IsEnum(LeadPriority)
+  priority?: LeadPriority;
+
+  @IsOptional()
+  @IsEnum(LeadTemperature)
+  temperature?: LeadTemperature;
+
+  /** Optionally mirror the next step into Tasks for someone on the team. */
+  @IsOptional()
+  @IsString()
+  assignToId?: string;
+
+  @IsOptional()
+  @IsString()
+  taskTitle?: string;
+}
+
+export class SnoozeLeadDto {
+  /** Push the open follow-up this many days from now (1–90). */
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  days!: number;
+}
+
+export class UpdateFollowUpStatusDto {
+  @IsEnum(FollowUpStatus)
+  status!: FollowUpStatus;
+}
+
+export class BulkUpdateLeadsDto {
+  @IsArray()
+  @IsString({ each: true })
+  ids!: string[];
+
+  @IsOptional()
+  @IsEnum(LeadStage)
+  stage?: LeadStage;
+
+  @IsOptional()
+  @IsString()
+  assignedToId?: string;
+
+  @IsOptional()
+  @IsEnum(LeadPriority)
+  priority?: LeadPriority;
+
+  @IsOptional()
+  @IsEnum(LeadTemperature)
+  temperature?: LeadTemperature;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  addTags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  removeTags?: string[];
+}
+

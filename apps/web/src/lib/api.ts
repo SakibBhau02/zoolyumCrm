@@ -2,6 +2,22 @@
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
 
+/**
+ * Error carrying the HTTP status so callers can tell "your session is invalid"
+ * (401/403 — log out) apart from "the server hiccuped" (500/network — retry).
+ * Without the status every failure looked identical and wiped the token.
+ */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export const UNAUTHORIZED_EVENT = "zoolyum:unauthorized";
+
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("zoolyum-token");
@@ -18,17 +34,36 @@ export async function apiFetch<T = any>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      // Always revalidate with the API. Without this the browser can replay a
+      // stale JSON body on a 304 after a deploy, which looks like "the data is
+      // wrong" until a hard refresh.
+      cache: "no-store",
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch {
+    // Network failure (API restarting, offline) — status 0, not an auth problem.
+    throw new ApiError("Cannot reach the server. Check that the API is running.", 0);
+  }
   if (!res.ok) {
+    // A token that existed but was rejected means the session is dead (expired,
+    // deactivated, password reset, permission change). Tell the shell once so it
+    // can sign the user out instead of leaving every page erroring.
+    if (res.status === 401 && token) {
+      setToken(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      }
+    }
     const body = await res.json().catch(() => null);
-    throw new Error(body?.message ?? `Request failed: ${res.status}`);
+    throw new ApiError(body?.message ?? `Request failed: ${res.status}`, res.status);
   }
   return res.json() as Promise<T>;
 }
@@ -46,6 +81,12 @@ export async function apiFetchFormData<T = any>(
     body: formData,
   });
   if (!res.ok) {
+    if (res.status === 401 && token) {
+      setToken(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      }
+    }
     const body = await res.json().catch(() => null);
     throw new Error(body?.message ?? `Request failed: ${res.status}`);
   }

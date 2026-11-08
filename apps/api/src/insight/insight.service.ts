@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
+import { invoiceTotals } from "../capital/finance-kernel";
 
 const ACTIVE_INVOICE_STATUSES = ["SENT", "VIEWED", "PARTIALLY_PAID", "PAID", "OVERDUE"];
 const TAX_RATE = 0.22;
@@ -122,8 +123,8 @@ export class InsightService {
       this.prisma.project.findMany(),
     ]);
 
-    const total = (inv: any) => inv.lineItems.reduce((s: number, l: any) => s + Number(l.amount), 0);
-    const paidOf = (inv: any) => inv.payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+    const total = (inv: any) => invoiceTotals(inv).grand;
+    const paidOf = (inv: any) => invoiceTotals(inv).paid;
 
     const monthInvoices = invoices.filter((i) => i.issueDate >= monthStart);
     const monthPayments = payments.filter((p) => p.paymentDate >= monthStart);
@@ -158,7 +159,7 @@ export class InsightService {
         activeProjects: projects.filter((p) => ["ACTIVE", "PLANNING"].includes(p.status)).length,
         totalLeads: leads.length,
         conversionRate: leads.length ? Math.round((leads.filter((l) => l.stage === "WON").length / leads.length) * 1000) / 10 : 0,
-        outstanding: Math.round(invoices.filter((i) => i.status !== "PAID").reduce((s, i) => s + total(i) - paidOf(i), 0) * 100) / 100,
+        outstanding: Math.round(invoices.filter((i) => ACTIVE_INVOICE_STATUSES.includes(i.status)).reduce((s, i) => s + Math.max(total(i) - paidOf(i), 0), 0) * 100) / 100,
       },
       trend: trendArr,
       paymentMethods: this.groupBy(payments, (p) => p.paymentMethod),
@@ -184,7 +185,13 @@ export class InsightService {
     const clients = await this.prisma.client.findMany({
       include: {
         _count: { select: { projects: true } },
-        invoices: { select: { status: true, lineItems: { select: { amount: true } } } },
+        invoices: {
+          select: {
+            status: true, taxApplicable: true, taxRate: true, discountRate: true, shippingFee: true,
+            lineItems: { select: { amount: true } },
+            payments: { select: { amount: true, type: true } },
+          },
+        },
         healthLogs: { orderBy: { recordedAt: "desc" }, take: 1 },
       },
     });
@@ -195,7 +202,7 @@ export class InsightService {
       healthLevel: c.healthLevel,
       renewalDate: c.renewalDate,
       activeProjects: c._count.projects,
-      totalRevenue: c.invoices.filter((i) => ACTIVE_INVOICE_STATUSES.includes(i.status)).reduce((s, i) => s + i.lineItems.reduce((x, l) => x + Number(l.amount), 0), 0),
+      totalRevenue: c.invoices.filter((i) => ACTIVE_INVOICE_STATUSES.includes(i.status)).reduce((s, i) => s + invoiceTotals(i).grand, 0),
       lastNote: c.healthLogs[0]?.driverSummary ?? null,
     }));
     });
@@ -217,7 +224,7 @@ export class InsightService {
     };
     for (const i of invoices) {
       add(i.issueDate, "invoiced", total(i));
-      for (const p of i.payments) add(p.paymentDate, "collected", Number(p.amount));
+      for (const p of i.payments) add(p.paymentDate, "collected", p.type === "REFUND" ? -Number(p.amount) : Number(p.amount));
     }
     for (const e of expenses) add(e.date, "expenses", Number(e.amount));
     const rows = Array.from(quarters.values())
@@ -234,11 +241,16 @@ export class InsightService {
   async performance() {
     return this.cache.wrap("insight:performance", 60, async () => {
     const [invoices, leads, employees] = await Promise.all([
-      this.prisma.invoice.findMany({ include: { lineItems: true, client: { select: { companyName: true, industryVertical: true } } } }),
+      this.prisma.invoice.findMany({
+        include: {
+          lineItems: true,
+          client: { select: { companyName: true, industryVertical: true } },
+        },
+      }),
       this.prisma.lead.findMany({ include: { assignedTo: { select: { name: true } } } }),
       this.prisma.employee.findMany({ select: { id: true, name: true, roleTitle: true } }),
     ]);
-    const total = (inv: any) => inv.lineItems.reduce((s: number, l: any) => s + Number(l.amount), 0);
+    const total = (inv: any) => invoiceTotals(inv).grand;
     const byClient = new Map<string, number>();
     for (const i of invoices.filter((i) => ACTIVE_INVOICE_STATUSES.includes(i.status))) {
       byClient.set(i.client?.companyName ?? "Unknown", (byClient.get(i.client?.companyName ?? "Unknown") ?? 0) + total(i));

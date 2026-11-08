@@ -12,7 +12,7 @@ import { LEGACY_TAB_ROUTE } from "./_components/constants";
  * by redirecting to the new per-tab routes.
  */
 function OverviewContent() {
-  const { overview, invoices, expenses } = useCapital();
+  const { overview, invoices, expenses, aging, installmentsDue } = useCapital();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -33,7 +33,7 @@ function OverviewContent() {
     }
   }, [router, searchParams]);
 
-  return <OverviewTab overview={overview} invoices={invoices} expenses={expenses} />;
+  return <OverviewTab overview={overview} invoices={invoices} expenses={expenses} aging={aging} installmentsDue={installmentsDue} />;
 }
 
 export default function CapitalOverviewPage() {

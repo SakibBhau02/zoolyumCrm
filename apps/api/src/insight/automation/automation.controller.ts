@@ -2,7 +2,9 @@ import { Body, Controller, Delete, Get, Param, Patch, Post } from "@nestjs/commo
 import { SchedulerService } from "./scheduler.service";
 import { AlertsService } from "./alerts.service";
 import { DeliveryService } from "./delivery.service";
+import { RequirePermission } from "../../common/decorators/require-permission.decorator";
 
+@RequirePermission("INSIGHT")
 @Controller("insight/automation")
 export class AutomationController {
   constructor(private readonly scheduler: SchedulerService, private readonly alerts: AlertsService, private readonly delivery: DeliveryService) {}

@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
-  AlertTriangle, Bell, Building2, Crown, Download, FileText, Globe2,
-  HeartPulse, Kanban, KeyRound, ListChecks, Mail, Palette, Pencil, Plug,
-  Plus, Power, RefreshCw, Search, ShieldCheck, Tags, Trash2, UserPlus,
-  Wallet, X,
+  Activity, AlertTriangle, Bell, Building2, CheckCircle2, Crown, Database, Download,
+  FileSignature, FileText, Globe2, HardDrive, HeartPulse, Kanban, KeyRound, ListChecks,
+  Lock, Mail, Palette, Pencil, Plug, Plus, Power, RefreshCw, Search, Server,
+  ShieldAlert, ShieldCheck, Tags, Trash2, UserCheck, UserPlus, Users, Wallet, X, XCircle,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch, apiFetchFormData, API_URL } from "@/lib/api";
 import { useBranding } from "@/lib/branding-context";
+import { useAuth } from "@/lib/auth";
 import { formatDate, timeAgo } from "@/lib/format";
 import {
   Avatar, CardShell, EmptyState, FadeIn, PageHeader, SectionTitle,
@@ -18,22 +20,28 @@ import {
 } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
+import { TelegramTab } from "./_components/telegram-tab";
 
-type Tab = "settings" | "users" | "roles" | "integrations" | "whatsapp" | "data";
+type Tab = "settings" | "users" | "roles" | "integrations" | "whatsapp" | "telegram" | "data";
 
 const SECTIONS = [
   { id: "companyProfile", label: "Company Profile", icon: Building2 },
   { id: "regional", label: "Regional", icon: Globe2 },
   { id: "invoiceTemplate", label: "Invoicing", icon: FileText },
+  { id: "invoiceProfile", label: "Invoice & Signature", icon: FileSignature },
   { id: "financeConfig", label: "Finance", icon: Wallet },
   { id: "pipelineStages", label: "Pipeline Stages", icon: Kanban },
   { id: "leadCategories", label: "Lead Categories", icon: Tags },
+  { id: "leadRules", label: "Lead Rules", icon: ShieldCheck },
   { id: "clientTiers", label: "Client Tiers", icon: Crown },
-  { id: "healthScoreWeights", label: "Health Score", icon: HeartPulse },
+  { id: "healthScoreWeights", label: "Scoring Engine", icon: HeartPulse },
   { id: "tasks", label: "Tasks", icon: ListChecks },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "emailTemplates", label: "Email Templates", icon: Mail },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "security", label: "Security", icon: Lock },
+  { id: "email", label: "Email / SMTP", icon: Mail },
+  { id: "system", label: "System", icon: Server },
   { id: "branding", label: "Branding", icon: Palette },
 ];
 
@@ -343,6 +351,29 @@ function FinanceSection({ settings, busy, onSave }: any) {
         </Field>
         <Field label="Late payment fee (%)"><Input type="number" step="0.5" value={draft.latePaymentFee ?? 0} onChange={(e) => patch({ latePaymentFee: Number(e.target.value) })} /></Field>
       </div>
+
+      <div className="rounded-xl border border-border/60 p-3.5">
+        <p className="text-[11.5px] font-semibold text-muted-foreground">Dollar desk</p>
+        <p className="mb-2.5 text-[10.5px] text-muted-foreground">
+          The cost rate used to calculate profit when a client buys dollars. Each sale keeps the rate it was recorded with, so changing this never rewrites past profit.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="USD cost rate (৳ per $1)" hint="Example: 130 means one dollar costs you ৳130.">
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={draft.dollarCostRate ?? 130}
+              onChange={(e) => patch({ dollarCostRate: Number(e.target.value) })}
+            />
+          </Field>
+          <div className="flex items-end">
+            <p className="rounded-xl bg-muted/40 px-3 py-2 text-[10.5px] text-muted-foreground">
+              Sell ৳4,500 for $30 at cost ৳130 → cost ৳3,900, profit ৳600 (13.3% margin).
+            </p>
+          </div>
+        </div>
+      </div>
       <div className="rounded-xl border border-border/60 p-3.5">
         <p className="mb-2.5 text-[11.5px] font-semibold text-muted-foreground">Payment methods</p>
         <div className="flex flex-col gap-2">
@@ -516,38 +547,39 @@ function ClientTiersSection({ settings, busy, onSave }: any) {
   );
 }
 
-function HealthScoreSection({ settings, busy, onSave }: any) {
-  const [rows, setRows] = useState<any[]>([]);
-  useEffect(() => setRows(settings?.healthScoreWeights?.map((w: any) => ({ ...w })) ?? []), [settings]);
-  if (!settings) return <SkeletonBlock className="h-64" />;
-  const patch = (i: number, p: any) => setRows(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
-  const total = rows.reduce((s, r) => s + Number(r.weight ?? 0), 0);
+function ScoringLinkSection() {
   return (
-    <RowListSection
-      title="Health Score"
-      subtitle="Weighting factors that drive client health scores"
-      busy={busy}
-      rows={rows}
-      addLabel="Add factor"
-      onAdd={() => setRows([...rows, { factor: "", weight: 0 }])}
-      onSave={(e) => {
-        e.preventDefault();
-        onSave({ healthScoreWeights: rows });
-      }}
-      onCancel={() => setRows(settings.healthScoreWeights?.map((w: any) => ({ ...w })) ?? [])}
-      renderRow={(r: any, i: number) => (
-        <div key={i} className="flex items-center gap-2.5">
-          <Input value={r.factor} onChange={(e) => patch(i, { factor: e.target.value })} className="flex-1" placeholder="Factor" />
-          <Input type="number" value={r.weight ?? 0} onChange={(e) => patch(i, { weight: Number(e.target.value) })} className="!w-24" placeholder="Weight" />
-          <DelBtn onClick={() => setRows(rows.filter((_: any, j: number) => j !== i))} />
+    <CardShell>
+      <SectionTitle
+        title="Scoring engine"
+        subtitle="Client health and project risk are calculated by a configurable engine — not by hardcoded numbers."
+      />
+      <div className="flex flex-col gap-3">
+        <div className="grid gap-2 sm:grid-cols-2">
+          {[
+            ["Weighted factors", "Every signal is normalised to 0-100 and weighted. Change a weight and the score moves."],
+            ["Editable bands", "Set the green / amber / red thresholds and the action each band requires."],
+            ["Override rules", "Escalate a cliff automatically — 30+ days overdue, 30pp behind plan, and so on."],
+            ["Explainability", "Each score carries a factor breakdown, so anyone can see why it is what it is."],
+          ].map(([title, desc]) => (
+            <div key={title} className="rounded-xl border border-border/60 bg-background px-3 py-2.5">
+              <p className="text-[11.5px] font-bold">{title}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">{desc}</p>
+            </div>
+          ))}
         </div>
-      )}
-      extra={
-        <p className={cn("text-[11.5px] font-semibold", total === 100 ? "text-emerald-500" : "text-amber-500")}>
-          Total weight: {total}% {total !== 100 && "— should add up to 100"}
+        <Link
+          href="/control/scoring"
+          className="inline-flex h-9 w-fit items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[12px] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+        >
+          <HeartPulse className="size-3.5" /> Open the scoring engine
+        </Link>
+        <p className="text-[11px] text-muted-foreground">
+          The old weight table lived here but the engine never read it. It has been replaced by the page above,
+          which drives the actual calculation, the history snapshots and the nightly recompute.
         </p>
-      }
-    />
+      </div>
+    </CardShell>
   );
 }
 
@@ -1142,8 +1174,236 @@ function InvoiceCompanyProfileSection({ notify }: { notify: (msg: string) => voi
   );
 }
 
-function AppearanceSection({ settings, busy, onSave }: any) {
-  const [draft, setDraft] = useDraft(settings?.appearance);
+function SignatureTips() {
+  return (
+    <CardShell className="mt-4">
+      <SectionTitle
+        title="Signature & invoice artwork tips"
+        subtitle="These settings drive the downloaded PDF and the browser print view"
+      />
+      <ul className="mt-2 flex flex-col gap-2 text-[12px] leading-relaxed text-muted-foreground">
+        <li>• Upload a transparent PNG cropped tight around the signature — it is scaled into a 40 × 13 mm slot without stretching.</li>
+        <li>• The signer name and title print under the rule, centred on the same vertical axis as the image.</li>
+        <li>• Leave “Signature image” empty to print the cursive “Authorized Representative” fallback instead.</li>
+        <li>• Every invoice is A4 (210 × 297 mm); the print view uses 10 mm page margins so columns never re-flow.</li>
+        <li>• Changes apply to the next download immediately — reopen the invoice if an old PDF is still open.</li>
+      </ul>
+    </CardShell>
+  );
+}
+
+function SecuritySection({ settings, busy, onSave }: any) {
+  const [d, setD] = useDraft(settings?.security);
+  if (!settings?.security) return <SkeletonBlock className="h-64" />;
+  const set = (k: string, v: any) => setD({ ...d, [k]: v });
+  const ipText = Array.isArray(d.ipAllowlist) ? d.ipAllowlist.join("\n") : "";
+  return (
+    <SectionShell
+      title="Security policy"
+      subtitle="Password strength, session lifetime and login lockout — enforced on every staff account"
+      busy={busy}
+      onSave={(e) => {
+        e.preventDefault();
+        onSave({ security: d });
+      }}
+      onCancel={() => setD({ ...settings.security })}
+    >
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Minimum password length">
+          <Input type="number" min={6} max={64} value={d.passwordMinLength ?? 8} onChange={(e) => set("passwordMinLength", Number(e.target.value))} />
+        </Field>
+        <Field label="Session lifetime (hours)">
+          <Input type="number" min={1} max={720} value={d.sessionHours ?? 12} onChange={(e) => set("sessionHours", Number(e.target.value))} />
+        </Field>
+        <Field label="Max failed logins before lockout">
+          <Input type="number" min={1} max={50} value={d.maxLoginAttempts ?? 5} onChange={(e) => set("maxLoginAttempts", Number(e.target.value))} />
+        </Field>
+        <Field label="Lockout duration (minutes)">
+          <Input type="number" min={1} max={1440} value={d.lockoutMinutes ?? 15} onChange={(e) => set("lockoutMinutes", Number(e.target.value))} />
+        </Field>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3.5">
+        <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Password requirements</p>
+        <RuleToggle label="Require a number" desc="At least one digit" value={!!d.requireNumber} onChange={(v) => set("requireNumber", v)} />
+        <RuleToggle label="Require an uppercase letter" desc="At least one A–Z character" value={!!d.requireUppercase} onChange={(v) => set("requireUppercase", v)} />
+        <RuleToggle label="Require a symbol" desc="At least one punctuation character" value={!!d.requireSymbol} onChange={(v) => set("requireSymbol", v)} />
+      </div>
+
+      <Field label="IP allowlist" hint="One IPv4/IPv6 address per line. Leave empty to allow every address.">
+        <Textarea
+          value={ipText}
+          onChange={(e) => set("ipAllowlist", e.target.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean))}
+          placeholder={"203.0.113.10\n198.51.100.0"}
+        />
+      </Field>
+
+      <p className="flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11.5px] leading-relaxed text-amber-600 dark:text-amber-400">
+        <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
+        Resetting a password, changing a role or deactivating a user revokes that user&apos;s existing session immediately.
+      </p>
+    </SectionShell>
+  );
+}
+
+function EmailSection({ settings, busy, onSave }: any) {
+  const [d, setD] = useDraft(settings?.email);
+  const [password, setPassword] = useState("");
+  const [clear, setClear] = useState(false);
+  if (!settings?.email) return <SkeletonBlock className="h-64" />;
+  const set = (k: string, v: any) => setD({ ...d, [k]: v });
+  return (
+    <SectionShell
+      title="Email delivery (SMTP)"
+      subtitle="Outgoing mail server used for invoice emails, reminders and receipts"
+      busy={busy}
+      onSave={(e) => {
+        e.preventDefault();
+        onSave({ email: { ...d, smtpPassword: password || undefined, clearPassword: clear } });
+        setPassword("");
+        setClear(false);
+      }}
+      onCancel={() => setD({ ...settings.email })}
+    >
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="SMTP host"><Input value={d.host ?? ""} onChange={(e) => set("host", e.target.value)} placeholder="smtp.zoho.com" /></Field>
+        <Field label="Port"><Input type="number" value={d.port ?? 587} onChange={(e) => set("port", Number(e.target.value))} /></Field>
+        <Field label="Username"><Input value={d.user ?? ""} onChange={(e) => set("user", e.target.value)} placeholder="billing@company.com" /></Field>
+        <Field label="Password" hint={settings.email.hasSmtpPassword ? "A password is stored. Leave blank to keep it." : "No password stored yet."}>
+          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
+        </Field>
+        <Field label="From name"><Input value={d.fromName ?? ""} onChange={(e) => set("fromName", e.target.value)} placeholder="Zoolyum" /></Field>
+        <Field label="From email"><Input value={d.fromEmail ?? ""} onChange={(e) => set("fromEmail", e.target.value)} placeholder="billing@company.com" /></Field>
+        <Field label="Reply-to"><Input value={d.replyTo ?? ""} onChange={(e) => set("replyTo", e.target.value)} placeholder="support@company.com" /></Field>
+        <div className="flex flex-col justify-end gap-2">
+          <RuleToggle label="Use TLS/SSL" desc="Secure connection on connect" value={!!d.secure} onChange={(v) => set("secure", v)} />
+          {settings.email.hasSmtpPassword && (
+            <label className="flex cursor-pointer items-center gap-2 text-[11.5px] font-medium text-rose-500">
+              <input type="checkbox" checked={clear} onChange={(e) => setClear(e.target.checked)} className="size-3.5 accent-rose-500" />
+              Remove stored password
+            </label>
+          )}
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Passwords are encrypted at rest (AES-256-GCM) and are never returned by the API.
+      </p>
+    </SectionShell>
+  );
+}
+
+function HealthCard({ label, value, tone = "text-foreground", icon }: { label: string; value: React.ReactNode; tone?: string; icon: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-card px-3 py-2.5">
+      <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        {icon} {label}
+      </p>
+      <p className={cn("mt-1 text-[13px] font-bold tabular-nums", tone)}>{value}</p>
+    </div>
+  );
+}
+
+function SystemSection({ settings, busy, onSave }: any) {
+  const [d, setD] = useDraft(settings?.system);
+  const [refresh, setRefresh] = useState(0);
+  const { data: health, loading: hLoading, error: hError } = useRefetch<any>("/control/health", refresh);
+  if (!settings?.system) return <SkeletonBlock className="h-64" />;
+  const set = (k: string, v: any) => setD({ ...d, [k]: v });
+  const flags = d.featureFlags ?? {};
+  const setFlag = (k: string, v: boolean) => setD({ ...d, featureFlags: { ...flags, [k]: v } });
+  const up = health?.uptimeSeconds ?? 0;
+  const uptime = `${Math.floor(up / 3600)}h ${Math.floor((up % 3600) / 60)}m`;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionShell
+        title="System & feature flags"
+        subtitle="Maintenance mode, module switches and audit retention"
+        busy={busy}
+        onSave={(e) => {
+          e.preventDefault();
+          onSave({ system: d });
+        }}
+        onCancel={() => setD({ ...settings.system })}
+      >
+        <div className="rounded-xl border border-rose-500/25 bg-rose-500/5 p-3.5">
+          <RuleToggle
+            label="Maintenance mode"
+            desc="Show a maintenance notice to staff and block writes while you deploy"
+            value={!!d.maintenanceMode}
+            onChange={(v) => set("maintenanceMode", v)}
+          />
+          {d.maintenanceMode && (
+            <div className="mt-3">
+              <Field label="Maintenance message">
+                <Textarea value={d.maintenanceMessage ?? ""} onChange={(e) => set("maintenanceMessage", e.target.value)} />
+              </Field>
+            </div>
+          )}
+        </div>
+
+        <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Feature flags</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {[
+            { key: "clientPortal", label: "Client portal", desc: "Public portal and approvals" },
+            { key: "whatsapp", label: "WhatsApp", desc: "Cloud API messaging" },
+            { key: "telegram", label: "Telegram", desc: "Bot notifications" },
+            { key: "aiInsights", label: "AI insights", desc: "Correlations and summaries" },
+            { key: "payroll", label: "Payroll", desc: "Runs, payslips and salary" },
+          ].map((f) => (
+            <div key={f.key} className="rounded-xl border border-border/60 px-3 py-2.5">
+              <RuleToggle label={f.label} desc={f.desc} value={flags[f.key] !== false} onChange={(v) => setFlag(f.key, v)} />
+            </div>
+          ))}
+        </div>
+
+        <Field label="Audit retention (days)" hint="How long security events are kept before pruning">
+          <Input type="number" min={7} max={3650} value={d.auditRetentionDays ?? 365} onChange={(e) => set("auditRetentionDays", Number(e.target.value))} />
+        </Field>
+      </SectionShell>
+
+      <CardShell>
+        <div className="flex items-center justify-between gap-3">
+          <SectionTitle title="System health" subtitle={health?.checkedAt ? `Last checked ${timeAgo(health.checkedAt)}` : "Live status of this API instance"} />
+          <Btn variant="outline" onClick={() => setRefresh((r) => r + 1)} disabled={hLoading}>
+            <RefreshCw className={cn("size-3.5", hLoading && "animate-spin")} /> Refresh
+          </Btn>
+        </div>
+        {hError ? (
+          <p className="text-[12px] font-medium text-rose-400">{hError}</p>
+        ) : hLoading && !health ? (
+          <SkeletonBlock className="h-28" />
+        ) : health ? (
+          <>
+            <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4">
+              <HealthCard label="API" value={health.ok ? "Operational" : "Degraded"} tone={health.ok ? "text-emerald-500" : "text-rose-500"} icon={health.ok ? <CheckCircle2 className="size-3" /> : <XCircle className="size-3" />} />
+              <HealthCard label="Database" value={`${health.database?.latencyMs ?? "—"} ms`} tone={health.database?.ok ? "text-emerald-500" : "text-rose-500"} icon={<Database className="size-3" />} />
+              <HealthCard label="Cache" value={health.cache === "redis" ? "Redis" : health.cache === "memory" ? "In-memory" : "Down"} tone={health.cache === "redis" ? "text-emerald-500" : health.cache === "memory" ? "text-amber-500" : "text-rose-500"} icon={<Activity className="size-3" />} />
+              <HealthCard label="Uptime" value={uptime} icon={<Server className="size-3" />} />
+              <HealthCard label="Memory" value={`${health.process?.rssMb ?? 0} MB`} icon={<HardDrive className="size-3" />} />
+              <HealthCard label="Uploads" value={`${health.storage?.uploadsMb ?? 0} MB`} icon={<HardDrive className="size-3" />} />
+              <HealthCard label="Users" value={`${health.counts?.activeUsers ?? 0}/${health.counts?.users ?? 0} active`} icon={<Users className="size-3" />} />
+              <HealthCard label="Audit events" value={health.counts?.auditEvents ?? 0} icon={<ShieldCheck className="size-3" />} />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <HealthCard label="Node" value={health.process?.node ?? "—"} icon={<Server className="size-3" />} />
+              <HealthCard label="Environment" value={health.environment ?? "—"} icon={<Globe2 className="size-3" />} />
+              <HealthCard label="Version" value={health.version ?? "—"} icon={<Tags className="size-3" />} />
+              <HealthCard label="Clients / projects" value={`${health.counts?.clients ?? 0} / ${health.counts?.projects ?? 0}`} icon={<Building2 className="size-3" />} />
+            </div>
+            {health.lastAudit && (
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                Last audit event: <span className="font-medium text-foreground">{health.lastAudit.action}</span> on {health.lastAudit.entityType} · {timeAgo(health.lastAudit.timestamp)}
+              </p>
+            )}
+          </>
+        ) : null}
+      </CardShell>
+    </div>
+  );
+}
+
+function AppearanceSection({ settings, busy, onSave }: any) {  const [draft, setDraft] = useDraft(settings?.appearance);
   if (!settings) return <SkeletonBlock className="h-64" />;
   const set = (k: string, v: any) => setDraft({ ...draft, [k]: v });
   const rows = [
@@ -1175,6 +1435,331 @@ function AppearanceSection({ settings, busy, onSave }: any) {
   );
 }
 
+function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; notify: (m: string) => void }) {
+  const [rules, setRules] = useState<any | null>(null);
+  const [users, setUsers] = useState<any[]>([]);
+  const [roles, setRoles] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [auditing, setAuditing] = useState(false);
+  const [showWeights, setShowWeights] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch<any>("/pulse/rules").catch(() => null),
+      apiFetch<any[]>("/users").catch(() => []),
+      apiFetch<any[]>("/control/roles").catch(() => []),
+    ]).then(([r, u, ro]) => {
+      setRules(r);
+      setUsers(u ?? []);
+      setRoles((ro ?? []).map((x: any) => x.name));
+    });
+  }, []);
+
+  if (!rules) return <SkeletonBlock className="h-64" />;
+
+  const set = (path: string, value: any) =>
+    setRules((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const keys = path.split(".");
+      let cur = next;
+      for (const k of keys.slice(0, -1)) cur = cur[k];
+      cur[keys[keys.length - 1]] = value;
+      return next;
+    });
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      onSave({ leadRules: rules });
+      notify("Lead rules saved");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runAudit = async () => {
+    setAuditing(true);
+    try {
+      const r = await apiFetch<any>("/pulse/audit", { method: "POST" });
+      notify(`Audit complete — ${r.flagged} of ${r.scanned} leads flagged · ${r.duplicates} duplicates · ${r.slaBreach} SLA breaches · ${r.rescored} rescored`);
+    } catch (e: any) {
+      notify(e.message ?? "Audit failed");
+    } finally {
+      setAuditing(false);
+    }
+  };
+
+  const verticalKeys = ["EDUCATION", "HEALTHCARE", "D2C", "OTHER"];
+  const sourceKeys = ["REFERRAL", "WEBSITE", "LINKEDIN", "PARTNER", "FACEBOOK", "GOOGLE_ADS", "WHATSAPP", "INBOUND_PHONE", "EMAIL_CAMPAIGN", "EVENT", "EMAIL", "COLD_CALL", "COLD", "OTHER"];
+  const priorityKeys = ["URGENT", "HIGH", "MEDIUM", "LOW"];
+
+  return (
+    <CardShell>
+      <SectionTitle
+        title="Lead Rules"
+        subtitle="What counts as a storable lead, who owns it, how it is scored and how fast it must be answered"
+        action={
+          <Btn variant="outline" onClick={runAudit} disabled={auditing}>
+            <RefreshCw className={cn("size-3.5", auditing && "animate-spin")} /> Run audit now
+          </Btn>
+        }
+      />
+
+      <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 px-3.5 py-3">
+        <div>
+          <p className="text-[12.5px] font-semibold">Rule engine</p>
+          <p className="text-[11px] text-muted-foreground">Master switch. Off = every lead is accepted exactly as typed.</p>
+        </div>
+        <Toggle checked={!!rules.enabled} onChange={(v) => set("enabled", v)} />
+      </div>
+
+      <div className={cn("mt-4 grid gap-4 lg:grid-cols-2", !rules.enabled && "pointer-events-none opacity-50")}>
+        {/* Intake gate */}
+        <RuleCard title="Intake gate" hint="Missing values block the save (or just warn, where noted)">
+          <RuleToggle label="Phone required" desc="Phone is the contact that works in BD" value={rules.intake.requirePhone.enabled} onChange={(v) => set("intake.requirePhone.enabled", v)} />
+          <RuleToggle label="Normalise phone" desc="+8801813-778899 → +8801813778899 before matching" value={rules.intake.normalizePhone.enabled} onChange={(v) => set("intake.normalizePhone.enabled", v)} />
+          <RuleToggle label="Validate email format" desc="Refuse addresses without @ and a domain" value={rules.intake.validateEmail.enabled} onChange={(v) => set("intake.validateEmail.enabled", v)} />
+          <RuleToggle label="Email required" desc="Turn on if you want a written trail for every lead" value={rules.intake.requireEmail.enabled} onChange={(v) => set("intake.requireEmail.enabled", v)} />
+          <RuleToggle label="Company required" desc="B2B: every lead must belong to a business" value={rules.intake.requireCompany.enabled} onChange={(v) => set("intake.requireCompany.enabled", v)} />
+          <RuleToggle label="Real source required" desc="Warns when the source is left as “Other”" value={rules.intake.requireSource.enabled} onChange={(v) => set("intake.requireSource.enabled", v)} />
+          <RuleToggle label="Deal size required" desc="No estimate = no pipeline forecast" value={rules.intake.requireDealSize.enabled} onChange={(v) => set("intake.requireDealSize.enabled", v)}>
+            <Input type="number" min={0} value={rules.intake.requireDealSize.minAmount ?? 0} onChange={(e) => set("intake.requireDealSize.minAmount", Number(e.target.value))} className="!w-28 !py-1 text-[11.5px]" />
+          </RuleToggle>
+          <RuleToggle label="Notes required" desc="At least a line of context from the first call" value={rules.intake.requireNotes.enabled} onChange={(v) => set("intake.requireNotes.enabled", v)}>
+            <Input type="number" min={0} value={rules.intake.requireNotes.minChars ?? 20} onChange={(e) => set("intake.requireNotes.minChars", Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
+          </RuleToggle>
+        </RuleCard>
+
+        {/* Duplicates */}
+        <RuleCard title="Duplicates" hint="Same contact twice wastes a rep's day">
+          <RuleToggle label="Phone match" desc="Compared after normalisation" value={rules.duplicates.byPhone.enabled} onChange={(v) => set("duplicates.byPhone.enabled", v)}>
+            <ActionSelect value={rules.duplicates.byPhone.action} onChange={(v) => set("duplicates.byPhone.action", v)} />
+          </RuleToggle>
+          <RuleToggle label="Email match" desc="Case-insensitive" value={rules.duplicates.byEmail.enabled} onChange={(v) => set("duplicates.byEmail.enabled", v)}>
+            <ActionSelect value={rules.duplicates.byEmail.action} onChange={(v) => set("duplicates.byEmail.action", v)} />
+          </RuleToggle>
+          <RuleToggle label="Same company" desc="A different person at a known company" value={rules.duplicates.byCompany.enabled} onChange={(v) => set("duplicates.byCompany.enabled", v)}>
+            <ActionSelect value={rules.duplicates.byCompany.action} onChange={(v) => set("duplicates.byCompany.action", v)} />
+          </RuleToggle>
+          <RuleToggle label="Include converted clients" desc="Warn when an old customer comes back" value={rules.duplicates.includeConverted.enabled} onChange={(v) => set("duplicates.includeConverted.enabled", v)} />
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[12px] font-semibold">Lookback window</p>
+              <p className="text-[10.5px] text-muted-foreground">How far back to search (0 = whole database)</p>
+            </div>
+            <Input type="number" min={0} value={rules.duplicates.lookbackDays ?? 180} onChange={(e) => set("duplicates.lookbackDays", Number(e.target.value))} className="!w-24 !py-1 text-[11.5px]" />
+          </div>
+        </RuleCard>
+
+        {/* Routing */}
+        <RuleCard title="Ownership & routing" hint="Nobody should have to ask “whose lead is this?”">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[12px] font-semibold">Assignment</p>
+              <p className="text-[10.5px] text-muted-foreground">How a new lead finds an owner</p>
+            </div>
+            <Select value={rules.routing.mode} onChange={(e) => set("routing.mode", e.target.value)} className="!w-56 !py-1 text-[11.5px]">
+              <option value="VERTICAL_THEN_ROUND_ROBIN">Vertical owner, else round-robin</option>
+              <option value="ROUND_ROBIN">Round-robin only</option>
+              <option value="CREATOR">Whoever created it</option>
+              <option value="MANUAL">Manual (form choice)</option>
+            </Select>
+          </div>
+          {verticalKeys.map((v) => (
+            <div key={v} className="flex items-center justify-between gap-3">
+              <p className="text-[12px] font-semibold">{v.charAt(0) + v.slice(1).toLowerCase()} owner</p>
+              <Select value={rules.routing.verticalOwners?.[v] ?? ""} onChange={(e) => set("routing.verticalOwners." + v, e.target.value)} className="!w-44 !py-1 text-[11.5px]">
+                <option value="">Use round-robin</option>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </Select>
+            </div>
+          ))}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[12px] font-semibold">Fallback owner</p>
+              <p className="text-[10.5px] text-muted-foreground">Used when nobody is in the rotation</p>
+            </div>
+            <Select value={rules.routing.fallbackUserId ?? ""} onChange={(e) => set("routing.fallbackUserId", e.target.value)} className="!w-44 !py-1 text-[11.5px]">
+              <option value="">Creator</option>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </Select>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[12px] font-semibold">Auto follow-up</p>
+              <p className="text-[10.5px] text-muted-foreground">Creates the first call task N hours after intake</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input type="number" min={0} value={rules.routing.autoFollowUpHours ?? 0} onChange={(e) => set("routing.autoFollowUpHours", Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
+              <span className="text-[11px] text-muted-foreground">hrs</span>
+            </div>
+          </div>
+          <RuleToggle label="Auto-tag by source" desc="facebook, google-ads… so source filters work" value={rules.routing.autoTagSource} onChange={(v) => set("routing.autoTagSource", v)} />
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] font-semibold text-muted-foreground">Round-robin roles:</span>
+            {roles.map((r) => {
+              const on = (rules.routing.roundRobinRoles ?? []).includes(r);
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => {
+                    const list: string[] = rules.routing.roundRobinRoles ?? [];
+                    set("routing.roundRobinRoles", on ? list.filter((x) => x !== r) : [...list, r]);
+                  }}
+                  className={cn("rounded-full border px-2 py-0.5 text-[10.5px] font-semibold", on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}
+                >
+                  {r}
+                </button>
+              );
+            })}
+          </div>
+        </RuleCard>
+
+        {/* Scoring */}
+        <RuleCard title="Lead scoring" hint="Rank the queue; thresholds drive HOT / COLD">
+          <RuleToggle label="Scoring on" desc="Off = every lead scores 0 and temperature stays manual" value={rules.scoring.enabled} onChange={(v) => set("scoring.enabled", v)} />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[12px] font-semibold">Base points</p>
+            <Input type="number" value={rules.scoring.base ?? 0} onChange={(e) => set("scoring.base", Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <MiniNum label="Email pts" value={rules.scoring.contact.email} onChange={(v) => set("scoring.contact.email", v)} />
+            <MiniNum label="Phone pts" value={rules.scoring.contact.phone} onChange={(v) => set("scoring.contact.phone", v)} />
+            <MiniNum label="Company pts" value={rules.scoring.contact.company} onChange={(v) => set("scoring.contact.company", v)} />
+            <MiniNum label="HOT ≥" value={rules.scoring.thresholds.hot} onChange={(v) => set("scoring.thresholds.hot", v)} />
+            <MiniNum label="COLD ≤" value={rules.scoring.thresholds.cold} onChange={(v) => set("scoring.thresholds.cold", v)} />
+            <MiniNum label="Per activity" value={rules.scoring.activity.perActivity} onChange={(v) => set("scoring.activity.perActivity", v)} />
+          </div>
+          <RuleToggle label="Auto temperature" desc="Score sets HOT / WARM / COLD on save" value={rules.scoring.autoTemperature} onChange={(v) => set("scoring.autoTemperature", v)} />
+          <button type="button" onClick={() => setShowWeights((v) => !v)} className="text-left text-[11.5px] font-bold text-primary hover:underline">
+            {showWeights ? "Hide weight tables" : "Edit weight tables"}
+          </button>
+          {showWeights && (
+            <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/10 p-3">
+              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Source</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {sourceKeys.map((s) => (
+                  <MiniNum key={s} label={s.replace(/_/g, " ")} value={rules.scoring.source[s] ?? 0} onChange={(v) => set("scoring.source." + s, v)} />
+                ))}
+              </div>
+              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Priority</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {priorityKeys.map((p) => (
+                  <MiniNum key={p} label={p} value={rules.scoring.priority[p] ?? 0} onChange={(v) => set("scoring.priority." + p, v)} />
+                ))}
+              </div>
+              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Vertical</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {verticalKeys.map((v) => (
+                  <MiniNum key={v} label={v === "D2C" ? "D2C" : v.charAt(0) + v.slice(1).toLowerCase()} value={rules.scoring.vertical[v] ?? 0} onChange={(x) => set("scoring.vertical." + v, x)} />
+                ))}
+              </div>
+              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Deal size bands</p>
+              <div className="flex flex-col gap-1.5">
+                {(rules.scoring.dealSizeBands ?? []).map((b: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input type="number" value={b.min} onChange={(e) => set(`scoring.dealSizeBands.${i}.min`, Number(e.target.value))} className="!w-32 !py-1 text-[11.5px]" />
+                    <span className="text-[11px] text-muted-foreground">+ points</span>
+                    <Input type="number" value={b.points} onChange={(e) => set(`scoring.dealSizeBands.${i}.points`, Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </RuleCard>
+
+        {/* SLA */}
+        <RuleCard title="Response SLA" hint="How fast a new lead must be touched">
+          <RuleToggle label="SLA tracking" desc="Breaches surface in Today and the worklist" value={rules.sla.enabled} onChange={(v) => set("sla.enabled", v)} />
+          <div className="grid grid-cols-2 gap-2">
+            {priorityKeys.map((p) => (
+              <MiniNum key={p} label={p + " (hrs)"} value={rules.sla.firstResponseHours[p] ?? 24} onChange={(v) => set("sla.firstResponseHours." + p, v)} />
+            ))}
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[12px] font-semibold">Stale after</p>
+              <p className="text-[10.5px] text-muted-foreground">No contact for N days = stale</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input type="number" min={1} value={rules.sla.staleDays ?? 7} onChange={(e) => set("sla.staleDays", Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
+              <span className="text-[11px] text-muted-foreground">days</span>
+            </div>
+          </div>
+          <RuleToggle label="Nightly audit" desc="03:15 — normalise phones, refresh flags and scores" value={rules.audit.nightly} onChange={(v) => set("audit.nightly", v)} />
+        </RuleCard>
+      </div>
+
+      <div className="mt-4 flex justify-end">
+        <Btn variant="primary" onClick={save} disabled={busy}>
+          {busy ? "Saving…" : "Save rules"}
+        </Btn>
+      </div>
+    </CardShell>
+  );
+}
+
+function RuleCard({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-border/60 bg-card p-3.5">
+      <p className="text-[12.5px] font-bold">{title}</p>
+      {hint && <p className="mb-2 text-[10.5px] text-muted-foreground">{hint}</p>}
+      <div className="flex flex-col gap-2">{children}</div>
+    </div>
+  );
+}
+
+function RuleToggle({
+  label,
+  desc,
+  value,
+  onChange,
+  children,
+}: {
+  label: string;
+  desc?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-[12px] font-semibold">{label}</p>
+        {desc && <p className="text-[10.5px] text-muted-foreground">{desc}</p>}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {children}
+        <Toggle checked={value} onChange={onChange} />
+      </div>
+    </div>
+  );
+}
+
+function ActionSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <Select value={value} onChange={(e) => onChange(e.target.value)} className="!w-24 !py-1 text-[11px]">
+      <option value="BLOCK">Block</option>
+      <option value="WARN">Warn</option>
+    </Select>
+  );
+}
+
+function MiniNum({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <label className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-2 py-1">
+      <span className="truncate text-[10.5px] font-semibold capitalize text-muted-foreground">{label.toLowerCase()}</span>
+      <input
+        type="number"
+        value={value ?? 0}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-14 shrink-0 rounded-md border border-border bg-background px-1.5 py-0.5 text-right text-[11.5px] tabular-nums outline-none focus:border-primary/40"
+      />
+    </label>
+  );
+}
+
 function SettingsTab({ settings, settingsLoading, settingsError, saving, onSave, onRetry, stages, stagesLoading, stagesError, onStagesRefresh, notify }: any) {
   const getInitialSection = () => {
     if (typeof window === "undefined") return "companyProfile";
@@ -1195,23 +1780,28 @@ function SettingsTab({ settings, settingsLoading, settingsError, saving, onSave,
       {active.id === "companyProfile" && <CompanyProfileSection settings={settings} busy={!!saving} onSave={onSave} />}
       {active.id === "regional" && <RegionalSection settings={settings} busy={!!saving} onSave={onSave} />}
       {active.id === "invoiceTemplate" && <InvoicingSection settings={settings} busy={!!saving} onSave={onSave} />}
+      {active.id === "invoiceProfile" && (
+        <>
+          <InvoiceCompanyProfileSection notify={notify} />
+          <SignatureTips />
+        </>
+      )}
       {active.id === "financeConfig" && <FinanceSection settings={settings} busy={!!saving} onSave={onSave} />}
       {active.id === "pipelineStages" && (
         <PipelineStagesSection stages={stages} loading={stagesLoading} error={stagesError} onRefresh={onStagesRefresh} notify={notify} />
       )}
       {active.id === "leadCategories" && <LeadCategoriesSection settings={settings} busy={!!saving} onSave={onSave} />}
+      {active.id === "leadRules" && <LeadRulesSection onSave={onSave} notify={notify} />}
       {active.id === "clientTiers" && <ClientTiersSection settings={settings} busy={!!saving} onSave={onSave} />}
-      {active.id === "healthScoreWeights" && <HealthScoreSection settings={settings} busy={!!saving} onSave={onSave} />}
+      {active.id === "healthScoreWeights" && <ScoringLinkSection />}
       {active.id === "tasks" && <TasksSection settings={settings} busy={!!saving} onSave={onSave} />}
       {active.id === "notifications" && <NotificationsSection settings={settings} busy={!!saving} onSave={onSave} />}
       {active.id === "emailTemplates" && <EmailTemplatesSection settings={settings} busy={!!saving} onSave={onSave} notify={notify} />}
       {active.id === "appearance" && <AppearanceSection settings={settings} busy={!!saving} onSave={onSave} />}
-      {active.id === "branding" && (
-        <>
-          <BrandingSection notify={notify} />
-          <InvoiceCompanyProfileSection notify={notify} />
-        </>
-      )}
+      {active.id === "security" && <SecuritySection settings={settings} busy={!!saving} onSave={onSave} />}
+      {active.id === "email" && <EmailSection settings={settings} busy={!!saving} onSave={onSave} />}
+      {active.id === "system" && <SystemSection settings={settings} busy={!!saving} onSave={onSave} />}
+      {active.id === "branding" && <BrandingSection notify={notify} />}
     </>
   );
   return (
@@ -1317,14 +1907,18 @@ function UserFormModal({ open, onClose, roles, initial, onSaved }: any) {
   );
 }
 
-function ResetPasswordModal({ user, onClose, onDone }: any) {
+function ResetPasswordModal({ user, onClose }: any) {
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [temp, setTemp] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (user) {
       setPw("");
       setErr(null);
+      setTemp(null);
+      setCopied(false);
     }
   }, [user]);
   const save = async (e: React.FormEvent) => {
@@ -1332,39 +1926,78 @@ function ResetPasswordModal({ user, onClose, onDone }: any) {
     setBusy(true);
     setErr(null);
     try {
-      await apiFetch(`/control/users/${user.id}/reset-password`, { method: "POST", body: JSON.stringify({ newPassword: pw || undefined }) });
-      onDone();
-      onClose();
+      const r = await apiFetch<any>(`/control/users/${user.id}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ newPassword: pw.trim() || undefined }),
+      });
+      if (r?.temporaryPassword) {
+        setTemp(r.temporaryPassword);
+      } else {
+        onClose();
+      }
     } catch (e2: any) {
       setErr(e2.message ?? "Reset failed");
     } finally {
       setBusy(false);
     }
   };
+  const copy = async () => {
+    if (!temp) return;
+    try {
+      await navigator.clipboard.writeText(temp);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard may be blocked */
+    }
+  };
   return (
     <Modal open={!!user} onClose={onClose} title={`Reset password — ${user?.name ?? ""}`}>
-      <form onSubmit={save} className="flex flex-col gap-4">
-        <Field label="New password" hint="Leave blank to reset to the default (password123)">
-          <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" autoFocus />
-        </Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
-        <FormActions busy={busy} cancel={onClose} submitLabel="Reset password" />
-      </form>
+      {temp ? (
+        <div className="flex flex-col gap-4">
+          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            Share this one-time password with the user. It is shown only once and their old sessions have been revoked.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input readOnly value={temp} className="!font-mono" />
+            <Btn type="button" variant="outline" onClick={copy}>{copied ? "Copied ✓" : "Copy"}</Btn>
+          </div>
+          <div className="flex justify-end">
+            <Btn variant="primary" onClick={onClose}>Done</Btn>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={save} className="flex flex-col gap-4">
+          <Field label="New password" hint="Leave blank to generate a secure temporary password automatically.">
+            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" autoFocus autoComplete="new-password" />
+          </Field>
+          {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+          <FormActions busy={busy} cancel={onClose} submitLabel="Reset password" />
+        </form>
+      )}
     </Modal>
   );
 }
 
 function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
   const [q, setQ] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editUser, setEditUser] = useState<any | null>(null);
   const [resetUser, setResetUser] = useState<any | null>(null);
   const [deleteUser, setDeleteUser] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const filtered = (users ?? []).filter((u: any) => !q || u.name.toLowerCase().includes(q.toLowerCase()) || u.email.toLowerCase().includes(q.toLowerCase()));
+  const filtered = (users ?? []).filter((u: any) => {
+    const needle = q.trim().toLowerCase();
+    const matchesQ = !needle || u.name.toLowerCase().includes(needle) || u.email.toLowerCase().includes(needle);
+    const matchesRole = !roleFilter || u.roleId === roleFilter || u.roleName === roleFilter;
+    const matchesStatus = !statusFilter || (statusFilter === "active" ? u.isActive : !u.isActive);
+    return matchesQ && matchesRole && matchesStatus;
+  });
   const changeRole = async (u: any, roleId: string) => {
     try {
-      await apiFetch(`/users/${u.id}/role`, { method: "PATCH", body: JSON.stringify({ roleId }) });
+      await apiFetch(`/control/users/${u.id}`, { method: "PATCH", body: JSON.stringify({ roleId }) });
       notify(`${u.name} role updated`);
       onRefresh();
     } catch (e: any) {
@@ -1373,7 +2006,7 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
   };
   const toggleActive = async (u: any) => {
     try {
-      await apiFetch(`/users/${u.id}/active`, { method: "PATCH", body: JSON.stringify({ isActive: !u.isActive }) });
+      await apiFetch(`/control/users/${u.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !u.isActive }) });
       notify(u.isActive ? `${u.name} deactivated` : `${u.name} activated`);
       onRefresh();
     } catch (e: any) {
@@ -1397,14 +2030,25 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="relative w-full max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search users…"
-            className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search name or email…"
+              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
+          <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="!w-40">
+            <option value="">All roles</option>
+            {(roles ?? []).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </Select>
+          <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="!w-36">
+            <option value="">All statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </Select>
         </div>
         <Btn variant="primary" onClick={() => setCreateOpen(true)}><UserPlus className="size-3.5" /> Add User</Btn>
       </div>
@@ -1425,41 +2069,57 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
             <table className="w-full">
               <THead>
                 <Th>User</Th>
-                <Th>Email</Th>
                 <Th>Role</Th>
                 <Th>Status</Th>
+                <Th>Last login</Th>
                 <Th>Joined</Th>
                 <Th className="text-right">Actions</Th>
               </THead>
               <tbody>
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8">
+                      <EmptyState title="No users match these filters" hint="Try a different search, role or status." />
+                    </td>
+                  </tr>
+                )}
                 {filtered.map((u: any, i: number) => (
                   <Tr key={u.id} index={i}>
                     <Td>
                       <div className="flex items-center gap-2.5">
                         <Avatar name={u.name} />
-                        <div>
-                          <p className="font-medium">{u.name}</p>
-                          {u.employee?.roleTitle && <p className="text-[10.5px] text-muted-foreground">{u.employee.roleTitle}</p>}
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{u.name}</p>
+                          <p className="truncate text-[10.5px] text-muted-foreground">{u.email}</p>
+                          {u.employee?.roleTitle && <p className="truncate text-[10.5px] text-muted-foreground">{u.employee.roleTitle}</p>}
                         </div>
                       </div>
                     </Td>
-                    <Td className="text-muted-foreground">{u.email}</Td>
                     <Td>
-                      <div className="flex items-center gap-2">
-                        <StatusBadge status={u.roleName.toUpperCase()} />
-                        <Select value={u.roleId ?? ""} onChange={(e) => changeRole(u, e.target.value)} className="!w-28 !py-1 !text-[11px]">
-                          {(roles ?? []).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                        </Select>
-                      </div>
+                      <Select value={u.roleId ?? ""} onChange={(e) => changeRole(u, e.target.value)} className="!w-32 !py-1 !text-[11px]">
+                        {(roles ?? []).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                      </Select>
                     </Td>
-                    <Td><StatusBadge status={u.isActive ? "ACTIVE" : "INACTIVE"} /></Td>
-                    <Td className="text-muted-foreground">{formatDate(u.createdAt ?? null)}</Td>
+                    <Td>
+                      <button onClick={() => toggleActive(u)} title={u.isActive ? "Deactivate account" : "Activate account"} className="transition-opacity hover:opacity-80">
+                        <StatusBadge status={u.isActive ? "ACTIVE" : "INACTIVE"} />
+                      </button>
+                    </Td>
+                    <Td className="text-[11px] text-muted-foreground">
+                      {u.lastLoginAt ? (
+                        <span>
+                          {formatDate(u.lastLoginAt)}
+                          <span className="block text-[10px]">{timeAgo(u.lastLoginAt)}</span>
+                        </span>
+                      ) : "Never"}
+                    </Td>
+                    <Td className="text-[11px] text-muted-foreground">{formatDate(u.createdAt ?? null)}</Td>
                     <Td>
                       <div className="flex items-center justify-end gap-1">
-                        <Btn variant="ghost" onClick={() => setEditUser(u)}><Pencil className="size-3.5" /></Btn>
-                        <Btn variant="ghost" onClick={() => setResetUser(u)}><KeyRound className="size-3.5" /></Btn>
-                        <Btn variant="ghost" onClick={() => toggleActive(u)}><Power className="size-3.5" /></Btn>
-                        <Btn variant="ghost" className="text-rose-400 hover:bg-rose-500/10 hover:text-rose-400" onClick={() => setDeleteUser(u)}><Trash2 className="size-3.5" /></Btn>
+                        <Btn variant="ghost" onClick={() => setEditUser(u)} title="Edit user"><Pencil className="size-3.5" /></Btn>
+                        <Btn variant="ghost" onClick={() => setResetUser(u)} title="Reset password"><KeyRound className="size-3.5" /></Btn>
+                        <Btn variant="ghost" onClick={() => toggleActive(u)} title={u.isActive ? "Deactivate" : "Activate"}><Power className="size-3.5" /></Btn>
+                        <Btn variant="ghost" className="text-rose-400 hover:bg-rose-500/10 hover:text-rose-400" onClick={() => setDeleteUser(u)} title="Delete user"><Trash2 className="size-3.5" /></Btn>
                       </div>
                     </Td>
                   </Tr>
@@ -1488,9 +2148,142 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
   );
 }
 
-function RolesTab({ roles, loading, error, onRetry }: any) {
+function RoleModal({ open, onClose, role, onSaved, notify }: any) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [perms, setPerms] = useState<Record<string, any>>({});
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setName(role?.name ?? "");
+    setDescription(role?.description ?? "");
+    setPerms(role?.modulePermissions ?? {});
+    setErr(null);
+  }, [open, role]);
+
+  const isOwner = role?.name === "Owner";
+  const perm = (m: string) => perms[m] ?? { view: false, edit: false, approve: false };
+  const setPerm = (m: string, k: "view" | "edit" | "approve", v: boolean) => {
+    const next = { ...perm(m), [k]: v };
+    if (k === "view" && !v) {
+      next.edit = false;
+      next.approve = false;
+    }
+    if ((k === "edit" || k === "approve") && v) next.view = true;
+    setPerms({ ...perms, [m]: next });
+  };
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return setErr("Role name is required");
+    setBusy(true);
+    setErr(null);
+    try {
+      const body: any = { name: name.trim(), description: description.trim() || null };
+      // The Owner role cannot carry a permission matrix — sending one makes the
+      // API reject the save. Only the description is editable for Owner.
+      if (!isOwner) body.modulePermissions = perms;
+      await apiFetch(role ? `/control/roles/${role.id}` : "/control/roles", {
+        method: role ? "PATCH" : "POST",
+        body: JSON.stringify(body),
+      });
+      notify(role ? "Role updated" : "Role created");
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={role ? `Edit role — ${role.name}` : "Create role"} size="lg">
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Role name">
+            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={isOwner} placeholder="e.g. Project Manager" autoFocus />
+          </Field>
+          <Field label="Description">
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this role can do" />
+          </Field>
+        </div>
+
+        {isOwner ? (
+          <p className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-[12px] text-primary">
+            The Owner role always has full access to every module and cannot be edited.
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border/60">
+            <table className="w-full">
+              <THead>
+                <Th>Module</Th>
+                <Th className="text-center">View</Th>
+                <Th className="text-center">Edit</Th>
+                <Th className="text-center">Approve</Th>
+              </THead>
+              <tbody>
+                {MODULES.map((m, i) => {
+                  const p = perm(m);
+                  return (
+                    <Tr key={m} index={i}>
+                      <Td className="text-[12px] font-medium">{label(m)}</Td>
+                      {(["view", "edit", "approve"] as const).map((k) => (
+                        <Td key={k} className="text-center">
+                          <input
+                            type="checkbox"
+                            checked={!!p[k]}
+                            onChange={(e) => setPerm(m, k, e.target.checked)}
+                            className="size-3.5 accent-primary"
+                          />
+                        </Td>
+                      ))}
+                    </Tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel={role ? "Save role" : "Create role"} />
+      </form>
+    </Modal>
+  );
+}
+
+function RolesTab({ roles, loading, error, onRetry, notify, onRefresh }: any) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState<any | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const remove = async () => {
+    if (!deleting) return;
+    setBusy(true);
+    try {
+      await apiFetch(`/control/roles/${deleting.id}`, { method: "DELETE" });
+      notify(`${deleting.name} deleted`);
+      setDeleting(null);
+      onRefresh();
+    } catch (e: any) {
+      notify(e.message ?? "Delete failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <SectionTitle title="Roles & permissions" subtitle="Control exactly which module each role can view, edit or approve" />
+        <Btn variant="primary" onClick={() => { setEditing(null); setOpen(true); }}>
+          <Plus className="size-3.5" /> New role
+        </Btn>
+      </div>
       {loading ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {[...Array(3)].map((_, i) => <SkeletonBlock key={i} className="h-64" />)}
@@ -1505,19 +2298,26 @@ function RolesTab({ roles, loading, error, onRetry }: any) {
       ) : (
         <FadeIn>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {(roles ?? []).length === 0 && (
+              <div className="md:col-span-2 xl:col-span-3">
+                <EmptyState title="No roles yet" hint="Create your first role to control module access." />
+              </div>
+            )}
             {(roles ?? []).map((r: any) => (
               <CardShell key={r.id} className="flex flex-col gap-3">
-                <div className="flex items-start justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
                     <p className="flex items-center gap-2 font-heading text-[15px] font-semibold">
                       {r.name}
                       {r.name === "Owner" && <ShieldCheck className="size-4 text-primary" />}
                     </p>
-                    {r.name === "Owner" && <p className="mt-0.5 text-[11px] font-bold text-primary">Full access to every module</p>}
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {r.name === "Owner" ? "Full access to every module" : r.description || "No description"}
+                    </p>
                   </div>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{r._count?.users ?? 0} users</span>
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{r._count?.users ?? 0} users</span>
                 </div>
-                <p className="text-[12px] leading-relaxed text-muted-foreground">{r.description || "No description"}</p>
+
                 {r.name !== "Owner" && (
                   <div className="overflow-hidden rounded-xl border border-border/60">
                     <table className="w-full">
@@ -1543,18 +2343,153 @@ function RolesTab({ roles, loading, error, onRetry }: any) {
                     </table>
                   </div>
                 )}
+
+                <div className="mt-auto flex items-center gap-1.5">
+                  <Btn variant="outline" onClick={() => { setEditing(r); setOpen(true); }}>
+                    <Pencil className="size-3.5" /> Edit
+                  </Btn>
+                  {r.name !== "Owner" && (
+                    <Btn variant="ghost" className="!text-rose-400 hover:bg-rose-500/10" onClick={() => setDeleting(r)}>
+                      <Trash2 className="size-3.5" /> Delete
+                    </Btn>
+                  )}
+                </div>
               </CardShell>
             ))}
           </div>
         </FadeIn>
       )}
+
+      <RoleModal open={open} onClose={() => { setOpen(false); setEditing(null); }} role={editing} notify={notify} onSaved={onRefresh} />
+      <Modal open={!!deleting} onClose={() => setDeleting(null)} title="Delete role?">
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <span className="font-semibold text-foreground">{deleting?.name}</span> will be removed. Roles that still have
+          users assigned cannot be deleted.
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={() => setDeleting(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
+          <button onClick={remove} disabled={busy} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white transition-all hover:scale-[1.02] disabled:opacity-60">
+            {busy ? "Deleting…" : "Delete role"}
+          </button>
+        </div>
+      </Modal>
     </div>
+  );
+}
+
+function IntegrationModal({ open, onClose, integration, onSaved, notify }: any) {
+  const editing = !!integration;
+  const [providerName, setProviderName] = useState("");
+  const [type, setType] = useState("MESSAGING");
+  const [rows, setRows] = useState<{ key: string; value: string }[]>([{ key: "", value: "" }]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setProviderName(integration?.providerName ?? "");
+    setType(integration?.type ?? "MESSAGING");
+    setRows([{ key: "", value: "" }]);
+    setErr(null);
+  }, [open, integration]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!providerName.trim()) return setErr("Provider name is required");
+    const credentials = Object.fromEntries(
+      rows.filter((r) => r.key.trim()).map((r) => [r.key.trim(), r.value])
+    );
+    setBusy(true);
+    setErr(null);
+    try {
+      await apiFetch(editing ? `/control/integrations/${integration.id}` : "/control/integrations", {
+        method: editing ? "PATCH" : "POST",
+        body: JSON.stringify({
+          providerName: providerName.trim(),
+          type,
+          ...(Object.keys(credentials).length ? { credentials } : {}),
+        }),
+      });
+      notify(editing ? "Integration updated" : "Integration added");
+      onSaved();
+      onClose();
+    } catch (e2: any) {
+      setErr(e2.message ?? "Save failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={editing ? `Configure ${integration?.providerName}` : "Add integration"} size="lg">
+      <form onSubmit={save} className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Provider name">
+            <Input value={providerName} onChange={(e) => setProviderName(e.target.value)} placeholder="Slack / Stripe / Google Ads" autoFocus />
+          </Field>
+          <Field label="Type">
+            <Select value={type} onChange={(e) => setType(e.target.value)}>
+              {["ADS", "PAYMENT", "BANKING", "FX_RATE", "MESSAGING"].map((t) => (
+                <option key={t} value={t}>{label(t)}</option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] font-semibold">Credentials</p>
+          <p className="text-[11px] text-muted-foreground">
+            Stored encrypted (AES-256-GCM) and never returned by the API.
+            {editing ? " Leave blank to keep the existing values." : ""}
+          </p>
+          {rows.map((row, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Input
+                value={row.key}
+                onChange={(e) => setRows(rows.map((r, j) => (j === i ? { ...r, key: e.target.value } : r)))}
+                placeholder="key (e.g. apiKey)"
+                className="!w-44"
+              />
+              <Input
+                value={row.value}
+                onChange={(e) => setRows(rows.map((r, j) => (j === i ? { ...r, value: e.target.value } : r)))}
+                placeholder="value"
+                type="password"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                onClick={() => setRows(rows.length > 1 ? rows.filter((_, j) => j !== i) : [{ key: "", value: "" }])}
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"
+                aria-label="Remove field"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          ))}
+          <Btn type="button" variant="outline" className="!w-fit" onClick={() => setRows([...rows, { key: "", value: "" }])}>
+            <Plus className="size-3.5" /> Add field
+          </Btn>
+        </div>
+
+        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save integration" : "Add integration"} />
+      </form>
+    </Modal>
   );
 }
 
 function IntegrationsTab({ integrations, loading, error, onRefresh, notify }: any) {
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [modal, setModal] = useState<{ open: boolean; item: any | null }>({ open: false, item: null });
+  const [deleting, setDeleting] = useState<any | null>(null);
+
   const setStatus = async (i: any, status: string) => {
+    if (status === "CONNECTED" && !i.hasCredentials) {
+      notify("Add credentials before connecting this integration");
+      setModal({ open: true, item: i });
+      return;
+    }
     setBusyId(i.id);
     try {
       await apiFetch(`/control/integrations/${i.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
@@ -1566,8 +2501,43 @@ function IntegrationsTab({ integrations, loading, error, onRefresh, notify }: an
       setBusyId(null);
     }
   };
+
+  const test = async (i: any) => {
+    setBusyId(i.id);
+    try {
+      const r = await apiFetch<any>(`/control/integrations/${i.id}/test`, { method: "POST" });
+      notify(r.message ?? (r.ok ? "Configuration looks valid" : "Test failed"));
+      onRefresh();
+    } catch (e: any) {
+      notify(e.message ?? "Test failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const remove = async () => {
+    if (!deleting) return;
+    setBusyId(deleting.id);
+    try {
+      await apiFetch(`/control/integrations/${deleting.id}`, { method: "DELETE" });
+      notify(`${deleting.providerName} removed`);
+      setDeleting(null);
+      onRefresh();
+    } catch (e: any) {
+      notify(e.message ?? "Delete failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <SectionTitle title="Integrations" subtitle="Connect ad platforms, payments, banking and messaging providers" />
+        <Btn variant="primary" onClick={() => setModal({ open: true, item: null })}>
+          <Plus className="size-3.5" /> Add integration
+        </Btn>
+      </div>
       {loading ? (
         <div className="flex flex-col gap-2">
           {[...Array(4)].map((_, i) => <SkeletonBlock key={i} className="h-14" />)}
@@ -1583,32 +2553,65 @@ function IntegrationsTab({ integrations, loading, error, onRefresh, notify }: an
         <FadeIn>
           <div className="flex flex-col gap-2.5">
             {(integrations ?? []).map((i: any) => (
-              <div key={i.id} className="card-lift flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 shadow-sm">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-9 items-center justify-center rounded-xl bg-muted">
+              <div key={i.id} className="card-lift flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 shadow-sm">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted">
                     <Plug className="size-4 text-muted-foreground" />
                   </div>
-                  <div>
-                    <p className="text-[13px] font-semibold">{i.providerName}</p>
-                    <p className="text-[10.5px] text-muted-foreground">
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-semibold">{i.providerName}</p>
+                    <p className="truncate text-[10.5px] text-muted-foreground">
                       {label(i.type)}
                       {i.connectedBy?.name ? ` · connected by ${i.connectedBy.name}` : ""}
                       {i.connectedAt ? ` · ${timeAgo(i.connectedAt)}` : " · never connected"}
                     </p>
+                    <p className="mt-0.5 text-[10px] font-semibold">
+                      {i.hasCredentials ? (
+                        <span className="text-emerald-500">{i.credentialKeys?.length ?? 0} credential field(s) stored</span>
+                      ) : (
+                        <span className="text-amber-500">No credentials configured</span>
+                      )}
+                    </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
                   <StatusBadge status={i.status} />
+                  <Btn variant="ghost" onClick={() => test(i)} disabled={busyId === i.id}>
+                    {busyId === i.id ? "Testing…" : "Test"}
+                  </Btn>
+                  <Btn variant="outline" onClick={() => setModal({ open: true, item: i })}>Configure</Btn>
                   <Btn variant={i.status === "CONNECTED" ? "outline" : "primary"} onClick={() => setStatus(i, i.status === "CONNECTED" ? "DISCONNECTED" : "CONNECTED")} className={busyId === i.id ? "opacity-50" : ""}>
                     {i.status === "CONNECTED" ? "Disconnect" : "Connect"}
+                  </Btn>
+                  <Btn variant="ghost" className="!text-rose-400 hover:bg-rose-500/10" onClick={() => setDeleting(i)} aria-label="Delete integration">
+                    <Trash2 className="size-3.5" />
                   </Btn>
                 </div>
               </div>
             ))}
-            {(integrations ?? []).length === 0 && <EmptyState title="No integrations configured" />}
+            {(integrations ?? []).length === 0 && <EmptyState title="No integrations configured" hint="Add your first provider to sync data." />}
           </div>
         </FadeIn>
       )}
+
+      <IntegrationModal
+        open={modal.open}
+        integration={modal.item}
+        onClose={() => setModal({ open: false, item: null })}
+        onSaved={onRefresh}
+        notify={notify}
+      />
+      <Modal open={!!deleting} onClose={() => setDeleting(null)} title="Remove integration?">
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <span className="font-semibold text-foreground">{deleting?.providerName}</span> and its stored credentials will be removed.
+        </p>
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={() => setDeleting(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
+          <button onClick={remove} disabled={busyId === deleting?.id} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white transition-all hover:scale-[1.02] disabled:opacity-60">
+            {busyId === deleting?.id ? "Removing…" : "Remove"}
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -1876,28 +2879,107 @@ function WhatsappTab({ notify }: { notify: (m: string) => void }) {
   );
 }
 
-function DataTab({ audit, auditLoading, onRefresh, notify }: any) {  const [exporting, setExporting] = useState(false);
+function csvCell(value: any): string {
+  const s = String(value ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function downloadTextFile(content: string, type: string, filename: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function DataTab({ onRefresh, notify }: any) {
+  const [exporting, setExporting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [confirm, setConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
+
+  // ── audit filters ──
+  const [q, setQ] = useState("");
+  const [action, setAction] = useState("");
+  const [entityType, setEntityType] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [audit, setAudit] = useState<any | null>(null);
+  const [auditLoading, setAuditLoading] = useState(true);
+  const [auditErr, setAuditErr] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+
+  const params = useMemo(() => {
+    const p = new URLSearchParams();
+    if (q.trim()) p.set("q", q.trim());
+    if (action) p.set("action", action);
+    if (entityType) p.set("entityType", entityType);
+    if (from) p.set("from", from);
+    if (to) p.set("to", to);
+    p.set("page", String(page));
+    p.set("pageSize", String(pageSize));
+    return p.toString();
+  }, [q, action, entityType, from, to, page, pageSize]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAuditLoading(true);
+    setAuditErr(null);
+    apiFetch<any>(`/control/audit-logs?${params}`)
+      .then((d) => !cancelled && setAudit(d))
+      .catch((e) => !cancelled && setAuditErr(e.message))
+      .finally(() => !cancelled && setAuditLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [params, tick]);
+
+  const { data: health } = useRefetch<any>("/control/health", 0);
+
   const exportData = async () => {
     setExporting(true);
     try {
-      const data = await apiFetch("/control/export");
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `zoolyum-export-${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      notify("Export downloaded");
+      const data = await apiFetch<any>("/control/export");
+      downloadTextFile(JSON.stringify(data, null, 2), "application/json", `zoolyum-export-${new Date().toISOString().slice(0, 10)}.json`);
+      notify(`Export downloaded (${data?.counts?.invoices ?? 0} invoices, ${data?.counts?.clients ?? 0} clients)`);
     } catch (e: any) {
       notify(e.message ?? "Export failed");
     } finally {
       setExporting(false);
     }
   };
+
+  const exportAudit = async () => {
+    try {
+      const p = new URLSearchParams();
+      if (q.trim()) p.set("q", q.trim());
+      if (action) p.set("action", action);
+      if (entityType) p.set("entityType", entityType);
+      if (from) p.set("from", from);
+      if (to) p.set("to", to);
+      p.set("page", "1");
+      p.set("pageSize", "1000");
+      const d = await apiFetch<any>(`/control/audit-logs?${p.toString()}`);
+      const header = ["timestamp", "actor", "actorEmail", "action", "entityType", "entityId"];
+      const lines = [
+        header.join(","),
+        ...(d.rows ?? []).map((r: any) =>
+          [r.timestamp, r.actor?.name ?? r.actorUserId ?? "", r.actor?.email ?? "", r.action, r.entityType, r.entityId]
+            .map(csvCell)
+            .join(",")
+        ),
+      ];
+      downloadTextFile(lines.join("\n"), "text/csv", `audit-log-${new Date().toISOString().slice(0, 10)}.csv`);
+      notify(`Audit log exported (${d.rows?.length ?? 0} rows)`);
+    } catch (e: any) {
+      notify(e.message ?? "Export failed");
+    }
+  };
+
   const wipe = async () => {
     setDeleting(true);
     try {
@@ -1906,56 +2988,143 @@ function DataTab({ audit, auditLoading, onRefresh, notify }: any) {  const [expo
       setDeleteOpen(false);
       setConfirm("");
       onRefresh();
+      setTick((t) => t + 1);
     } catch (e: any) {
       notify(e.message ?? "Delete failed");
     } finally {
       setDeleting(false);
     }
   };
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <CardShell>
-          <SectionTitle title="Export All Data" subtitle="Download every client, lead, project, task, invoice, employee and expense record as JSON" />
-          <p className="mb-4 text-[12px] leading-relaxed text-muted-foreground">
-            The export is a full backup of business data, including nested records like contacts, documents, payments
-            and attendance. Sensitive fields such as passwords are never included.
-          </p>
-          <Btn variant="primary" onClick={exportData} className={exporting ? "opacity-50" : ""}>
-            <Download className="size-3.5" /> {exporting ? "Exporting…" : "Export All Data"}
+          <SectionTitle title="Backup" subtitle="Full JSON snapshot of business data — no passwords or secrets" />
+          <div className="mb-3 grid grid-cols-2 gap-2">
+            <HealthCard label="Clients" value={health?.counts?.clients ?? "—"} icon={<Building2 className="size-3" />} />
+            <HealthCard label="Projects" value={health?.counts?.projects ?? "—"} icon={<Activity className="size-3" />} />
+            <HealthCard label="Invoices" value={health?.counts?.invoices ?? "—"} icon={<FileText className="size-3" />} />
+            <HealthCard label="Tasks" value={health?.counts?.tasks ?? "—"} icon={<ListChecks className="size-3" />} />
+          </div>
+          <Btn variant="primary" onClick={exportData} disabled={exporting}>
+            <Download className="size-3.5" /> {exporting ? "Exporting…" : "Export all data"}
           </Btn>
         </CardShell>
+
+        <CardShell>
+          <SectionTitle title="Storage & system" subtitle="Uploads and audit volume for this workspace" />
+          <div className="grid grid-cols-2 gap-2">
+            <HealthCard label="Uploads" value={`${health?.storage?.uploadsMb ?? 0} MB`} icon={<HardDrive className="size-3" />} />
+            <HealthCard label="Audit events" value={health?.counts?.auditEvents ?? "—"} icon={<ShieldCheck className="size-3" />} />
+            <HealthCard label="Environment" value={health?.environment ?? "—"} icon={<Globe2 className="size-3" />} />
+            <HealthCard label="Uptime" value={health?.uptimeSeconds ? `${Math.floor(health.uptimeSeconds / 3600)}h` : "—"} icon={<Server className="size-3" />} />
+          </div>
+        </CardShell>
+
         <CardShell className="border-rose-500/30">
-          <SectionTitle title="Delete All Data" subtitle="Irreversibly wipe every business record from the workspace" />
-          <p className="mb-4 flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground">
+          <SectionTitle title="Danger zone" subtitle="Irreversibly wipe every business record" />
+          <p className="mb-3 flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-rose-400" />
-            Users, roles, settings and integrations are kept. Clients, leads, projects, tasks, invoices, employees,
-            expenses and all related records are permanently removed.
+            Users, roles, settings, integrations and the audit trail are kept.
           </p>
           <Btn variant="outline" className="!text-rose-400 hover:bg-rose-500/10 hover:text-rose-400" onClick={() => setDeleteOpen(true)}>
-            <Trash2 className="size-3.5" /> Delete All Data
+            <Trash2 className="size-3.5" /> Delete all data
           </Btn>
         </CardShell>
       </div>
+
       <CardShell>
-        <SectionTitle title="System Audit Trail" subtitle="The latest 50 security and configuration events" />
-        {auditLoading ? (
-          <SkeletonBlock className="h-32" />
-        ) : (
-          <div className="flex flex-col gap-2">
-            {(audit ?? []).slice(0, 10).map((a: any) => (
-              <div key={a.id} className="flex items-start gap-2.5">
-                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary" />
-                <p className="text-[12px] leading-snug">
-                  <span className="font-medium">{a.action}</span>{" "}
-                  <span className="text-muted-foreground">on {label(a.entityType ?? "")} · {timeAgo(a.timestamp)}</span>
-                </p>
-              </div>
-            ))}
-            {(audit ?? []).length === 0 && <EmptyState title="No audit events yet" />}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionTitle title="Audit trail" subtitle="Every security and configuration change, with actor and payload" />
+          <div className="flex items-center gap-2">
+            <Btn variant="ghost" onClick={() => setTick((t) => t + 1)} disabled={auditLoading}>
+              <RefreshCw className={cn("size-3.5", auditLoading && "animate-spin")} /> Refresh
+            </Btn>
+            <Btn variant="outline" onClick={exportAudit}>
+              <Download className="size-3.5" /> Export CSV
+            </Btn>
           </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="relative xl:col-span-2">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={q}
+              onChange={(e) => { setQ(e.target.value); setPage(1); }}
+              placeholder="Search action / entity / id…"
+              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12px] outline-none focus:border-primary/40"
+            />
+          </div>
+          <Select value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }}>
+            <option value="">All actions</option>
+            {(audit?.actions ?? []).map((a: string) => <option key={a} value={a}>{a}</option>)}
+          </Select>
+          <Select value={entityType} onChange={(e) => { setEntityType(e.target.value); setPage(1); }}>
+            <option value="">All entities</option>
+            {(audit?.entityTypes ?? []).map((t: string) => <option key={t} value={t}>{t}</option>)}
+          </Select>
+          <Input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setPage(1); }} />
+          <Input type="date" value={to} onChange={(e) => { setTo(e.target.value); setPage(1); }} />
+        </div>
+
+        {auditErr ? (
+          <p className="mt-3 text-[12px] font-medium text-rose-400">{auditErr}</p>
+        ) : auditLoading && !audit ? (
+          <SkeletonBlock className="mt-3 h-40" />
+        ) : (
+          <>
+            <div className="mt-3 overflow-hidden rounded-xl border border-border/60">
+              <table className="w-full">
+                <THead>
+                  <Th>When</Th>
+                  <Th>Actor</Th>
+                  <Th>Action</Th>
+                  <Th>Entity</Th>
+                  <Th>ID</Th>
+                </THead>
+                <tbody>
+                  {(audit?.rows ?? []).length === 0 && (
+                    <tr><td colSpan={5} className="px-4 py-8"><EmptyState title="No audit events match these filters" /></td></tr>
+                  )}
+                  {(audit?.rows ?? []).map((r: any, i: number) => (
+                    <Tr key={r.id} index={i}>
+                      <Td className="whitespace-nowrap text-[11px] text-muted-foreground">{formatDate(r.timestamp)} · {new Date(r.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</Td>
+                      <Td className="text-[12px]">
+                        {r.actor ? (
+                          <span>
+                            <span className="font-medium">{r.actor.name}</span>
+                            <span className="block text-[10.5px] text-muted-foreground">{r.actor.email}</span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">system</span>
+                        )}
+                      </Td>
+                      <Td className="text-[12px] font-medium">{r.action}</Td>
+                      <Td className="text-[11.5px] text-muted-foreground">{r.entityType}</Td>
+                      <Td className="max-w-[180px] truncate text-[11px] text-muted-foreground">{r.entityId}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[11.5px] text-muted-foreground">
+                {audit?.total ?? 0} event(s) · page {audit?.page ?? 1} of {audit?.pages ?? 1}
+              </p>
+              <div className="flex items-center gap-2">
+                <Select value={String(pageSize)} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }} className="!w-24">
+                  {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
+                </Select>
+                <Btn variant="outline" disabled={(audit?.page ?? 1) <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</Btn>
+                <Btn variant="outline" disabled={(audit?.page ?? 1) >= (audit?.pages ?? 1)} onClick={() => setPage((p) => p + 1)}>Next</Btn>
+              </div>
+            </div>
+          </>
         )}
       </CardShell>
+
       <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete all business data?">
         <div className="flex flex-col gap-4">
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
@@ -1978,7 +3147,7 @@ function DataTab({ audit, auditLoading, onRefresh, notify }: any) {  const [expo
   );
 }
 
-export default function ControlPage() {
+function ControlWorkspace() {
   const [tab, setTab] = useState<Tab>("settings");
   const [flash, setFlash] = useState<string | null>(null);
   const notify = useCallback((msg: string) => {
@@ -1992,7 +3161,6 @@ export default function ControlPage() {
   const [usersRefresh, setUsersRefresh] = useState(0);
   const [rolesRefresh, setRolesRefresh] = useState(0);
   const [integRefresh, setIntegRefresh] = useState(0);
-  const [auditRefresh, setAuditRefresh] = useState(0);
   const [stagesRefresh, setStagesRefresh] = useState(0);
   const loadSettings = useCallback(() => {
     setSettingsLoading(true);
@@ -2008,13 +3176,12 @@ export default function ControlPage() {
   const { data: users, error: usersError, loading: usersLoading } = useRefetch<any[]>("/users", usersRefresh);
   const { data: roles, error: rolesError, loading: rolesLoading } = useRefetch<any[]>("/control/roles", rolesRefresh);
   const { data: integrations, error: integError, loading: integLoading } = useRefetch<any[]>("/control/integrations", integRefresh);
-  const { data: audit, loading: auditLoading } = useRefetch<any[]>("/control/audit-logs", auditRefresh);
   const { data: stages, error: stagesError, loading: stagesLoading } = useRefetch<any[]>("/control/pipeline-stages", stagesRefresh);
+  const { data: health } = useRefetch<any>("/control/health", 0);
   const reloadAll = () => {
     setUsersRefresh((r) => r + 1);
     setRolesRefresh((r) => r + 1);
     setIntegRefresh((r) => r + 1);
-    setAuditRefresh((r) => r + 1);
     setStagesRefresh((r) => r + 1);
     loadSettings();
   };
@@ -2045,20 +3212,37 @@ export default function ControlPage() {
         title="Control — Admin & Settings"
         subtitle="Workspace settings, users, roles, integrations and data management."
         actions={
-          <Segmented
-            options={[
-              { value: "settings", label: "Settings" },
-              { value: "users", label: "Users" },
-              { value: "roles", label: "Roles" },
-              { value: "integrations", label: "Integrations" },
-              { value: "whatsapp", label: "WhatsApp" },
-              { value: "data", label: "Data" },
-            ]}
-            value={tab}
-            onChange={setTab}
-          />
+          <div className="flex items-center gap-2">
+            <Link
+              href="/control/scoring"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-[12px] font-semibold transition-colors hover:border-violet-400/60 hover:text-violet-500"
+            >
+              <HeartPulse className="size-3.5" /> Scoring engine
+            </Link>
+            <Segmented
+              options={[
+                { value: "settings", label: "Settings" },
+                { value: "users", label: "Users" },
+                { value: "roles", label: "Roles" },
+                { value: "integrations", label: "Integrations" },
+                { value: "whatsapp", label: "WhatsApp" },
+                { value: "telegram", label: "Telegram" },
+                { value: "data", label: "Data" },
+              ]}
+              value={tab}
+              onChange={setTab}
+            />
+          </div>
         }
       />
+      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+        <HealthCard label="API status" value={health ? (health.ok ? "Operational" : "Degraded") : "—"} tone={health ? (health.ok ? "text-emerald-500" : "text-rose-500") : undefined} icon={<Activity className="size-3" />} />
+        <HealthCard label="Staff users" value={`${health?.counts?.activeUsers ?? "—"} / ${health?.counts?.users ?? "—"}`} icon={<Users className="size-3" />} />
+        <HealthCard label="Roles" value={(roles ?? []).length} icon={<ShieldCheck className="size-3" />} />
+        <HealthCard label="Integrations" value={(integrations ?? []).length} icon={<Plug className="size-3" />} />
+        <HealthCard label="Audit events" value={health?.counts?.auditEvents ?? "—"} icon={<ListChecks className="size-3" />} />
+        <HealthCard label="Maintenance" value={health?.maintenanceMode ? "ON" : "Off"} tone={health?.maintenanceMode ? "text-rose-500" : "text-emerald-500"} icon={<Server className="size-3" />} />
+      </div>
       {tab === "settings" && (
         <SettingsTab
           settings={settings}
@@ -2075,10 +3259,38 @@ export default function ControlPage() {
         />
       )}
       {tab === "users" && <UsersTab users={users ?? []} loading={usersLoading} error={usersError} roles={roles ?? []} onRefresh={() => setUsersRefresh((r) => r + 1)} notify={notify} />}
-      {tab === "roles" && <RolesTab roles={roles} loading={rolesLoading} error={rolesError} onRetry={() => setRolesRefresh((r) => r + 1)} />}
+      {tab === "roles" && <RolesTab roles={roles} loading={rolesLoading} error={rolesError} onRetry={() => setRolesRefresh((r) => r + 1)} notify={notify} onRefresh={() => setRolesRefresh((r) => r + 1)} />}
       {tab === "integrations" && <IntegrationsTab integrations={integrations ?? []} loading={integLoading} error={integError} onRefresh={() => setIntegRefresh((r) => r + 1)} notify={notify} />}
       {tab === "whatsapp" && <WhatsappTab notify={notify} />}
-      {tab === "data" && <DataTab audit={audit ?? []} auditLoading={auditLoading} onRefresh={reloadAll} notify={notify} />}
+      {tab === "telegram" && <TelegramTab notify={notify} />}
+      {tab === "data" && <DataTab onRefresh={reloadAll} notify={notify} />}
     </div>
   );
+}
+export default function ControlPage() {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        <SkeletonBlock className="h-24" />
+        <SkeletonBlock className="h-64" />
+      </div>
+    );
+  }
+  const perms = user?.permissions;
+  const allowed =
+    user?.role === "Owner" ||
+    user?.role === "CONTROL" ||
+    perms?.CONTROL?.view === true;
+  if (!allowed) {
+    return (
+      <CardShell>
+        <EmptyState
+          title="Admin access required"
+          hint="Ask an Owner to grant your role Control access in Roles & permissions."
+        />
+      </CardShell>
+    );
+  }
+  return <ControlWorkspace />;
 }

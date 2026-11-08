@@ -11,7 +11,6 @@ import {
   Globe2,
   LayoutDashboard,
   ListTodo,
-  Menu,
   Settings,
   Users,
   Wallet,
@@ -60,6 +59,15 @@ export function Sidebar() {
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
+
+  // The mobile trigger now lives in the topbar (a floating button used to sit
+  // on top of the primary CTA); it opens the drawer through this event.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const open = () => setMobileOpen(true);
+    window.addEventListener("zoolyum:open-nav", open);
+    return () => window.removeEventListener("zoolyum:open-nav", open);
+  }, []);
 
   // Lock body scroll while the drawer is open
   useEffect(() => {
@@ -153,14 +161,8 @@ export function Sidebar() {
         {nav}
       </aside>
 
-      {/* Mobile: floating menu button + slide-over nav (no sidebar below lg) */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        aria-label="Open navigation menu"
-        className="fixed bottom-5 right-5 z-40 flex size-12 items-center justify-center rounded-2xl bg-sidebar text-white shadow-xl transition-transform outline-none active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/60 lg:hidden"
-      >
-        <Menu className="size-5" />
-      </button>
+      {/* Mobile nav is triggered from the topbar (lg:hidden) so it never
+          overlaps page content such as the attendance CTA. */}
       <AnimatePresence>
         {mobileOpen && (
           <motion.div

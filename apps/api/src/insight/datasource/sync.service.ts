@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CacheService } from "../../cache/cache.service";
 import { GoogleAdsService } from "./google-ads.service";
@@ -56,7 +56,7 @@ export class SyncService {
 
   async syncAccount(accountId: string, opts: { from?: Date; to?: Date } = {}) {
     const account = await this.prisma.adAccount.findUnique({ where: { id: accountId } });
-    if (!account) throw new Error("Ad account not found");
+    if (!account) throw new NotFoundException("Ad account not found");
     const to = opts.to ?? new Date();
     const from = opts.from ?? new Date(Date.now() - 30*86400000);
     // truncate to date only

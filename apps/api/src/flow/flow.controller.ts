@@ -24,9 +24,10 @@ import { CreateProjectDto } from "./dto/create-project.dto";
 import { UpdateProjectDto } from "./dto/update-project.dto";
 import { CreateReferenceDto } from "./dto/create-reference.dto";
 import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
-
+import { RequirePermission, SkipPermission } from "../common/decorators/require-permission.decorator";
 const flowUploadDir = () => uploadsDir();
 
+@RequirePermission("FLOW")
 @Controller("flow")
 export class FlowController {
   constructor(private readonly flow: FlowService) {}
@@ -39,6 +40,17 @@ export class FlowController {
   @Get("projects")
   list(@Query() query: { q?: string; status?: string; health?: string }) {
     return this.flow.list(query);
+  }
+
+  /**
+   * Minimal id/name list for pickers in Capital and other modules whose roles
+   * do not have the Flow workspace (e.g. HR recording a project expense).
+   * Exposes no budget, client or health data.
+   */
+  @Get("project-lookup")
+  @SkipPermission()
+  async projectLookup() {
+    return this.flow.projectLookup();
   }
 
   @Get("projects/:id")
@@ -164,7 +176,7 @@ export class FlowController {
   @Post("import")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 15 * 1024 * 1024 } }))
   importCsv(@UploadedFile() file: Express.Multer.File) {
-    if (!file) throw new Error("No file uploaded");
+    if (!file) throw new BadRequestException("No file uploaded");
     return this.flow.importCsv(file.buffer);
   }
 
@@ -206,7 +218,7 @@ export class FlowController {
     })
   )
   upload(@UploadedFile() file: Express.Multer.File) {
-    if (!file) throw new Error("No file uploaded");
+    if (!file) throw new BadRequestException("No file uploaded");
     return { fileUrl: `/api/flow/uploads/${file.filename}`, originalName: file.originalname, size: file.size };
   }
 

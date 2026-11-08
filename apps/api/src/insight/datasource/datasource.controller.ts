@@ -1,7 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { AdAccountService } from "./ad-account.service";
 import { SyncService } from "./sync.service";
+import { RequirePermission } from "../../common/decorators/require-permission.decorator";
 
+@RequirePermission("INSIGHT")
 @Controller("insight/datasource")
 export class DatasourceController {
   constructor(private readonly accounts: AdAccountService, private readonly sync: SyncService) {}

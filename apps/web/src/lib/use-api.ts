@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 
 export function useApi<T = any>(path: string | null) {
@@ -10,6 +10,9 @@ export function useApi<T = any>(path: string | null) {
     queryKey: ["api", path],
     queryFn: () => apiFetch<T>(path as string),
     enabled: path !== null,
+    // Keep the last payload visible while a refetch is in flight; otherwise
+    // every window focus flashes "—"/zeroes across the whole page.
+    placeholderData: keepPreviousData,
   });
 
   const mutate = useCallback(() => {

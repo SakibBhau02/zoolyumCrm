@@ -7,6 +7,12 @@ import { PayrollService } from "./payroll.service";
 import { PerformanceService } from "./performance.service";
 import { TrainingService } from "./training.service";
 import { RecruitmentService } from "./recruitment.service";
+import { TeamService } from "./team.service";
+import { PeopleAutomationService } from "./people-automation.service";
+import { UtilizationService } from "./utilization.service";
+import { MeService } from "./me.service";
+import { OnboardingService } from "./onboarding.service";
+import { AssetsService } from "./assets.service";
 import { PeopleController } from "./people.controller";
 import { IclockController } from "./iclock.controller";
 import { CapitalModule } from "../capital/capital.module";
@@ -15,7 +21,24 @@ import { NotificationsModule } from "../notifications/notifications.module";
 @Module({
   imports: [CapitalModule, NotificationsModule],
   controllers: [PeopleController, IclockController],
-  providers: [DirectoryService, AttendanceService, LeaveService, PayrollService, PerformanceService, TrainingService, RecruitmentService],
+  providers: [
+    DirectoryService,
+    AttendanceService,
+    LeaveService,
+    PayrollService,
+    PerformanceService,
+    TrainingService,
+    RecruitmentService,
+    TeamService,
+    PeopleAutomationService,
+    UtilizationService,
+    MeService,
+    OnboardingService,
+    AssetsService,
+  ],
+  // The Telegram bot commands need attendance punching and leave decisions;
+  // exporting keeps that logic in one place instead of duplicating rules.
+  exports: [AttendanceService, LeaveService, DirectoryService, PayrollService],
 })
 export class PeopleModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

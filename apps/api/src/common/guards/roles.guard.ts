@@ -21,9 +21,15 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest();
     const user: AuthUser = request.user;
-    if (!requiredRoles.includes(user.role)) {
-      throw new ForbiddenException("Insufficient role for this action");
+    if (requiredRoles.includes(user.role)) return true;
+
+    // "CONTROL" is a module permission, not only a role name: any role whose
+    // matrix grants Control → View may use the admin workspace. This keeps the
+    // sidebar (permission-based) and the API (role-based) consistent.
+    if (requiredRoles.includes("CONTROL") && user.permissions?.CONTROL?.view === true) {
+      return true;
     }
-    return true;
+
+    throw new ForbiddenException("Insufficient role for this action");
   }
 }

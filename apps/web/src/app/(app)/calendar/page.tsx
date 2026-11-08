@@ -418,7 +418,7 @@ export default function CalendarPage() {
       apiFetch<any[]>("/calendar/posts"),
       apiFetch<any>("/calendar/stats"),
       apiFetch<any[]>("/calendar/events"),
-      apiFetch<any[]>("/accounts/clients").catch(() => []),
+      apiFetch<any[]>("/accounts/client-lookup").catch(() => []),
       apiFetch<any[]>("/projects").catch(() => []),
     ])
       .then(([p, s, ev, cl, pr]) => {

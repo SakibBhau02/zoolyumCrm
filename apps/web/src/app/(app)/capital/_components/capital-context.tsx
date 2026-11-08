@@ -82,8 +82,8 @@ export function CapitalProvider({ children }: { children: React.ReactNode }) {
   // NOTE: lookups carry ?ts= so every reload() busts the react-query cache.
   // Without it, newly created vendors/accounts/categories/clients only appear
   // after a full page reload (static query keys never refetch).
-  const { data: clients } = useApi<any[]>(`/accounts/clients?ts=${refreshKey}`);
-  const { data: projects } = useApi<any[]>(`/flow/projects?ts=${refreshKey}`);
+  const { data: clients } = useApi<any[]>(`/accounts/client-lookup?ts=${refreshKey}`);
+  const { data: projects } = useApi<any[]>(`/flow/project-lookup?ts=${refreshKey}`);
   const { data: incomeStats } = useApi<any>(`/capital/income/stats?ts=${refreshKey}`);
   const { data: reports } = useApi<any>(`/capital/reports?ts=${refreshKey}`);
   const { data: profitability } = useApi<any>(`/capital/profitability?ts=${refreshKey}`);

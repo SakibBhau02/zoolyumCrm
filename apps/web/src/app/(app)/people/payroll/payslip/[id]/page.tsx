@@ -2,12 +2,13 @@
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Building2, Printer } from "lucide-react";
+import { ArrowLeft, Building2, Download, Printer } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Avatar, EmptyState, PageHeader, SkeletonBlock, StatusBadge } from "@/components/shared";
 import { Btn } from "@/components/table";
 import { formatBDT, formatDate } from "@/lib/format";
 import { useBranding } from "@/lib/branding-context";
+import { buildPayslipPdf } from "@/lib/payslip-pdf";
 
 function Row({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "rose" | "emerald" | "default" }) {
   return (
@@ -27,6 +28,7 @@ export default function PayslipPage() {
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pdfBusy, setPdfBusy] = useState(false);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -39,8 +41,24 @@ export default function PayslipPage() {
   const r = data?.record;
   const breakdown = r?.breakdown ?? {};
   const payslipBranding = data?.company?.branding ?? contextBranding;
+
+  // The payslip had Print only — no file for records, banks or a visa pack.
+  const downloadPdf = async () => {
+    if (!data || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const doc = await buildPayslipPdf(data, payslipBranding);
+      const safeName = String(data.employee?.name ?? "employee").replace(/\s+/g, "-").toLowerCase();
+      doc.save(`payslip-${data.record?.period ?? "salary"}-${safeName}.pdf`);
+    } catch {
+      setError("Could not generate the PDF. Please try again.");
+    } finally {
+      setPdfBusy(false);
+    }
+  };
   const brandingAppName = payslipBranding?.appName ?? data?.company?.name ?? "Zoolyum OS";
   const brandingLogo = payslipBranding?.logoDarkUrl ?? payslipBranding?.logoUrl ?? null;
+
   return (
     <div>
       <div className="print:hidden">
@@ -50,6 +68,9 @@ export default function PayslipPage() {
           actions={
             <div className="flex items-center gap-2">
               <Link href="/people"><Btn variant="outline"><ArrowLeft className="size-3.5" /> Back to People</Btn></Link>
+              <Btn variant="outline" onClick={downloadPdf} disabled={!data || pdfBusy}>
+                <Download className="size-3.5" /> {pdfBusy ? "Preparing…" : "Download PDF"}
+              </Btn>
               <Btn variant="primary" onClick={() => window.print()}><Printer className="size-3.5" /> Print</Btn>
             </div>
           }

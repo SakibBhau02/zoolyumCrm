@@ -3,8 +3,8 @@ import { test, expect } from "@playwright/test";
 test("client can download an invoice PDF from the portal", async ({ page }) => {
   await page.goto("/portal-login");
   await page.getByPlaceholder("you@company.com").fill("principal@gvs.edu.bd");
-  await page.getByPlaceholder("••••••••").fill("portal123");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.locator('input[type="password"]').fill("portal123");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL(/\/portal-client/);
 
   await page.getByRole("button", { name: "Invoices" }).first().click();

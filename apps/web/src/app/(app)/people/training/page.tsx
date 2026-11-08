@@ -8,6 +8,8 @@ import { Btn, Td, Tr } from "@/components/table";
 import { Select } from "@/components/ui";
 import { label } from "../_components/constants";
 import { DataTable, Toast, useList, useToast } from "../_components/hooks";
+import { Pager, useTable } from "../_components/table-kit";
+import { PeopleHero, PeopleTabs } from "../_components/hero";
 import { CourseModal, EnrollModal } from "../_components/modals/training-modals";
 
 export default function TrainingPage() {
@@ -18,6 +20,9 @@ export default function TrainingPage() {
   const { data: employees } = useList<any[]>("/people/employees");
   const [courseOpen, setCourseOpen] = useState(false);
   const [enrollOpen, setEnrollOpen] = useState(false);
+  const [view, setView] = useState<"courses" | "enrollments">("courses");
+  const courseRows = useTable<any>(courses, { keys: (c) => [c.title, c.category, c.provider], pageSize: 7 });
+  const enrollRows = useTable<any>(enrollments, { keys: (en) => [en.course?.title, en.employee?.name, en.status], pageSize: 7 });
   const { flash, notify } = useToast();
   const removeCourse = async (c: any) => {
     try {
@@ -36,22 +41,39 @@ export default function TrainingPage() {
   return (
     <div>
       <Toast flash={flash} />
-      <div className="mb-4">
-        <div className="mb-3 flex items-center justify-between">
-          <SectionTitle title="Courses" subtitle="Learning catalog" />
-          <div className="flex gap-2">
-            <Btn variant="outline" onClick={() => setEnrollOpen(true)}><Users className="size-3.5" /> Enroll</Btn>
-            <Btn variant="primary" onClick={() => setCourseOpen(true)}><Plus className="size-3.5" /> Add Course</Btn>
+      <PeopleHero
+        title="Training"
+        subtitle="Learning catalog and employee progress"
+        stats={[
+          { label: "Courses", value: (courses ?? []).length },
+          { label: "Enrollments", value: (enrollments ?? []).length, tone: "sky" },
+          { label: "Completed", value: (enrollments ?? []).filter((e: any) => (e.progress ?? 0) >= 100).length, tone: "emerald" },
+        ]}
+        actions={
+          <div className="flex gap-1.5">
+            <Btn variant="outline" onClick={() => setEnrollOpen(true)} className="!px-2 !py-1 text-[10.5px]"><Users className="size-3" /> Enroll</Btn>
+            <Btn variant="primary" onClick={() => setCourseOpen(true)} className="!px-2 !py-1 text-[10.5px]"><Plus className="size-3" /> Course</Btn>
           </div>
-        </div>
+        }
+      />
+      <PeopleTabs
+        className="mt-2"
+        value={view}
+        onChange={setView}
+        tabs={[
+          { id: "courses", label: "Courses", count: courseRows.total },
+          { id: "enrollments", label: "Enrollments", count: enrollRows.total },
+        ]}
+      />
+      <div className={view === "courses" ? "mt-2" : "hidden"}>
         <DataTable
           loading={cl}
           error={ce}
           onRetry={reload}
           skeleton={5}
-          footer={<span className="text-[11.5px] text-muted-foreground">{(courses ?? []).length} courses</span>}
+          footer={<div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[11.5px] text-muted-foreground">{courseRows.total} courses</span><Pager page={courseRows.page} pages={courseRows.pages} onPage={courseRows.setPage} total={courseRows.total} pageSize={7} label="courses" /></div>}
           cols={["Course", "Type", "Category", "Duration", "Provider", "Actions"]}
-          rows={(courses ?? []).map((c: any, i: number) => (
+          rows={courseRows.paged.map((c: any, i: number) => (
             <Tr key={c.id} index={i}>
               <Td>
                 <div className="flex items-center gap-2.5">
@@ -68,15 +90,16 @@ export default function TrainingPage() {
           ))}
         />
       </div>
+      <div className={view === "enrollments" ? "mt-2" : "hidden"}>
       <SectionTitle title="Enrollments" subtitle="Employee progress across the catalog" />
       <DataTable
         loading={el}
         error={ee}
         onRetry={reload}
         skeleton={5}
-        footer={<span className="text-[11.5px] text-muted-foreground">{(enrollments ?? []).length} enrollments</span>}
+        footer={<div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[11.5px] text-muted-foreground">{enrollRows.total} enrollments</span><Pager page={enrollRows.page} pages={enrollRows.pages} onPage={enrollRows.setPage} total={enrollRows.total} pageSize={7} label="enrollments" /></div>}
         cols={["Course", "Employee", "Status", "Progress", "Completed"]}
-        rows={(enrollments ?? []).map((en: any, i: number) => (
+        rows={enrollRows.paged.map((en: any, i: number) => (
           <Tr key={en.id} index={i}>
             <Td><p className="font-medium">{en.course?.title}</p></Td>
             <Td><div className="flex items-center gap-2.5"><Avatar name={en.employee?.name} size="size-7" /><p className="text-muted-foreground">{en.employee?.name}</p></div></Td>
@@ -87,7 +110,11 @@ export default function TrainingPage() {
                   <div className={cn("h-full rounded-full", (en.progress ?? 0) >= 100 ? "bg-emerald-500" : "bg-brand-gradient")} style={{ width: `${Math.min(en.progress ?? 0, 100)}%` }} />
                 </div>
                 <Select value={String(en.progress ?? 0)} onChange={(e) => setProgress(en, Number(e.target.value))} className="!w-24 !py-1 !text-[11px]">
-                  {[0, 25, 50, 75, 100].map((p) => <option key={p} value={p}>{p}%</option>)}
+                  {/* Include the stored value even when it is not one of the
+                      presets (40%, 60% …) — otherwise the select renders blank. */}
+                  {Array.from(new Set([0, 25, 50, 75, 100, Number(en.progress ?? 0)])).sort((a, b) => a - b).map((p) => (
+                    <option key={p} value={p}>{p}%</option>
+                  ))}
                 </Select>
               </div>
             </Td>
@@ -95,6 +122,7 @@ export default function TrainingPage() {
           </Tr>
         ))}
       />
+      </div>
       <CourseModal open={courseOpen} onClose={() => setCourseOpen(false)} onSaved={() => { notify("Course added"); reload(); }} />
       <EnrollModal open={enrollOpen} onClose={() => setEnrollOpen(false)} courses={courses ?? []} employees={employees ?? []} onSaved={() => { notify("Employee enrolled"); reload(); }} />
     </div>

@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
+import { OnboardingService } from "./onboarding.service";
 import { dateStrDhaka, invalidatePeopleCache } from "./people-utils";
 
 /** UTC-midnight labelled with today's Dhaka date — matches `attendance.date`. */
@@ -14,7 +15,8 @@ const stripPay = <T extends { salary?: any; costRate?: any }>(e: T, user: any): 
 export class DirectoryService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cache: CacheService
+    private readonly cache: CacheService,
+    private readonly onboarding: OnboardingService
   ) {}
 
   async overview() {    return this.cache.wrap("people:overview", 30, async () => {
@@ -96,6 +98,8 @@ export class DirectoryService {
         tasks: { where: { status: { not: "DONE" } }, take: 10, include: { project: { select: { name: true } } } },
         okrs: { orderBy: { createdAt: "desc" } },
         enrollments: { include: { course: true } },
+        checklists: { include: { items: { orderBy: { sortOrder: "asc" } } }, orderBy: { startedAt: "desc" } },
+        assets: { select: { id: true, tag: true, name: true, category: true, status: true, assignedAt: true }, orderBy: { assignedAt: "desc" } },
       },
     });
     if (!detail) throw new NotFoundException("Employee not found");
@@ -142,6 +146,9 @@ export class DirectoryService {
       },
     });
     await invalidatePeopleCache(this.cache);
+    // Onboarding starts itself — a new hire's first week usually slips because
+    // nobody remembered to open the checklist.
+    await this.onboarding.autoStartOnboarding(result.id);
     return result;
   }
 
@@ -161,6 +168,11 @@ export class DirectoryService {
     if (body.joinDate !== undefined) data.joinDate = new Date(body.joinDate);
     const result = await this.prisma.employee.update({ where: { id }, data });
     await invalidatePeopleCache(this.cache);
+    // Exiting an employee opens the offboarding run so gear and access are
+    // actually collected instead of living in someone's memory.
+    if (body.employmentStatus === "EXITED" && existing.employmentStatus !== "EXITED") {
+      await this.onboarding.autoStartOffboarding(id);
+    }
     return result;
   }
 
@@ -173,8 +185,16 @@ export class DirectoryService {
   }
 
   // ── Org chart ────────────────────────────────────────────────────────
+  /**
+   * Returns a real tree, not a flat list. The UI drew one row per employee and
+   * badged every row "Lead" because it expected `directReports` that the API
+   * never produced. Parents are matched by `reportingManagerId`, and anyone
+   * caught in a reporting cycle is promoted to a root so the chart cannot lose
+   * people silently.
+   */
   async orgChart() {
     const employees = await this.prisma.employee.findMany({
+      where: { employmentStatus: { not: "EXITED" } },
       select: {
         id: true,
         name: true,
@@ -182,11 +202,46 @@ export class DirectoryService {
         department: true,
         reportingManagerId: true,
         employmentStatus: true,
+        email: true,
+        workLocation: true,
         _count: { select: { reports: true } },
       },
       orderBy: { name: "asc" },
     });
-    return employees;
+
+    type Node = (typeof employees)[number] & { directReports: Node[] };
+    const byId = new Map<string, Node>();
+    for (const e of employees) byId.set(e.id, { ...e, directReports: [] });
+
+    const roots: Node[] = [];
+    for (const node of byId.values()) {
+      const parent = node.reportingManagerId ? byId.get(node.reportingManagerId) : null;
+      if (parent && parent.id !== node.id) parent.directReports.push(node);
+      else roots.push(node);
+    }
+
+    // Promote cycle members (A→B→A) that never got a root.
+    const seen = new Set<string>();
+    const walk = (n: Node) => {
+      if (seen.has(n.id)) return;
+      seen.add(n.id);
+      n.directReports.forEach(walk);
+    };
+    roots.forEach(walk);
+    for (const node of byId.values()) {
+      if (!seen.has(node.id)) {
+        seen.add(node.id);
+        walk(node);
+        roots.push(node);
+      }
+    }
+
+    const sortRec = (list: Node[]) => {
+      list.sort((a, b) => a.name.localeCompare(b.name));
+      list.forEach((n) => sortRec(n.directReports));
+    };
+    sortRec(roots);
+    return roots;
   }
 
   // ── Skills matrix ────────────────────────────────────────────────────

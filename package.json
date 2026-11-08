@@ -12,10 +12,15 @@
     "db:migrate": "npm run prisma:migrate --prefix apps/api",
     "db:seed": "npm run prisma:seed --prefix apps/api",
     "db:reset": "npm run prisma:reset --prefix apps/api",
-    "dev": "start /b cmd /c \"npm run dev:api > %TEMP%\\dev-api.log 2>&1\" && start /b cmd /c \"npm run dev:web > %TEMP%\\dev-web.log 2>&1\"",
+    "dev": "node scripts/dev.mjs",
+    "dev:check": "node scripts/dev.mjs --check",
     "dev:api": "npm run start:dev --prefix apps/api",
     "dev:web": "npm run dev --prefix apps/web",
-    "build": "npm run build --prefix apps/api && npm run build --prefix apps/web"
+    "build": "npm run build --prefix apps/api && npm run build --prefix apps/web",
+    "typecheck": "npm run typecheck --prefix apps/api && npm run typecheck --prefix apps/web",
+    "test:smoke": "node scripts/smoke.mjs",
+    "test:e2e": "npm run test:e2e --prefix apps/web",
+    "check": "npm run typecheck && npm run test:smoke"
   },
   "engines": {
     "node": ">=20.9"

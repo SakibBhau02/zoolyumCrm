@@ -36,9 +36,14 @@ npm run db:migrate        # prisma migrate dev --name init
 # 4. seed realistic demo data (roles, users, leads, clients, projects, invoices…)
 npm run db:seed
 
-# 5. run both apps
+# 5. run both apps (waits for Postgres/Redis first, then starts API + web)
 npm run dev
 ```
+
+> `npm run dev` probes `DATABASE_URL`/`REDIS_URL` from `apps/api/.env` and waits up to
+> 120s for them to accept connections before booting Nest — so a cold start no longer
+> crashes with `P1001 / Failed to fetch`. Use `npm run dev:check` to test readiness only,
+> or `node scripts/dev.mjs --timeout 30` to change the wait.
 
 - Web: http://localhost:3000
 - API: http://localhost:4000/api
@@ -72,6 +77,10 @@ npm run dev
 ```bash
 npm run db:reset    # migrate reset + re-seed (destructive)
 npm run build       # build api + web
+npm run typecheck   # tsc --noEmit for api + web
+npm run test:smoke  # live API smoke + authorization gate (needs API + seeded DB)
+npm run test:e2e    # Playwright suite (starts API + web automatically)
+npm run check       # typecheck + smoke
 ```
 
 ## Design system

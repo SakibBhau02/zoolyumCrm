@@ -1,7 +1,9 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { DashboardService } from "./dashboard.service";
 import { AiInsightService } from "./ai-insight.service";
+import { RequirePermission } from "../../common/decorators/require-permission.decorator";
 
+@RequirePermission("INSIGHT")
 @Controller("insight/presentation")
 export class PresentationController {
   constructor(private readonly dash: DashboardService, private readonly ai: AiInsightService) {}

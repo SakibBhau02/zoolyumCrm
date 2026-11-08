@@ -144,6 +144,7 @@ export function SavedViewBar({
       <span className="ml-1 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground/70">
         Group by
         <select
+          aria-label="Group tasks by"
           value={currentGroupBy}
           onChange={(e) => onApply({ id: "__group__", name: "", filters: currentFilters, viewMode: currentView, groupBy: e.target.value, isShared: false })}
           className="rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-semibold normal-case tracking-normal text-foreground outline-none focus:border-primary/40"

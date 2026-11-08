@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { CalendarService } from "./calendar.service";
+import { RequirePermission } from "../common/decorators/require-permission.decorator";
 
+@RequirePermission("FLOW")
 @Controller("calendar")
 export class CalendarController {
   constructor(private readonly service: CalendarService) {}

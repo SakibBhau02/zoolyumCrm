@@ -143,7 +143,15 @@ export class LeaveService {
     };
   }
 
-  async applyLeave(body: { employeeId: string; leaveType: string; startDate: string; endDate: string }) {
+  async applyLeave(body: { employeeId: string; leaveType: string; startDate: string; endDate: string }, user?: any) {
+    // Staff without HR rights may only apply for themselves — the form lists
+    // every employee, so without this any user could book leave for a colleague.
+    const role = user?.role ?? "";
+    const isHr = /owner|hr|admin/i.test(role);
+    if (user?.sub && !isHr) {
+      const self = await this.prisma.employee.findFirst({ where: { user: { id: user.sub } }, select: { id: true } });
+      if (self?.id) body = { ...body, employeeId: self.id };
+    }
     const emp = await this.prisma.employee.findUnique({ where: { id: body.employeeId }, select: { id: true, name: true } });
     if (!emp) throw new NotFoundException("Employee not found");
     const valid = ["CASUAL", "SICK", "EARNED", "UNPAID"];
@@ -188,7 +196,7 @@ export class LeaveService {
         "LEAVE_REQUEST",
         "Leave request submitted",
         `${leave.employee?.name ?? "Someone"} requested ${body.leaveType} leave (${from} → ${to}, ${working.working} working day(s)).`,
-        "/people/leave"
+        `/people/leave?request=${leave.id}`
       );
     } catch {}
     return { ...leave, totalDays, workingDays: working.working };
@@ -285,7 +293,7 @@ export class LeaveService {
     await invalidatePeopleCache(this.cache);
   }
 
-  private async notifyLeaveStatus(leave: { employeeId: string; leaveType: string; startDate: Date; endDate: Date }, approved: boolean) {
+  private async notifyLeaveStatus(leave: { id: string; employeeId: string; leaveType: string; startDate: Date; endDate: Date }, approved: boolean) {
     try {
       const userId = await this.notifications.userIdForEmployee(leave.employeeId);
       if (userId) {
@@ -294,7 +302,7 @@ export class LeaveService {
           "LEAVE_STATUS",
           approved ? "Leave approved" : "Leave rejected",
           `Your ${leave.leaveType} leave (${dateStrDhaka(leave.startDate)} → ${dateStrDhaka(leave.endDate)}) was ${approved ? "approved" : "rejected"}.`,
-          "/people/leave"
+          `/people/leave?request=${leave.id}`
         );
       }
     } catch {}

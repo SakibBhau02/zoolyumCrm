@@ -197,10 +197,12 @@
 /* ─── Print (invoice print preview) ─── */
 @media print {
   @page {
-    size: A4;
+    size: A4 portrait;
     margin: 10mm;
   }
+  html,
   body {
+    width: 210mm;
     background: #fff !important;
   }
   body * {
@@ -210,20 +212,69 @@
   .invoice-print-area * {
     visibility: visible;
   }
+  /* The sheet is a true A4 content box: 210mm page − 2 × 10mm page margins.
+     Using 100% previously let the sheet grow to the viewport width, which
+     changed every column's proportion when printing from a wide screen. */
   .invoice-print-area {
     position: absolute;
     left: 0;
     top: 0;
-    width: 100%;
-    max-width: none !important;
+    width: 190mm !important;
+    max-width: 190mm !important;
+    min-width: 190mm !important;
     margin: 0 !important;
     padding: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+  /* Any modal scroll container must not clip the print sheet. */
+  .invoice-print-host,
+  .invoice-print-host * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  .invoice-print-area table,
+  .invoice-print-area tr {
+    page-break-inside: avoid;
   }
   .no-print {
     display: none !important;
   }
+}
+
+/* ─── Popover panel ─── */
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-pop-in {
+  animation: pop-in 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-pop-in { animation: none; }
+}
+
+/* Slim scroll area used by inbox / notification panels */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.5 0.05 285 / 25%) transparent;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 6px;
+}
+.scroll-slim::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: oklch(0.5 0.05 285 / 25%);
+  border-radius: 999px;
+}
+.scroll-slim::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.5 0.05 285 / 45%);
 }
 
 /* ─── Scrollbar ─── */

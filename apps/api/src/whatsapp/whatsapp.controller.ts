@@ -4,8 +4,10 @@ import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { WhatsappConfigService } from "./whatsapp-config.service";
 import { WhatsappSenderService } from "./whatsapp-sender.service";
 import { WhatsappTriggersService } from "./whatsapp-triggers.service";
+import { RequirePermission } from "../common/decorators/require-permission.decorator";
 
 /** Control-panel management (credentials from here, never from env files). */
+@RequirePermission("CONTROL")
 @Controller("control/whatsapp")
 export class WhatsappAdminController {
   constructor(

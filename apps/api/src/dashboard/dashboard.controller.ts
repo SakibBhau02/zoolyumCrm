@@ -11,6 +11,11 @@ export class DashboardController {
     return this.dashboard.overview();
   }
 
+  @Get("home")
+  home(@CurrentUser() user: any) {
+    return this.dashboard.home(user?.role, user?.sub, user?.permissions);
+  }
+
   @Get("scoped")
   scoped(@CurrentUser("role") role: string) {
     return this.dashboard.scoped(role);

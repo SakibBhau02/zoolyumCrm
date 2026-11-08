@@ -5,6 +5,7 @@ import { Check, Loader2, Pause, Play, Plus, Timer, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/components/shared";
 import { Btn } from "@/components/table";
+import { useTaskTimer } from "./timer-context";
 
 export interface ChecklistItem {
   id: string;
@@ -121,8 +122,8 @@ export function ChecklistTab({ taskId, onChanged }: { taskId: string; onChanged?
               )}
               <button
                 onClick={() => remove(item)}
+                aria-label={`Delete checklist item: ${item.content}`}
                 className="flex size-6 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100"
-                aria-label="Delete item"
               >
                 <Trash2 className="size-3" />
               </button>
@@ -173,46 +174,36 @@ function fmtElapsed(ms: number) {
  * by navigating between views.
  */
 export function TimerPill({ onStopped }: { onStopped?: () => void }) {
-  const [timer, setTimer] = useState<RunningTimer | null>(null);
+  const { running, setRunning } = useTaskTimer();
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState(false);
-  const loaded = useRef(false);
-
-  useEffect(() => {
-    apiFetch<RunningTimer | null>("/tasks/timers/running")
-      .then((t) => setTimer(t))
-      .catch(() => setTimer(null))
-      .finally(() => {
-        loaded.current = true;
-      });
-  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
 
-  if (!timer) return null;
+  if (!running) return null;
 
   const stop = async () => {
     if (busy) return;
     setBusy(true);
     try {
-      await apiFetch(`/tasks/${timer.taskId}/timer/stop`, { method: "POST" });
-      setTimer(null);
+      await apiFetch(`/tasks/${running.taskId}/timer/stop`, { method: "POST" });
+      setRunning(null);
       onStopped?.();
     } finally {
       setBusy(false);
     }
   };
 
-  const elapsed = Date.now() - new Date(timer.startedAt).getTime();
+  const elapsed = Date.now() - new Date(running.startedAt).getTime();
   void tick; // referenced so the interval re-renders
 
   return (
     <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-1.5">
       <Timer className="size-3.5 shrink-0 text-primary" />
-      <span className="max-w-32 truncate text-[11.5px] font-semibold">{timer.task?.title ?? "Task"}</span>
+      <span className="max-w-32 truncate text-[11.5px] font-semibold">{running.task?.title ?? "Task"}</span>
       <span className="font-mono text-[11.5px] font-bold tabular-nums text-primary">{fmtElapsed(elapsed)}</span>
       <button
         onClick={stop}
@@ -228,20 +219,9 @@ export function TimerPill({ onStopped }: { onStopped?: () => void }) {
 
 /** Play/stop control on a task card or in the detail header. */
 export function TaskTimerButton({ taskId, onChanged, compact }: { taskId: string; onChanged?: () => void; compact?: boolean }) {
-  const [runningId, setRunningId] = useState<string | null>(null);
+  const { running, refresh, setRunning } = useTaskTimer();
   const [busy, setBusy] = useState(false);
-
-  const refresh = useCallback(() => {
-    apiFetch<RunningTimer | null>("/tasks/timers/running")
-      .then((t) => setRunningId(t?.taskId ?? null))
-      .catch(() => setRunningId(null));
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const isMine = runningId === taskId;
+  const isMine = running?.taskId === taskId;
 
   const toggle = async () => {
     if (busy) return;
@@ -249,10 +229,11 @@ export function TaskTimerButton({ taskId, onChanged, compact }: { taskId: string
     try {
       if (isMine) {
         await apiFetch(`/tasks/${taskId}/timer/stop`, { method: "POST" });
-        setRunningId(null);
+        setRunning(null);
       } else {
         await apiFetch(`/tasks/${taskId}/timer/start`, { method: "POST", body: JSON.stringify({}) });
-        setRunningId(taskId);
+        // Re-read so the pill gets the server timestamp/title rather than a guess.
+        await refresh();
       }
       onChanged?.();
     } finally {
@@ -260,11 +241,14 @@ export function TaskTimerButton({ taskId, onChanged, compact }: { taskId: string
     }
   };
 
+  const label = isMine ? "Stop timer" : "Start timer";
   return (
     <button
       onClick={toggle}
       disabled={busy}
-      title={isMine ? "Stop timer" : "Start timer"}
+      title={label}
+      aria-label={label}
+      aria-pressed={isMine}
       className={cn(
         "flex items-center justify-center rounded-lg transition-colors disabled:opacity-50",
         compact ? "size-6" : "size-7",

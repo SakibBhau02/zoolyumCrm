@@ -9,12 +9,17 @@ import { Public } from "../common/decorators/public.decorator";
 export class NotificationsController {
   constructor(private readonly service: NotificationsService) {}
 
+  @Get("sse-token")
+  sseToken(@CurrentUser("sub") userId: string) {
+    return { token: this.service.signSseToken(userId), expiresIn: 120 };
+  }
+
   @Public()
   @Sse("sse")
   sse(@Query("token") token: string): Observable<MessageEvent> {
     let payload;
     try {
-      payload = this.service.verifyToken(token);
+      payload = this.service.verifySseToken(token);
     } catch {
       throw new UnauthorizedException("Invalid token");
     }
@@ -29,8 +34,18 @@ export class NotificationsController {
   }
 
   @Get()
-  list(@CurrentUser("sub") userId: string, @Query("limit") limit?: string) {
-    return this.service.getForUser(userId, limit ? Number(limit) : 30);
+  list(@CurrentUser("sub") userId: string, @Query() query: any) {
+    return this.service.getForUser(userId, {
+      limit: query.limit ? Number(query.limit) : undefined,
+      skip: query.skip ? Number(query.skip) : undefined,
+      unread: query.unread === "true" || query.unread === "1",
+      category: query.category || undefined,
+    });
+  }
+
+  @Get("summary")
+  summary(@CurrentUser("sub") userId: string) {
+    return this.service.getSummary(userId);
   }
 
   @Post()

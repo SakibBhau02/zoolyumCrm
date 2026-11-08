@@ -53,14 +53,19 @@ export function PageHeader({
 export function CardShell({
   children,
   className,
+  id,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Anchor target for in-page section navigation. */
+  id?: string;
 }) {
   return (
     <div
+      id={id}
       className={cn(
         "card-lift rounded-2xl border border-border/60 bg-card p-5 shadow-sm",
+        id && "scroll-mt-24",
         className
       )}
     >

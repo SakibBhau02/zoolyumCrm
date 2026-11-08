@@ -3,9 +3,10 @@ import { useCallback, useState } from "react";
 import { CalendarOff, Plus, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatDate } from "@/lib/format";
-import { EmptyState, FadeIn, SectionTitle } from "@/components/shared";
+import { EmptyState, FadeIn } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { LoadOrError, Toast, useList, useToast } from "../_components/hooks";
+import { PeopleHero } from "../_components/hero";
 import { HolidayModal } from "../_components/modals/holiday-modal";
 
 export default function HolidaysPage() {
@@ -24,10 +25,17 @@ export default function HolidaysPage() {
   return (
     <div>
       <Toast flash={flash} />
-      <div className="mb-3 flex items-center justify-between">
-        <SectionTitle title="Holidays" subtitle="Company-wide days off" />
-        <Btn variant="primary" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Add Holiday</Btn>
-      </div>
+      <PeopleHero
+        icon={<CalendarOff className="size-4" />}
+        title="Holidays"
+        subtitle="Company-wide days off — government, festival and tentative"
+        stats={[
+          { label: "Holidays", value: (holidays ?? []).length },
+          { label: "Govt", value: (holidays ?? []).filter((h: any) => h.isGovernment).length, tone: "emerald" },
+          { label: "Tentative", value: (holidays ?? []).filter((h: any) => h.tentative).length, tone: "amber" },
+        ]}
+        actions={<Btn variant="primary" onClick={() => setOpen(true)} className="!px-2.5 !py-1.5 text-[11px]"><Plus className="size-3.5" /> Add</Btn>}
+      />
       <LoadOrError loading={loading} error={error} onRetry={reload} skeleton={4} />
       {!loading && !error && (
         <FadeIn>

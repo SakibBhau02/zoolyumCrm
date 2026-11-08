@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate --schema apps/api/prisma/schema.prisma
+      - run: npm run typecheck
+      - run: npm run build
+
+  e2e:
+    name: Smoke + E2E
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: zoolyum
+          POSTGRES_PASSWORD: zoolyum
+          POSTGRES_DB: zoolyum_os
+        ports: ["5544:5432"]
+        options: >-
+          --health-cmd "pg_isready -U zoolyum -d zoolyum_os"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://zoolyum:zoolyum@localhost:5544/zoolyum_os?schema=public
+      REDIS_URL: redis://localhost:6380
+      JWT_SECRET: ci-only-secret-not-used-in-production-please-rotate
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api
+      CORS_ORIGINS: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate --schema apps/api/prisma/schema.prisma
+      - run: npx prisma migrate deploy --schema apps/api/prisma/schema.prisma
+      - run: npm run db:seed
+      - name: Start API
+        run: npm run dev:api &
+      - name: Wait for API
+        run: npx wait-on http://localhost:4000/api/auth/me --timeout 120000 || true
+      - name: Smoke + authorization gate
+        run: npm run test:smoke
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - name: E2E
+        run: npx playwright test
+        working-directory: apps/web
+        env:
+          CI: "true"

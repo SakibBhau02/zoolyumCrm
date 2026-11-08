@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Pencil, Plus, X } from "lucide-react";
+import { AlertCircle, Pencil, Plus, ReceiptText, X } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatBDT, formatDate } from "@/lib/format";
-import { EmptyState, StatusBadge } from "@/components/shared";
+import { EmptyState, StatusBadge, cn } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
-import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
+import { Field, FormActions, FormSection, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 import { useBranding } from "@/lib/branding-context";
 import { INVOICE_TEMPLATES, accountsForMethod, invoiceTotals, numberToWords } from "@/lib/invoice-utils";
@@ -92,9 +92,9 @@ const TEMPLATE_SWATCH: Record<string, string> = {
   "classic-corporate": "bg-[#2563eb]",
 };
 
-function TemplatePicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function TemplatePicker({ value, onChange, compact }: { value: string; onChange: (v: string) => void; compact?: boolean }) {
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div className={cn("grid gap-2", compact ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-4")}>
       {INVOICE_TEMPLATES.map((t) => (
         <button
           key={t.value}
@@ -173,12 +173,14 @@ const blankForm = (): InvoiceFormState => ({
   lines: [{ description: "", unitPrice: "", quantity: "1" }],
 });
 
-function InvoiceFormBody({ f, setF, clients, projects, showNumber }: {
+function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = false }: {
   f: InvoiceFormState;
   setF: (v: InvoiceFormState) => void;
   clients: any[];
   projects: any[];
   showNumber: boolean;
+  /** Two-pane, sectioned layout used by the create sheet. */
+  sectioned?: boolean;
 }) {
   const updateLine = (i: number, key: keyof InvoiceLineDraft, v: string) =>
     setF({ ...f, lines: f.lines.map((l, idx) => (idx === i ? { ...l, [key]: v } : l)) });
@@ -286,116 +288,221 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber }: {
   })();
   const showAdvanceInput = !!selectedProject && (selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME";
 
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-4">
-        {showNumber && <Field label="Invoice number *"><Input value={f.invoiceNumber} onChange={(e) => setF({ ...f, invoiceNumber: e.target.value })} placeholder="ZLM-2026-0001" className="font-mono" /></Field>}
-        <Field label="Client *"><Select value={f.clientId} onChange={(e) => onClientChange(e.target.value)}><option value="">Select client…</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
-        <Field label="Project">
-          <Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)}>
-            <option value="">No project</option>
-            {visibleProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-          {f.clientId && visibleProjects.length === 0 && (
-            <p className="mt-1 text-[11px] text-muted-foreground">No projects under this client yet.</p>
-          )}
-          {showAdvanceInput && (
-            <div className="mt-2 flex items-center gap-2">
-              <div className="relative w-28">
-                <Input type="number" min={0} max={100} step="any" value={f.advancePct} onChange={(e) => applyAdvancePct(e.target.value)} placeholder="50" className="pr-7" />
-                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] font-bold text-muted-foreground">%</span>
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                {advancePreview ? <span>Advance <span className="font-bold tabular-nums text-foreground">{advancePreview}</span> of {formatBDT(projectValue(selectedProject, projFin))}</span> : "Milestone % of project value"}
-              </p>
+  const totals = invoiceTotals({
+    lineItems: f.lines.map((l) => ({ amount: (Number(l.unitPrice) || 0) * (Number(l.quantity) || 0) })),
+    taxApplicable: f.taxApplicable,
+    taxRate: Number(f.taxRate) || 0,
+    discountRate: Number(f.discountRate) || 0,
+    shippingFee: Number(f.shippingFee) || 0,
+    payments: [],
+  });
+  const clientName = (clients ?? []).find((c: any) => c.id === f.clientId)?.companyName ?? null;
+  const filledLines = f.lines.filter((l) => l.description.trim()).length;
+
+  const partyFields = (
+    <>
+      {showNumber && <Field label="Invoice number *"><Input value={f.invoiceNumber} onChange={(e) => setF({ ...f, invoiceNumber: e.target.value })} placeholder="ZLM-2026-0001" className="font-mono" /></Field>}
+      <Field label="Client *"><Select value={f.clientId} onChange={(e) => onClientChange(e.target.value)}><option value="">Select client…</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
+      <Field label="Project">
+        <Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)}>
+          <option value="">No project</option>
+          {visibleProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </Select>
+        {f.clientId && visibleProjects.length === 0 && (
+          <p className="mt-1 text-[11px] text-muted-foreground">No projects under this client yet.</p>
+        )}
+        {showAdvanceInput && (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="relative w-28">
+              <Input type="number" min={0} max={100} step="any" value={f.advancePct} onChange={(e) => applyAdvancePct(e.target.value)} placeholder="50" className="pr-7" />
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] font-bold text-muted-foreground">%</span>
             </div>
-          )}
-          {showAdvanceInput && Number(f.advancePct) > 0 && Number(f.advancePct) <= 100 && !systemLines(f.lines) && (
-            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Line edited by hand — clear it to apply the % again.</p>
-          )}
-          {showAdvanceInput && projFin && Number(f.advancePct) > 0 && Number(f.advancePct) <= 100 &&
-            Math.round((projectValue(selectedProject, projFin) * Number(f.advancePct)) / 100 * 100) / 100 > projectRemaining(selectedProject, projFin) && (
-            <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-              {String(Number(f.advancePct))}% of full value ({formatBDT(projectValue(selectedProject, projFin))}) exceeds the remaining {formatBDT(projectRemaining(selectedProject, projFin))} — {formatBDT(projFin.totalInvoiced ?? 0)} already billed.
+            <p className="text-[11px] text-muted-foreground">
+              {advancePreview ? <span>Advance <span className="font-bold tabular-nums text-foreground">{advancePreview}</span> of {formatBDT(projectValue(selectedProject, projFin))}</span> : "Milestone % of project value"}
             </p>
-          )}
-          {projFinLoading && f.projectId && (
-            <p className="mt-1 text-[11px] text-muted-foreground">Loading billing status…</p>
-          )}
-          {!projFinLoading && projFin && f.projectId && selectedProject && (
-            <div className="mt-2 rounded-xl bg-muted/40 px-3 py-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Project billing</p>
-                {projFin.project?.paymentStatus && <StatusBadge status={projFin.project.paymentStatus} />}
-              </div>
-              <div className="mt-1.5 grid grid-cols-4 gap-2">
-                <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Value</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT(projectValue(selectedProject, projFin))}</p></div>
-                <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Billed</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT(projFin.totalInvoiced ?? 0)}</p></div>
-                <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Paid</p><p className="text-[12.5px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(projFin.collected ?? 0)}</p></div>
-                <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">{(selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? "Remaining" : "Outstanding"}</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT((selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? projectRemaining(selectedProject, projFin) : (projFin.outstanding ?? 0))}</p></div>
-              </div>
-              {(projFin.invoices ?? []).length > 0 && (
-                <div className="mt-2 flex flex-col gap-1 border-t border-border/60 pt-2">
-                  {(projFin.invoices ?? []).slice(0, 5).map((inv: any) => (
-                    <div key={inv.id} className="flex items-center justify-between gap-2 text-[11.5px]">
-                      <span className="min-w-0">
-                        <span className="font-medium tabular-nums">{inv.invoiceNumber}</span>
-                        {inv.title && <span className="block truncate text-[10.5px] text-muted-foreground">{inv.title}</span>}
-                      </span>
-                      <span className="flex shrink-0 items-center gap-1.5">
-                        {inv.invoiceType === "ADVANCE" && (
-                          <span className="rounded-full bg-amber-500/15 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Adv</span>
-                        )}
-                        <StatusBadge status={inv.status} />
-                        <span className="tabular-nums text-muted-foreground">bal {formatBDT(inv.balance ?? 0)}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </Field>
-        <Field label="Issue date"><Input type="date" value={f.issueDate} onChange={(e) => setF({ ...f, issueDate: e.target.value })} /></Field>
-        <Field label="Due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
-        <Field label="Status"><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select></Field>
-        <Field label="Type"><Select value={f.invoiceType} onChange={(e) => setF({ ...f, invoiceType: e.target.value })}>{["ONE_TIME", "RECURRING", "ADVANCE", "COMBINED"].map((t) => <option key={t} value={t}>{label(t)}</option>)}</Select></Field>
-        <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
-        <Field label="Tax (VAT %)">
-          <div className="flex items-center gap-2">
-            <label className="flex cursor-pointer items-center gap-1.5 text-[12px]">
-              <input type="checkbox" checked={f.taxApplicable} onChange={(e) => setF({ ...f, taxApplicable: e.target.checked })} className="size-3.5 accent-primary" />
-              Apply
-            </label>
-            <Input type="number" min={0} max={100} step="0.01" value={f.taxRate} onChange={(e) => setF({ ...f, taxRate: e.target.value })} placeholder="5" className="!w-20" disabled={!f.taxApplicable} />
           </div>
-        </Field>
-        <Field label="Discount %"><Input type="number" min={0} max={100} step="0.01" value={f.discountRate} onChange={(e) => setF({ ...f, discountRate: e.target.value })} placeholder="0" /></Field>
-        <Field label="Shipping / Delivery"><Input type="number" min={0} step="0.01" value={f.shippingFee} onChange={(e) => setF({ ...f, shippingFee: e.target.value })} placeholder="0" /></Field>
-        {f.currency !== "BDT" && <Field label={`Rate (1 ${f.currency} → BDT) *`}><Input type="number" min={0} step="0.01" value={f.exchangeRate} onChange={(e) => setF({ ...f, exchangeRate: e.target.value })} placeholder="e.g. 120" /></Field>}
-      </div>
-      <Field label="Line items">
-        <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-[1fr_90px_70px_84px_32px] items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <span>Description</span><span className="text-right">Rate</span><span className="text-right">Qty</span><span className="text-right">Amount</span><span />
-          </div>
-          {f.lines.map((l, i) => (
-            <div key={i} className="grid grid-cols-[1fr_90px_70px_84px_32px] items-center gap-2">
-              <Input value={l.description} onChange={(e) => updateLine(i, "description", e.target.value)} placeholder="Design retainer…" />
-              <Input type="number" min={0} step="0.01" value={l.unitPrice} onChange={(e) => updateLine(i, "unitPrice", e.target.value)} placeholder="Rate" />
-              <Input type="number" min={0} step="0.01" value={l.quantity} onChange={(e) => updateLine(i, "quantity", e.target.value)} placeholder="Qty" />
-              <span className="text-right text-[12px] font-semibold tabular-nums">{formatBDT((Number(l.unitPrice) || 0) * (Number(l.quantity) || 0))}</span>
-              <button type="button" onClick={() => setF({ ...f, lines: f.lines.filter((_, idx) => idx !== i) })} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="size-3.5" /></button>
+        )}
+        {showAdvanceInput && Number(f.advancePct) > 0 && Number(f.advancePct) <= 100 && !systemLines(f.lines) && (
+          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Line edited by hand — clear it to apply the % again.</p>
+        )}
+        {showAdvanceInput && projFin && Number(f.advancePct) > 0 && Number(f.advancePct) <= 100 &&
+          Math.round((projectValue(selectedProject, projFin) * Number(f.advancePct)) / 100 * 100) / 100 > projectRemaining(selectedProject, projFin) && (
+          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+            {String(Number(f.advancePct))}% of full value ({formatBDT(projectValue(selectedProject, projFin))}) exceeds the remaining {formatBDT(projectRemaining(selectedProject, projFin))} — {formatBDT(projFin.totalInvoiced ?? 0)} already billed.
+          </p>
+        )}
+        {projFinLoading && f.projectId && (
+          <p className="mt-1 text-[11px] text-muted-foreground">Loading billing status…</p>
+        )}
+        {!projFinLoading && projFin && f.projectId && selectedProject && (
+          <div className="mt-2 rounded-xl bg-muted/40 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Project billing</p>
+              {projFin.project?.paymentStatus && <StatusBadge status={projFin.project.paymentStatus} />}
             </div>
-          ))}
-          <button type="button" onClick={() => setF({ ...f, lines: [...f.lines, { description: "", unitPrice: "", quantity: "1" }] })} className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3" /> Add line item</button>
-          <InvoiceTotalsPreview lines={f.lines} taxApplicable={f.taxApplicable} taxRate={f.taxRate} discountRate={f.discountRate} shippingFee={f.shippingFee} currency={f.currency} />
+            <div className="mt-1.5 grid grid-cols-4 gap-2">
+              <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Value</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT(projectValue(selectedProject, projFin))}</p></div>
+              <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Billed</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT(projFin.totalInvoiced ?? 0)}</p></div>
+              <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Paid</p><p className="text-[12.5px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(projFin.collected ?? 0)}</p></div>
+              <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">{(selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? "Remaining" : "Outstanding"}</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT((selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? projectRemaining(selectedProject, projFin) : (projFin.outstanding ?? 0))}</p></div>
+            </div>
+            {(projFin.invoices ?? []).length > 0 && (
+              <div className="mt-2 flex flex-col gap-1 border-t border-border/60 pt-2">
+                {(projFin.invoices ?? []).slice(0, 5).map((inv: any) => (
+                  <div key={inv.id} className="flex items-center justify-between gap-2 text-[11.5px]">
+                    <span className="min-w-0">
+                      <span className="font-medium tabular-nums">{inv.invoiceNumber}</span>
+                      {inv.title && <span className="block truncate text-[10.5px] text-muted-foreground">{inv.title}</span>}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {inv.invoiceType === "ADVANCE" && (
+                        <span className="rounded-full bg-amber-500/15 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Adv</span>
+                      )}
+                      <StatusBadge status={inv.status} />
+                      <span className="tabular-nums text-muted-foreground">bal {formatBDT(inv.balance ?? 0)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </Field>
+      <Field label="Issue date"><Input type="date" value={f.issueDate} onChange={(e) => setF({ ...f, issueDate: e.target.value })} /></Field>
+      <Field label="Due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
+    </>
+  );
+
+  const pricingFields = (
+    <>
+      <Field label="Status"><Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select></Field>
+      <Field label="Type"><Select value={f.invoiceType} onChange={(e) => setF({ ...f, invoiceType: e.target.value })}>{["ONE_TIME", "RECURRING", "ADVANCE", "COMBINED"].map((t) => <option key={t} value={t}>{label(t)}</option>)}</Select></Field>
+      <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
+      <Field label="Tax (VAT %)">
+        <div className="flex items-center gap-2">
+          <label className="flex cursor-pointer items-center gap-1.5 text-[12px]">
+            <input type="checkbox" checked={f.taxApplicable} onChange={(e) => setF({ ...f, taxApplicable: e.target.checked })} className="size-3.5 accent-primary" />
+            Apply
+          </label>
+          <Input type="number" min={0} max={100} step="0.01" value={f.taxRate} onChange={(e) => setF({ ...f, taxRate: e.target.value })} placeholder="5" className="!w-20" disabled={!f.taxApplicable} />
         </div>
       </Field>
-      <Field label="PDF template"><TemplatePicker value={f.templateStyle} onChange={(v) => setF({ ...f, templateStyle: v })} /></Field>
-      <Field label="Payment instructions (printed on invoice)"><PaymentDetailsFields value={f.pay} onChange={(pay) => setF({ ...f, pay })} /></Field>
-      <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Payment terms, references…" /></Field>
-      <Field label="Terms & conditions"><Textarea value={f.terms} onChange={(e) => setF({ ...f, terms: e.target.value })} placeholder="Payment is due within 15 days…" /></Field>
+      <Field label="Discount %"><Input type="number" min={0} max={100} step="0.01" value={f.discountRate} onChange={(e) => setF({ ...f, discountRate: e.target.value })} placeholder="0" /></Field>
+      <Field label="Shipping / Delivery"><Input type="number" min={0} step="0.01" value={f.shippingFee} onChange={(e) => setF({ ...f, shippingFee: e.target.value })} placeholder="0" /></Field>
+      {f.currency !== "BDT" && <Field label={`Rate (1 ${f.currency} → BDT) *`}><Input type="number" min={0} step="0.01" value={f.exchangeRate} onChange={(e) => setF({ ...f, exchangeRate: e.target.value })} placeholder="e.g. 120" /></Field>}
+    </>
+  );
+
+  const lineItemsBlock = (
+    <div className="overflow-hidden rounded-xl border border-border/60">
+      <div className="grid grid-cols-[minmax(0,1fr)_92px_72px_96px_34px] items-center gap-2 border-b border-border/50 bg-muted/25 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        <span>Description</span><span className="text-right">Rate</span><span className="text-right">Qty</span><span className="text-right">Amount</span><span />
+      </div>
+      <div className="divide-y divide-border/40">
+        {f.lines.map((l, i) => (
+          <div key={i} className="grid grid-cols-[minmax(0,1fr)_92px_72px_96px_34px] items-center gap-2 px-3 py-2">
+            <Input value={l.description} onChange={(e) => updateLine(i, "description", e.target.value)} placeholder="Design retainer…" />
+            <Input type="number" min={0} step="0.01" value={l.unitPrice} onChange={(e) => updateLine(i, "unitPrice", e.target.value)} placeholder="Rate" />
+            <Input type="number" min={0} step="0.01" value={l.quantity} onChange={(e) => updateLine(i, "quantity", e.target.value)} placeholder="Qty" />
+            <span className="text-right text-[12px] font-semibold tabular-nums">{formatBDT((Number(l.unitPrice) || 0) * (Number(l.quantity) || 0))}</span>
+            <button type="button" onClick={() => setF({ ...f, lines: f.lines.filter((_, idx) => idx !== i) })} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="size-3.5" /></button>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/50 bg-muted/15 px-3 py-2">
+        <button type="button" onClick={() => setF({ ...f, lines: [...f.lines, { description: "", unitPrice: "", quantity: "1" }] })} className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3" /> Add line item</button>
+        <span className="text-[10.5px] text-muted-foreground">{filledLines} of {f.lines.length} filled</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className={cn(sectioned ? "grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem] xl:items-start" : "flex flex-col gap-4")}>
+      <div className={cn("flex min-w-0 flex-col", sectioned ? "gap-6" : "gap-4")}>
+        {sectioned ? (
+          <FormSection step={1} title="Client & schedule" hint="Who is billed, which project this draws from, and when payment falls due.">
+            <div className="grid gap-4 sm:grid-cols-2">{partyFields}</div>
+          </FormSection>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">{partyFields}{pricingFields}</div>
+        )}
+
+        {sectioned && (
+          <FormSection step={2} title="Pricing & adjustments" hint="Anything applied on top of the line items — status, currency, VAT, discount, delivery.">
+            <div className="grid gap-4 sm:grid-cols-2">{pricingFields}</div>
+          </FormSection>
+        )}
+
+        {sectioned ? (
+          <FormSection step={3} title="Line items" hint="Each row prints as one line on the PDF. Amount = rate × quantity.">
+            {lineItemsBlock}
+          </FormSection>
+        ) : (
+          <Field label="Line items">
+            <div className="flex flex-col gap-2">
+              {lineItemsBlock}
+              <InvoiceTotalsPreview lines={f.lines} taxApplicable={f.taxApplicable} taxRate={f.taxRate} discountRate={f.discountRate} shippingFee={f.shippingFee} currency={f.currency} />
+            </div>
+          </Field>
+        )}
+
+        {!sectioned && <Field label="PDF template"><TemplatePicker value={f.templateStyle} onChange={(v) => setF({ ...f, templateStyle: v })} /></Field>}
+
+        {sectioned ? (
+          <FormSection step={4} title="Payment instructions" hint="Printed on the invoice so the client knows where to send the money.">
+            <PaymentDetailsFields value={f.pay} onChange={(pay) => setF({ ...f, pay })} />
+          </FormSection>
+        ) : (
+          <Field label="Payment instructions (printed on invoice)"><PaymentDetailsFields value={f.pay} onChange={(pay) => setF({ ...f, pay })} /></Field>
+        )}
+
+        {sectioned ? (
+          <FormSection step={5} title="Notes & terms">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Payment terms, references…" /></Field>
+              <Field label="Terms & conditions"><Textarea value={f.terms} onChange={(e) => setF({ ...f, terms: e.target.value })} placeholder="Payment is due within 15 days…" /></Field>
+            </div>
+          </FormSection>
+        ) : (
+          <>
+            <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Payment terms, references…" /></Field>
+            <Field label="Terms & conditions"><Textarea value={f.terms} onChange={(e) => setF({ ...f, terms: e.target.value })} placeholder="Payment is due within 15 days…" /></Field>
+          </>
+        )}
+      </div>
+
+      {sectioned && (
+        <aside className="flex flex-col gap-4 xl:sticky xl:top-1">
+          <section className="overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-b from-primary/[0.08] to-transparent">
+            <div className="px-4 pt-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary/80">Invoice total</p>
+              <p className="mt-1 font-heading text-[28px] font-bold leading-none tabular-nums">{formatBDT(totals.grand)}</p>
+              <p className="mt-1.5 text-[11px] text-muted-foreground">{filledLines} line item{filledLines === 1 ? "" : "s"} · {f.currency} · {label(f.status)}</p>
+            </div>
+            <div className="px-4 pb-4 pt-3">
+              <InvoiceTotalsPreview lines={f.lines} taxApplicable={f.taxApplicable} taxRate={f.taxRate} discountRate={f.discountRate} shippingFee={f.shippingFee} currency={f.currency} />
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-border/60 bg-card">
+            <header className="border-b border-border/50 bg-muted/20 px-4 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Snapshot</p>
+            </header>
+            <div className="flex flex-col gap-2 px-4 py-3 text-[11.5px]">
+              <div className="flex items-baseline justify-between gap-3"><span className="shrink-0 text-muted-foreground">Client</span><span className={cn("min-w-0 truncate text-right font-medium", !clientName && "text-muted-foreground/70")}>{clientName ?? "Not selected"}</span></div>
+              <div className="flex items-baseline justify-between gap-3"><span className="shrink-0 text-muted-foreground">Project</span><span className={cn("min-w-0 truncate text-right font-medium", !selectedProject && "text-muted-foreground/70")}>{selectedProject?.name ?? "No project"}</span></div>
+              <div className="flex items-baseline justify-between gap-3"><span className="shrink-0 text-muted-foreground">Issue</span><span className="text-right font-medium tabular-nums">{f.issueDate ? formatDate(f.issueDate) : "—"}</span></div>
+              <div className="flex items-baseline justify-between gap-3"><span className="shrink-0 text-muted-foreground">Due</span><span className="text-right font-medium tabular-nums">{f.dueDate ? formatDate(f.dueDate) : "—"}</span></div>
+              <div className="flex items-baseline justify-between gap-3"><span className="shrink-0 text-muted-foreground">Status</span><span className="text-right font-medium">{label(f.status)}</span></div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-border/60 bg-card p-4">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">PDF template</p>
+            <TemplatePicker value={f.templateStyle} onChange={(v) => setF({ ...f, templateStyle: v })} compact />
+          </section>
+        </aside>
+      )}
     </div>
   );
 }
@@ -466,11 +573,31 @@ export function InvoiceFormModal({ open, onClose, clients, projects, onSaved, in
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="New invoice" size="xl">
-      <form onSubmit={save} className="flex flex-col gap-4">
-        <InvoiceFormBody f={f} setF={setF} clients={clients} projects={projects} showNumber />
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
-        <FormActions busy={busy} cancel={onClose} submitLabel="Create invoice" />
+    <Modal
+      open={open}
+      onClose={onClose}
+      eyebrow="Accounts receivable"
+      icon={<ReceiptText className="size-4" />}
+      title="New invoice"
+      subtitle="Bill a client — schedule, line items, tax and payment instructions in one pass."
+      size="3xl"
+      footer={
+        <FormActions
+          formId="new-invoice-form"
+          busy={busy}
+          cancel={onClose}
+          submitLabel="Create invoice"
+          hint="* required · totals update live as you type"
+        />
+      }
+    >
+      <form id="new-invoice-form" onSubmit={save} className="flex flex-col gap-4">
+        <InvoiceFormBody f={f} setF={setF} clients={clients} projects={projects} showNumber sectioned />
+        {err && (
+          <p className="flex items-center gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-[12px] font-medium text-rose-600 dark:text-rose-300">
+            <AlertCircle className="size-3.5 shrink-0" /> {err}
+          </p>
+        )}
       </form>
     </Modal>
   );
@@ -781,36 +908,89 @@ export function PaymentModal({ invoice, open, bankAccounts, onClose, onSaved }: 
   );
 }
 
+function FormBlock({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/[0.15] p-3.5">
+      <p className="text-[11.5px] font-semibold">{title}</p>
+      {hint && <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted-foreground">{hint}</p>}
+      <div className="mt-3 flex flex-col gap-3">{children}</div>
+    </div>
+  );
+}
+
+const DEPARTMENTS = ["Accounts", "Creative", "Production", "Media", "Strategy", "Admin", "Tech", "Other"];
+const RECURRENCE = [
+  { value: "WEEKLY", label: "Weekly" },
+  { value: "MONTHLY", label: "Monthly" },
+  { value: "QUARTERLY", label: "Quarterly" },
+  { value: "YEARLY", label: "Yearly" },
+];
+
 export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories, vendors, clients, projects }: { open: boolean; onClose: () => void; onSaved: () => void; bankAccounts: any[]; categories: any[]; vendors: any[]; clients: any[]; projects: any[] }) {
   const { user } = useAuth();
   const canDirect = ["Owner", "Finance", "Admin", "HR/Admin", "CONTROL"].includes(user?.role ?? "");
-  const [f, setF] = useState({ scope: "COMPANY", clientId: "", projectId: "", description: "", amount: "", category: "AD_SPEND", subcategory: "", date: today(), method: "CASH", billable: false, bankAccountId: "", receiptUrl: "", vendorId: "", isPayable: false, dueDate: "", currency: "BDT", exchangeRate: "" });
+  const blank = () => ({
+    scope: "PROJECT",
+    clientId: "",
+    projectId: "",
+    description: "",
+    amount: "",
+    category: (categories?.[0]?.key ?? "AD_SPEND") as string,
+    subcategory: "",
+    date: today(),
+    method: "CASH",
+    bankAccountId: bankAccounts[0]?.id ?? "",
+    receiptUrl: "",
+    vendorId: "",
+    isPayable: false,
+    dueDate: "",
+    currency: "BDT",
+    exchangeRate: "",
+    vendorBillNumber: "",
+    vendorBillDate: "",
+    notes: "",
+    department: "Accounts",
+    markupPct: "",
+    billable: true,
+    isRecurring: false,
+    recurrenceSchedule: "MONTHLY",
+  });
+  const [f, setF] = useState<any>(blank());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const cats = categories ?? [];
   const currentCat = cats.find((c: any) => c.key === f.category);
   const subs: string[] = currentCat?.subcategories ?? [];
-
-  // projects of the selected client (same pattern as the invoice form)
   const projectsFor = (clientId: string) =>
     clientId ? (projects ?? []).filter((p: any) => p.clientId === clientId) : (projects ?? []);
 
   useEffect(() => {
-    if (open) setF({ scope: "COMPANY", clientId: "", projectId: "", description: "", amount: "", category: cats[0]?.key ?? "AD_SPEND", subcategory: "", date: today(), method: "CASH", billable: false, bankAccountId: bankAccounts[0]?.id ?? "", receiptUrl: "", vendorId: "", isPayable: false, dueDate: "", currency: "BDT", exchangeRate: "" });
+    if (open) setF(blank());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const onScopeChange = (scope: string) => {
-    setF({ ...f, scope, clientId: scope === "COMPANY" ? "" : f.clientId, projectId: scope === "COMPANY" ? "" : f.projectId, billable: scope === "COMPANY" ? false : f.billable });
+    setF({
+      ...f,
+      scope,
+      clientId: scope === "COMPANY" ? "" : f.clientId,
+      projectId: scope === "COMPANY" ? "" : f.projectId,
+      billable: scope === "COMPANY" ? false : f.billable,
+    });
   };
   const onClientChange = (clientId: string) => {
-    const keepProject = f.projectId && projectsFor(clientId).some((p: any) => p.id === f.projectId);
-    setF({ ...f, clientId, projectId: keepProject ? f.projectId : "" });
+    const keep = f.projectId && projectsFor(clientId).some((p: any) => p.id === f.projectId);
+    setF({ ...f, clientId, projectId: keep ? f.projectId : "" });
   };
   const onProjectChange = (projectId: string) => {
     const proj = (projects ?? []).find((p: any) => p.id === projectId);
     setF({ ...f, projectId, clientId: proj && (!f.clientId || f.clientId !== proj.clientId) ? proj.clientId : f.clientId });
   };
+
+  const amount = Number(f.amount) || 0;
+  const markUp = f.scope === "PROJECT" && f.billable ? Number(f.markupPct) || 0 : 0;
+  const recharge = amount * (1 + markUp / 100);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -818,12 +998,38 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
     if (f.scope === "PROJECT" && !f.projectId) return setErr("Select the project this expense belongs to");
     if (f.isPayable && !f.vendorId) return setErr("Select a vendor for payable expenses");
     if (f.currency !== "BDT" && !f.exchangeRate) return setErr("Exchange rate required for foreign currency");
+    if (f.billable && (markUp < 0 || markUp > 100)) return setErr("Markup must be between 0 and 100%");
     setBusy(true);
     setErr(null);
     try {
       await apiFetch("/capital/expenses", {
         method: "POST",
-        body: JSON.stringify({ description: f.description.trim(), amount: Number(f.amount), category: f.category, subcategory: f.subcategory || undefined, date: f.date || undefined, paymentMethod: f.method, isClientBillable: f.scope === "PROJECT" && f.billable, clientId: f.scope === "PROJECT" ? f.clientId || undefined : undefined, projectId: f.scope === "PROJECT" ? f.projectId || undefined : undefined, bankAccountId: f.bankAccountId || undefined, receiptUrl: f.receiptUrl.trim() || undefined, vendorId: f.vendorId || undefined, isPayable: f.isPayable, dueDate: f.dueDate || undefined, currency: f.currency, exchangeRate: f.currency === "BDT" ? 1 : Number(f.exchangeRate) || undefined, approvalStatus: canDirect ? "APPROVED" : "PENDING" }),
+        body: JSON.stringify({
+          description: f.description.trim(),
+          amount,
+          category: f.category,
+          subcategory: f.subcategory || undefined,
+          date: f.date || undefined,
+          paymentMethod: f.method,
+          isClientBillable: f.scope === "PROJECT" && f.billable,
+          markupPct: f.scope === "PROJECT" && f.billable ? markUp : 0,
+          clientId: f.scope === "PROJECT" ? f.clientId || undefined : undefined,
+          projectId: f.scope === "PROJECT" ? f.projectId || undefined : undefined,
+          bankAccountId: f.bankAccountId || undefined,
+          receiptUrl: f.receiptUrl.trim() || undefined,
+          vendorId: f.vendorId || undefined,
+          vendorBillNumber: f.vendorBillNumber.trim() || undefined,
+          vendorBillDate: f.vendorBillDate || undefined,
+          isPayable: f.isPayable,
+          dueDate: f.dueDate || undefined,
+          currency: f.currency,
+          exchangeRate: f.currency === "BDT" ? 1 : Number(f.exchangeRate) || undefined,
+          notes: f.notes.trim() || undefined,
+          department: f.scope === "COMPANY" ? f.department : undefined,
+          isRecurring: f.isRecurring,
+          recurrenceSchedule: f.isRecurring ? f.recurrenceSchedule : undefined,
+          approvalStatus: canDirect ? "APPROVED" : "PENDING",
+        }),
       });
       onSaved();
       onClose();
@@ -835,47 +1041,96 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Record expense">
-      <form onSubmit={save} className="flex flex-col gap-4">
-        <Segmented options={[{ value: "PROJECT", label: "Project expense" }, { value: "COMPANY", label: "Company overhead" }]} value={f.scope} onChange={onScopeChange} />
-        {f.scope === "PROJECT" ? (
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Client *"><Select value={f.clientId} onChange={(e) => onClientChange(e.target.value)}><option value="">Select client…</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
-            <Field label="Project *"><Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)}><option value="">Select project…</option>{projectsFor(f.clientId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
-          </div>
-        ) : (
-          <p className="rounded-xl bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground">Company overhead — salary, rent, software, vendor payments. Not linked to any client or project.</p>
-        )}
-        <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Google Ads — June campaign" autoFocus /></Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="12000" /></Field>
-          <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value, subcategory: "" })}>{(cats.length ? cats : [{ key: "MISC", name: "MISC" }]).map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select></Field>
-          <Field label="Subcategory"><Select value={f.subcategory} onChange={(e) => setF({ ...f, subcategory: e.target.value })}><option value="">—</option>{subs.map((s: string) => <option key={s} value={s}>{s}</option>)}</Select></Field>
-          <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
-          <Field label="Payment method"><Select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
-          <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{(bankAccounts ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
-          <Field label="Vendor"><Select value={f.vendorId} onChange={(e) => setF({ ...f, vendorId: e.target.value })}><option value="">No vendor</option>{(vendors ?? []).map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}</Select></Field>
-          <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
-          {f.currency !== "BDT" && <Field label={`Rate (1 ${f.currency} → BDT) *`}><Input type="number" min={0} step="0.01" value={f.exchangeRate} onChange={(e) => setF({ ...f, exchangeRate: e.target.value })} placeholder="e.g. 120" /></Field>}
-          <Field label="Receipt URL"><Input value={f.receiptUrl} onChange={(e) => setF({ ...f, receiptUrl: e.target.value })} placeholder="https://…" /></Field>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          {f.scope === "PROJECT" && (
-            <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
-              <input type="checkbox" checked={f.billable} onChange={(e) => setF({ ...f, billable: e.target.checked })} className="size-4 rounded accent-primary" />
-              Client billable (pass-through)
-            </label>
+    <Modal open={open} onClose={onClose} title="Record expense" size="lg">
+      <form onSubmit={save} className="flex flex-col gap-3">
+        <FormBlock title="What is it?" hint="Project spend is costed to the client; company overhead stays internal.">
+          <Segmented options={[{ value: "PROJECT", label: "Project expense" }, { value: "COMPANY", label: "Company overhead" }]} value={f.scope} onChange={onScopeChange} />
+          {f.scope === "PROJECT" ? (
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Client *"><Select value={f.clientId} onChange={(e) => onClientChange(e.target.value)}><option value="">Select client…</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
+              <Field label="Project *"><Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)}><option value="">Select project…</option>{projectsFor(f.clientId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+            </div>
+          ) : (
+            <p className="rounded-xl bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+              Salary, rent, software, utilities — not charged to a client. Use the department field to attribute it.
+            </p>
           )}
-          <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
-            <input type="checkbox" checked={f.isPayable} onChange={(e) => setF({ ...f, isPayable: e.target.checked })} className="size-4 rounded accent-amber-500" />
-            Unpaid (accounts payable)
-          </label>
-        </div>
-        {f.isPayable && <Field label="Payable due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>}
+          <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="e.g. Google Ads — June campaign, DOP day rate…" autoFocus /></Field>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Field label="Amount *"><Input type="number" min={0} step="0.01" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="12000" /></Field>
+            <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value, subcategory: "" })}>{(cats.length ? cats : [{ key: "MISC", name: "MISC" }]).map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select></Field>
+            <Field label="Subcategory"><Select value={f.subcategory} onChange={(e) => setF({ ...f, subcategory: e.target.value })}><option value="">—</option>{subs.map((s: string) => <option key={s} value={s}>{s}</option>)}</Select></Field>
+            <Field label="Expense date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          </div>
+        </FormBlock>
+
+        <FormBlock title="Vendor & bill" hint="The bill details are what an auditor or AP review looks for first.">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <Field label="Vendor"><Select value={f.vendorId} onChange={(e) => setF({ ...f, vendorId: e.target.value })}><option value="">No vendor</option>{(vendors ?? []).map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}</Select></Field>
+            <Field label="Vendor bill no."><Input value={f.vendorBillNumber} onChange={(e) => setF({ ...f, vendorBillNumber: e.target.value })} placeholder="INV-2043" /></Field>
+            <Field label="Bill date"><Input type="date" value={f.vendorBillDate} onChange={(e) => setF({ ...f, vendorBillDate: e.target.value })} /></Field>
+            <Field label="Payment method"><Select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+            <Field label="Paid from"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">Default account</option>{(bankAccounts ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
+            <Field label="Receipt URL"><Input value={f.receiptUrl} onChange={(e) => setF({ ...f, receiptUrl: e.target.value })} placeholder="https://…" /></Field>
+          </div>
+        </FormBlock>
+
+        <FormBlock title="Recharge, approval & schedule" hint="Agency rules that change how the cost is recovered and approved.">
+          {f.scope === "PROJECT" && (
+            <div className="rounded-xl border border-border/60 bg-card p-3">
+              <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+                <input type="checkbox" checked={f.billable} onChange={(e) => setF({ ...f, billable: e.target.checked })} className="size-4 rounded accent-primary" />
+                Client billable (recharge the client)
+              </label>
+              {f.billable && (
+                <div className="mt-2 grid grid-cols-2 items-end gap-3">
+                  <Field label="Markup %" hint="Pass-through cost + markup = client recharge">
+                    <Input type="number" min={0} max={100} step="0.5" value={f.markupPct} onChange={(e) => setF({ ...f, markupPct: e.target.value })} placeholder="15" />
+                  </Field>
+                  <p className="rounded-lg bg-emerald-500/10 px-2.5 py-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    Recharge {formatBDT(recharge)}{markUp > 0 ? ` · margin ${formatBDT(recharge - amount)}` : ""}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <div className="flex flex-col justify-end gap-2">
+              <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+                <input type="checkbox" checked={f.isPayable} onChange={(e) => setF({ ...f, isPayable: e.target.checked })} className="size-4 rounded accent-amber-500" />
+                Unpaid (accounts payable)
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+                <input type="checkbox" checked={f.isRecurring} onChange={(e) => setF({ ...f, isRecurring: e.target.checked })} className="size-4 rounded accent-sky-500" />
+                Recurring expense
+              </label>
+            </div>
+            {f.isPayable ? (
+              <Field label="Payable due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
+            ) : (
+              <div className="flex items-end text-[10.5px] text-muted-foreground">Paid now — bank balance is reduced immediately.</div>
+            )}
+            {f.isRecurring ? (
+              <Field label="Repeats"><Select value={f.recurrenceSchedule} onChange={(e) => setF({ ...f, recurrenceSchedule: e.target.value })}>{RECURRENCE.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</Select></Field>
+            ) : f.scope === "COMPANY" ? (
+              <Field label="Department"><Select value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })}>{DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}</Select></Field>
+            ) : null}
+            <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
+            {f.currency !== "BDT" && <Field label={`Rate (1 ${f.currency} → BDT) *`}><Input type="number" min={0} step="0.01" value={f.exchangeRate} onChange={(e) => setF({ ...f, exchangeRate: e.target.value })} placeholder="e.g. 120" /></Field>}
+          </div>
+        </FormBlock>
+
+        <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="What was bought, who approved it, any context for the audit trail…" /></Field>
+
         {canDirect ? (
-          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11.5px] text-emerald-600 dark:text-emerald-400">Posts to {f.bankAccountId ? "the selected bank account" : "the default bank account"} & ledger immediately.</p>
+          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11.5px] text-emerald-600 dark:text-emerald-400">
+            Posts to {f.bankAccountId ? "the selected account" : "the default account"} &amp; ledger immediately{f.isPayable ? " as an unpaid bill" : ""}.
+          </p>
         ) : (
-          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-600 dark:text-amber-400">Goes to admin for approval first — accounts update on approval.</p>
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-600 dark:text-amber-400">
+            Goes to admin for approval first — accounts update on approval.
+          </p>
         )}
         {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Record expense" />
@@ -885,7 +1140,7 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
 }
 
 export function EditExpenseModal({ expense, onClose, onSaved, categories }: { expense: any; onClose: () => void; onSaved: () => void; categories: any[] }) {
-  const [f, setF] = useState({ description: "", amount: "", category: "MISC", date: today(), method: "CASH", notes: "" });
+  const [f, setF] = useState({ description: "", amount: "", category: "MISC", date: today(), method: "CASH", notes: "", vendorBillNumber: "", vendorBillDate: "", department: "", markupPct: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -898,7 +1153,11 @@ export function EditExpenseModal({ expense, onClose, onSaved, categories }: { ex
       category: expense.category ?? "MISC",
       date: String(expense.date ?? "").slice(0, 10),
       method: expense.paymentMethod ?? "CASH",
-      notes: "",
+      notes: expense.notes ?? "",
+      vendorBillNumber: expense.vendorBillNumber ?? "",
+      vendorBillDate: expense.vendorBillDate ? String(expense.vendorBillDate).slice(0, 10) : "",
+      department: expense.department ?? "",
+      markupPct: expense.markupPct != null ? String(expense.markupPct) : "",
     });
   }, [expense]);
 
@@ -916,6 +1175,11 @@ export function EditExpenseModal({ expense, onClose, onSaved, categories }: { ex
           category: f.category,
           date: f.date || undefined,
           paymentMethod: f.method,
+          notes: f.notes || undefined,
+          vendorBillNumber: f.vendorBillNumber || undefined,
+          vendorBillDate: f.vendorBillDate || undefined,
+          department: f.department || undefined,
+          markupPct: f.markupPct !== "" ? Number(f.markupPct) : undefined,
         }),
       });
       onSaved();
@@ -928,7 +1192,7 @@ export function EditExpenseModal({ expense, onClose, onSaved, categories }: { ex
   };
 
   return (
-    <Modal open={!!expense} onClose={onClose} title={`Edit expense`}>
+    <Modal open={!!expense} onClose={onClose} title={`Edit expense`} size="lg">
       <form onSubmit={save} className="flex flex-col gap-4">
         {expense?.payrollRecordId && (
           <p className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11.5px] text-sky-600 dark:text-sky-300">
@@ -941,7 +1205,12 @@ export function EditExpenseModal({ expense, onClose, onSaved, categories }: { ex
           <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{(categories?.length ? categories : [{ key: "MISC", name: "Misc" }]).map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select></Field>
           <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
           <Field label="Method"><Select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+          <Field label="Vendor bill no."><Input value={f.vendorBillNumber} onChange={(e) => setF({ ...f, vendorBillNumber: e.target.value })} placeholder="INV-2043" /></Field>
+          <Field label="Bill date"><Input type="date" value={f.vendorBillDate} onChange={(e) => setF({ ...f, vendorBillDate: e.target.value })} /></Field>
+          <Field label="Department"><Input value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })} placeholder="Accounts / Creative…" /></Field>
+          <Field label="Markup % (billable)"><Input type="number" min={0} max={100} step="0.5" value={f.markupPct} onChange={(e) => setF({ ...f, markupPct: e.target.value })} placeholder="15" /></Field>
         </div>
+        <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Internal context for this expense…" /></Field>
         {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Save changes" />
       </form>
@@ -1006,13 +1275,16 @@ export function ConfirmModal({ open, onClose, title, message, busy, onConfirm }:
 
 export function PayExpenseModal({ expense, open, bankAccounts, onClose, onSaved }: { expense: any; open: boolean; bankAccounts: any[]; onClose: () => void; onSaved: () => void }) {
   const due = Math.max(0, Number(expense?.amount ?? 0) - Number(expense?.paidAmount ?? 0));
-  const [f, setF] = useState({ amount: String(due), method: "CASH", date: today(), bankAccountId: "" });
+  const [f, setF] = useState({ amount: String(due), method: "CASH", date: today(), bankAccountId: "", taxWithheld: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) setF({ amount: String(due), method: "CASH", date: today(), bankAccountId: bankAccounts[0]?.id ?? "" });
+    if (open) setF({ amount: String(due), method: "CASH", date: today(), bankAccountId: bankAccounts[0]?.id ?? "", taxWithheld: "" });
   }, [open, expense]);
+
+  const tax = Math.min(Number(f.taxWithheld) || 0, Number(f.amount) || 0);
+  const net = Math.max((Number(f.amount) || 0) - tax, 0);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1021,7 +1293,7 @@ export function PayExpenseModal({ expense, open, bankAccounts, onClose, onSaved 
     setBusy(true);
     setErr(null);
     try {
-      await apiFetch(`/capital/expenses/${expense.id}/payment`, { method: "POST", body: JSON.stringify({ amount: Number(f.amount), paymentMethod: f.method, paymentDate: f.date || undefined, bankAccountId: f.bankAccountId || undefined }) });
+      await apiFetch(`/capital/expenses/${expense.id}/payment`, { method: "POST", body: JSON.stringify({ amount: Number(f.amount), paymentMethod: f.method, paymentDate: f.date || undefined, bankAccountId: f.bankAccountId || undefined, taxWithheld: tax }) });
       onSaved();
       onClose();
     } catch (e2: any) {
@@ -1039,6 +1311,10 @@ export function PayExpenseModal({ expense, open, bankAccounts, onClose, onSaved 
           <span className="text-right font-bold tabular-nums">{formatBDT(due)}</span>
         </div>
         <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
+        <div className="grid grid-cols-2 items-end gap-4">
+          <Field label="TDS / VDS withheld" hint="Vendor receives amount − tax"><Input type="number" min={0} step="0.01" value={f.taxWithheld} onChange={(e) => setF({ ...f, taxWithheld: e.target.value })} placeholder="0" /></Field>
+          <p className="rounded-lg bg-muted/40 px-2.5 py-2 text-[11px] font-semibold">Net cash out {formatBDT(net)}</p>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
           <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
@@ -1138,25 +1414,79 @@ export function CategoriesModal({ open, categories, accounts, onClose, onSaved }
   );
 }
 
-export function AddIncomeModal({ open, bankAccounts, onClose, onSaved }: { open: boolean; bankAccounts: any[]; onClose: () => void; onSaved: () => void }) {
-  const [f, setF] = useState({ description: "", amount: "", category: "OTHER_INCOME", date: today(), method: "CASH", bankAccountId: "", referenceId: "", currency: "BDT", exchangeRate: "" });
+const INCOME_CATEGORIES = [
+  { value: "PROJECT_PAYMENT", label: "Project payment" },
+  { value: "RETAINER", label: "Retainer" },
+  { value: "CONSULTING", label: "Consulting / strategy" },
+  { value: "WORKSHOP", label: "Workshop / training" },
+  { value: "COMMISSION", label: "Commission" },
+  { value: "REFERRAL", label: "Referral fee" },
+  { value: "REIMBURSEMENT", label: "Reimbursement" },
+  { value: "INTEREST", label: "Bank interest" },
+  { value: "FX_GAIN", label: "FX / dollar gain" },
+  { value: "OTHER_INCOME", label: "Other income" },
+];
+
+export function AddIncomeModal({ open, bankAccounts, clients, projects, onClose, onSaved }: { open: boolean; bankAccounts: any[]; clients: any[]; projects: any[]; onClose: () => void; onSaved: () => void }) {
+  const blank = () => ({
+    description: "",
+    amount: "",
+    category: "OTHER_INCOME",
+    date: today(),
+    method: "CASH",
+    bankAccountId: bankAccounts[0]?.id ?? "",
+    referenceId: "",
+    currency: "BDT",
+    exchangeRate: "",
+    clientId: "",
+    projectId: "",
+    taxWithheld: "",
+    notes: "",
+    attachmentUrl: "",
+  });
+  const [f, setF] = useState<any>(blank());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) setF({ description: "", amount: "", category: "OTHER_INCOME", date: today(), method: "CASH", bankAccountId: bankAccounts[0]?.id ?? "", referenceId: "", currency: "BDT", exchangeRate: "" });
+    if (open) setF(blank());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  const projectsFor = (clientId: string) =>
+    clientId ? (projects ?? []).filter((p: any) => p.clientId === clientId) : (projects ?? []);
+
+  const gross = Number(f.amount) || 0;
+  const tax = Math.min(Number(f.taxWithheld) || 0, Math.max(gross - 0.01, 0));
+  const net = Math.max(gross - tax, 0);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!f.description.trim() || !f.amount || Number(f.amount) <= 0) return setErr("Description and amount are required");
+    if (Number(f.taxWithheld) < 0) return setErr("Tax withheld cannot be negative");
+    if (Number(f.taxWithheld) >= Number(f.amount)) return setErr("Tax withheld must be less than the gross amount");
     if (f.currency !== "BDT" && !f.exchangeRate) return setErr("Exchange rate required for foreign currency");
     setBusy(true);
     setErr(null);
     try {
       await apiFetch("/capital/income", {
         method: "POST",
-        body: JSON.stringify({ description: f.description.trim(), amount: Number(f.amount), category: f.category, paymentDate: f.date || undefined, paymentMethod: f.method, bankAccountId: f.bankAccountId || undefined, referenceId: f.referenceId.trim() || undefined, currency: f.currency, exchangeRate: f.currency === "BDT" ? 1 : Number(f.exchangeRate) || undefined }),
+        body: JSON.stringify({
+          description: f.description.trim(),
+          amount: gross,
+          category: f.category,
+          date: f.date || undefined,
+          paymentMethod: f.method,
+          bankAccountId: f.bankAccountId || undefined,
+          referenceId: f.referenceId.trim() || undefined,
+          currency: f.currency,
+          exchangeRate: f.currency === "BDT" ? 1 : Number(f.exchangeRate) || undefined,
+          clientId: f.clientId || undefined,
+          projectId: f.projectId || undefined,
+          taxWithheld: Number(f.taxWithheld) || 0,
+          notes: f.notes.trim() || undefined,
+          attachmentUrl: f.attachmentUrl.trim() || undefined,
+        }),
       });
       onSaved();
       onClose();
@@ -1168,19 +1498,45 @@ export function AddIncomeModal({ open, bankAccounts, onClose, onSaved }: { open:
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Record income (manual)">
-      <form onSubmit={save} className="flex flex-col gap-4">
-        <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Bank interest, forex gain, workshop fee…" autoFocus /></Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="5000" /></Field>
-          <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{["OTHER_INCOME", "COMMISSION", "REFERRAL", "SALE", "INTEREST"].map((c) => <option key={c} value={c}>{label(c)}</option>)}</Select></Field>
-          <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
-          <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
-          <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
-          <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
-          {f.currency !== "BDT" && <Field label={`Rate (1 ${f.currency} → BDT) *`}><Input type="number" min={0} step="0.01" value={f.exchangeRate} onChange={(e) => setF({ ...f, exchangeRate: e.target.value })} placeholder="e.g. 120" /></Field>}
-          <Field label="Reference"><Input value={f.referenceId} onChange={(e) => setF({ ...f, referenceId: e.target.value })} placeholder="Transaction ref" /></Field>
-        </div>
+    <Modal open={open} onClose={onClose} title="Record income (manual)" size="lg">
+      <form onSubmit={save} className="flex flex-col gap-3">
+        <FormBlock title="What came in?" hint="For money received without an invoice — retainers, workshops, FX gains, reimbursements.">
+          <Field label="Description *"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="e.g. Brand workshop fee, bank interest, referral commission…" autoFocus /></Field>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Field label="Gross amount *"><Input type="number" min={0} step="0.01" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="5000" /></Field>
+            <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{INCOME_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</Select></Field>
+            <Field label="Tax withheld (TDS)" hint="Client deducted this before paying"><Input type="number" min={0} step="0.01" value={f.taxWithheld} onChange={(e) => setF({ ...f, taxWithheld: e.target.value })} placeholder="0" /></Field>
+            <div className="flex flex-col justify-end">
+              <p className="rounded-lg bg-emerald-500/10 px-2.5 py-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                Net received {formatBDT(net)}
+              </p>
+            </div>
+          </div>
+        </FormBlock>
+
+        <FormBlock title="Who is it from?" hint="Optional — linking makes client profitability and the income table accurate.">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Client"><Select value={f.clientId} onChange={(e) => setF({ ...f, clientId: e.target.value, projectId: "" })}><option value="">No client</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
+            <Field label="Project"><Select value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })}><option value="">No project</option>{projectsFor(f.clientId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+          </div>
+        </FormBlock>
+
+        <FormBlock title="How was it received?">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+            <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+            <Field label="Received into"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">Default account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
+            <Field label="Reference"><Input value={f.referenceId} onChange={(e) => setF({ ...f, referenceId: e.target.value })} placeholder="Txn / cheque no." /></Field>
+            <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
+            {f.currency !== "BDT" && <Field label={`Rate (1 ${f.currency} → BDT) *`}><Input type="number" min={0} step="0.01" value={f.exchangeRate} onChange={(e) => setF({ ...f, exchangeRate: e.target.value })} placeholder="e.g. 120" /></Field>}
+          </div>
+        </FormBlock>
+
+        <FormBlock title="Backup">
+          <Field label="Attachment URL"><Input value={f.attachmentUrl} onChange={(e) => setF({ ...f, attachmentUrl: e.target.value })} placeholder="https://…" /></Field>
+          <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Any context for the audit trail…" /></Field>
+        </FormBlock>
+
         {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Record income" />
       </form>

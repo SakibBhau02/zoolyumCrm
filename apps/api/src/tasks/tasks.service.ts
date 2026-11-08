@@ -5,6 +5,19 @@ import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { CacheService } from "../cache/cache.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
+import { ScoringService } from "../scoring/scoring.service";
+import { normalizeTaskStatus } from "./task-status";
+import { recomputeProjectStats } from "../common/project-stats";
+
+/**
+ * Folds legacy/loose status strings onto the real enum. Old saved views and
+ * bookmarks still carry `BACKLOG` / `IN_REVIEW`, which used to reach Prisma and
+ * throw a validation error; now they simply mean TODO / REVIEW.
+ */
+function toTaskStatus(value?: string | null): TaskStatus | null {
+  if (!value) return null;
+  return normalizeTaskStatus(value) as TaskStatus;
+}
 
 const STATUS_ORDER: TaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW", "BLOCKED", "DONE"];
 
@@ -22,8 +35,30 @@ export class TasksService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly cache: CacheService,
-    private readonly wa: WhatsappTriggersService
+    private readonly wa: WhatsappTriggersService,
+    private readonly scoring: ScoringService
   ) {}
+
+  /**
+   * Task moves change the project's quality/schedule factors, so rescore the
+   * project (and its client) after the write. Never allowed to fail the edit.
+   */
+  private async rescoreProject(projectId?: string | null) {
+    if (!projectId) return;
+    // Derived counters (progress / spend) share a source with the board and the
+    // portal, so refresh them in the same pass as the health score.
+    await recomputeProjectStats(this.prisma, projectId).catch(() => {});
+    try {
+      const project = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { clientId: true },
+      });
+      await this.scoring.recomputeProject(projectId);
+      if (project?.clientId) await this.scoring.recomputeClient(project.clientId);
+    } catch {
+      /* scoring must never fail a task write */
+    }
+  }
 
   // ── Permission helpers (enterprise field-level) ──────────────────────────
   //
@@ -45,6 +80,52 @@ export class TasksService {
     if (!userId) return null;
     const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { employeeId: true } });
     return (u as any)?.employeeId ?? null;
+  }
+
+  /**
+   * Departments can restrict which task types their people may file
+   * (`Settings.departmentTaskTypes`, edited at /tasks/setup).
+   *
+   * Assigned task  → must match that employee's department rule.
+   * Unassigned     → no department exists yet, so the type must be allowed by
+   *                  *at least one* department. Otherwise the task could never
+   *                  be handed to anybody, which is a mistake worth catching at
+   *                  creation instead of at assignment time.
+   *
+   * No rules configured at all means "everything allowed", so an unconfigured
+   * install behaves exactly as before.
+   */
+  private async assertTaskTypeAllowed(assignedToId?: string | null, taskType?: string | null) {
+    const settings = await this.prisma.settings
+      .findUnique({ where: { id: "default" }, select: { departmentTaskTypes: true } })
+      .catch(() => null);
+    const rules = ((settings?.departmentTaskTypes as any[]) ?? []).filter(
+      (r) => Array.isArray(r?.taskTypes) && r.taskTypes.length > 0
+    );
+    if (!rules.length) return;
+    const wanted = String(taskType ?? "general").toLowerCase();
+    const allows = (types: string[]) => types.map((t) => String(t).toLowerCase()).includes(wanted);
+
+    if (!assignedToId) {
+      if (rules.some((r: any) => allows(r.taskTypes))) return;
+      const union = [...new Set(rules.flatMap((r: any) => r.taskTypes.map((t: string) => String(t).toLowerCase())))];
+      throw new BadRequestException(
+        `No department allows the "${wanted}" task type — permitted anywhere: ${union.join(", ")}`
+      );
+    }
+
+    const emp = await this.prisma.employee.findUnique({
+      where: { id: assignedToId },
+      select: { department: true, name: true },
+    });
+    if (!emp?.department) return;
+    const rule = rules.find((r: any) => String(r.department).toLowerCase() === emp.department!.toLowerCase());
+    if (!rule) return;
+    if (!allows(rule.taskTypes)) {
+      throw new BadRequestException(
+        `${emp.name}'s department (${emp.department}) only allows: ${rule.taskTypes.join(", ")} — "${wanted}" is not permitted`
+      );
+    }
   }
   private isAssignee(task: any, empId: string | null) {
     if (!empId) return false;
@@ -268,22 +349,23 @@ export class TasksService {
     switch (body.op) {
       case "status": {
         if (!body.value) throw new BadRequestException("status value required");
+        const nextStatus = normalizeTaskStatus(body.value) as TaskStatus;
         const idsToSpawn: string[] = [];
         for (const id of allowed) {
           const task = tasks.find((t) => t.id === id)!;
-          if (task.status === body.value) continue;
+          if (task.status === nextStatus) continue;
           await this.prisma.task.update({
             where: { id },
             data: {
-              status: body.value as TaskStatus,
-              ...(body.value === "DONE" ? { completedAt: task.completedAt ?? now } : { completedAt: null }),
+              status: nextStatus,
+              ...(nextStatus === "DONE" ? { completedAt: task.completedAt ?? now } : { completedAt: null }),
               activityLog: [
-                { action: "updated", field: "status", from: task.status, to: body.value, at: now.toISOString(), by: user?.name ?? "Bulk update" },
+                { action: "updated", field: "status", from: task.status, to: nextStatus, at: now.toISOString(), by: user?.name ?? "Bulk update" },
                 ...(((task.activityLog ?? []) as any[]).slice(0, 99)),
               ] as any,
             },
           });
-          if (body.value === "DONE" && task.status !== "DONE") idsToSpawn.push(id);
+          if (nextStatus === "DONE" && task.status !== "DONE") idsToSpawn.push(id);
           count++;
         }
         for (const id of idsToSpawn) await this.spawnRecurrence(id).catch(() => {});
@@ -493,7 +575,17 @@ export class TasksService {
           startDate: true, targetEndDate: true,
           projectLink: true, websiteUrl: true, briefLink: true, driveLink: true, researchLink: true,
           socialLinks: true,
-          client: { select: { id: true, companyName: true } },
+          client: {
+            select: {
+              id: true,
+              companyName: true,
+              contacts: {
+                select: { id: true, name: true, roleTitle: true, email: true, phone: true, isPrimary: true },
+                orderBy: [{ isPrimary: "desc" }, { name: "asc" }],
+                take: 2,
+              },
+            },
+          },
           assignedPm: { select: { id: true, name: true } },
           _count: { select: { tasks: true } },
         },
@@ -813,8 +905,11 @@ export class TasksService {
     return tasks.map((t) => ({ ...t, priorityScore: score(t) })).sort((a, b) => b.priorityScore - a.priorityScore);
   }
 
-  async list(query: { status?: string; priority?: string; taskType?: string; assignee?: string; projectId?: string; sprintId?: string; q?: string; parent?: string; mine?: boolean; sort?: string; archived?: string; employeeId?: string }) {
-    return this.cache.wrapQuery("tasks:list", query, 30, async () => {
+  async list(query: { status?: string; priority?: string; taskType?: string; assignee?: string; projectId?: string; sprintId?: string; q?: string; parent?: string; mine?: boolean; sort?: string; archived?: string; employeeId?: string }, user?: any) {
+    // `mine` is resolved from the JWT here — the query string used to carry an
+    // employeeId that the client never sent, so "Mine" silently matched nothing.
+    const mineEmployeeId = (query.mine === true || String(query.mine) === "true") ? (await this.getEmployeeIdByUserId(user?.sub)) ?? undefined : undefined;
+    return this.cache.wrapQuery("tasks:list", { ...query, mineEmployeeId }, 30, async () => {
       const sort = query.sort ?? "due";
     const orderBy: any =
       sort === "priority" ? [{ priority: "desc" }, { dueDate: "asc" }]
@@ -826,7 +921,7 @@ export class TasksService {
       this.prisma.task.findMany({
         where: {
           ...(query.archived === "true" ? {} : { archivedAt: null }),
-          ...(query.status ? { status: query.status as TaskStatus } : {}),
+          ...(query.status ? { status: toTaskStatus(query.status) ?? undefined } : {}),
           ...(query.priority ? { priority: query.priority as Priority } : {}),
           ...(query.taskType ? { taskType: query.taskType } : {}),
           ...(query.assignee ? { assignedToId: query.assignee } : {}),
@@ -834,7 +929,7 @@ export class TasksService {
           ...(query.sprintId ? { sprintId: query.sprintId } : {}),
           ...(query.parent ? { parentTaskId: query.parent } : { parentTaskId: null }),
           ...(query.q ? { OR: [{ title: { contains: query.q, mode: "insensitive" } }, { tags: { has: query.q } }] } : {}),
-          ...(query.mine && query.employeeId ? { assignedToId: query.employeeId } : {}),
+          ...(mineEmployeeId ? { assignedToId: mineEmployeeId } : {}),
         },
         include: {
           project: { select: { id: true, name: true, healthStatus: true } },
@@ -845,6 +940,8 @@ export class TasksService {
           _count: { select: { timeLogs: true, comments: true, checklist: true } },
         },
         orderBy,
+        // Safety cap for the unbounded board/table query.
+        take: 500,
       }),
       this.prisma.task.groupBy({ by: ["parentTaskId"], where: { parentTaskId: { not: null } }, _count: { _all: true } }),
     ]);
@@ -916,6 +1013,7 @@ export class TasksService {
     assignedToName?: string;
   }) {
     const status = body.status ?? "TODO";
+    await this.assertTaskTypeAllowed(body.assignedToId, body.taskType);
     let sortOrder = 0;
     if (body.parentTaskId) {
       const siblings = await this.prisma.task.findMany({ where: { parentTaskId: body.parentTaskId }, select: { sortOrder: true } });
@@ -1007,6 +1105,14 @@ export class TasksService {
 
     const data: any = {};
     const log: any[] = [];
+    // Changing assignee or type can violate a department rule — check the pair
+    // that will result, not just what was submitted.
+    if (body.taskType !== undefined || body.assignedToId !== undefined) {
+      await this.assertTaskTypeAllowed(
+        body.assignedToId !== undefined ? body.assignedToId : existing.assignedToId,
+        body.taskType !== undefined ? body.taskType : existing.taskType
+      );
+    }
     const push = (field: string, from: any, to: any) => {
       if (JSON.stringify(from) !== JSON.stringify(to)) {
         log.push({ action: "updated", field, from: from ?? null, to: to ?? null, at: new Date().toISOString(), by: actorName ?? "System" });
@@ -1065,6 +1171,13 @@ export class TasksService {
       await this.recordEstimateAccuracy(updated).catch(() => {});
       await this.spawnRecurrence(id).catch(() => {});
     }
+    // Only rescore when a field the engine actually reads changed.
+    if (["status", "dueDate", "isBlocked", "estimatedHours", "projectId"].some((k) => body[k] !== undefined)) {
+      if (existing.projectId && existing.projectId !== updated.projectId) {
+        await this.rescoreProject(existing.projectId);
+      }
+      await this.rescoreProject(updated.projectId);
+    }
     await this.invalidateTasks();
     return updated;
   }
@@ -1076,6 +1189,7 @@ export class TasksService {
     await this.prisma.task.delete({ where: { id } }).catch(() => {
       throw new NotFoundException("Task not found");
     });
+    await this.rescoreProject(existing.projectId);
     await this.invalidateTasks();
     return { ok: true };
   }
@@ -1427,6 +1541,15 @@ export class TasksService {
     // Handoffs from a template carry the same provenance as a manual create:
     // the user pressing the button is both reporter and assigner.
     const creatorEmpId = await this.empId(body.createdById);
+    // A template is a plan authored by a planner, but it still must not create
+    // tasks the assignee's department is not allowed to own — check every type
+    // once up-front so the failure names the offending type instead of
+    // half-applying the template.
+    if (body.assigneeId) {
+      const types = new Set<string>([...(tasks.map((t) => t.taskType ?? "general") as string[])]);
+      for (const t of tasks) for (const st of t.subtasks ?? []) types.add(st.taskType ?? "general");
+      for (const type of types) await this.assertTaskTypeAllowed(body.assigneeId, type);
+    }
     const created = [];
     for (const t of tasks) {
       const assignedToId = body.assigneeId;
@@ -1580,10 +1703,10 @@ export class TasksService {
     if (emp?.user) {
       await this.notifications.create(
         emp.user.id,
-        "task_assigned",
+        "TASK_ASSIGNED",
         "New Task Assigned",
         `"${title}" has been assigned to you.`,
-        `/tasks`
+        `/tasks?task=${taskId}`
       );
     }
   }

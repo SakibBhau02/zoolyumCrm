@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: zoolyum
       POSTGRES_DB: zoolyum_os
     ports:
-      - "5434:5432"
+      - "5544:5432"
     volumes:
       - zoolyum_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -30,5 +30,67 @@ services:
       timeout: 5s
       retries: 10
 
+  # Optional app stack: `docker compose --profile app up -d --build`.
+  # Local development still runs `npm run dev` against the two services above.
+  api:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://zoolyum:zoolyum@postgres:5432/zoolyum_os?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET before running the app profile}
+      PORT: "4000"
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      NODE_ENV: production
+    ports:
+      - "4000:4000"
+    volumes:
+      - zoolyum_uploads:/app/uploads
+
+  web:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+
+  # Nightly logical backup. Restore with:
+  #   docker exec zoolyum-postgres pg_restore -U zoolyum -d zoolyum_os <file>
+  backup:
+    profiles: ["backup"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: zoolyum
+    entrypoint: >
+      sh -c 'while true; do
+        pg_dump -h postgres -U zoolyum -d zoolyum_os -Fc -f /backups/zoolyum-$$(date +%Y%m%d-%H%M).dump &&
+        find /backups -name "zoolyum-*.dump" -mtime +14 -delete;
+        sleep 86400;
+      done'
+    volumes:
+      - zoolyum_backups:/backups
+
 volumes:
   zoolyum_pgdata:
+  zoolyum_uploads:
+  zoolyum_backups:

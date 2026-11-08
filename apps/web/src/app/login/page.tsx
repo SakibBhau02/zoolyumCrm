@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Fingerprint, Lock, Mail } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { BrandLogo } from "@/components/brand-logo";
 import { useBranding } from "@/lib/branding-context";
+import { apiFetch } from "@/lib/api";
+import { biometricErrorMessage, loginWithFingerprint } from "@/lib/webauthn";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -20,6 +22,7 @@ export default function LoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [fingerprintBusy, setFingerprintBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,6 +35,40 @@ export default function LoginPage() {
       setError(err?.message ?? "Login failed");
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * Passwordless sign-in with the platform fingerprint sensor (WebAuthn).
+   * After the session is issued we also clock the employee in/out based on
+   * today's attendance state, so touching the sensor is the whole morning
+   * routine: authenticate + punch.
+   */
+  const fingerprintLogin = async () => {
+    setError(null);
+    setFingerprintBusy(true);
+    try {
+      await loginWithFingerprint(email.trim() || undefined);
+      // Best-effort punch; an account without an employee record simply skips.
+      try {
+        const today = await apiFetch<any>("/people/attendance/today");
+        const mine = today?.mine;
+        if (mine) {
+          const action = !mine.checkIn || mine.checkOut ? "in" : "out";
+          await apiFetch("/people/attendance/kiosk", {
+            method: "POST",
+            body: JSON.stringify({ action, mode: "self" }),
+          });
+        }
+      } catch {
+        /* punch is optional — never block sign-in */
+      }
+      // Full navigation so AuthProvider loads /auth/me with the new token.
+      window.location.href = "/dashboard";
+    } catch (err: any) {
+      setError(biometricErrorMessage(err));
+    } finally {
+      setFingerprintBusy(false);
     }
   };
 
@@ -96,6 +133,8 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPw(!showPw)}
+                  aria-label={showPw ? "Hide password" : "Show password"}
+                  aria-pressed={showPw}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
                   {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -119,10 +158,34 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-[11px] text-muted-foreground">
-            Demo: <span className="font-mono font-medium text-foreground">sakib@zoolyum.com</span> /{" "}
-            <span className="font-mono font-medium text-foreground">zoolyum123</span>
+          <div className="my-5 flex items-center gap-3">
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">or</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+
+          <button
+            type="button"
+            onClick={fingerprintLogin}
+            disabled={fingerprintBusy || busy}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-[12.5px] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Fingerprint className="size-4 text-primary" />
+            {fingerprintBusy ? "Waiting for fingerprint…" : "Sign in with fingerprint"}
+          </button>
+          <p className="mt-2 text-center text-[10.5px] leading-relaxed text-muted-foreground">
+            Touch your device sensor (Windows Hello / Touch ID). Signs you in and records your attendance automatically.
           </p>
+
+          {/* Demo credentials are a development convenience only. In a
+              production build they would hand the Owner account to anyone who
+              opens the login page, so they are compiled out. */}
+          {process.env.NODE_ENV !== "production" && (
+            <p className="mt-6 text-center text-[11px] text-muted-foreground">
+              Demo: <span className="font-mono font-medium text-foreground">sakib@zoolyum.com</span> /{" "}
+              <span className="font-mono font-medium text-foreground">zoolyum123</span>
+            </p>
+          )}
         </div>
       </motion.div>
     </main>

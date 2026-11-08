@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { Cron } from "@nestjs/schedule";
 import { NotificationsService } from "../../notifications/notifications.service";
@@ -16,7 +16,7 @@ export class AlertsService {
     }});
   }
   async update(id:string, body:any){
-    const ex=await this.prisma.alertRule.findUnique({ where:{ id }}); if(!ex) throw new Error("Alert not found");
+    const ex=await this.prisma.alertRule.findUnique({ where:{ id }}); if(!ex) throw new NotFoundException("Alert not found");
     const data:any={}; for(const f of ["name","clientId","metric","condition","threshold","windowDays","isActive"]) if(body[f]!==undefined) data[f]=body[f];
     return this.prisma.alertRule.update({ where:{ id }, data });
   }

@@ -17,7 +17,7 @@ export default function CapitalTabNav() {
   const activeKey = active?.key ?? "overview";
 
   return (
-    <div className="inline-flex max-w-full gap-0.5 overflow-x-auto rounded-xl border border-border bg-card p-1">
+    <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1">
       {TABS.map((t) => (
         <Link
           key={t.key}
@@ -25,7 +25,7 @@ export default function CapitalTabNav() {
           className={cn(
             "whitespace-nowrap rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
             activeKey === t.key
-              ? "bg-primary text-primary-foreground"
+              ? "bg-primary text-primary-foreground shadow-sm"
               : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
           )}
         >

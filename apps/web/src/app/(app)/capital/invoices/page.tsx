@@ -92,7 +92,6 @@ function InvoicesContent() {
     <>
       <InstallmentWatch onView={openInvoice} />
       <InvoicesTab
-        invoices={c.invoices}
         error={c.invoicesErr}
         refresh={c.reload}
         clients={c.clients}

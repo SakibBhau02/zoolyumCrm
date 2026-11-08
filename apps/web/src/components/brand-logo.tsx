@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { useBranding } from "@/lib/branding-context";
+import { resolveBrandingUrl } from "@/lib/branding-url";
 
 export function BrandLogo({
   height = 32,
@@ -26,9 +27,13 @@ export function BrandLogo({
   const appName = branding?.appName ?? "Zoolyum OS";
   const [failed, setFailed] = useState(false);
   const effectiveDark = variant === "light" ? true : variant === "dark" ? false : isDark;
-  const src = effectiveDark
+  const rawSrc = effectiveDark
     ? (branding?.logoLightUrl ?? branding?.logoUrl ?? null)
     : (branding?.logoDarkUrl ?? branding?.logoUrl ?? null);
+  // Branding uploads live behind the API origin (/api/...), not the web origin.
+  // Resolving them here is what stopped the shell logo from 404ing on every
+  // page while the invoice print view showed it correctly.
+  const src = resolveBrandingUrl(rawSrc);
 
   useEffect(() => {
     setFailed(false);

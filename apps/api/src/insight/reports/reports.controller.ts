@@ -2,7 +2,9 @@ import { Body, Controller, Get, Param, Post, Query, Res } from "@nestjs/common";
 import { ReportsService } from "./reports.service";
 import { Response } from "express";
 import { PrismaService } from "../../prisma/prisma.service";
+import { RequirePermission } from "../../common/decorators/require-permission.decorator";
 
+@RequirePermission("INSIGHT")
 @Controller("insight/reports")
 export class ReportsController {
   constructor(private readonly reports: ReportsService, private readonly prisma: PrismaService) {}

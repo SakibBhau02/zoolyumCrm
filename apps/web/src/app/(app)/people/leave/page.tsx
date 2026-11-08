@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle2, History, Plus, Wallet, XCircle } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatDate } from "@/lib/format";
@@ -7,6 +8,8 @@ import { Avatar, EmptyState, SectionTitle, SkeletonBlock, StatusBadge, cn } from
 import { Btn, Td, Tr } from "@/components/table";
 import { Drawer, Field, Textarea } from "@/components/ui";
 import { DataTable, Toast, useList, useToast } from "../_components/hooks";
+import { Pager, RowCheck, TableToolbar, useTable } from "../_components/table-kit";
+import { PeopleHero, PeopleTabs } from "../_components/hero";
 import { LeaveModal } from "../_components/modals/leave-modal";
 
 export default function LeavePage() {
@@ -16,10 +19,49 @@ export default function LeavePage() {
   const { data: balances, loading: bl, error: be } = useList<any[]>("/people/leave-balances", refresh);
   const { data: employees } = useList<any[]>("/people/employees");
   const [open, setOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Telegram / email notifications deep-link to one request.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get("request"));
+  // Clicking a second notification while this page is already mounted must
+  // replace the open request — not silently keep the first one.
+  useEffect(() => {
+    const r = searchParams.get("request");
+    if (r) setSelectedId(r);
+  }, [searchParams]);
+  // Closing the drawer clears ?request= so the same notification can re-open it.
+  useEffect(() => {
+    if (selectedId) return;
+    if (!searchParams.get("request")) return;
+    const p = new URLSearchParams(searchParams.toString());
+    p.delete("request");
+    router.replace(`/people/leave${p.toString() ? `?${p}` : ""}`, { scroll: false });
+  }, [selectedId, searchParams, router]);
   const [note, setNote] = useState("");
   const [deciding, setDeciding] = useState(false);
   const { flash, notify } = useToast();
+  const pending = (requests ?? []).filter((r: any) => r.status === "PENDING").length;
+  const table = useTable<any>(requests, { keys: (r) => [r.employee?.name, r.status, r.leaveType], pageSize: 7 });
+  const [view, setView] = useState<"requests" | "balances">("requests");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const pickedPending = (requests ?? []).filter((r: any) => picked.includes(r.id) && r.status === "PENDING");
+
+  const bulkDecide = async (approved: boolean) => {
+    if (!pickedPending.length) return;
+    setBulkBusy(true);
+    let ok = 0;
+    for (const r of pickedPending) {
+      try {
+        await apiFetch(`/people/leave-requests/${r.id}`, { method: "PATCH", body: JSON.stringify({ approved }) });
+        ok++;
+      } catch { /* per-request errors are surfaced by the count below */ }
+    }
+    notify(`${ok}/${pickedPending.length} ${approved ? "approved" : "rejected"}`);
+    setPicked([]);
+    setBulkBusy(false);
+    reload();
+  };
   const decide = async (r: any, approved: boolean) => {
     try {
       await apiFetch(`/people/leave-requests/${r.id}`, { method: "PATCH", body: JSON.stringify({ approved }) });
@@ -48,25 +90,84 @@ export default function LeavePage() {
   return (
     <div>
       <Toast flash={flash} />
-      <div className="mb-4">
+      <PeopleHero
+        title="Leave"
+        subtitle="Approvals, balances and the yearly quota in one place"
+        stats={[
+          { label: "Requests", value: table.total },
+          { label: "Pending", value: pending, tone: pending ? "amber" : "default" },
+          { label: "Approved", value: (requests ?? []).filter((r: any) => r.status === "APPROVED").length, tone: "emerald" },
+          { label: "Balances", value: (balances ?? []).length, sub: "rows", tone: "sky" },
+        ]}
+        actions={<Btn variant="primary" onClick={() => setOpen(true)} className="!px-2.5 !py-1.5 text-[11px]"><Plus className="size-3.5" /> Request</Btn>}
+      />
+      <PeopleTabs
+        className="mt-2"
+        value={view}
+        onChange={setView}
+        tabs={[
+          { id: "requests", label: "Requests", count: table.total },
+          { id: "balances", label: "Balances", count: (balances ?? []).length },
+        ]}
+      />
+      <div className={view === "requests" ? "mt-2" : "hidden"}>
         <div className="mb-3 flex items-center justify-between">
-          <SectionTitle title="Leave requests" subtitle="Approve or reject pending requests" />
-          <Btn variant="primary" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Request Leave</Btn>
+          <SectionTitle title="Leave requests" subtitle={`Approve or reject pending requests${pending ? ` · ${pending} waiting` : ""}`} />
         </div>
+        <TableToolbar
+          q={table.q}
+          onQ={table.setQ}
+          placeholder="Search employee, type or status…"
+          count={`${table.total} request${table.total === 1 ? "" : "s"}`}
+          right={
+            picked.length > 0 ? (
+              <>
+                <span className="text-[11.5px] font-semibold">{pickedPending.length} pending selected</span>
+                <Btn variant="primary" onClick={() => bulkDecide(true)} disabled={bulkBusy || pickedPending.length === 0} className="!py-1.5">
+                  <CheckCircle2 className="size-3.5" /> Approve
+                </Btn>
+                <Btn variant="outline" onClick={() => bulkDecide(false)} disabled={bulkBusy || pickedPending.length === 0} className="!py-1.5 text-rose-500">
+                  <XCircle className="size-3.5" /> Reject
+                </Btn>
+                <Btn variant="ghost" onClick={() => setPicked([])} className="!py-1.5">Clear</Btn>
+              </>
+            ) : null
+          }
+        />
         <DataTable
           loading={loading}
           error={error}
           onRetry={reload}
           skeleton={6}
-          footer={<span className="text-[11.5px] text-muted-foreground">{(requests ?? []).length} requests</span>}
-          cols={["Employee", "Type", "From", "To", "Days", "Applied", "Status"]}
-          rows={(requests ?? []).map((r: any, i: number) => (
+          footer={<Pager page={table.page} pages={table.pages} onPage={table.setPage} total={table.total} pageSize={7} label="requests" />}
+          cols={[
+            <span key="sel" className="inline-flex">
+              <RowCheck
+                checked={table.paged.length > 0 && table.paged.every((r: any) => picked.includes(r.id))}
+                label="Select all on this page"
+                onChange={(v) => {
+                  const ids = table.paged.map((r: any) => r.id);
+                  setPicked((s) => (v ? [...new Set([...s, ...ids])] : s.filter((x) => !ids.includes(x))));
+                }}
+              />
+            </span>,
+            "Employee", "Type", "From", "To", "Days", "Applied", "Status",
+          ]}
+          rows={table.paged.map((r: any, i: number) => (
             <Tr key={r.id} index={i} onClick={() => setSelectedId(r.id)} className="cursor-pointer">
+              <Td onClick={(e) => e.stopPropagation()}>
+                <RowCheck checked={picked.includes(r.id)} label={`Select ${r.employee?.name ?? "request"}`} onChange={(v) => setPicked((s) => (v ? [...s, r.id] : s.filter((x) => x !== r.id)))} />
+              </Td>
               <Td><div className="flex items-center gap-2.5"><Avatar name={r.employee?.name} /><div><p className="font-medium">{r.employee?.name}</p><p className="text-[11px] text-muted-foreground">{r.employee?.roleTitle}</p></div></div></Td>
               <Td><span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary dark:text-primary">{r.leaveType}</span></Td>
               <Td className="text-muted-foreground">{formatDate(r.startDate)}</Td>
               <Td className="text-muted-foreground">{formatDate(r.endDate)}</Td>
-              <Td className="font-semibold tabular-nums">{days(r.startDate, r.endDate)}</Td>
+              <Td className="font-semibold tabular-nums">
+                {/* Working days (weekends/holidays excluded) — the same number the
+                    drawer and the balance deduction use. The old cell counted
+                    calendar days, so the table and the drawer disagreed. */}
+                {r.workingDays != null ? r.workingDays : days(r.startDate, r.endDate)}
+              </Td>
               <Td className="text-muted-foreground">{formatDate(r.appliedAt)}</Td>
               <Td>
                 <div className="flex items-center gap-1.5">
@@ -83,6 +184,7 @@ export default function LeavePage() {
           ))}
         />
       </div>
+      <div className={view === "balances" ? "mt-2" : "hidden"}>
       <SectionTitle title="Leave balances" subtitle="Entitlement by type and period" />
       <DataTable
         loading={bl}
@@ -100,6 +202,7 @@ export default function LeavePage() {
           </Tr>
         ))}
       />
+      </div>
       <LeaveModal open={open} onClose={() => setOpen(false)} employees={employees ?? []} onSaved={() => { notify("Leave requested"); reload(); }} />
       <LeaveDetailDrawer
         id={selectedId}

@@ -12,10 +12,10 @@ export default function CapitalLayout({ children }: { children: React.ReactNode 
         subtitle="Invoicing, expenses, payments and real-time profitability."
         actions={<CapitalHeaderActions />}
       />
-      <div className="mb-5 overflow-x-auto pb-1">
+      <div className="sticky top-0 z-30 -mx-4 mb-4 border-b border-border/60 bg-background/90 bg-mesh px-4 py-2.5 backdrop-blur-xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <CapitalTabNav />
       </div>
-      <div className="mt-5">{children}</div>
+      <div className="mt-4">{children}</div>
       <CapitalGlobalModals />
     </CapitalProvider>
   );

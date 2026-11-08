@@ -80,13 +80,17 @@ export interface Lead {
   stage: string;
   priority: string;
   leadScore: number | null;
+  /** Rule-engine flags: NO_PHONE, NO_COMPANY, DUPLICATE, STALE, SLA_BREACH, UNASSIGNED. */
+  qualityFlags?: string[];
   estimatedDealSize: number | null;
   currency: string;
   assignedTo: { id: string; name: string } | null;
   assignedToId?: string | null;
   convertedClientId?: string | null;
   client?: { id: string; companyName: string } | null;
-  projects?: { id: string; name: string; status: string }[];
+  projects?: { id: string; name: string; status: string; team?: string[]; assignedPm?: { name: string } | null }[];
+  /** What the lead needs — sector, requirement, budget, timeline. */
+  description?: string | null;
   notes?: string | null;
   createdAt: string;
   stageEnteredAt?: string | null;
@@ -115,6 +119,12 @@ export interface LeadMeeting {
   meetingLink: string | null;
   location: string | null;
   attendees?: { id: string; name: string }[] | null;
+  attendeeLinks?: {
+    id: string;
+    employeeId: string;
+    status: string;
+    employee?: { id: string; name: string } | null;
+  }[];
   status: string;
   notes: string | null;
   createdBy?: { name: string } | null;
@@ -138,6 +148,48 @@ export interface LeadFollowUp {
   status: "SCHEDULED" | "COMPLETED" | "MISSED";
   createdAt: string;
   updatedAt: string;
+}
+
+/** One row in the Today queue — a lead plus the next thing owed to it. */
+export interface PulseWorkItem {
+  id: string;
+  uid: string | null;
+  name: string;
+  company: string | null;
+  stage: string;
+  priority: string;
+  temperature: string;
+  leadScore: number | null;
+  probability: number;
+  estimatedDealSize: number | null;
+  currency: string;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  lastContactedAt: string | null;
+  nextFollowUpAt: string | null;
+  nextActionKind: "follow-up" | "meeting" | null;
+  nextActionNote: string | null;
+  followUpId: string | null;
+  meetingId: string | null;
+  assignedTo: { id: string; name: string } | null;
+  daysSinceContact: number | null;
+  stale: boolean;
+}
+
+export interface PulseWorklist {
+  generatedAt: string;
+  counts: {
+    overdue: number;
+    today: number;
+    upcoming: number;
+    unscheduled: number;
+    stale: number;
+    pipelineValue: number;
+  };
+  overdue: PulseWorkItem[];
+  today: PulseWorkItem[];
+  upcoming: PulseWorkItem[];
+  unscheduled: PulseWorkItem[];
 }
 
 export interface LeadNote {
@@ -188,8 +240,12 @@ export interface PipelineSummary {
   winRate: number | null;
   hotLeads: number;
   staleLeads: number;
+  /** Active leads whose first response passed the SLA (Control → Lead Rules). */
+  slaBreached?: number;
   avgScore: number | null;
   followUpsDue: number;
+  followUpsToday?: number;
+  noNextAction?: number;
   urgentCount: number;
   avgResponseHours: number | null;
   starredCount: number;
@@ -225,11 +281,45 @@ export interface Client {
   renewalDate: string | null;
   notes?: string | null;
   createdAt?: string;
+  /** Retainer settings — present on the raw record. */
+  monthlyAmount?: number | string | null;
+  monthlyServiceDescription?: string | null;
+  billingDayOfMonth?: number | null;
+  paymentDueDays?: number | null;
+  retainerInterval?: string | null;
+  autoGenerateInvoice?: boolean;
+  lastAutoInvoiceCycle?: string | null;
   accountOwner: { id: string; name: string } | null;
+  /** Primary contact, resolved by the list endpoint for quick call/email actions. */
+  primaryContact?: {
+    id: string;
+    name: string;
+    roleTitle: string | null;
+    email: string | null;
+    phone: string | null;
+    isPrimary?: boolean;
+  } | null;
+  /** First contacts returned by the list endpoint (used by search + pickers). */
+  contacts?: {
+    id: string;
+    name: string;
+    roleTitle: string | null;
+    email: string | null;
+    phone: string | null;
+    isPrimary?: boolean;
+  }[];
   _count?: { projects: number; invoices: number; contacts: number };
   totalInvoiced?: number;
   totalPaid?: number;
   totalDue?: number;
+  /** Derived from invoice dates, not the stored status column. */
+  overdueCount?: number;
+  overdueAmount?: number;
+  openInvoiceCount?: number;
+  /** Not yet issued — excluded from outstanding. */
+  draftAmount?: number;
+  draftCount?: number;
+  lastInvoiceDate?: string | null;
 }
 
 export interface ClientContact {
@@ -276,9 +366,17 @@ export interface ClientDetail extends Client {
     riskScore: number | null; budgetAmount: number | null; targetEndDate: string | null;
   }[];
   invoices: {
-    id: string; invoiceNumber: string; status: string; issueDate: string;
-    dueDate: string | null; lineItems: { amount: number; revenueTag: string }[];
-    total?: number; paid?: number;
+    id: string; invoiceNumber: string; status: string; invoiceType?: string | null;
+    issueDate: string; dueDate: string | null;
+    lineItems: {
+      description?: string | null;
+      quantity?: number | string | null;
+      unitPrice?: number | string | null;
+      amount: number;
+      revenueTag: string;
+    }[];
+    total?: number; paid?: number; balance?: number; refunded?: number;
+    project?: { id: string; name: string } | null;
   }[];
   payments?: {
     id: string;
@@ -291,17 +389,48 @@ export interface ClientDetail extends Client {
   totalInvoiced: number;
   totalPaid: number;
   totalDue: number;
+  /** Full-history counts — the `invoices` array above is only the recent page. */
+  invoiceCount?: number;
+  projectCount?: number;
+  overdueCount?: number;
+  overdueAmount?: number;
+  draftAmount?: number;
+  draftCount?: number;
   aging?: { current: number; d30: number; d60: number; d90: number; d90p: number };
+  /** Cost side of the relationship, straight from Capital expenses. */
+  finance?: {
+    expensesTotal: number;
+    pendingExpenses: number;
+    billableExpenses: number;
+    expenseCount: number;
+    profit: number;
+    margin: number | null;
+    recentExpenses: {
+      id: string; description: string; amount: number; category: string;
+      date: string; approvalStatus: string; isClientBillable: boolean; projectId: string | null;
+    }[];
+  };
 }
 
 export interface AccountsOverview {
   totalClients: number;
+  /** Archived clients are excluded from every KPI above. */
+  archivedClients?: number;
   avgHealth: number | null;
   distribution: { GREEN: number; YELLOW: number; RED: number };
-  renewalsNext30: { id: string; companyName: string; renewalDate: string | null }[];
+  renewalsNext30: { id: string; companyName: string; renewalDate: string | null; healthLevel?: string }[];
   atRiskCount: number;
   newThisMonth: number;
   churnFlagged: number;
+  /** Portfolio money, so the board can lead with what is owed. */
+  totalDue?: number;
+  overdueAmount?: number;
+  overdueClients?: number;
+  mrr?: number;
+  retainerMissingAmount?: number;
+  noContact?: number;
+  noOwner?: number;
+  dataGaps?: number;
 }
 
 export interface ProjectReference {

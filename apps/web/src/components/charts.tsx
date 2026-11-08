@@ -57,8 +57,14 @@ export function RevenueAreaChart({
   height?: number;
 }) {
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <AreaChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -14 }}>
+    <div>
+      <div className="mb-1.5 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-3.5 rounded-full bg-[var(--chart-1)]" /> Invoiced</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-3.5 rounded-full bg-[var(--chart-3)]" /> Collected</span>
+        <span className="ml-auto text-[9.5px] font-medium opacity-70">hover a point for exact amounts</span>
+      </div>
+      <ResponsiveContainer width="100%" height={height}>
+        <AreaChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -14 }}>
         <defs>
           <linearGradient id="gradInvoiced" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.35} />
@@ -108,7 +114,8 @@ export function RevenueAreaChart({
           animationEasing="ease-out"
         />
       </AreaChart>
-    </ResponsiveContainer>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -132,15 +139,21 @@ const METHOD_LABELS: Record<string, string> = {
 export function PaymentDonut({
   data,
 }: {
-  data: { method: string; amount: number }[];
+  data: { method?: string; name?: string; amount: number }[];
 }) {
   const total = data.reduce((s, d) => s + d.amount, 0) || 1;
-  const chartData = data.map((d) => ({
-    ...d,
-    fill: METHOD_COLORS[d.method]?.[0] ?? "var(--chart-1)",
-  }));
+  // The API returns `{ name, amount }` in some reports and `{ method, amount }`
+  // in others — normalise instead of crashing on `undefined.replace`.
+  const chartData = data.map((d) => {
+    const method = d.method ?? d.name ?? "OTHER";
+    return {
+      ...d,
+      method,
+      fill: METHOD_COLORS[method]?.[0] ?? "var(--chart-1)",
+    };
+  });
   return (
-    <div className="flex items-center gap-6">
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-4">
       <div className="relative shrink-0">
         <ResponsiveContainer width={170} height={170}>
           <PieChart>
@@ -169,14 +182,14 @@ export function PaymentDonut({
           </span>
         </div>
       </div>
-      <div className="flex flex-col gap-2.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
         {chartData.map((d) => (
-          <div key={d.method} className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full" style={{ background: d.fill }} />
-            <span className="w-28 text-[12px] text-muted-foreground">
+          <div key={d.method} className="flex min-w-0 items-center gap-2">
+            <span className="size-2.5 shrink-0 rounded-full" style={{ background: d.fill }} />
+            <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
               {METHOD_LABELS[d.method] ?? d.method.replace(/_/g, " ")}
             </span>
-            <span className="text-[12.5px] font-bold tabular-nums">
+            <span className="shrink-0 text-[12.5px] font-bold tabular-nums">
               {Math.round((d.amount / total) * 100)}%
             </span>
           </div>
@@ -195,13 +208,18 @@ export function StageBarChart({
   height?: number;
 }) {
   return (
-    <ResponsiveContainer width="100%" height={height}>
-      <BarChart
-        data={data}
-        layout="vertical"
-        margin={{ top: 4, right: 16, bottom: 0, left: 4 }}
-        barGap={4}
-      >
+    <div>
+      <div className="mb-1.5 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3.5 rounded-full bg-gradient-to-r from-[var(--chart-1)] to-[var(--chart-2)]" /> Pipeline value (৳)</span>
+        <span className="ml-auto text-[9.5px] font-medium opacity-70">hover a bar for the lead count &amp; value</span>
+      </div>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart
+          data={data}
+          layout="vertical"
+          margin={{ top: 4, right: 16, bottom: 0, left: 4 }}
+          barGap={4}
+        >
         <defs>
           <linearGradient id="gradStage" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0%" stopColor="var(--chart-1)" />
@@ -247,7 +265,8 @@ export function StageBarChart({
           animationDuration={1000}
         />
       </BarChart>
-    </ResponsiveContainer>
+      </ResponsiveContainer>
+    </div>
   );
 }
 

@@ -8,6 +8,8 @@ import { InvoiceService } from "./invoice.service";
 import { ExpenseService } from "./expense.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
 import { buildTrend, invalidateFinance, invoiceTotals, logAudit, POSTABLE_STATUSES } from "./finance-kernel";
+import { AccountsService } from "../accounts/accounts.service";
+import { advanceBillingDate as advanceBillingDateShared } from "../common/billing-date";
 
 @Injectable()
 export class BillingService {
@@ -18,13 +20,26 @@ export class BillingService {
     private readonly ledger: LedgerService,
     private readonly invoiceService: InvoiceService,
     private readonly expenseService: ExpenseService,
-    private readonly wa: WhatsappTriggersService
+    private readonly wa: WhatsappTriggersService,
+    private readonly accounts: AccountsService
   ) {}
 
 
   @Cron("0 2 * * *")
   async handleRecurring() {
     await this.runRecurringBilling();
+  }
+
+  /**
+   * Keep OVERDUE status (and the client health score that reads it) aligned
+   * with reality every morning — before retainer billing runs.
+   */
+  @Cron("0 1 * * *")
+  async handleOverdueSweep() {
+    const moved = await this.invoiceService.syncOverdueStatuses(true);
+    if (moved.toOverdue || moved.toSent) {
+      await this.accounts.recomputeAll().catch(() => {});
+    }
   }
 
 
@@ -279,7 +294,7 @@ export class BillingService {
           "INVOICE_CREATED",
           "Retainer invoice auto-generated",
           `${periodLabel} retainer ${invoice.invoiceNumber} for ${invoice.client.companyName} (${monthName}) has been created.`,
-          "/capital/invoices"
+          `/capital/invoices?inv=${invoice.id}`
         );
       } catch {}
       await logAudit(this.prisma, "Invoice", invoice.id, "retainer_auto_created", { invoiceNumber, cycle: cycleId });
@@ -295,10 +310,7 @@ export class BillingService {
   }
 
   private advanceBillingDate(from: Date, interval: string | null): Date {
-    const d = new Date(from);
-    const s = (interval ?? '30-days').toLowerCase();
-    const days = s.includes('monthly') || s.includes('30') ? 30 : s.includes('90') ? 90 : s.includes('60') ? 60 : s.includes('15') ? 15 : s.includes('7') ? 7 : 30;
-    d.setDate(d.getDate() + days);
-    return d;
+    // One shared rule for every billing cadence (see common/billing-date.ts).
+    return advanceBillingDateShared(from, interval);
   }
 }

@@ -1,11 +1,14 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { HealthStatus, ProjectStatus, ProjectType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { CacheService } from "../cache/cache.service";
 import { CapitalService } from "../capital/capital.service";
+import { ScoringService } from "../scoring/scoring.service";
 import { CreateReferenceDto } from "./dto/create-reference.dto";
+import { advanceBillingDate } from "../common/billing-date";
+import { recomputeProjectStats } from "../common/project-stats";
 
 @Injectable()
 export class FlowService {
@@ -13,7 +16,8 @@ export class FlowService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly cache: CacheService,
-    private readonly capital: CapitalService
+    private readonly capital: CapitalService,
+    private readonly scoring: ScoringService
   ) {}
 
   async overview() {
@@ -39,7 +43,7 @@ export class FlowService {
     });
   }
 
-  async list(query: { q?: string; status?: string; health?: string; clientId?: string; managerId?: string }) {
+  async list(query: { q?: string; status?: string; health?: string; clientId?: string; managerId?: string; page?: string | number; pageSize?: string | number }) {
     return this.cache.wrapQuery("flow:list", query, 30, async () => {
       const where: any = {
       ...(query.q
@@ -56,7 +60,13 @@ export class FlowService {
       ...(query.clientId ? { clientId: query.clientId } : {}),
       ...(query.managerId ? { assignedPmId: query.managerId } : {}),
     };
-    const [projects, tasks] = await Promise.all([
+    // Opt-in pagination: callers that pass `page` get { items, total, ... };
+    // existing callers keep the plain array they already expect.
+    const wantsPage = query.page !== undefined && query.page !== null && query.page !== "";
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(query.pageSize) || 50));
+
+    const [projects, total, taskGroups] = await Promise.all([
       this.prisma.project.findMany({
         where,
         include: {
@@ -65,21 +75,30 @@ export class FlowService {
           _count: { select: { tasks: true, milestones: true } },
         },
         orderBy: [{ healthStatus: "asc" }, { createdAt: "desc" }],
+        ...(wantsPage ? { take: pageSize, skip: (page - 1) * pageSize } : {}),
       }),
-      this.prisma.task.findMany({ where: { projectId: { not: null } }, select: { projectId: true, status: true } }),
+      wantsPage ? this.prisma.project.count({ where }) : Promise.resolve(0),
+      // Aggregated in the database instead of pulling every task row into
+      // memory on each request (the list used to fetch all tasks, always).
+      this.prisma.task.groupBy({
+        by: ["projectId", "status"],
+        where: { projectId: { not: null }, archivedAt: null },
+        _count: { _all: true },
+      }),
     ]);
     const byProject: Record<string, { total: number; completed: number }> = {};
-    for (const t of tasks) {
-      if (!t.projectId) continue;
-      byProject[t.projectId] ??= { total: 0, completed: 0 };
-      byProject[t.projectId].total++;
-      if (t.status === "DONE") byProject[t.projectId].completed++;
+    for (const g of taskGroups) {
+      if (!g.projectId) continue;
+      byProject[g.projectId] ??= { total: 0, completed: 0 };
+      byProject[g.projectId].total += g._count._all;
+      if (g.status === "DONE") byProject[g.projectId].completed += g._count._all;
     }
-    return projects.map((p) => ({
+    const items = projects.map((p) => ({
       ...p,
       tasksTotal: byProject[p.id]?.total ?? 0,
       tasksCompleted: byProject[p.id]?.completed ?? 0,
     }));
+    return wantsPage ? { items, total, page, pageSize } : items;
     });
   }
 
@@ -98,13 +117,20 @@ export class FlowService {
     });
   }
 
+  /** id + name only, for pickers in modules that lack Flow permissions. */
+  async projectLookup() {
+    return this.prisma.project.findMany({
+      select: { id: true, name: true, uid: true },
+      orderBy: { name: "asc" },
+      take: 500,
+    });
+  }
+
   private nextBillingDate(start: string, interval?: string): Date | undefined {
     if (!interval) return undefined;
-    const s = new Date(start);
-    const days = interval === "7-days" ? 7 : interval === "15-days" ? 15 : interval === "30-days" ? 30 : undefined;
-    if (days) return new Date(s.getTime() + days * 86400000);
-    const next = new Date(s.getFullYear(), s.getMonth() + 1, 1);
-    return next;
+    // Shared with the billing cron so the first cycle and every later cycle use
+    // the same anchor day (see common/billing-date.ts).
+    return advanceBillingDate(new Date(start), interval);
   }
 
   async detail(id: string) {
@@ -133,7 +159,7 @@ export class FlowService {
         },
       },
     });
-    if (!project) throw new Error("Project not found");
+    if (!project) throw new NotFoundException("Project not found");
     // derive deliverable status from linked tasks (manual status kept when no tasks)
     const deliverables = project.deliverables.map((d) => {
       if (!d.tasks.length) return d;
@@ -148,7 +174,6 @@ export class FlowService {
   }
 
   async create(body: any) {
-    const uid = await this.nextUid();
     // amount sync — keep budgetAmount for compat
     let amount = body.amount;
     let budgetAmount = body.budgetAmount;
@@ -157,9 +182,7 @@ export class FlowService {
     } else if (budgetAmount !== undefined && budgetAmount !== null) {
       amount = budgetAmount;
     }
-    const project = await this.prisma.project.create({
-      data: {
-        uid,
+    const data = {
         clientId: body.clientId,
         name: body.name,
         description: body.description ?? undefined,
@@ -189,11 +212,26 @@ export class FlowService {
         startDate: body.startDate ? new Date(body.startDate) : new Date(),
         targetEndDate: body.targetEndDate ? new Date(body.targetEndDate) : undefined,
         status: body.status ?? undefined,
-        healthStatus: body.healthStatus ?? undefined,
-        riskScore: body.riskScore ?? undefined,
-        riskDriver: body.riskDriver ?? undefined,
-      },
-    });
+        confidenceScore: body.confidenceScore ?? undefined,
+        // healthStatus / riskScore are derived by the scoring engine, never
+        // taken from the create payload.
+    };
+
+    // `uid` is derived from "highest existing number + 1". Two concurrent
+    // creates can pick the same value; the unique index rejects one, and the
+    // retry recomputes it instead of surfacing a 500.
+    let project: any = null;
+    for (let attempt = 0; attempt < 6 && !project; attempt++) {
+      const uid = await this.nextUid();
+      try {
+        project = await this.prisma.project.create({ data: { ...data, uid } });
+      } catch (err: any) {
+        if (err?.code !== "P2002") throw err;
+      }
+    }
+    if (!project) {
+      throw new ConflictException("Could not allocate a project number - please try again");
+    }
     try {
       if (project.assignedPmId) {
         await this.notifications.create(
@@ -201,7 +239,7 @@ export class FlowService {
           "PROJECT_ASSIGNED",
           "Project assigned to you",
           `You are now PM of "${project.name}".`,
-          "/flow"
+          `/flow/${project.id}`
         );
       }
       await this.notifications.notifyRole(
@@ -209,11 +247,12 @@ export class FlowService {
         "PROJECT_UPDATE",
         "New Project Created",
         `New project "${project.name}" has been created.`,
-        "/flow"
+        `/flow/${project.id}`
       );
     } catch {}
+    await this.rescore(project.id, project.clientId);
     await this.invalidateProjects();
-    return project;
+    return (await this.prisma.project.findUnique({ where: { id: project.id } })) ?? project;
   }
 
   async update(id: string, body: any) {
@@ -221,12 +260,27 @@ export class FlowService {
     if (!existing) throw new NotFoundException("Project not found");
     const data: any = {};
     for (const field of [
-      "name", "type", "templateId", "assignedPmId", "status", "healthStatus", "clientId",
+      "name", "type", "templateId", "assignedPmId", "status", "clientId",
       "category", "priority", "progress", "team", "billingType", "recurringInterval",
       "monthlyRate", "totalBilled", "paymentStatus", "briefLink", "driveLink", "researchLink",
-      "riskScore", "riskDriver", "reportFrequency", "reportMode",
+      "confidenceScore", "reportFrequency", "reportMode",
     ]) {
       if (body[field] !== undefined) data[field] = body[field];
+    }
+    // Health is computed, not typed. A PM can still override it, but the
+    // override is stored separately (with a reason) so the engine's own reading
+    // stays visible and a later "clear override" restores it.
+    if (body.clearHealthOverride) {
+      data.healthStatusOverride = null;
+      data.healthOverrideReason = null;
+    } else if (body.healthStatus !== undefined) {
+      if (!body.healthStatus || body.healthStatus === "AUTO") {
+        data.healthStatusOverride = null;
+        data.healthOverrideReason = null;
+      } else {
+        data.healthStatusOverride = body.healthStatus;
+        data.healthOverrideReason = body.healthOverrideReason ?? "Manual override";
+      }
     }
     // amount ↔ budgetAmount sync
     if (body.amount !== undefined) {
@@ -260,8 +314,29 @@ export class FlowService {
     } catch {
       // do not fail status transition if invoice creation fails
     }
+    await this.rescore(id, result.clientId);
     await this.invalidateProjects();
-    return result;
+    return (await this.prisma.project.findUnique({ where: { id } })) ?? result;
+  }
+
+  /**
+   * Recompute the project's own score (which may have changed its
+   * healthStatus), then the client's score, since "at-risk projects" is a
+   * client health factor. Failures never break the caller's write.
+   */
+  private async rescore(projectId: string, clientId?: string | null) {
+    try {
+      await this.scoring.recomputeProject(projectId);
+    } catch {
+      /* scoring must never fail a project write */
+    }
+    if (clientId) {
+      try {
+        await this.scoring.recomputeClient(clientId);
+      } catch {
+        /* same */
+      }
+    }
   }
 
   private async handleAutoInvoice(prev: any, next: any) {
@@ -311,9 +386,18 @@ export class FlowService {
   }
 
   async remove(id: string) {
+    const existing = await this.prisma.project.findUnique({ where: { id }, select: { clientId: true } });
     await this.prisma.project.delete({ where: { id } }).catch(() => {
       throw new NotFoundException("Project not found");
     });
+    // The client's "at-risk projects" factor just changed.
+    if (existing?.clientId) {
+      try {
+        await this.scoring.recomputeClient(existing.clientId);
+      } catch {
+        /* scoring must never fail a delete */
+      }
+    }
     await this.invalidateProjects();
     return { ok: true };
   }
@@ -405,7 +489,8 @@ export class FlowService {
   }
 
   async exportCsv(query: { q?: string; status?: string; clientId?: string; managerId?: string } = {}) {
-    const rows = await this.list(query);
+    const result = await this.list(query);
+    const rows = Array.isArray(result) ? result : result.items;
     const header = [
       "uid", "name", "client", "category", "status", "priority", "progress", "budget", "spent",
       "startDate", "dueDate", "billingType", "recurringInterval", "projectManager", "paymentStatus",
@@ -735,7 +820,7 @@ export class FlowService {
           "REPORT_READY",
           "Report generated",
           `Report "${report.title}" generated for ${project.name}.`,
-          "/flow"
+          `/flow/${projectId}?tab=reports&report=${report.id}`
         );
       }
     } catch {}
@@ -779,9 +864,19 @@ export class FlowService {
   }
 
   // ── Scheduled report generation (recurring projects, AUTOMATIC mode) ──
+  @Cron("15 3 * * *")
+  async reconcileProjectStats() {
+    // Self-healing sweep: any drift introduced by a direct DB edit, an import
+    // or a failed hook is corrected overnight so the board and finance agree.
+    const projects = await this.prisma.project.findMany({ select: { id: true } });
+    for (const p of projects) {
+      await recomputeProjectStats(this.prisma, p.id).catch(() => {});
+    }
+    return { updated: projects.length };
+  }
+
   @Cron("30 2 * * *")
-  async handleScheduledReports() {
-    const due = await this.prisma.project.findMany({
+  async handleScheduledReports() {    const due = await this.prisma.project.findMany({
       where: {
         reportMode: "AUTOMATIC",
         reportFrequency: { not: null },

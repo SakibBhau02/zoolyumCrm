@@ -5,6 +5,11 @@ export interface AuthUser {
   email: string;
   name: string;
   role: string;
+  permissions?: Record<string, { view?: boolean; edit?: boolean; approve?: boolean }>;
+  /** Session id (set on tokens issued after the logout feature shipped). */
+  jti?: string;
+  /** Expiry, seconds since epoch. */
+  exp?: number;
 }
 
 export const CurrentUser = createParamDecorator(

@@ -5,6 +5,10 @@ import type { PrismaService } from "../prisma/prisma.service";
 
 export const ACTIVE_STATUSES = ["SENT", "VIEWED", "PARTIALLY_PAID", "PAID", "OVERDUE"];
 export const POSTABLE_STATUSES = ["SENT", "VIEWED", "PARTIALLY_PAID", "PAID", "OVERDUE"];
+/** Statuses that carry a receivable (drafts and voids are not client debt yet). */
+export const RECEIVABLE_STATUSES = [...ACTIVE_STATUSES];
+/** Statuses that can still be collected. */
+export const OPEN_STATUSES = ["SENT", "VIEWED", "PARTIALLY_PAID", "OVERDUE"];
 
 /**
  * Canonical invoice money math (mirrors Finance_System formulas):
@@ -12,6 +16,8 @@ export const POSTABLE_STATUSES = ["SENT", "VIEWED", "PARTIALLY_PAID", "PAID", "O
  *   tax      = subtotal * taxRate / 100   (only when taxApplicable)
  *   discount = subtotal * discountRate / 100
  *   grand    = subtotal + tax - discount + shipping
+ *   paid     = Σ payments IN − Σ payments REFUND   (net cash actually retained)
+ *   balance  = grand − paid
  * Revenue recognition stays line-based (pre-tax, as before); `grand` is the
  * client-facing receivable used for status / aging / balances.
  */
@@ -21,21 +27,50 @@ export function invoiceTotals(inv: any) {
   const discount = inv.discountRate ? (subtotal * Number(inv.discountRate)) / 100 : 0;
   const shipping = Number(inv.shippingFee ?? 0);
   const grand = Math.max(0, subtotal + tax - discount + shipping);
-  const paid = (inv.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0);
-  const paidIn = (inv.payments ?? []).filter((p: any) => !p.type || p.type === "IN").reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0);
+  const payments = inv.payments ?? [];
+  const paidIn = payments.filter((p: any) => !p.type || p.type === "IN").reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0);
+  // A refund gives money back, so it must reduce collected — the old formula
+  // added it, which made refunded invoices look MORE paid than before.
+  const refunded = payments.filter((p: any) => p.type === "REFUND").reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0);
+  const paid = paidIn - refunded;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
   return {
-    subtotal: Math.round(subtotal * 100) / 100,
-    tax: Math.round(tax * 100) / 100,
-    discount: Math.round(discount * 100) / 100,
-    shipping: Math.round(shipping * 100) / 100,
-    grand: Math.round(grand * 100) / 100,
-    paid: Math.round(paid * 100) / 100,
-    paidIn: Math.round(paidIn * 100) / 100,
-    balance: Math.round(Math.max(grand - paid, 0) * 100) / 100,
+    subtotal: r2(subtotal),
+    tax: r2(tax),
+    discount: r2(discount),
+    shipping: r2(shipping),
+    grand: r2(grand),
+    paid: r2(paid),
+    paidIn: r2(paidIn),
+    refunded: r2(refunded),
+    balance: r2(Math.max(grand - paid, 0)),
   };
 }
 
-/** Clear every finance-derived cache (reports read through these keys). */
+/** A draft/void invoice is not yet a receivable. */
+export function isReceivable(status: string) {
+  return RECEIVABLE_STATUSES.includes(status);
+}
+
+/** Balance still owed, or 0 when the invoice is settled / not a receivable. */
+export function outstandingOf(inv: any) {
+  const t = invoiceTotals(inv);
+  return isReceivable(inv.status) ? t.balance : 0;
+}
+
+/** Past its due date with money still owed. */
+export function isOverdue(inv: any, now: Date = new Date()) {
+  const t = invoiceTotals(inv);
+  if (!isReceivable(inv.status) || t.balance <= 0) return false;
+  return !!inv.dueDate && new Date(inv.dueDate).getTime() < now.getTime();
+}
+
+export function daysOverdue(inv: any, now: Date = new Date()) {
+  if (!inv.dueDate) return 0;
+  return Math.max(0, Math.floor((now.getTime() - new Date(inv.dueDate).getTime()) / 86400000));
+}
+
+/** Clear every finance-derived cache (reports and client accounts read through these). */
 export async function invalidateFinance(cache: CacheService) {
   await cache.del("capital:overview");
   await cache.del("capital:income-stats");
@@ -50,6 +85,10 @@ export async function invalidateFinance(cache: CacheService) {
   await cache.del("capital:statements:bs");
   await cache.del("capital:statements:tb");
   await cache.del("capital:statements:cf");
+  // Accounts reads the same invoices: without these the client board shows
+  // stale money for up to 30s after every invoice/payment/expense change.
+  await cache.del("accounts:overview");
+  await cache.delPattern("accounts:list:*");
   await cache.del("insight:overview");
   await cache.del("insight:tax");
   await cache.del("insight:performance");

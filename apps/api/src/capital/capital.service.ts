@@ -6,6 +6,7 @@ import { ExpenseService } from "./expense.service";
 import { ReportingService } from "./reporting.service";
 import { BillingService } from "./billing.service";
 import { MastersService } from "./masters.service";
+import { ApprovalPolicyService } from "./approval-policy.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
 import { invalidateFinance, notifyRole } from "./finance-kernel";
 
@@ -23,6 +24,7 @@ export class CapitalService {
     private readonly reportingService: ReportingService,
     private readonly billingService: BillingService,
     private readonly mastersService: MastersService,
+    private readonly approvalPolicyService: ApprovalPolicyService,
     private readonly cache: CacheService,
     private readonly notifications: NotificationsService,
     private readonly wa: WhatsappTriggersService
@@ -37,7 +39,10 @@ export class CapitalService {
   }
 
 
-  async invoices(query: { status?: string; clientId?: string; q?: string }) {
+  async invoices(query: { status?: string; clientId?: string; q?: string; page?: string; pageSize?: string; quick?: string; min?: string; max?: string }) {
+    // A requested page switches to the paged contract; without it the legacy
+    // array response is kept so existing callers (context, reports) still work.
+    if (query.page || query.pageSize || query.quick) return this.invoiceService.invoicesPage(query);
     return this.invoiceService.invoices(query);
   }
 
@@ -111,8 +116,8 @@ export class CapitalService {
   }
 
 
-  async deleteInvoice(id: string) {
-    return this.invoiceService.deleteInvoice(id);
+  async deleteInvoice(id: string, actorId?: string) {
+    return this.invoiceService.deleteInvoice(id, actorId);
   }
 
 
@@ -141,8 +146,8 @@ export class CapitalService {
   }
 
 
-  async expenses(query: { status?: string; clientId?: string; q?: string; category?: string }) {
-    return this.expenseService.expenses(query);
+  async expenses(query: { status?: string; clientId?: string; q?: string; category?: string }, actorId?: string) {
+    return this.expenseService.expenses(query, actorId);
   }
 
 
@@ -163,6 +168,15 @@ export class CapitalService {
 
   async updateExpense(id: string, body: any, actorId?: string, opts?: { skipPayrollSync?: boolean }) {
     return this.expenseService.updateExpense(id, body, actorId, opts);
+  }
+
+  async approvalPolicy() {
+    return this.approvalPolicyService.get();
+  }
+
+  async updateApprovalPolicy(body: any) {
+    this.approvalPolicyService.validate(body);
+    return this.approvalPolicyService.update(body);
   }
 
 
@@ -223,6 +237,12 @@ export class CapitalService {
 
   async reportsData() {
     return this.reportingService.reportsData();
+  }
+
+
+  /** Monthly / custom-range report used by the downloadable report PDFs. */
+  async reportPeriod(from?: string, to?: string) {
+    return this.reportingService.reportPeriod(from, to);
   }
 
 

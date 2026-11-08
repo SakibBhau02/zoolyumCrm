@@ -6,40 +6,82 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { LedgerService, CapitalDb } from "./ledger.service";
 import { ReportingService } from "./reporting.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
-import { ACTIVE_STATUSES, POSTABLE_STATUSES, invalidateFinance, invoiceTotals, logAudit, notifyRole } from "./finance-kernel";
+import { ACTIVE_STATUSES, POSTABLE_STATUSES, invoiceTotals, invalidateFinance, logAudit, notifyRole } from "./finance-kernel";
+import { AccountsService } from "../accounts/accounts.service";
 
 @Injectable()
 export class InvoiceService {
+  private lastOverdueSync = 0;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
     private readonly notifications: NotificationsService,
     private readonly ledger: LedgerService,
     private readonly reporting: ReportingService,
-    private readonly wa: WhatsappTriggersService
+    private readonly wa: WhatsappTriggersService,
+    private readonly accounts: AccountsService
   ) {}
 
 
+  /**
+   * Status must always agree with money + dates:
+   *   fully paid → PAID, partly paid → PARTIALLY_PAID, past due → OVERDUE.
+   * Previously nothing ever wrote OVERDUE, so capital reports, dashboards and
+   * the client health score all read 0 overdue while invoices sat unpaid.
+   */
   private async recomputeInvoiceStatus(invoiceId: string) {
     const inv = await this.prisma.invoice.findUnique({ where: { id: invoiceId }, include: { lineItems: true, payments: true } });
     if (!inv) return;
     const t = invoiceTotals(inv);
     if (inv.status === "DRAFT" || inv.status === "CANCELLED" || inv.status === "VOID") return;
-    // Zero-paid PAID/PARTIALLY_PAID rows are corrupt (e.g. payments removed) —
-    // demote to SENT so the invoice re-enters the collection flow.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const pastDue = !!inv.dueDate && inv.dueDate < today;
     const status =
-      t.paidIn >= t.grand && t.grand > 0 ? "PAID"
-      : t.paidIn > 0 ? "PARTIALLY_PAID"
-      : (inv.status === "PAID" || inv.status === "PARTIALLY_PAID" ? "SENT" : inv.status);
+      t.paid >= t.grand && t.grand > 0 ? "PAID"
+      : t.paid > 0 ? "PARTIALLY_PAID"
+      : pastDue ? "OVERDUE"
+      : (["PAID", "PARTIALLY_PAID", "OVERDUE"].includes(inv.status) ? "SENT" : inv.status);
     if (status !== inv.status) await this.prisma.invoice.update({ where: { id: invoiceId }, data: { status } });
-    return { total: t.grand, paid: t.paidIn };
+    return { total: t.grand, paid: t.paid };
+  }
+
+  /**
+   * Bulk date→status reconciliation (daily cron + throttled on read).
+   * Returns how many rows moved so callers can invalidate caches.
+   */
+  async syncOverdueStatuses(force = false) {
+    const now = Date.now();
+    if (!force && now - this.lastOverdueSync < 60_000) return { skipped: true, toOverdue: 0, toSent: 0 };
+    this.lastOverdueSync = now;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const [toOverdue, toSent] = await Promise.all([
+      this.prisma.invoice.updateMany({
+        where: { status: { in: ["SENT", "VIEWED"] }, dueDate: { lt: today } },
+        data: { status: "OVERDUE" },
+      }),
+      this.prisma.invoice.updateMany({
+        where: { status: "OVERDUE", OR: [{ dueDate: null }, { dueDate: { gte: today } }] },
+        data: { status: "SENT" },
+      }),
+    ]);
+    if (toOverdue.count || toSent.count) await invalidateFinance(this.cache);
+    return { toOverdue: toOverdue.count, toSent: toSent.count };
+  }
+
+  /** Health depends on overdue invoices — refresh the client after money moves. */
+  private async refreshClientHealth(clientId?: string | null) {
+    if (!clientId) return;
+    await this.accounts.recomputeHealth(clientId).catch(() => {});
   }
 
 
   private async applyOverpayment(invoice: any, db: CapitalDb = this.prisma) {
     if (!invoice) return;
     const t = invoiceTotals(invoice);
-    const excess = Math.round((t.paidIn - t.grand) * 100) / 100;
+    const excess = Math.round((t.paid - t.grand) * 100) / 100;
     if (excess > 0) {
       await db.creditBalance.create({ data: { clientId: invoice.clientId, amount: excess, currency: invoice.currency, source: `Overpayment on ${invoice.invoiceNumber}` } });
     }
@@ -54,11 +96,8 @@ export class InvoiceService {
       where: { projectId, status: { in: ACTIVE_STATUSES as InvoiceStatus[] } },
       include: { lineItems: true, payments: true },
     });
-    const totalBilled = invoices.reduce((s, i) => s + i.lineItems.reduce((x, l) => x + Number(l.amount), 0), 0);
-    const outstanding = invoices.reduce(
-      (s, i) => s + Math.max(invoiceTotals(i).grand - i.payments.reduce((x, p) => x + Number(p.amount), 0), 0),
-      0
-    );
+    const totalBilled = invoices.reduce((s, i) => s + invoiceTotals(i).grand, 0);
+    const outstanding = invoices.reduce((s, i) => s + invoiceTotals(i).balance, 0);
     const paymentStatus = totalBilled === 0 ? "PENDING" : outstanding <= 0 ? "PAID" : "PARTIAL";
     await this.prisma.project
       .update({ where: { id: projectId }, data: { totalBilled: Math.round(totalBilled * 100) / 100, paymentStatus } })
@@ -69,6 +108,8 @@ export class InvoiceService {
 
 
   async invoices(query: { status?: string; clientId?: string; q?: string }) {
+    // Keep OVERDUE badges honest before reading the list (throttled to 1/min).
+    await this.syncOverdueStatuses().catch(() => {});
     return this.prisma.invoice.findMany({
       where: {
         ...(query.status ? { status: query.status as InvoiceStatus } : {}),
@@ -79,12 +120,130 @@ export class InvoiceService {
         client: { select: { id: true, companyName: true } },
         project: { select: { id: true, name: true } },
         lineItems: true,
-        payments: { select: { id: true, amount: true, paymentMethod: true, paymentDate: true } },
+        // `type` is required: refunds must subtract from the paid amount.
+        payments: { select: { id: true, amount: true, type: true, paymentMethod: true, paymentDate: true } },
       },
       orderBy: { issueDate: "desc" },
+      // Safety cap: the invoice table is the heaviest list in the product.
+      take: 500,
     });
   }
 
+
+  /**
+   * Server-side listed view for the invoice table.
+   *
+   * The table previously fetched every invoice and filtered/sliced in the
+   * browser, which stops working at a few hundred rows (payload + DOM). Here
+   * the row filters, the aggregates and the page slice all happen server-side,
+   * so the client only ever receives one page plus the numbers it displays.
+   *
+   * Note: balance-based predicates (`quick`, min/max) are applied after the
+   * query because `balance` is derived (grand − paid), not a column. The DB
+   * query itself is still narrowed by status / client / text search.
+   */
+  async invoicesPage(query: {
+    page?: string;
+    pageSize?: string;
+    status?: string;
+    clientId?: string;
+    q?: string;
+    quick?: string;
+    min?: string;
+    max?: string;
+  }) {
+    await this.syncOverdueStatuses().catch(() => {});
+    const pageSize = Math.min(Math.max(Number(query.pageSize) || 12, 1), 100);
+    const page = Math.max(Number(query.page) || 1, 1);
+
+    const all = await this.prisma.invoice.findMany({
+      where: {
+        ...(query.status ? { status: query.status as InvoiceStatus } : {}),
+        ...(query.clientId ? { clientId: query.clientId } : {}),
+        ...(query.q
+          ? {
+              OR: [
+                { invoiceNumber: { contains: query.q, mode: "insensitive" } },
+                { client: { companyName: { contains: query.q, mode: "insensitive" } } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        client: { select: { id: true, companyName: true } },
+        project: { select: { id: true, name: true } },
+        lineItems: true,
+        payments: { select: { id: true, amount: true, type: true, paymentMethod: true, paymentDate: true } },
+      },
+      orderBy: { issueDate: "desc" },
+    });
+
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const in7 = new Date(midnight.getTime() + 7 * 86400000);
+    const live = (inv: any) => !["DRAFT", "CANCELLED", "VOID"].includes(inv.status);
+    const isOverdue = (inv: any) => {
+      const t = invoiceTotals(inv);
+      return live(inv) && t.balance > 0 && inv.dueDate && inv.dueDate < midnight;
+    };
+    const isDue7 = (inv: any) => {
+      const t = invoiceTotals(inv);
+      const d = inv.dueDate ? new Date(inv.dueDate) : null;
+      return live(inv) && t.balance > 0 && d && d >= midnight && d <= in7;
+    };
+
+    // Chip counts and headline values come from the unfiltered set so the
+    // chips stay meaningful while you are inside one of them.
+    const counts = {
+      all: all.length,
+      overdue: all.filter(isOverdue).length,
+      due7: all.filter(isDue7).length,
+      draft: all.filter((i) => i.status === "DRAFT").length,
+      paid: all.filter((i) => i.status === "PAID").length,
+    };
+    const values = {
+      overdue: all.filter(isOverdue).reduce((s, i) => s + invoiceTotals(i).balance, 0),
+      due7: all.filter(isDue7).reduce((s, i) => s + invoiceTotals(i).balance, 0),
+      draft: all.filter((i) => i.status === "DRAFT").reduce((s, i) => s + invoiceTotals(i).grand, 0),
+    };
+
+    const lo = query.min === undefined || query.min === "" ? null : Number(query.min);
+    const hi = query.max === undefined || query.max === "" ? null : Number(query.max);
+    const filtered = all.filter((inv) => {
+      const t = invoiceTotals(inv);
+      if (query.quick === "overdue" && !isOverdue(inv)) return false;
+      if (query.quick === "due7" && !isDue7(inv)) return false;
+      if (query.quick === "draft" && inv.status !== "DRAFT") return false;
+      if (query.quick === "paid" && inv.status !== "PAID") return false;
+      if (lo != null && t.grand < lo) return false;
+      if (hi != null && t.grand > hi) return false;
+      return true;
+    });
+
+    const sums = filtered.reduce(
+      (acc, inv) => {
+        const t = invoiceTotals(inv);
+        if (inv.status === "DRAFT") {
+          acc.drafts += 1;
+          acc.draftValue += t.grand;
+          return acc;
+        }
+        if (!live(inv)) return acc;
+        acc.billed += t.grand;
+        acc.paid += t.paid;
+        acc.due += t.balance;
+        return acc;
+      },
+      { billed: 0, paid: 0, due: 0, drafts: 0, draftValue: 0 }
+    );
+
+    const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(page, pages);
+    const items = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+    return { items, total, page: safePage, pageSize, pages, sums, counts, values };
+  }
 
   async invoiceDetail(id: string) {
     const inv = await this.prisma.invoice.findUnique({
@@ -100,18 +259,10 @@ export class InvoiceService {
       },
     });
     if (!inv) throw new NotFoundException("Invoice not found");
-    // Self-heal: payment status must always agree with actual payments.
-    const t = invoiceTotals(inv);
-    let healed = inv.status;
-    if (["PAID", "PARTIALLY_PAID"].includes(inv.status)) {
-      healed = t.paidIn >= t.grand && t.grand > 0 ? "PAID" : t.paidIn > 0 ? "PARTIALLY_PAID" : "SENT";
-    } else if (["SENT", "VIEWED", "OVERDUE"].includes(inv.status) && t.grand > 0 && t.paidIn >= t.grand) {
-      healed = "PAID";
-    }
-    if (healed !== inv.status) {
-      await this.prisma.invoice.update({ where: { id }, data: { status: healed } });
-      (inv as any).status = healed;
-    }
+    // Self-heal: payment status must always agree with actual payments + dates.
+    await this.recomputeInvoiceStatus(id);
+    const fresh = await this.prisma.invoice.findUnique({ where: { id }, select: { status: true } });
+    if (fresh && fresh.status !== inv.status) (inv as any).status = fresh.status;
     // Chronological receipt serials (earliest payment = 1, stable ties) —
     // every consumer (detail modal, portal, PDFs) numbers from this.
     const chrono = [...(inv.payments ?? [])].sort((a: any, b: any) =>
@@ -198,12 +349,33 @@ export class InvoiceService {
   }
 
 
-  async createInvoice(body: any, createdById?: string) {
-    if (!body.clientId) {
-      throw new BadRequestException("clientId is required");
+  /**
+   * An invoice may only bill the client that owns the project. Without this,
+   * an invoice could sit on client A's account while inflating client B's
+   * project finance (and the two modules then disagree).
+   */
+  private async resolveBillingTarget(clientId?: string | null, projectId?: string | null) {
+    if (!projectId) {
+      if (!clientId) throw new BadRequestException("clientId is required");
+      return { clientId, projectId: null as string | null };
     }
-    const client = await this.prisma.client.findUnique({ where: { id: body.clientId }, select: { id: true } }).catch(() => null);
+    const project = await this.prisma.project
+      .findUnique({ where: { id: projectId }, select: { id: true, clientId: true, name: true } })
+      .catch(() => null);
+    if (!project) throw new NotFoundException("Project not found");
+    if (clientId && clientId !== project.clientId) {
+      throw new BadRequestException(
+        `Project "${project.name}" belongs to another client — an invoice can only bill the project's own client.`
+      );
+    }
+    return { clientId: project.clientId, projectId: project.id };
+  }
+
+  async createInvoice(body: any, createdById?: string) {
+    const target = await this.resolveBillingTarget(body.clientId, body.projectId);
+    const client = await this.prisma.client.findUnique({ where: { id: target.clientId }, select: { id: true } }).catch(() => null);
     if (!client) throw new NotFoundException("Client not found");
+    body = { ...body, clientId: target.clientId, projectId: target.projectId };
     let invoiceNumber: string = (body.invoiceNumber ?? "").trim() || (await this.ledger.nextInvoiceNumber());
     const clash = await this.prisma.invoice.findUnique({ where: { invoiceNumber } }).catch(() => null);
     if (clash) invoiceNumber = await this.ledger.nextInvoiceNumber();
@@ -271,12 +443,17 @@ export class InvoiceService {
         "INVOICE_CREATED",
         "New Invoice Created",
         `Invoice ${invoice.invoiceNumber} for ${invoice.client.companyName} has been created.`,
-        "/capital",
+        `/capital/invoices?inv=${invoice.id}`,
         createdById
       );
     } catch {}
     await this.syncProjectBilling(body.projectId ?? null);
     await invalidateFinance(this.cache);
+    // A freshly created invoice cannot be PAID without money against it.
+    if (invoice.status === "PAID" || invoice.status === "PARTIALLY_PAID") {
+      await this.recomputeInvoiceStatus(invoice.id).catch(() => {});
+    }
+    await this.refreshClientHealth(invoice.clientId);
     // WhatsApp automation (never blocks the request)
     if (ACTIVE_STATUSES.includes(invoice.status)) void this.wa.notifyInvoiceSent(invoice.id).catch(() => {});
     return invoice;
@@ -286,6 +463,14 @@ export class InvoiceService {
   async updateInvoice(id: string, body: any, actorId?: string) {
     const existing = await this.prisma.invoice.findUnique({ where: { id }, include: { lineItems: true } });
     if (!existing) throw new NotFoundException("Invoice not found");
+    if (body.projectId !== undefined || body.clientId !== undefined) {
+      const target = await this.resolveBillingTarget(
+        body.clientId ?? existing.clientId,
+        body.projectId === undefined ? existing.projectId : body.projectId || null
+      );
+      body = { ...body, clientId: target.clientId };
+      if (body.projectId !== undefined) body.projectId = target.projectId ?? undefined;
+    }
     const data: any = {};
     for (const f of ["status", "invoiceType", "issueDate", "dueDate", "taxApplicable", "taxRate", "discountRate", "shippingFee", "templateStyle", "terms", "paymentDetails", "notes", "projectId", "clientId", "currency", "exchangeRate"]) {
       if (body[f] === undefined || body[f] === "") continue;
@@ -340,6 +525,14 @@ export class InvoiceService {
     }
     await this.syncProjectBilling(body.projectId ?? existing.projectId);
     await invalidateFinance(this.cache);
+    // "Mark as paid" without a payment row would leave the receivable open in
+    // the ledger — let the money itself decide PAID / PARTIALLY_PAID.
+    if (body.status === "PAID" || body.status === "PARTIALLY_PAID") {
+      await this.recomputeInvoiceStatus(id).catch(() => {});
+    }
+    await this.refreshClientHealth(updated.clientId ?? existing.clientId);
+    // Moving an invoice between clients changes both balances.
+    if (existing.clientId !== updated.clientId) await this.refreshClientHealth(existing.clientId);
     // first activation (DRAFT → SENT etc.) triggers the invoice_issued WhatsApp
     if (body.status && !ACTIVE_STATUSES.includes(existing.status) && ACTIVE_STATUSES.includes(body.status)) {
       void this.wa.notifyInvoiceSent(id).catch(() => {});
@@ -390,9 +583,35 @@ export class InvoiceService {
   }
 
 
-  async deleteInvoice(id: string) {
-    const inv = await this.prisma.invoice.findUnique({ where: { id }, include: { payments: true } }).catch(() => null);
+  async deleteInvoice(id: string, actorId?: string) {
+    const inv = await this.prisma.invoice.findUnique({ where: { id }, include: { payments: true, creditNotes: { select: { referenceNumber: true } } } }).catch(() => null);
     if (!inv) throw new NotFoundException("Invoice not found");
+    // Credit notes are accounting records with their own journals - deleting
+    // the invoice underneath them would orphan the ledger.
+    if (inv.creditNotes.length) {
+      throw new BadRequestException(
+        `Invoice ${inv.invoiceNumber} has ${inv.creditNotes.length} credit note(s) (${inv.creditNotes.map((c) => c.referenceNumber).join(", ")}). Void the invoice instead of deleting it.`
+      );
+    }
+    // Financial records are never hard-deleted (PRD §14). A draft with no cash
+    // against it is not a financial record yet, so it may be removed; anything
+    // issued is voided and kept for the ledger and the audit trail.
+    if (inv.status !== "DRAFT" || inv.payments.length > 0) {
+      if (inv.payments.length > 0) {
+        throw new BadRequestException(
+          `Invoice ${inv.invoiceNumber} has ${inv.payments.length} payment(s). Refund or credit them first, then void the invoice.`
+        );
+      }
+      await this.prisma.$transaction(async (tx) => {
+        await this.ledger.reverseGL(id, actorId, tx);
+        await tx.invoice.update({ where: { id }, data: { status: "VOID", shareEnabled: false } });
+        await logAudit(tx, "Invoice", id, "voided", { invoiceNumber: inv.invoiceNumber, previousStatus: inv.status }, actorId);
+      }, { timeout: 15000 });
+      await this.syncProjectBilling(inv.projectId);
+      await invalidateFinance(this.cache);
+      await this.refreshClientHealth(inv.clientId);
+      return { ok: true, voided: true };
+    }
     await this.prisma.$transaction(async (tx) => {
       for (const p of inv.payments) {
         if (p.balanceCredited && p.bankAccountId && p.type === "IN") {
@@ -402,13 +621,14 @@ export class InvoiceService {
           await this.ledger.creditBankAccount(p.bankAccountId, Number(p.amount), tx);
         }
       }
-      await this.ledger.reverseGL(id, undefined, tx);
+      await this.ledger.reverseGL(id, actorId, tx);
       await tx.invoice.delete({ where: { id } });
-      await logAudit(tx, "Invoice", id, "deleted", {});
+      await logAudit(tx, "Invoice", id, "deleted", { invoiceNumber: inv.invoiceNumber, status: inv.status }, actorId);
     }, { timeout: 15000 });
     await this.syncProjectBilling(inv.projectId);
     await invalidateFinance(this.cache);
-    return { ok: true };
+    await this.refreshClientHealth(inv.clientId);
+    return { ok: true, voided: false };
   }
 
 
@@ -421,9 +641,17 @@ export class InvoiceService {
       include: { lineItems: true, payments: true, installments: { orderBy: { sequence: "asc" } }, client: { select: { id: true, companyName: true } } },
     });
     if (!invoice) throw new NotFoundException("Invoice not found");
+    // A draft has no receivable or revenue journal yet; taking money against it
+    // would leave the ledger and the client's account out of balance.
+    if (invoice.status === "DRAFT") {
+      throw new BadRequestException("This invoice is still a draft — issue it first, then record the payment.");
+    }
+    if (["CANCELLED", "VOID"].includes(invoice.status)) {
+      throw new BadRequestException(`Cannot record a payment on a ${invoice.status.toLowerCase()} invoice.`);
+    }
     const t = invoiceTotals(invoice);
     const total = t.grand;
-    const paidSoFar = t.paidIn;
+    const paidSoFar = t.paid;
     // All money movement is atomic: installment, payment, bank, GL, status
     // commit together or roll back together.
     const saved = await this.prisma.$transaction(async (tx) => {
@@ -483,14 +711,15 @@ export class InvoiceService {
       const paid = paidSoFar + Number(body.amount);
       const status = paid >= total ? "PAID" : "PARTIALLY_PAID";
       const msg = `${invoice.client.companyName} paid ৳${Number(body.amount).toLocaleString()} on ${invoice.invoiceNumber}${status === "PAID" ? " — fully paid ✓" : ""}.`;
-      await this.notifications.notifyRole("Finance", "INVOICE_PAID", status === "PAID" ? "Invoice fully paid" : "Payment recorded", msg, "/capital", recordedById);
-      await this.notifications.notifyRole("Owner", "INVOICE_PAID", status === "PAID" ? "Invoice fully paid" : "Payment recorded", msg, "/capital", recordedById);
+      await this.notifications.notifyRole("Finance", "INVOICE_PAID", status === "PAID" ? "Invoice fully paid" : "Payment recorded", msg, `/capital/invoices?inv=${invoiceId}`, recordedById);
+      await this.notifications.notifyRole("Owner", "INVOICE_PAID", status === "PAID" ? "Invoice fully paid" : "Payment recorded", msg, `/capital/invoices?inv=${invoiceId}`, recordedById);
       if (full?.createdById && full.createdById !== recordedById) {
-        await this.notifications.create(full.createdById, "INVOICE_PAID", status === "PAID" ? "Invoice fully paid" : "Payment recorded", msg, "/capital");
+        await this.notifications.create(full.createdById, "INVOICE_PAID", status === "PAID" ? "Invoice fully paid" : "Payment recorded", msg, `/capital/invoices?inv=${invoiceId}`);
       }
     } catch {}
     await this.syncProjectBilling(invoice.projectId);
     await invalidateFinance(this.cache);
+    await this.refreshClientHealth(invoice.clientId);
     void this.wa.notifyPaymentReceived(invoiceId, { amount: Number(body.amount), referenceId: (saved as any)?.referenceId ?? null }).catch(() => {});
     return saved;
   }
@@ -582,21 +811,56 @@ export class InvoiceService {
 
 
   async income(query: { q?: string }) {
-    const [payments, manual] = await Promise.all([
+    const [payments, manual, dollarSales, matched] = await Promise.all([
       this.prisma.payment.findMany({
         where: query.q ? { invoice: { client: { companyName: { contains: query.q, mode: "insensitive" } } } } : undefined,
         include: {
           invoice: { select: { id: true, invoiceNumber: true, invoiceType: true, client: { select: { companyName: true } }, project: { select: { name: true } } } },
           recordedBy: { select: { name: true } },
+          bankAccount: { select: { id: true, accountName: true } },
         },
         orderBy: { paymentDate: "desc" },
       }),
       this.prisma.manualIncome.findMany({
-        where: query.q ? { description: { contains: query.q, mode: "insensitive" } } : undefined,
-        include: { recordedBy: { select: { name: true } } },
+        where: query.q
+          ? {
+              OR: [
+                { description: { contains: query.q, mode: "insensitive" } },
+                { referenceId: { contains: query.q, mode: "insensitive" } },
+                { client: { companyName: { contains: query.q, mode: "insensitive" } } },
+                { project: { name: { contains: query.q, mode: "insensitive" } } },
+              ],
+            }
+          : undefined,
+        include: {
+          recordedBy: { select: { name: true } },
+          bankAccount: { select: { id: true, accountName: true } },
+          client: { select: { id: true, companyName: true } },
+          project: { select: { id: true, name: true } },
+        },
         orderBy: { date: "desc" },
       }),
+      // Dollar sales contribute their FX spread (profit), not the gross BDT —
+      // the principal is a balance-sheet conversion, only the gain is income.
+      this.prisma.dollarSale.findMany({
+        where: query.q
+          ? {
+              OR: [
+                { reference: { contains: query.q, mode: "insensitive" } },
+                { client: { companyName: { contains: query.q, mode: "insensitive" } } },
+              ],
+            }
+          : undefined,
+        include: { client: { select: { companyName: true } } },
+        orderBy: { date: "desc" },
+      }),
+      // A payment is "reconciled" when a bank statement line was matched to it.
+      this.prisma.reconciliationRecord.findMany({
+        where: { matchedPaymentId: { not: null } },
+        select: { matchedPaymentId: true },
+      }),
     ]);
+    const reconciled = new Set(matched.map((m) => m.matchedPaymentId));
     const fromPayments = payments.map((p) => ({
       id: p.id,
       source: "invoice",
@@ -606,10 +870,13 @@ export class InvoiceService {
       method: p.paymentMethod,
       reference: p.referenceId,
       description: p.invoice?.invoiceNumber ?? "Payment",
+      invoice: p.invoice,
       client: p.invoice?.client.companyName ?? null,
       project: p.invoice?.project?.name ?? null,
       category: p.invoice?.invoiceType ?? "PAYMENT",
       recordedBy: p.recordedBy?.name ?? null,
+      bankAccount: p.bankAccount?.accountName ?? null,
+      reconciled: reconciled.has(p.id),
     }));
     const fromManual = manual.map((m) => ({
       id: m.id,
@@ -618,48 +885,131 @@ export class InvoiceService {
       amount: Number(m.amount),
       currency: m.currency,
       method: m.paymentMethod,
-      reference: null,
+      reference: m.referenceId,
       description: m.description,
-      client: null,
-      project: null,
+      invoice: null,
+      client: m.client?.companyName ?? null,
+      project: m.project?.name ?? null,
       category: m.category,
       recordedBy: m.recordedBy?.name ?? null,
+      bankAccount: m.bankAccount?.accountName ?? null,
+      notes: m.notes,
+      attachmentUrl: m.attachmentUrl,
+      taxWithheld: Number(m.taxWithheld ?? 0),
+      netAmount: Number(m.amount) - Number(m.taxWithheld ?? 0),
+      // Manual income never flows through the payment table, so it is its own
+      // bank line: treat it as reconciled only when a statement line exists.
+      reconciled: false,
     }));
-    return [...fromPayments, ...fromManual].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const fromDollar = dollarSales.map((s) => ({
+      id: s.id,
+      source: "dollar",
+      date: s.date,
+      amount: Number(s.profit),
+      currency: "BDT",
+      method: s.paymentMethod,
+      reference: s.reference,
+      description: `Dollar sale ${s.reference} · ${Number(s.usdAmount).toLocaleString("en-US")} USD`,
+      invoice: null,
+      client: s.client?.companyName ?? null,
+      project: null,
+      category: "FX_GAIN",
+      recordedBy: null,
+      bankAccount: null,
+      reconciled: false,
+      fx: {
+        usd: Number(s.usdAmount),
+        bdt: Number(s.bdtAmount),
+        costRate: Number(s.costRate),
+        sellRate: Number(s.effectiveRate),
+        marginPct: Number(s.marginPct),
+      },
+    }));
+    return [...fromPayments, ...fromManual, ...fromDollar].sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
   }
 
 
   async createIncome(body: any, actorId?: string) {
+    const amount = Number(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException("Income amount must be greater than zero");
+    const taxWithheld = Math.max(0, Number(body.taxWithheld ?? 0));
+    if (taxWithheld >= amount) throw new BadRequestException("Tax withheld must be less than the gross amount");
+    const net = Math.round((amount - taxWithheld) * 100) / 100;
+
+    let clientId: string | null = body.clientId ?? null;
+    let projectId: string | null = body.projectId ?? null;
+    if (projectId) {
+      const project = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { id: true, clientId: true, name: true },
+      });
+      if (!project) throw new BadRequestException("Project not found");
+      if (clientId && clientId !== project.clientId) {
+        throw new BadRequestException(`Project "${project.name}" belongs to another client`);
+      }
+      clientId = project.clientId;
+    }
+
     const bankId = body.bankAccountId ?? (await this.ledger.defaultBankAccount());
-    const income = await this.prisma.manualIncome.create({
-      data: {
-        description: body.description,
-        amount: body.amount,
-        currency: body.currency ?? "BDT",
-        exchangeRate: body.exchangeRate ?? 1,
-        category: body.category ?? "OTHER_INCOME",
-        date: body.date ? new Date(body.date) : new Date(),
-        paymentMethod: body.paymentMethod ?? "CASH",
-        bankAccountId: bankId ?? null,
-        notes: body.notes ?? null,
-        recordedById: actorId,
-      },
-    });
-    if (bankId) await this.ledger.creditBankAccount(bankId, Number(body.amount));
-    const [acctBank, acctOther] = await Promise.all([this.ledger.accountByCode("1200"), this.ledger.accountByCode("4200")]);
-    await this.ledger.postGL(
-      "MANUAL_INCOME",
-      `Income — ${income.description}`,
-      income.date,
-      income.id,
-      income.notes,
-      [
-        { accountId: acctBank.id, debit: Number(income.amount), credit: 0 },
-        { accountId: acctOther.id, debit: 0, credit: Number(income.amount) },
-      ],
-      actorId
-    );
-    await logAudit(this.prisma, "ManualIncome", income.id, "created", { description: income.description, amount: Number(income.amount) }, actorId);
+    const rawDate = body.date ?? body.paymentDate;
+    const date = rawDate ? new Date(rawDate) : new Date();
+
+    const income = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.manualIncome.create({
+        data: {
+          description: body.description,
+          amount,
+          currency: body.currency ?? "BDT",
+          exchangeRate: body.exchangeRate ?? 1,
+          category: body.category ?? "OTHER_INCOME",
+          date,
+          paymentMethod: body.paymentMethod ?? "CASH",
+          bankAccountId: bankId ?? null,
+          notes: body.notes ?? null,
+          recordedById: actorId,
+          clientId,
+          projectId,
+          referenceId: body.referenceId ?? null,
+          attachmentUrl: body.attachmentUrl ?? null,
+          taxWithheld,
+        },
+      });
+
+      if (bankId && net > 0) await this.ledger.creditBankAccount(bankId, net, tx);
+      const [acctBank, acctOther] = await Promise.all([
+        this.ledger.accountByCode("1200", tx),
+        this.ledger.accountByCode("4200", tx),
+      ]);
+      const lines = [
+        { accountId: acctBank.id, debit: net, credit: 0, memo: row.description },
+        { accountId: acctOther.id, debit: 0, credit: amount, memo: row.category },
+      ];
+      if (taxWithheld > 0) {
+        const acctTax = await this.ledger.ensureAccount("1150", "Tax Withheld Receivable", "ASSET", tx);
+        lines.push({ accountId: acctTax.id, debit: taxWithheld, credit: 0, memo: "Tax withheld by client" });
+      }
+      await this.ledger.postGL(
+        "MANUAL_INCOME",
+        `Income - ${row.description}`,
+        date,
+        row.id,
+        row.notes,
+        lines,
+        actorId,
+        tx
+      );
+      await logAudit(tx, "ManualIncome", row.id, "created", {
+        description: row.description,
+        amount,
+        taxWithheld,
+        clientId,
+        projectId,
+      }, actorId);
+      return row;
+    }, { timeout: 15000 });
+
     await invalidateFinance(this.cache);
     return income;
   }
@@ -674,6 +1024,19 @@ export class InvoiceService {
 
 
   async createCreditNote(body: any, actorId?: string) {
+    if (body.invoiceId) {
+      const inv = await this.prisma.invoice
+        .findUnique({ where: { id: body.invoiceId }, select: { status: true, invoiceNumber: true, clientId: true } })
+        .catch(() => null);
+      if (!inv) throw new NotFoundException("Invoice not found");
+      if (["DRAFT", "CANCELLED", "VOID"].includes(inv.status)) {
+        throw new BadRequestException(`Invoice ${inv.invoiceNumber} is ${inv.status.toLowerCase()} — issue it before crediting or refunding.`);
+      }
+      if (body.clientId && body.clientId !== inv.clientId) {
+        throw new BadRequestException("The credit note client must match the invoice client.");
+      }
+      body = { ...body, clientId: inv.clientId };
+    }
     const referenceNumber = await this.ledger.nextCreditNoteNumber();
     const type = body.type ?? "CREDIT_NOTE";
     const creditNote = await this.prisma.creditNote.create({
@@ -736,6 +1099,7 @@ export class InvoiceService {
     }
     await logAudit(this.prisma, "CreditNote", creditNote.id, "created", { type, amount: Number(body.amount), referenceNumber }, actorId);
     await invalidateFinance(this.cache);
+    await this.refreshClientHealth(creditNote.clientId);
     return this.prisma.creditNote.findUnique({ where: { id: creditNote.id }, include: { client: { select: { companyName: true } }, invoice: { select: { invoiceNumber: true } } } });
   }
 

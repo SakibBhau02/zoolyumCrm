@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { InvoiceStatus, RevenueTag } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
@@ -20,7 +20,7 @@ export class ReportingService {
 
 
   private async computeOverview() {
-    const [invoices, expenses, bankAccounts, payments, snapshots] = await Promise.all([
+    const [invoices, expenses, bankAccounts, payments, snapshots, unreconciledCount] = await Promise.all([
       this.prisma.invoice.findMany({ include: { lineItems: true, payments: true } }),
       this.prisma.expense.findMany({
         where: { approvalStatus: "APPROVED" },
@@ -29,18 +29,29 @@ export class ReportingService {
       this.prisma.bankAccount.findMany({ select: { accountName: true, accountType: true, currentBalance: true } }),
       this.prisma.payment.findMany({ select: { amount: true, paymentMethod: true } }),
       this.prisma.metricSnapshot.findMany({ orderBy: { recordedAt: "asc" } }),
+      // Bank entries nobody has matched yet — the cash figure cannot be trusted
+      // until these are cleared, so the overview surfaces them.
+      this.prisma.reconciliationRecord.count({ where: { matchStatus: "UNMATCHED" } }),
     ]);
 
     const invoiceable = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status));
     const sumLines = (i: any, tag?: RevenueTag) =>
       i.lineItems.filter((l: any) => (tag ? l.revenueTag === tag : true)).reduce((s: number, l: any) => s + Number(l.amount), 0);
-    const paidOf = (i: any) => i.payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+    // Net of refunds; identical rule to the Accounts module and the web UI.
+    const paidOf = (i: any) => invoiceTotals(i).paid;
 
-    const totalInvoiced = invoiceable.reduce((s, i) => s + sumLines(i), 0);
+    const totalInvoiced = invoiceable.reduce((s, i) => s + invoiceTotals(i).grand, 0);
     const recognizedRevenue = invoiceable.reduce((s, i) => s + sumLines(i, "AGENCY_REVENUE") + sumLines(i, "MANAGEMENT_FEE"), 0);
     const collected = invoices.reduce((s, i) => s + paidOf(i), 0);
-    const outstanding = invoiceable.filter((i) => i.status !== "PAID").reduce((s, i) => s + Math.max(invoiceTotals(i).grand - paidOf(i), 0), 0);
-    const overdueAmount = invoiceable.filter((i) => i.status === "OVERDUE").reduce((s, i) => s + Math.max(invoiceTotals(i).grand - paidOf(i), 0), 0);
+    const outstanding = invoiceable.reduce((s, i) => s + invoiceTotals(i).balance, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // Date-based: status badges are synced, but this must hold even if a row
+    // was never swept (e.g. between cron runs).
+    const overdueAmount = invoiceable.reduce((s, i) => {
+      const bal = invoiceTotals(i).balance;
+      return bal > 0 && i.dueDate && i.dueDate < today ? s + bal : s;
+    }, 0);
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -65,6 +76,7 @@ export class ReportingService {
       expensesMonth,
       billableShare,
       cashPosition,
+      unreconciledCount,
       paymentSplit: Array.from(paymentSplit.entries()).map(([method, amount]) => ({ method, amount })),
       trend,
       profitTrend,
@@ -186,10 +198,10 @@ export class ReportingService {
     if (!project) throw new NotFoundException("Project not found");
     const active = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status));
     const amountOf = (i: any) => invoiceTotals(i).grand;
-    const paidOf = (i: any) => i.payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+    const paidOf = (i: any) => invoiceTotals(i).paid;
     const totalInvoiced = active.reduce((s, i) => s + amountOf(i), 0);
     const collected = invoices.reduce((s, i) => s + paidOf(i), 0);
-    const outstanding = Math.max(totalInvoiced - collected, 0);
+    const outstanding = active.reduce((s, i) => s + invoiceTotals(i).balance, 0);
     const approvedExpenses = expenses.filter((e) => e.approvalStatus === "APPROVED");
     const expensesTotal = approvedExpenses.reduce((s, e) => s + Number(e.amount), 0);
     const byCategory = new Map<string, number>();
@@ -255,7 +267,7 @@ export class ReportingService {
     const lines = await this.prisma.journalEntryLine.findMany({ include: { account: true } });
     const revenue = new Map<string, { name: string; code: string; amount: number }>();
     const expense = new Map<string, { name: string; code: string; amount: number }>();
-    let totalRevenue = 0, totalExpense = 0;
+    let totalRevenue = 0, totalExpense = 0, totalDirectCost = 0;
     for (const l of lines) {
       const amount = Number(l.credit) - Number(l.debit);
       if (l.account.category === "REVENUE") {
@@ -266,17 +278,22 @@ export class ReportingService {
         const e = expense.get(l.accountId) ?? { name: l.account.name, code: l.account.code ?? "", amount: 0 };
         e.amount += -amount;
         expense.set(l.accountId, e);
+        // Track direct cost separately for gross profit. The old lookup used
+        // the accountId-keyed map with the category name, so it never matched
+        // and gross profit always equalled total revenue.
+        if (l.account.category === "DIRECT_COST") totalDirectCost += -amount;
       }
     }
     for (const r of revenue.values()) { r.amount = Math.round(r.amount * 100) / 100; totalRevenue += r.amount; }
     for (const e of expense.values()) { e.amount = Math.round(e.amount * 100) / 100; totalExpense += e.amount; }
-    const grossProfit = totalRevenue - (expense.get("DIRECT_COST") ? expense.get("DIRECT_COST")!.amount : 0);
+    const grossProfit = totalRevenue - totalDirectCost;
     return {
       revenue: Array.from(revenue.values()).sort((a, b) => a.code.localeCompare(b.code)),
       expenses: Array.from(expense.values()).sort((a, b) => a.code.localeCompare(b.code)),
       totalRevenue: Math.round(totalRevenue * 100) / 100,
       totalExpenses: Math.round(totalExpense * 100) / 100,
-      grossProfit: Math.round((totalRevenue - (expense.get("DIRECT_COST")?.amount ?? 0)) * 100) / 100,
+      totalDirectCost: Math.round(totalDirectCost * 100) / 100,
+      grossProfit: Math.round(grossProfit * 100) / 100,
       netIncome: Math.round((totalRevenue - totalExpense) * 100) / 100,
       margin: totalRevenue ? Math.round(((totalRevenue - totalExpense) / totalRevenue) * 100) : 0,
     };
@@ -380,7 +397,7 @@ export class ReportingService {
     ]);
 
     const sumLines = (i: any) => i.lineItems.reduce((s: number, l: any) => s + Number(l.amount), 0);
-    const paidOf = (i: any) => i.payments.reduce((s: number, p: any) => s + Number(p.amount), 0);
+    const paidOf = (i: any) => invoiceTotals(i).paid;
 
     // Revenue by category (invoiceType)
     const byCategory = new Map<string, number>();
@@ -456,8 +473,8 @@ export class ReportingService {
       .map((x) => ({ name: x.category, planned: Math.round(budgetPlanned.get(x.category) ?? 0), actual: x.spent }));
 
     // Key metrics
-    const totalInvoiced = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status)).reduce((s, i) => s + sumLines(i), 0);
-    const totalCollected = payments.reduce((s, p) => s + Number(p.amount), 0);
+    const totalInvoiced = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status)).reduce((s, i) => s + invoiceTotals(i).grand, 0);
+    const totalCollected = payments.reduce((s, p) => s + (p.type === "REFUND" ? -Number(p.amount) : Number(p.amount)), 0);
     const avgInvoiceValue = totalInvoiced ? totalInvoiced / Math.max(invoices.filter((i) => ACTIVE_STATUSES.includes(i.status)).length, 1) : 0;
     const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
     const profitMargin = totalInvoiced ? ((totalInvoiced - totalExpenses) / totalInvoiced) * 100 : 0;
@@ -484,6 +501,8 @@ export class ReportingService {
         avgInvoiceValue: Math.round(avgInvoiceValue),
         profitMargin: Math.round(profitMargin * 100) / 100,
         totalInvoiced: Math.round(totalInvoiced),
+        totalCollected: Math.round(totalCollected),
+        totalExpenses: Math.round(totalExpenses),
         collectionRate: Math.round(collectionRate * 100) / 100,
       },
       taxReport: {
@@ -516,6 +535,232 @@ export class ReportingService {
   }
 
 
+  // ── Period report (monthly / custom range) ───────────────────────────
+
+  /**
+   * Financial report for an arbitrary date window.
+   *
+   * The reports screen is a live snapshot; downloadable monthly and six-month
+   * reports need the invoices / payments / expenses that actually belong to the
+   * window. Returning the headline figures plus line-level breakdowns here
+   * keeps the printed report identical no matter which range was picked.
+   */
+  async reportPeriod(fromStr?: string, toStr?: string) {
+    const now = new Date();
+    const defaultFrom = new Date(now.getFullYear(), now.getMonth(), 1);
+    const defaultTo = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const parse = (value: string | undefined, fallback: Date, endOfDay: boolean) => {
+      if (!value) return fallback;
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) throw new BadRequestException(`Invalid date: ${value}`);
+      if (endOfDay) d.setHours(23, 59, 59, 999);
+      else d.setHours(0, 0, 0, 0);
+      return d;
+    };
+    const from = parse(fromStr, defaultFrom, false);
+    const to = parse(toStr, defaultTo, true);
+    if (from.getTime() > to.getTime()) throw new BadRequestException("`from` must be before `to`");
+
+    const [invoices, payments, expenses] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where: { issueDate: { gte: from, lte: to } },
+        include: { lineItems: true, payments: true, client: { select: { id: true, companyName: true } } },
+        orderBy: { issueDate: "desc" },
+      }),
+      this.prisma.payment.findMany({
+        where: { paymentDate: { gte: from, lte: to } },
+        include: { invoice: { select: { invoiceNumber: true, invoiceType: true } } },
+        orderBy: { paymentDate: "desc" },
+      }),
+      this.prisma.expense.findMany({
+        where: { approvalStatus: "APPROVED", date: { gte: from, lte: to } },
+        orderBy: { date: "desc" },
+      }),
+    ]);
+
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const active = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status));
+    const sumLines = (i: any) =>
+      (i.lineItems ?? []).reduce((s: number, l: any) => s + Number(l.amount ?? 0), 0);
+
+    const invoiced = r2(active.reduce((s, i) => s + invoiceTotals(i).grand, 0));
+    const collected = r2(
+      payments.reduce((s, p) => s + (p.type === "REFUND" ? -Number(p.amount) : Number(p.amount)), 0)
+    );
+    const expensesTotal = r2(expenses.reduce((s, e) => s + Number(e.amount), 0));
+    const profit = r2(invoiced - expensesTotal);
+    const margin = invoiced ? Math.round((profit / invoiced) * 10000) / 100 : 0;
+    const collectionRate = invoiced ? Math.round((collected / invoiced) * 10000) / 100 : 0;
+    const outstanding = r2(active.reduce((s, i) => s + invoiceTotals(i).balance, 0));
+
+    // ── monthly buckets across the window ──
+    const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const buckets = new Map<
+      string,
+      { key: string; label: string; invoiced: number; collected: number; expenses: number; profit: number }
+    >();
+    for (
+      let cursor = new Date(from.getFullYear(), from.getMonth(), 1);
+      cursor.getTime() <= to.getTime();
+      cursor.setMonth(cursor.getMonth() + 1)
+    ) {
+      buckets.set(monthKey(cursor), {
+        key: monthKey(cursor),
+        label: cursor.toLocaleString("en-US", { month: "short", year: "numeric" }),
+        invoiced: 0,
+        collected: 0,
+        expenses: 0,
+        profit: 0,
+      });
+    }
+    for (const inv of active) {
+      const b = buckets.get(monthKey(inv.issueDate));
+      if (b) b.invoiced += invoiceTotals(inv).grand;
+    }
+    for (const p of payments) {
+      const b = buckets.get(monthKey(p.paymentDate));
+      if (b) b.collected += p.type === "REFUND" ? -Number(p.amount) : Number(p.amount);
+    }
+    for (const e of expenses) {
+      const b = buckets.get(monthKey(e.date));
+      if (b) b.expenses += Number(e.amount);
+    }
+    const monthly = Array.from(buckets.values()).map((b) => ({
+      ...b,
+      invoiced: r2(b.invoiced),
+      collected: r2(b.collected),
+      expenses: r2(b.expenses),
+      profit: r2(b.invoiced - b.expenses),
+    }));
+
+    // ── breakdowns ──
+    const byStatusMap = new Map<
+      string,
+      { status: string; count: number; invoiced: number; paid: number; balance: number }
+    >();
+    for (const inv of invoices) {
+      const t = invoiceTotals(inv);
+      const row =
+        byStatusMap.get(inv.status) ?? { status: inv.status, count: 0, invoiced: 0, paid: 0, balance: 0 };
+      row.count += 1;
+      row.invoiced += ACTIVE_STATUSES.includes(inv.status) ? t.grand : 0;
+      row.paid += t.paid;
+      row.balance += ACTIVE_STATUSES.includes(inv.status) ? t.balance : 0;
+      byStatusMap.set(inv.status, row);
+    }
+    const byStatus = Array.from(byStatusMap.values())
+      .map((s) => ({ ...s, invoiced: r2(s.invoiced), paid: r2(s.paid), balance: r2(s.balance) }))
+      .sort((a, b) => b.invoiced - a.invoiced);
+
+    const byCategoryMap = new Map<string, number>();
+    for (const inv of active)
+      byCategoryMap.set(inv.invoiceType, (byCategoryMap.get(inv.invoiceType) ?? 0) + sumLines(inv));
+
+    const byMethodMap = new Map<string, number>();
+    for (const p of payments) {
+      const net = p.type === "REFUND" ? -Number(p.amount) : Number(p.amount);
+      byMethodMap.set(p.paymentMethod, (byMethodMap.get(p.paymentMethod) ?? 0) + net);
+    }
+
+    const byExpenseCategoryMap = new Map<string, number>();
+    for (const e of expenses)
+      byExpenseCategoryMap.set(e.category, (byExpenseCategoryMap.get(e.category) ?? 0) + Number(e.amount));
+
+    const clientMap = new Map<
+      string,
+      { id: string; clientName: string; invoiced: number; paid: number; balance: number; invoices: number }
+    >();
+    for (const inv of invoices) {
+      const t = invoiceTotals(inv);
+      const row =
+        clientMap.get(inv.clientId) ?? {
+          id: inv.clientId,
+          clientName: inv.client.companyName,
+          invoiced: 0,
+          paid: 0,
+          balance: 0,
+          invoices: 0,
+        };
+      row.invoices += 1;
+      row.invoiced += ACTIVE_STATUSES.includes(inv.status) ? t.grand : 0;
+      row.paid += t.paid;
+      row.balance += ACTIVE_STATUSES.includes(inv.status) ? t.balance : 0;
+      clientMap.set(inv.clientId, row);
+    }
+    const topClients = Array.from(clientMap.values())
+      .map((c) => ({ ...c, invoiced: r2(c.invoiced), paid: r2(c.paid), balance: r2(c.balance) }))
+      .sort((a, b) => b.invoiced - a.invoiced)
+      .slice(0, 10);
+
+    const fmtDay = (d: Date) =>
+      d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+
+    return {
+      from,
+      to,
+      label: `${fmtDay(from)} — ${fmtDay(to)}`,
+      generatedAt: new Date(),
+      totals: {
+        invoiced,
+        collected,
+        expenses: expensesTotal,
+        profit,
+        margin,
+        collectionRate,
+        outstanding,
+        invoiceCount: invoices.length,
+        paidInvoiceCount: invoices.filter((i) => i.status === "PAID").length,
+        paymentCount: payments.length,
+        expenseCount: expenses.length,
+      },
+      monthly,
+      byStatus,
+      byCategory: Array.from(byCategoryMap.entries())
+        .map(([name, amount]) => ({ name, amount: r2(amount) }))
+        .sort((a, b) => b.amount - a.amount),
+      byMethod: Array.from(byMethodMap.entries())
+        .map(([method, amount]) => ({ method, amount: r2(amount) }))
+        .sort((a, b) => b.amount - a.amount),
+      expensesByCategory: Array.from(byExpenseCategoryMap.entries())
+        .map(([name, amount]) => ({ name, amount: r2(amount) }))
+        .sort((a, b) => b.amount - a.amount),
+      topClients,
+      invoices: invoices.map((inv) => {
+        const t = invoiceTotals(inv);
+        return {
+          id: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          clientName: inv.client.companyName,
+          issueDate: inv.issueDate,
+          dueDate: inv.dueDate,
+          status: inv.status,
+          invoiceType: inv.invoiceType,
+          amount: t.grand,
+          paid: t.paid,
+          balance: t.balance,
+        };
+      }),
+      expenses: expenses.map((e) => ({
+        id: e.id,
+        date: e.date,
+        description: e.description,
+        category: e.category,
+        amount: Number(e.amount),
+        paymentMethod: e.paymentMethod,
+        isClientBillable: e.isClientBillable,
+      })),
+      payments: payments.map((p) => ({
+        id: p.id,
+        date: p.paymentDate,
+        amount: p.type === "REFUND" ? -Number(p.amount) : Number(p.amount),
+        method: p.paymentMethod,
+        type: p.type,
+        reference: p.referenceId,
+        invoiceNumber: p.invoice?.invoiceNumber ?? null,
+      })),
+    };
+  }
+
   async profitability() {
     return this.cache.wrap("capital:profitability", 30, () => this.computeProfitability());
   }
@@ -534,7 +779,7 @@ export class ReportingService {
         .filter((i) => ACTIVE_STATUSES.includes(i.status))
         .reduce((s, i) => s + i.lineItems.filter((l) => l.revenueTag !== "PASS_THROUGH").reduce((x, l) => x + Number(l.amount), 0), 0);
       const cost = p.expenses.filter((e) => e.approvalStatus === "APPROVED").reduce((s, e) => s + Number(e.amount), 0);
-      const collected = p.invoices.reduce((s, i) => s + i.payments.filter((x) => x.type === "IN").reduce((y, x) => y + Number(x.amount), 0), 0);
+      const collected = p.invoices.reduce((s, i) => s + invoiceTotals(i).paid, 0);
       const hours = p.tasks.reduce((s, t) => s + t.timeLogs.reduce((x, l) => x + Number(l.hours), 0), 0);
       return {
         id: p.id,
@@ -612,31 +857,46 @@ export class ReportingService {
 
 
   private async computeIncomeStats() {
-    const [payments, manual] = await Promise.all([
+    const [payments, manual, dollarSales] = await Promise.all([
       this.prisma.payment.findMany({ include: { invoice: { select: { id: true, invoiceType: true, invoiceNumber: true } } } }),
       this.prisma.manualIncome.findMany(),
+      this.prisma.dollarSale.findMany({ select: { usdAmount: true, profit: true, marginPct: true, paymentMethod: true } }),
     ]);
     const totalPayments = payments.filter((p) => p.type === "IN").reduce((s, p) => s + Number(p.amount), 0);
-    const recurring = payments.filter((p) => p.invoice?.invoiceType === "RECURRING").reduce((s, p) => s + Number(p.amount), 0);
+    const recurring = payments
+      .filter((p) => p.type === "IN" && p.invoice?.invoiceType === "RECURRING")
+      .reduce((s, p) => s + Number(p.amount), 0);
     const oneTime = totalPayments - recurring;
     const manualTotal = manual.reduce((s, m) => s + Number(m.amount), 0);
+    const fxProfit = dollarSales.reduce((s, d) => s + Number(d.profit), 0);
+    const fxUsd = dollarSales.reduce((s, d) => s + Number(d.usdAmount), 0);
+    const txCount = payments.filter((p) => p.type === "IN").length + manual.length + dollarSales.length;
     const byMethod = new Map<string, number>();
     for (const p of payments) if (p.type === "IN") byMethod.set(p.paymentMethod, (byMethod.get(p.paymentMethod) ?? 0) + Number(p.amount));
     for (const m of manual) byMethod.set(m.paymentMethod, (byMethod.get(m.paymentMethod) ?? 0) + Number(m.amount));
+    for (const d of dollarSales) {
+      if (Number(d.profit) === 0) continue;
+      byMethod.set(d.paymentMethod, (byMethod.get(d.paymentMethod) ?? 0) + Number(d.profit));
+    }
+    const totalIncome = totalPayments + manualTotal + fxProfit;
     return {
-      total: totalPayments + manualTotal,
-      totalIncome: totalPayments + manualTotal,
+      total: totalIncome,
+      totalIncome,
       recurring,
       oneTime,
       manual: manualTotal,
-      paymentCount: payments.filter((p) => p.type === "IN").length + manual.length,
-      count: payments.filter((p) => p.type === "IN").length + manual.length,
-      avgAmount: payments.filter((p) => p.type === "IN").length + manual.length ? (totalPayments + manualTotal) / (payments.filter((p) => p.type === "IN").length + manual.length) : 0,
+      fxProfit: Math.round(fxProfit * 100) / 100,
+      fxUsd: Math.round(fxUsd * 100) / 100,
+      fxCount: dollarSales.length,
+      paymentCount: txCount,
+      count: txCount,
+      avgAmount: txCount ? totalIncome / txCount : 0,
       byMethod: Array.from(byMethod.entries()).map(([method, amount]) => ({ method, amount: Math.round(amount) })).sort((a, b) => b.amount - a.amount),
       bySource: [
         { source: "invoice", amount: Math.round(totalPayments) },
         { source: "manual", amount: Math.round(manualTotal) },
-      ].filter((s) => s.amount > 0),
+        { source: "dollar", amount: Math.round(fxProfit) },
+      ].filter((s) => s.amount !== 0),
     };
   }
 

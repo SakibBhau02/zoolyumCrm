@@ -2,7 +2,10 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from "@
 import { TasksService } from "./tasks.service";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { BulkTaskDto, ChecklistItemDto, SavedViewDto, SprintDto, UpdateChecklistItemDto } from "./dto/task-ops.dto";
+import { normalizeTaskStatus } from "./task-status";
+import { RequirePermission, SkipPermission } from "../common/decorators/require-permission.decorator";
 
+@RequirePermission("TASKS")
 @Controller("tasks")
 export class TasksController {
   constructor(private readonly tasks: TasksService) {}
@@ -12,6 +15,7 @@ export class TasksController {
     return this.tasks.stats();
   }
 
+  @SkipPermission()
   @Get("my-day")
   myDay(@CurrentUser() user: any) {
     // controller resolves the caller's employee; service refuses to run unscoped
@@ -87,6 +91,7 @@ export class TasksController {
   }
 
   // ── Timer ────────────────────────────────────────────────────────────
+  @SkipPermission()
   @Get("timers/running")
   runningTimer(@CurrentUser() user: any) {
     return this.tasks.runningTimer(user);
@@ -142,8 +147,8 @@ export class TasksController {
   }
 
   @Get()
-  list(@Query() query: any) {
-    return this.tasks.list(query);
+  list(@Query() query: any, @CurrentUser() user: any) {
+    return this.tasks.list(query, user);
   }
 
   // ── Bulk ─────────────────────────────────────────────────────────────
@@ -181,7 +186,9 @@ export class TasksController {
 
   @Patch(":id/status")
   updateStatus(@Param("id") id: string, @Body() body: { status: string }, @CurrentUser() user: any) {
-    return this.tasks.updateStatus(id, body.status as any, user);
+    // Legacy clients still send IN_REVIEW / BACKLOG — fold them onto the enum
+    // instead of letting Prisma throw a validation error at the user.
+    return this.tasks.updateStatus(id, normalizeTaskStatus(body.status) as any, user);
   }
 
   // ── Checklist ────────────────────────────────────────────────────────

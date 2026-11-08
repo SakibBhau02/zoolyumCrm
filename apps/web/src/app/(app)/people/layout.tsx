@@ -1,18 +1,25 @@
-import { PageHeader } from "@/components/shared";
 import TabNav from "./_components/tab-nav";
+import { PayrollStatusBadge } from "./_components/payroll-status";
 
+/**
+ * People chrome is deliberately slimmer than the other modules: the tabs carry
+ * their own compact hero, so a big page header here would only push the actual
+ * numbers below the fold.
+ */
 export default function PeopleLayout({ children }: { children: React.ReactNode }) {
   return (
     <div>
-      <PageHeader
-        title="People — HRM"
-        subtitle="Attendance through payroll, with utilization intelligence."
-        actions={<span className="rounded-full border border-border bg-card px-3 py-1.5 text-[11.5px] text-muted-foreground">Payroll: July finalized</span>}
-      />
-      <div className="overflow-x-auto pb-1">
-        <TabNav />
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <h1 className="font-heading text-[19px] font-bold tracking-tight">People</h1>
+          <span className="hidden text-[11px] text-muted-foreground sm:inline">
+            HRM · attendance, leave, payroll
+          </span>
+        </div>
+        <PayrollStatusBadge />
       </div>
-      <div className="mt-5">{children}</div>
+      <TabNav />
+      <div className="mt-2">{children}</div>
     </div>
   );
 }

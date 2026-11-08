@@ -495,11 +495,15 @@ export class AttendanceService {
       const empPunches = punches.filter((p) => p.employeeId === emp.id);
       const empLeaves = leaves.filter((l) => l.employeeId === emp.id);
       const expected = this.expectedMinutes(emp, policy);
+      const joinedStr = emp.joinDate ? dateStrDhaka(emp.joinDate) : null;
       let workingDays = 0, weekOffDays = 0, holidayDays = 0, leaveDays = 0;
-      let present = 0, late = 0, halfDay = 0, absent = 0, lateMinutes = 0;
+      let present = 0, late = 0, halfDay = 0, absent = 0, lateMinutes = 0, unrecordedDays = 0;
       let workedMinutes = 0, expectedMinutes = 0, overtimeMinutes = 0, undertimeMinutes = 0, daysCounted = 0;
       for (const dstr of days) {
         if (dstr > todayStr) break;
+        // Before the hire date the person was not employed: count nothing at all
+        // (no working day, no absence, no deduction).
+        if (joinedStr != null && dstr < joinedStr) continue;
         // Explicit calendar override wins over weekly off / holiday.
         const ov = overrides.get(dstr)?.isOpen;
         if (ov === false) { holidayDays++; continue; }
@@ -511,8 +515,13 @@ export class AttendanceService {
         workingDays++;
         const att = empAtt.find((a) => dateStrDhaka(a.date) === dstr);
         const dayPunches = empPunches.filter((p) => dateStrDhaka(p.punchTime) === dstr).sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
-        const st = att?.status ?? this.computeDayStatus(emp, dayPunches, policy).status;
-        if (st === "LATE") { late++; lateMinutes += this.computeDayStatus(emp, dayPunches, policy).minutesLate; }
+        // "No row and no punch" means the day was never processed — that is not
+        // evidence of absence, so it must not feed a deduction. A real ABSENT is
+        // one the engine (or HR) actually wrote.
+        const unrecorded = !att && !dayPunches.length;
+        const st = att?.status ?? (dayPunches.length ? this.computeDayStatus(emp, dayPunches, policy).status : null);
+        if (unrecorded) unrecordedDays++;
+        else if (st === "LATE") { late++; lateMinutes += this.computeDayStatus(emp, dayPunches, policy).minutesLate; }
         else if (st === "HALF_DAY") halfDay++;
         else if (st === "ABSENT") absent++;
         else present++;
@@ -537,7 +546,7 @@ export class AttendanceService {
       rows.push({
         employeeId: emp.id, name: emp.name, roleTitle: emp.roleTitle, department: emp.department ?? null,
         workingDays, weekOffDays, holidayDays, leaveDays,
-        present, late, halfDay, absent, lateMinutes,
+        present, late, halfDay, absent, lateMinutes, unrecordedDays,
         // hours (new): totals across counted days + per-day average
         workedMinutes, expectedMinutes, overtimeMinutes, undertimeMinutes,
         daysCounted,
@@ -670,6 +679,7 @@ export class AttendanceService {
       select: {
         id: true, name: true, roleTitle: true, department: true, employmentStatus: true,
         shiftStart: true, shiftEnd: true, graceMinutes: true, weeklyOffDays: true, deviceId: true,
+        joinDate: true,
       },
     });
     if (!emp) throw new NotFoundException("Employee not found");
@@ -692,12 +702,18 @@ export class AttendanceService {
     const holidayName = new Map(holidays.map((h) => [h.date, h.name]));
     const off = this.offDaysFor(emp, policy);
     const todayStr = dateStrDhaka(new Date());
+    // Days before the person was hired are not "absent" — they were not employed.
+    // Counting them made a fresh hire look like they had 19 unpaid absences.
+    const joinedStr = emp.joinDate ? dateStrDhaka(emp.joinDate) : null;
     const shiftStart = emp.shiftStart ?? policy.shiftStart;
     const grace = emp.graceMinutes ?? policy.graceMinutes;
     const dayList: any[] = [];
-    const summary = { working: 0, present: 0, late: 0, halfDay: 0, absent: 0, leave: 0, off: 0, holiday: 0, lateMinutes: 0, workedMinutes: 0, expectedMinutes: 0, overtimeMinutes: 0, undertimeMinutes: 0 };
+    const summary = { working: 0, present: 0, late: 0, halfDay: 0, absent: 0, leave: 0, off: 0, holiday: 0, lateMinutes: 0, workedMinutes: 0, expectedMinutes: 0, overtimeMinutes: 0, undertimeMinutes: 0, beforeJoining: 0, unrecorded: 0 };
     for (const dstr of days) {
       const isFuture = dstr > todayStr;
+      // Not employed yet — skip entirely, never absorb it into working days or
+      // absences (that is what made a new hire look like they had 19 absences).
+      const beforeJoining = joinedStr != null && dstr < joinedStr;
       const ov = overrides.get(dstr);
       const isOff = ov?.isOpen !== true && off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)));
       const isHoliday = ov?.isOpen !== true && holidaySet.has(dstr);
@@ -707,15 +723,20 @@ export class AttendanceService {
       const dayPunches = punches.filter((p) => dateStrDhaka(p.punchTime) === dstr);
       let kind: string;
       let hours: { worked: number; overtime: number; undertime: number; open: boolean } | null = null;
-      if (isFuture) kind = "future";
+      if (beforeJoining) { kind = "before"; summary.beforeJoining++; }
+      else if (isFuture) kind = "future";
       else if (isOverrideClosed) { kind = "holiday"; summary.holiday++; }
       else if (isOff) { kind = "off"; summary.off++; }
       else if (isHoliday) { kind = "holiday"; summary.holiday++; }
       else if (onLeave && !dayPunches.length) { kind = "leave"; summary.leave++; }
       else {
         summary.working++;
-        const st = att?.status ?? (dayPunches.length ? this.computeDayStatus(emp, dayPunches, policy).status : "ABSENT");
-        if (st === "LATE") {
+        // A working day with neither an attendance row nor a punch was never
+        // processed — surface it as such instead of silently calling it absent.
+        const unrecorded = !att && !dayPunches.length;
+        const st = att?.status ?? (dayPunches.length ? this.computeDayStatus(emp, dayPunches, policy).status : null);
+        if (unrecorded) { kind = "unrecorded"; summary.unrecorded++; }
+        else if (st === "LATE") {
           kind = "late"; summary.late++;
           const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
           const mins = ci ? Math.max(0, minutesOf(toHHmmDhaka(new Date(ci))) - (minutesOf(shiftStart) + grace)) : 0;
@@ -783,6 +804,7 @@ export class AttendanceService {
       lastPunchAt: string | null;
       lastSource: string | null;
       minutesLate: number | null;
+      punches: { at: string; source: string | null }[];
     } | null = null;
     if (user?.sub) {
       const emp = employees.find((e) => e.user?.id === user.sub);
@@ -811,8 +833,9 @@ export class AttendanceService {
               lastPunchAt: last ? new Date(last.punchTime).toISOString() : null,
               lastSource: last?.source ?? null,
               minutesLate,
+              punches: myPunches.map((p) => ({ at: new Date(p.punchTime).toISOString(), source: p.source })),
             }
-          : { status: "NOT_PUNCHED", checkIn: null, checkOut: null, hasDeviceId: !!emp.deviceId, punchCount: myPunches.length, lastPunchAt: last ? new Date(last.punchTime).toISOString() : null, lastSource: last?.source ?? null, minutesLate: null };
+          : { status: "NOT_PUNCHED", checkIn: null, checkOut: null, hasDeviceId: !!emp.deviceId, punchCount: myPunches.length, lastPunchAt: last ? new Date(last.punchTime).toISOString() : null, lastSource: last?.source ?? null, minutesLate: null, punches: myPunches.map((p) => ({ at: new Date(p.punchTime).toISOString(), source: p.source })) };
       }
     }
     const counts = { present: 0, late: 0, halfDay: 0, wfh: 0, absent: 0, notPunched: 0 };
@@ -916,11 +939,14 @@ export class AttendanceService {
       const empPunches = punches.filter((p) => p.employeeId === emp.id);
       const empLeaves = leaves.filter((l) => l.employeeId === emp.id);
       const expected = this.expectedMinutes(emp, policy);
+      const joinedStr = emp.joinDate ? dateStrDhaka(emp.joinDate) : null;
       let late = 0, absent = 0, worked = 0, overtime = 0, counted = 0;
       let streak = 0; // current run of consecutive missed working days (absent or late), most recent first
       let streakOpen = true;
       for (let i = days.length - 1; i >= 0; i--) {
         const dstr = days[i];
+        // Not employed yet — not a missed day, and it must not extend a streak.
+        if (joinedStr != null && dstr < joinedStr) continue;
         const ov = overrides.get(dstr)?.isOpen;
         if (ov === false) continue;
         if (ov !== true) {
@@ -930,6 +956,9 @@ export class AttendanceService {
         if (empLeaves.some((l) => dstr >= dateStrDhaka(l.startDate) && dstr <= dateStrDhaka(l.endDate))) continue;
         const att = empAtt.find((a) => dateStrDhaka(a.date) === dstr);
         const dayPunches = empPunches.filter((p) => dateStrDhaka(p.punchTime) === dstr).sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
+        // Never-processed days are neither attendance nor absence — skip them so
+        // a data gap cannot be reported as a miss streak.
+        if (!att && !dayPunches.length) continue;
         const st = att?.status ?? this.computeDayStatus(emp, dayPunches, policy).status;
         const missed = st === "ABSENT" || st === "LATE";
         if (streakOpen) {

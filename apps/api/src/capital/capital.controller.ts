@@ -1,10 +1,103 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { diskStorage } from "multer";
+import { randomUUID } from "crypto";
+import { basename } from "path";
+import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
 import { CapitalService } from "./capital.service";
+import { LiabilitiesService } from "./liabilities.service";
+import { DollarService } from "./dollar.service";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
+import { Public } from "../common/decorators/public.decorator";
+import { Roles } from "../common/decorators/roles.decorator";
+import { RequirePermission } from "../common/decorators/require-permission.decorator";
 
+const receiptDir = () => uploadsDir("receipts");
+
+@RequirePermission("CAPITAL")
 @Controller("capital")
 export class CapitalController {
-  constructor(private readonly capital: CapitalService) {}
+  constructor(
+    private readonly capital: CapitalService,
+    private readonly liabilities: LiabilitiesService,
+    private readonly dollar: DollarService
+  ) {}
+
+  // ── Dollar Desk (client FX sales) ────────────────────────────────────
+
+  @Get("dollar/rate")
+  dollarRate() {
+    return this.dollar.getRate();
+  }
+
+  @Get("dollar/sales")
+  dollarSales(@Query() query: any) {
+    return this.dollar.list(query);
+  }
+
+  @Get("dollar/summary")
+  dollarSummary() {
+    return this.dollar.summary();
+  }
+
+  @Post("dollar/sales")
+  createDollarSale(@Body() body: any, @CurrentUser() user: any) {
+    return this.dollar.create(body, user?.sub);
+  }
+
+  @Delete("dollar/sales/:id")
+  @Roles("Owner", "Finance", "CONTROL")
+  deleteDollarSale(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.dollar.remove(id, user?.sub);
+  }
+
+  // ── Liabilities (vendor commitments / payables) ──────────────────────
+
+  @Get("engagements")
+  engagements(@Query() query: any) {
+    return this.liabilities.list(query);
+  }
+
+  @Get("engagements/summary")
+  engagementSummary() {
+    return this.liabilities.summary();
+  }
+
+  @Get("engagements/:id")
+  engagement(@Param("id") id: string) {
+    return this.liabilities.get(id);
+  }
+
+  @Post("engagements")
+  createEngagement(@Body() body: any, @CurrentUser() user: any) {
+    return this.liabilities.create(body, user?.sub);
+  }
+
+  @Patch("engagements/:id")
+  updateEngagement(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+    return this.liabilities.update(id, body, user?.sub);
+  }
+
+  @Post("engagements/:id/payments")
+  payEngagement(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+    return this.liabilities.pay(id, body, user?.sub);
+  }
+
+  @Post("engagements/:id/complete")
+  completeEngagement(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+    return this.liabilities.complete(id, body, user?.sub);
+  }
+
+  @Post("engagements/:id/cancel")
+  cancelEngagement(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.liabilities.cancel(id, user?.sub);
+  }
+
+  @Delete("engagements/:id")
+  @Roles("Owner", "Finance", "CONTROL")
+  deleteEngagement(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.liabilities.remove(id, user?.sub);
+  }
 
   @Get("overview")
   overview() {
@@ -47,8 +140,9 @@ export class CapitalController {
   }
 
   @Delete("invoices/:id")
-  deleteInvoice(@Param("id") id: string) {
-    return this.capital.deleteInvoice(id);
+  @RequirePermission("CAPITAL", "edit")
+  deleteInvoice(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.deleteInvoice(id, actorId);
   }
 
   @Post("invoices/:id/payment")
@@ -97,8 +191,20 @@ export class CapitalController {
   }
 
   @Get("expenses")
-  expenses(@Query() query: any) {
-    return this.capital.expenses(query);
+  expenses(@Query() query: any, @CurrentUser() user: any) {
+    return this.capital.expenses(query, user?.sub);
+  }
+
+  // ── Expense approval matrix ───────────────────────────────────────────
+  @Get("approval-policy")
+  approvalPolicy() {
+    return this.capital.approvalPolicy();
+  }
+
+  @Patch("approval-policy")
+  @Roles("Owner", "Finance", "CONTROL")
+  updateApprovalPolicy(@Body() body: any) {
+    return this.capital.updateApprovalPolicy(body);
   }
 
   @Post("expenses")
@@ -119,6 +225,42 @@ export class CapitalController {
   @Post("expenses/:id/payment")
   payExpense(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     return this.capital.payExpense(id, body, user?.sub);
+  }
+
+  /**
+   * Receipt upload for an expense. Images and PDFs up to 8 MB; the file is
+   * served back from an unguessable UUID path so <img>/<a> can render it
+   * without an auth header (the name is the capability).
+   */
+  @Post("expenses/:id/receipt")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => cb(null, receiptDir()),
+        filename: (_req, file, cb) => cb(null, `${randomUUID()}-${sanitizeFilename(file.originalname)}`),
+      }),
+      limits: { fileSize: 8 * 1024 * 1024 },
+      fileFilter: (_req, file, cb) => {
+        const ok = ["image/png", "image/jpeg", "image/webp", "application/pdf"].includes(file.mimetype);
+        cb(ok ? null : new BadRequestException("Only PNG, JPEG, WebP or PDF receipts are allowed"), ok);
+      },
+    })
+  )
+  async uploadReceipt(@Param("id") id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    const url = `/api/capital/receipts/${file.filename}`;
+    await this.capital.updateExpense(id, { receiptUrl: url });
+    return { url, name: file.originalname };
+  }
+
+  @Get("receipts/:filename")
+  @Public()
+  serveReceipt(@Param("filename") filename: string, @Res() res: any) {
+    if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      throw new BadRequestException("Invalid filename");
+    }
+    const safe = basename(sanitizeFilename(filename));
+    return res.sendFile(findUploadedFile("receipts", safe));
   }
 
   @Get("vendors")
@@ -218,6 +360,9 @@ export class CapitalController {
 
   @Get("reconciliation")
   reconciliation(@Query("bankAccountId") bankAccountId: string) {
+    if (!bankAccountId) {
+      throw new BadRequestException("bankAccountId is required (pick a bank account first)");
+    }
     return this.capital.bankTransactions(bankAccountId);
   }
 
@@ -284,6 +429,12 @@ export class CapitalController {
   @Get("reports")
   reportsData() {
     return this.capital.reportsData();
+  }
+
+  /** Monthly / custom-range totals for the downloadable report PDFs. */
+  @Get("reports/period")
+  reportPeriod(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.reportPeriod(from, to);
   }
 
   @Get("profitability")

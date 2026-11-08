@@ -25,21 +25,59 @@ export const fmtTime = (t?: string | null) => (t ? new Date(t).toLocaleTimeStrin
 export const skillsOf = (e: any) => e?.skills ?? e?.skillTags ?? [];
 export const utilBarCls = (u: number | null | undefined) => (u == null ? "bg-muted" : u >= 1.05 ? "bg-rose-500" : u >= 0.95 ? "bg-amber-400" : "bg-emerald-500");
 
-export const TABS = [
-  { value: "Overview", href: "/people" },
-  { value: "Directory", href: "/people/directory" },
-  { value: "Attendance", href: "/people/attendance" },
-  { value: "Leave", href: "/people/leave" },
-  { value: "Payroll", href: "/people/payroll" },
-  { value: "Settings", href: "/people/settings" },
-  { value: "Performance", href: "/people/performance" },
-  { value: "OKRs", href: "/people/okrs" },
-  { value: "Training", href: "/people/training" },
-  { value: "Candidates", href: "/people/candidates" },
-  { value: "Holidays", href: "/people/holidays" },
-  { value: "Org Chart", href: "/people/org-chart" },
-  { value: "Skills", href: "/people/skills" },
-] as const;
+/**
+ * People module navigation.
+ *
+ * The module used to expose 14 equal-weight tabs in one scrolling pill row,
+ * which is a wall, not a menu — on a phone you had to scroll horizontally to
+ * find Payroll. Five hubs mirror how the work actually happens (who they are →
+ * when they work → what they're paid → how they grow), and the routes inside
+ * each hub are unchanged so every existing deep link still resolves.
+ */
+export type NavItem = { label: string; href: string };
+export type NavHub = { label: string; href: string; items: NavItem[]; exact?: boolean };
+
+export const NAV: NavHub[] = [
+  { label: "My space", href: "/people/me", items: [], exact: true },
+  { label: "Overview", href: "/people", items: [], exact: true },
+  {
+    label: "Team",
+    href: "/people/team",
+    items: [
+      { label: "Team 360", href: "/people/team" },
+      { label: "Directory", href: "/people/directory" },
+      { label: "Org chart", href: "/people/org-chart" },
+      { label: "Skills", href: "/people/skills" },
+      { label: "Onboarding", href: "/people/onboarding" },
+      { label: "Assets", href: "/people/assets" },
+    ],
+  },
+  {
+    label: "Time",
+    href: "/people/attendance",
+    items: [
+      { label: "Attendance", href: "/people/attendance" },
+      { label: "Leave", href: "/people/leave" },
+      { label: "Holidays", href: "/people/holidays" },
+      { label: "Policy", href: "/people/settings" },
+    ],
+  },
+  { label: "Pay", href: "/people/payroll", items: [] },
+  {
+    label: "Grow",
+    href: "/people/performance",
+    items: [
+      { label: "Reviews", href: "/people/performance" },
+      { label: "OKRs", href: "/people/okrs" },
+      { label: "Training", href: "/people/training" },
+      { label: "Hiring", href: "/people/candidates" },
+    ],
+  },
+];
+
+/** Flat list kept for anything that still needs to resolve a route → label. */
+export const TABS = NAV.flatMap((h) => (h.items.length ? h.items : [{ label: h.label, href: h.href }])) as { label: string; href: string }[];
+
 
 export function downloadCsv(filename: string, cols: string[], rows: (string | number)[][]) {
   const esc = (v: string | number) => {

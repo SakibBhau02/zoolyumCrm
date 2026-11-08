@@ -11,6 +11,8 @@ import { Btn } from "@/components/table";
 import { label, monthNow, skillsOf, fmtTime } from "../../_components/constants";
 import { LoadOrError, Toast, useList, useToast } from "../../_components/hooks";
 import EmployeeProfileModal from "../../_components/modals/employee-profile";
+import { TelegramConnect } from "../../_components/telegram-connect";
+import { EmployeeDocuments } from "../../_components/employee-documents";
 
 const isHr = (user: any) => /owner|hr|admin/i.test(`${user?.role ?? ""} ${user?.roleName ?? ""}`);
 
@@ -96,6 +98,12 @@ export default function EmployeeProfilePage() {
                 </p>
               </div>
               <Btn variant="outline" onClick={() => setEditOpen(true)}><Pencil className="size-3.5" /> Edit profile</Btn>
+              <Link
+                href={`/people/team?id=${detail.id}`}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Fingerprint className="size-3.5" /> Attendance & output
+              </Link>
               <Btn variant="ghost" className="text-rose-400 hover:bg-rose-500/10 hover:text-rose-400" onClick={doDelete} disabled={deleting}>
                 <Trash2 className="size-3.5" /> {deleting ? "Deleting…" : "Delete"}
               </Btn>
@@ -141,6 +149,9 @@ export default function EmployeeProfilePage() {
                   </div>
                 )}
               </CardShell>
+
+              {/* Telegram channel */}
+              <TelegramConnect employeeId={detail.id} employeeName={detail.name} />
 
               {/* Compensation (restricted) */}
               {canSeePay ? (
@@ -212,7 +223,7 @@ export default function EmployeeProfilePage() {
                 <SectionTitle
                   title="Attendance"
                   subtitle={`${attCount("PRESENT")} present · ${attCount("LATE")} late · ${attCount("ABSENT")} absent this month`}
-                  action={<Link href={`/people/attendance/${detail.id}`} className="text-[11.5px] font-semibold text-primary hover:underline">Full log →</Link>}
+                  action={<Link href={`/people/team?id=${detail.id}`} className="text-[11.5px] font-semibold text-primary hover:underline">Full log →</Link>}
                 />
                 <div className="flex flex-col gap-1.5">
                   {(detail.attendance ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No attendance logged.</p>}
@@ -277,27 +288,70 @@ export default function EmployeeProfilePage() {
                 </div>
               </CardShell>
 
-              {/* Documents */}
-              {docs.length > 0 && (
-                <CardShell>
-                  <SectionTitle title={`Documents (${docs.length})`} icon={<FileText className="size-3.5" />} />
-                  <div className="flex flex-col gap-1.5">
-                    {docs.map((d: any, i: number) => (
-                      <a key={d.id ?? i} href={d.url} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2 text-[12px] font-medium hover:text-primary">
-                        {d.name ?? `Document ${i + 1}`}
-                        <span className="text-[10.5px] text-muted-foreground">{d.type ?? ""}</span>
-                      </a>
-                    ))}
-                  </div>
-                </CardShell>
-              )}
+              {/* Documents & expiry */}
+              <EmployeeDocuments employeeId={detail.id} documents={docs} onSaved={reload} notify={notify} />
+
+              {/* Gear & onboarding */}
+              <CardShell>
+                <SectionTitle
+                  title="Gear & onboarding"
+                  subtitle={`${(detail.assets ?? []).length} asset(s) · ${(detail.checklists ?? []).length} checklist(s)`}
+                  icon={<Briefcase className="size-3.5" />}
+                  action={<Link href="/people/assets" className="text-[11.5px] font-semibold text-primary hover:underline">Register</Link>}
+                />
+                <div className="flex flex-col gap-2">
+                  {(detail.checklists ?? []).map((c: any) => {
+                    const done = (c.items ?? []).filter((i: any) => i.done).length;
+                    const total = (c.items ?? []).length;
+                    const pct = total ? Math.round((done / total) * 100) : 0;
+                    return (
+                      <Link key={c.id} href="/people/onboarding" className="rounded-xl bg-muted/40 px-3 py-2 hover:bg-muted/60">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-[12px] font-semibold capitalize">{c.kind.toLowerCase()}</p>
+                          <span className="text-[11px] font-bold tabular-nums text-muted-foreground">{done}/{total}</span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div className={cn("h-full rounded-full", pct === 100 ? "bg-emerald-500" : "bg-brand-gradient")} style={{ width: `${pct}%` }} />
+                        </div>
+                      </Link>
+                    );
+                  })}
+                  {(detail.checklists ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No checklist yet.</p>}
+
+                  {(detail.assets ?? []).length === 0 ? (
+                    <p className="text-[11.5px] text-muted-foreground">No assets assigned.</p>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      {(detail.assets ?? []).map((a: any) => (
+                        <div key={a.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-1.5">
+                          <span className="min-w-0">
+                            <span className="block truncate text-[11.5px] font-medium">{a.name}</span>
+                            <span className="block font-mono text-[9.5px] text-muted-foreground">{a.tag} · {a.category}</span>
+                          </span>
+                          <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold uppercase text-primary">
+                            {a.status === "ASSIGNED" ? "held" : a.status.toLowerCase()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardShell>
 
               {/* Performance */}
               {(reviews.length > 0 || (detail.utilizationLogs ?? []).length > 0) && (
                 <CardShell>
                   <SectionTitle title="Performance" icon={<Target className="size-3.5" />} />
                   {reviews.length > 0 && (
-                    <p className="text-[12px] text-muted-foreground">Latest review: <span className="font-semibold text-foreground">{reviews[0].overallScore ?? reviews[0].status ?? "—"}</span> · {formatDate(reviews[0].createdAt)}</p>
+                    <p className="text-[12px] text-muted-foreground">
+                      Latest review:{" "}
+                      <span className="font-semibold text-foreground">
+                        {reviews[0].managerScore != null || reviews[0].selfScore != null
+                          ? `${(Number(reviews[0].managerScore ?? reviews[0].selfScore) / 2).toFixed(1)} / 5`
+                          : (reviews[0].status ?? "—")}
+                      </span>{" "}
+                      · {formatDate(reviews[0].createdAt)}
+                    </p>
                   )}
                   {(detail.utilizationLogs ?? []).length > 0 && (
                     <p className="mt-1 text-[12px] text-muted-foreground">Utilization (latest week): <span className="font-semibold tabular-nums text-foreground">{Math.round(Number(detail.utilizationLogs[0].utilizationRate ?? 0) * 100)}%</span></p>

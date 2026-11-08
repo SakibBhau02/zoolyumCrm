@@ -1,17 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, Check, CircleDollarSign, Copy, Eye, HandCoins, Landmark, Pencil, Plus, ReceiptText, RefreshCw, Search, Trash2, UserPlus, Wallet, X } from "lucide-react";
-import { apiFetch } from "@/lib/api";
+import { AlarmClock, ArrowUpRight, Banknote, Building2, CalendarClock, CalendarDays, Check, CircleDollarSign, Clock, Copy, Download, ExternalLink, Eye, FileDown, FileText, FolderKanban, HandCoins, Landmark, Link2, Mail, Paperclip, Pencil, Phone, Plus, ReceiptText, RefreshCw, Search, ShieldCheck, Trash2, UserPlus, Wallet, X } from "lucide-react";
+import { API_URL, apiFetch, apiFetchFormData } from "@/lib/api";
+import { useApi } from "@/lib/use-api";
 import { formatBDT, formatDate, formatDay, timeAgo } from "@/lib/format";
 import { Avatar, CardShell, EmptyState, FadeIn, SectionTitle, SkeletonBlock, StatCard, StatusBadge, cn } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
-import { Select } from "@/components/ui";
+import { Modal, Select } from "@/components/ui";
 import { PaymentDonut, RevenueAreaChart } from "@/components/charts";
 import { invoiceTotals } from "@/lib/invoice-utils";
+import { useBranding } from "@/lib/branding-context";
 import { ACCOUNT_CATEGORIES, CAT_TONES, ENTITY_TONES, EXPENSE_STATUSES, INVOICE_STATUSES, exportInvoicesCsv, fmtJSON, label } from "./constants";
 import { AddIncomeModal, BudgetModal, CategoriesModal, EditExpenseModal, PayExpenseModal, ReconcileModal } from "./modals";
+import { downloadInvoicePdf } from "./invoice-download";
+import { buildBusinessReportPdf, buildStatementPdf, monthBounds, sixMonthBounds, statementLabel, type StatementType } from "@/lib/reports-pdf";
+import { Pager, usePaged } from "./table-pager";
+import { ApprovalPolicyModal } from "./approval-policy";
 
 export function ErrorRetry({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
@@ -22,145 +29,519 @@ export function ErrorRetry({ message, onRetry }: { message: string; onRetry: () 
   );
 }
 
-export function OverviewTab({ overview, invoices, expenses }: { overview: any; invoices: any[] | null; expenses: any[] | null }) {
+/** A titled block inside a record drawer. */
+function DetailSection({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border/60 bg-card">
+      <header className="flex items-center gap-2 border-b border-border/50 bg-muted/20 px-3.5 py-2">
+        <h4 className="flex-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{title}</h4>
+        {action}
+      </header>
+      <div className="px-3.5 py-2.5">{children}</div>
+    </section>
+  );
+}
+
+/** Label / value line used across the capital detail drawers. */
+function DetailRow({ label: k, children, mono, strong }: { label: string; children: React.ReactNode; mono?: boolean; strong?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-1">
+      <span className="shrink-0 text-[11px] text-muted-foreground">{k}</span>
+      <span className={cn("min-w-0 text-right text-[11.5px]", strong ? "font-bold" : "font-medium", mono && "font-mono tabular-nums")}>{children}</span>
+    </div>
+  );
+}
+
+/** Big amount + status chips at the top of a detail drawer. */
+function DetailHero({
+  eyebrow,
+  amount,
+  tone = "primary",
+  chips,
+  caption,
+}: {
+  eyebrow: string;
+  amount: React.ReactNode;
+  tone?: "primary" | "emerald" | "amber" | "rose";
+  chips?: React.ReactNode;
+  caption?: React.ReactNode;
+}) {
+  const tones: Record<string, string> = {
+    primary: "from-primary/12",
+    emerald: "from-emerald-500/12",
+    amber: "from-amber-500/12",
+    rose: "from-rose-500/12",
+  };
+  return (
+    <div className={cn("rounded-2xl border border-border/60 bg-gradient-to-br to-transparent p-4", tones[tone])}>
+      <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
+      <p className="mt-0.5 text-[26px] font-bold leading-tight tabular-nums">{amount}</p>
+      {chips ? <div className="mt-2 flex flex-wrap items-center gap-1.5">{chips}</div> : null}
+      {caption ? <div className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">{caption}</div> : null}
+    </div>
+  );
+}
+
+export function OverviewTab({ overview, invoices, expenses, aging, installmentsDue }: { overview: any; invoices: any[] | null; expenses: any[] | null; aging?: any; installmentsDue?: any[] | null }) {
+  const router = useRouter();
+  const inv = invoices ?? [];
+  const exp = expenses ?? [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // ── Decision inputs, derived once ─────────────────────────────────────
+  const receivable = inv.filter((i) => !["DRAFT", "CANCELLED", "VOID"].includes(i.status));
+  const overdueList = receivable.filter((i) => {
+    const t = invoiceTotals(i);
+    return t.balance > 0 && i.dueDate && new Date(i.dueDate) < today;
+  });
+  const overdueValue = overdueList.reduce((s, i) => s + invoiceTotals(i).balance, 0);
+  const drafts = inv.filter((i) => i.status === "DRAFT");
+  const draftValue = drafts.reduce((s, i) => s + invoiceTotals(i).grand, 0);
+  const pendingExp = exp.filter((e) => e.approvalStatus === "PENDING");
+  const pendingValue = pendingExp.reduce((s, e) => s + Number(e.amount ?? 0), 0);
+  const dueInstallments = (installmentsDue ?? []).filter((s) => s.overdue);
+  const installmentValue = dueInstallments.reduce((s, s2) => s + Number(s2.balance ?? 0), 0);
+
+  const collected = Number(overview?.collected ?? 0);
+  const invoiced = Number(overview?.totalInvoiced ?? 0);
+  const outstanding = Number(overview?.outstanding ?? 0);
+  const collectionRate = invoiced > 0 ? Math.round((collected / invoiced) * 100) : 0;
+  const overduePct = outstanding > 0 ? Math.round((overdueValue / outstanding) * 100) : 0;
+
+  const attention = [
+    overdueList.length > 0 && {
+      key: "overdue",
+      tone: "rose" as const,
+      icon: <AlarmClock className="size-4" />,
+      title: `${overdueList.length} invoice${overdueList.length === 1 ? "" : "s"} overdue`,
+      detail: `${formatBDT(overdueValue)} past due — chase these first`,
+      href: "/capital/invoices?status=OVERDUE",
+      cta: "Review",
+    },
+    dueInstallments.length > 0 && {
+      key: "installments",
+      tone: "amber" as const,
+      icon: <CalendarClock className="size-4" />,
+      title: `${dueInstallments.length} installment${dueInstallments.length === 1 ? "" : "s"} overdue`,
+      detail: `${formatBDT(installmentValue)} across payment plans`,
+      href: "/capital/invoices",
+      cta: "Open plans",
+    },
+    pendingExp.length > 0 && {
+      key: "expenses",
+      tone: "sky" as const,
+      icon: <ReceiptText className="size-4" />,
+      title: `${pendingExp.length} expense${pendingExp.length === 1 ? "" : "s"} awaiting approval`,
+      detail: `${formatBDT(pendingValue)} needs a decision`,
+      href: "/capital/expenses",
+      cta: "Approve",
+    },
+    drafts.length > 0 && {
+      key: "drafts",
+      tone: "violet" as const,
+      icon: <FileText className="size-4" />,
+      title: `${drafts.length} draft invoice${drafts.length === 1 ? "" : "s"} not issued`,
+      detail: `${formatBDT(draftValue)} billable but not sent`,
+      href: "/capital/invoices",
+      cta: "Finish",
+    },
+    Number(overview?.unreconciledCount ?? 0) > 0 && {
+      key: "recon",
+      tone: "sky" as const,
+      icon: <Landmark className="size-4" />,
+      title: `${overview.unreconciledCount} bank entr${Number(overview.unreconciledCount) === 1 ? "y" : "ies"} unreconciled`,
+      detail: "Cash position can drift until statements are matched",
+      href: "/capital/reports",
+      cta: "Reconcile",
+    },
+  ].filter(Boolean) as { key: string; tone: "rose" | "amber" | "sky" | "violet"; icon: React.ReactNode; title: string; detail: string; href: string; cta: string }[];
+
+  const toneCls = {
+    rose: "border-rose-500/30 bg-rose-500/5",
+    amber: "border-amber-500/30 bg-amber-500/5",
+    sky: "border-sky-500/30 bg-sky-500/5",
+    violet: "border-violet-500/30 bg-violet-500/5",
+  } as const;
+  const iconCls = {
+    rose: "bg-rose-500/15 text-rose-600 dark:text-rose-300",
+    amber: "bg-amber-500/15 text-amber-600 dark:text-amber-300",
+    sky: "bg-sky-500/15 text-sky-600 dark:text-sky-300",
+    violet: "bg-violet-500/15 text-violet-600 dark:text-violet-300",
+  } as const;
+
+  const buckets = aging?.buckets ?? null;
+  const bucketRows = buckets
+    ? [
+        { key: "CURRENT", label: "Not due yet", value: Number(buckets.CURRENT ?? 0) },
+        { key: "1-30", label: "1–30 days", value: Number(buckets["1-30"] ?? 0) },
+        { key: "31-60", label: "31–60 days", value: Number(buckets["31-60"] ?? 0) },
+        { key: "61-90", label: "61–90 days", value: Number(buckets["61-90"] ?? 0) },
+        { key: "90+", label: "90+ days", value: Number(buckets["90+"] ?? 0) },
+      ]
+    : [];
+  const bucketMax = Math.max(1, ...bucketRows.map((b) => b.value));
+  const bucketTotal = bucketRows.reduce((s, b) => s + b.value, 0);
+
+  // Show a balanced pair of cards: six ageing clients, six latest expenses.
+  const recentExpenses = exp.slice(0, 6);
+  const recentBillableShare = recentExpenses.length
+    ? Math.round((recentExpenses.filter((e) => e.isClientBillable).length / recentExpenses.length) * 100)
+    : 0;
+  const billableShare = Number(overview?.expensesMonth ?? 0) > 0 ? Number(overview?.billableShare ?? 0) : recentBillableShare;
+
   return (
     <div className="flex flex-col gap-4">
+      {/* ── What needs a decision today ─────────────────────────────────── */}
+      {attention.length > 0 && (
+        <div>
+          <p className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Needs attention</p>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-2">
+            {attention.map((a) => (
+              <Link key={a.key} href={a.href} className={cn("group flex items-start gap-2.5 rounded-2xl border p-3 transition-colors hover:border-primary/40", toneCls[a.tone])}>
+                <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", iconCls[a.tone])}>{a.icon}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[12.5px] font-semibold leading-snug">{a.title}</span>
+                  <span className="mt-0.5 line-clamp-2 block text-[10.5px] leading-snug text-muted-foreground">{a.detail}</span>
+                  <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] font-bold text-primary">
+                    {a.cta} <ArrowUpRight className="size-3 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                  </span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Headline numbers ────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Invoiced" value={formatBDT(overview?.totalInvoiced)} sub="incl. pass-through" tone="primary" icon={<Wallet className="size-5" />} />
-        <StatCard label="Recognized Revenue" value={formatBDT(overview?.recognizedRevenue)} sub="agency revenue only" tone="sky" icon={<CircleDollarSign className="size-5" />} />
-        <StatCard label="Collected" value={formatBDT(overview?.collected)} sub={`${overview?.billableShare ?? 0}% billable`} tone="emerald" icon={<HandCoins className="size-5" />} />
-        <StatCard label="Outstanding" value={formatBDT(overview?.outstanding)} sub={`${formatBDT(overview?.overdueAmount)} overdue`} tone="amber" icon={<Banknote className="size-5" />} />
+        <StatCard label="Total Invoiced" value={formatBDT(invoiced)} sub={`${receivable.length} live invoices`} tone="primary" icon={<Wallet className="size-5" />} index={0} />
+        <StatCard label="Collected" value={formatBDT(collected)} sub={`${collectionRate}% collection rate`} tone="emerald" icon={<HandCoins className="size-5" />} index={1} />
+        <StatCard label="Outstanding" value={formatBDT(outstanding)} sub={overdueValue > 0 ? `${formatBDT(overdueValue)} overdue (${overduePct}%)` : "nothing overdue"} tone="amber" icon={<Banknote className="size-5" />} index={2} />
+        <StatCard label="Cash position" value={formatBDT(overview?.cashPosition)} sub={Number(overview?.expensesMonth ?? 0) > 0 ? `${formatBDT(overview.expensesMonth)} spent this month` : "no spend this month"} tone="sky" icon={<Landmark className="size-5" />} index={3} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <CardShell className="xl:col-span-2">
-          <SectionTitle title="Revenue Trend" subtitle="Invoiced vs collected vs expenses" />
+          <SectionTitle
+            title="Revenue trend"
+            subtitle="Invoiced vs collected vs expenses"
+            action={<Link href="/capital/reports" className="text-[11.5px] font-semibold text-primary hover:underline">Full report →</Link>}
+          />
           <RevenueAreaChart data={(overview?.trend ?? []).map((t: any) => ({ ...t, month: String(t.month).slice(0, 3) }))} />
         </CardShell>
         <CardShell>
-          <SectionTitle title="Payment Split" subtitle="collected by method" />
+          <SectionTitle title="Payment split" subtitle="collected by method" />
           <PaymentDonut data={overview?.paymentSplit ?? []} />
         </CardShell>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          {!invoices ? (
-            <div className="flex flex-col gap-2">{[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}</div>
+      {/* ── Where the money is stuck ────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
+        <CardShell>
+          <SectionTitle
+            title="Receivables ageing"
+            subtitle={bucketTotal > 0 ? `${formatBDT(bucketTotal)} outstanding across ${receivable.length} invoices` : "Nothing outstanding"}
+            action={<Link href="/capital/reports" className="text-[11.5px] font-semibold text-primary hover:underline">Aging report →</Link>}
+          />
+          {bucketRows.length === 0 ? (
+            <SkeletonBlock className="h-32" />
           ) : (
-            <FadeIn>
-              <TableShell footer={<><span className="text-[11.5px] text-muted-foreground">{(invoices ?? []).length} invoices · cash position {formatBDT(overview?.cashPosition)}</span><Btn variant="ghost" onClick={() => exportInvoicesCsv(invoices ?? [])}>Export CSV</Btn></>}>
-                <table className="w-full">
-                  <THead><Th>Invoice</Th><Th>Client</Th><Th>Type</Th><Th>Amount</Th><Th>Status</Th><Th>Due</Th></THead>
-                  <tbody>
-                    {(invoices ?? []).slice(0, 8).map((inv, i) => (
-                      <Tr key={inv.id} index={i}>
-                        <Td>
-                          <p className="font-medium tabular-nums">{inv.invoiceNumber}</p>
-                          <p className="text-[11px] text-muted-foreground">{label(inv.invoiceType)}</p>
-                        </Td>
-                        <Td className="text-muted-foreground">{inv.client.companyName}</Td>
-                        <Td className="text-muted-foreground">{inv.project?.name ?? "—"}</Td>
-                        <Td className="font-semibold tabular-nums">{formatBDT(invoiceTotals(inv).grand)}</Td>
-                        <Td><StatusBadge status={inv.status} /></Td>
-                        <Td className="text-muted-foreground">{formatDay(inv.dueDate)}</Td>
-                      </Tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableShell>
-            </FadeIn>
-          )}
-        </div>
-
-        <FadeIn delay={0.1}>
-          <CardShell className="h-full">
-            <h3 className="mb-4 text-[15px] font-heading font-semibold">Recent Expenses</h3>
-            <div className="flex flex-col gap-3">
-              {(expenses ?? []).slice(0, 7).map((e) => (
-                <div key={e.id} className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-[12px] font-medium">{e.description}</p>
-                    <p className="text-[10.5px] text-muted-foreground">{label(e.category)} · {e.isClientBillable ? "billable" : "absorbed"} · {formatDay(e.date)}</p>
+            <div className="flex flex-col gap-2.5">
+              {bucketRows.map((b) => (
+                <div key={b.key} className="flex items-center gap-2.5">
+                  <span className="w-24 shrink-0 text-[11.5px] text-muted-foreground">{b.label}</span>
+                  <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn("h-full rounded-full", b.key === "CURRENT" ? "bg-emerald-500" : b.key === "1-30" ? "bg-sky-500" : b.key === "31-60" ? "bg-amber-400" : "bg-rose-500")}
+                      style={{ width: `${(b.value / bucketMax) * 100}%` }}
+                    />
                   </div>
-                  <div className="text-right">
-                    <p className="text-[12.5px] font-bold tabular-nums">{formatBDT(e.amount)}</p>
-                    <StatusBadge status={e.approvalStatus} />
-                  </div>
+                  <span className="w-24 shrink-0 text-right text-[11.5px] font-bold tabular-nums">{formatBDT(b.value)}</span>
                 </div>
               ))}
-              {!expenses?.length && <p className="text-[12px] text-muted-foreground">No expenses</p>}
             </div>
-          </CardShell>
-        </FadeIn>
+          )}
+          {(aging?.byClient ?? []).length > 0 && (
+            <div className="mt-4 border-t border-border/50 pt-3">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Top exposures</p>
+              <div className="flex flex-col gap-1.5">
+                {(aging?.byClient ?? []).slice(0, 6).map((c: any) => (
+                  <div key={c.clientId} className="flex items-center justify-between gap-2 text-[11.5px]">
+                    <span className="min-w-0 truncate font-medium">{c.clientName}</span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {c.d90p > 0 && <span className="rounded-full bg-rose-500/10 px-1.5 py-0.5 text-[9px] font-bold text-rose-500">{formatBDT(c.d90p)} 90+</span>}
+                      <span className="font-bold tabular-nums">{formatBDT(c.total)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardShell>
+
+        <CardShell>
+          <SectionTitle
+            title="Recent expenses"
+            subtitle={Number(overview?.expensesMonth ?? 0) > 0 ? `${formatBDT(overview.expensesMonth)} this month · ${billableShare}% client-billable` : `latest entries · ${billableShare}% client-billable`}
+            action={<Link href="/capital/expenses" className="text-[11.5px] font-semibold text-primary hover:underline">All expenses →</Link>}
+          />
+          <div className="flex flex-col gap-2.5">
+            {recentExpenses.map((e) => (
+              <div key={e.id} className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-[12px] font-medium">{e.description}</p>
+                  <p className="truncate text-[10.5px] text-muted-foreground">
+                    {label(e.category)} · {e.isClientBillable ? "billable" : "absorbed"} · {formatDay(e.date)}
+                    {e.vendor?.name ? ` · ${e.vendor.name}` : ""}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="text-[12.5px] font-bold tabular-nums">{formatBDT(e.amount)}</p>
+                  <StatusBadge status={e.approvalStatus} />
+                </div>
+              </div>
+            ))}
+            {expenses === null ? (
+              <SkeletonBlock className="h-24" />
+            ) : exp.length === 0 ? (
+              <p className="text-[12px] text-muted-foreground">No expenses recorded.</p>
+            ) : null}
+          </div>
+        </CardShell>
+      </div>
+
+      {/* ── Recent invoices, with the number that matters: days overdue ── */}
+      <div>
+        {!invoices ? (
+          <div className="flex flex-col gap-2">{[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}</div>
+        ) : (
+          <FadeIn>
+            <TableShell
+              footer={
+                <>
+                  <span className="text-[11.5px] text-muted-foreground">
+                    {inv.length} invoices · cash position {formatBDT(overview?.cashPosition)}
+                  </span>
+                  <Link href="/capital/invoices" className="text-[11.5px] font-bold text-primary hover:underline">All invoices →</Link>
+                </>
+              }
+            >
+              <table className="w-full">
+                <THead><Th>Invoice</Th><Th>Client</Th><Th>Amount</Th><Th>Balance</Th><Th>Status</Th><Th>Ageing</Th><Th>Due</Th></THead>
+                <tbody>
+                  {inv.slice(0, 8).map((it, i) => {
+                    const t = invoiceTotals(it);
+                    const days = it.dueDate ? Math.floor((today.getTime() - new Date(it.dueDate).getTime()) / 86400000) : 0;
+                    const late = t.balance > 0 && days > 0 && !["DRAFT", "CANCELLED", "VOID"].includes(it.status);
+                    return (
+                      <Tr key={it.id} index={i} onClick={() => router.push(`/capital/invoices?inv=${it.id}`)} className="cursor-pointer">
+                        <Td>
+                          <Link href={`/capital/invoices?inv=${it.id}`} onClick={(ev) => ev.stopPropagation()} className="font-medium tabular-nums hover:text-primary hover:underline">{it.invoiceNumber}</Link>
+                          <p className="text-[11px] text-muted-foreground">{label(it.invoiceType)}</p>
+                        </Td>
+                        <Td className="text-muted-foreground">{it.client.companyName}</Td>
+                        <Td className="font-semibold tabular-nums">{formatBDT(t.grand)}</Td>
+                        <Td className={cn("tabular-nums", t.balance > 0 ? "font-semibold" : "text-emerald-500")}>
+                          {it.status === "DRAFT" ? "—" : formatBDT(t.balance)}
+                        </Td>
+                        <Td><StatusBadge status={it.status} /></Td>
+                        <Td>
+                          {late ? (
+                            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", days > 60 ? "bg-rose-500/15 text-rose-500" : days > 30 ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-sky-500/15 text-sky-600 dark:text-sky-400")}>
+                              {days}d late
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">—</span>
+                          )}
+                        </Td>
+                        <Td className="text-muted-foreground">{formatDay(it.dueDate)}</Td>
+                      </Tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableShell>
+          </FadeIn>
+        )}
       </div>
     </div>
   );
 }
 
-export function InvoicesTab({ invoices, error, refresh, clients, onView, onNew, onDuplicate, onDelete, initialClientId }: { invoices: any[] | null; error: string | null; refresh: () => void; clients: any[]; onView: (id: string) => void; onNew: () => void; onDuplicate: (id: string) => void; onDelete: (inv: any) => void; initialClientId?: string }) {
+export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicate, onDelete, initialClientId }: { error: string | null; refresh: () => void; clients: any[]; onView: (id: string) => void; onNew: () => void; onDuplicate: (id: string) => void; onDelete: (inv: any) => void; initialClientId?: string }) {
+  const { branding } = useBranding();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [clientId, setClientId] = useState(initialClientId ?? "");
-  const [range, setRange] = useState("all");
   const [minAmt, setMinAmt] = useState("");
   const [maxAmt, setMaxAmt] = useState("");
+  const [quick, setQuick] = useState<"all" | "overdue" | "due7" | "draft" | "paid">("all");
+  const [page, setPage] = useState(0);
+  const [pdfId, setPdfId] = useState<string | null>(null);
+  const [pdfErr, setPdfErr] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState<string | null>(null);
+
+  // Filters and the page slice are resolved by the API — the browser only ever
+  // holds one page of rows plus the counters it renders.
+  const qs = new URLSearchParams({
+    page: String(page + 1),
+    pageSize: "12",
+    ...(q.trim() ? { q: q.trim() } : {}),
+    ...(status ? { status } : {}),
+    ...(clientId ? { clientId } : {}),
+    ...(quick !== "all" ? { quick } : {}),
+    ...(minAmt !== "" ? { min: minAmt } : {}),
+    ...(maxAmt !== "" ? { max: maxAmt } : {}),
+  }).toString();
+  const { data, loading: pagedLoading, error: pagedErr, mutate } = useApi<any>(`/capital/invoices?${qs}`);
+  const list: any[] = data?.items ?? [];
+  const sums = data?.sums ?? { billed: 0, paid: 0, due: 0, drafts: 0, draftValue: 0 };
+  const counts = data?.counts ?? { all: 0, overdue: 0, due7: 0, draft: 0, paid: 0 };
+  const values = data?.values ?? { overdue: 0, due7: 0, draft: 0 };
+  const total = data?.total ?? 0;
+  const pages = data?.pages ?? 1;
+  const loading = pagedLoading && !data;
+  const loadError = pagedErr ?? error;
+  const reload = () => { void mutate(); refresh(); };
 
   useEffect(() => {
     if (initialClientId) setClientId(initialClientId);
   }, [initialClientId]);
 
-  const inRange = (iso: string | null | undefined) => {
-    if (range === "all" || !iso) return range === "all" ? true : !!iso;
-    const d = new Date(String(iso).slice(0, 10));
-    const now = new Date();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    if (range === "today") return d >= startOfDay;
-    if (range === "this-week") {
-      const dow = (startOfDay.getDay() + 6) % 7;
-      const mon = new Date(startOfDay);
-      mon.setDate(mon.getDate() - dow);
-      return d >= mon;
+  // Any filter change resets to the first page — landing on page 4 of a
+  // narrower result set would look empty.
+  useEffect(() => { setPage(0); }, [q, status, clientId, quick, minAmt, maxAmt]);
+
+  // Counters and headline totals are computed server-side over the filtered
+  // set, so the chips stay meaningful even when one is active.
+  const quickChips: { key: typeof quick; label: string; count: number }[] = [
+    { key: "all", label: "All", count: counts.all },
+    { key: "overdue", label: "Overdue", count: counts.overdue },
+    { key: "due7", label: "Due ≤ 7 days", count: counts.due7 },
+    { key: "draft", label: "Drafts", count: counts.draft },
+    { key: "paid", label: "Paid", count: counts.paid },
+  ];
+  const overdueValue = values.overdue;
+  const due7Count = counts.due7;
+  const draftValue = values.draft;
+  const drafts = counts.draft;
+  const hasFilters = q.trim() !== "" || status !== "" || clientId !== "" || minAmt !== "" || maxAmt !== "" || quick !== "all";
+
+  const downloadOne = async (id: string) => {
+    setPdfId(id);
+    setPdfErr(null);
+    try {
+      await downloadInvoicePdf(id, branding);
+    } catch (e: any) {
+      setPdfErr(e?.message ?? "PDF generation failed");
+    } finally {
+      setPdfId(null);
     }
-    if (range === "this-month") return d >= new Date(now.getFullYear(), now.getMonth(), 1);
-    if (range === "this-quarter") return d >= new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
-    if (range === "this-year") return d >= new Date(now.getFullYear(), 0, 1);
-    return true;
   };
 
-  const list = useMemo(() => {
-    const items = invoices ?? [];
-    const ql = q.trim().toLowerCase();
-    const lo = minAmt === "" ? null : Number(minAmt);
-    const hi = maxAmt === "" ? null : Number(maxAmt);
-    return items.filter((inv) => {
-      if (ql && !inv.invoiceNumber.toLowerCase().includes(ql) && !inv.client.companyName.toLowerCase().includes(ql)) return false;
-      if (status && inv.status !== status) return false;
-      if (clientId && inv.client.id !== clientId) return false;
-      if (!inRange(inv.issueDate)) return false;
-      const g = invoiceTotals(inv).grand;
-      if (lo != null && g < lo) return false;
-      if (hi != null && g > hi) return false;
-      return true;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoices, q, status, clientId, range, minAmt, maxAmt]);
+  // ── Bulk actions ─────────────────────────────────────────────────────
+  // `list` is already the current page, so selection only ever spans it.
+  const selectedRows = list.filter((i) => selected.includes(i.id));
+  const selectableOnPage = list.map((i) => i.id);
+  const allOnPage = selectableOnPage.length > 0 && selectableOnPage.every((id) => selected.includes(id));
 
-  const sums = useMemo(() => {
-    let billed = 0, paid = 0, due = 0;
-    for (const inv of list) {
-      const t = invoiceTotals(inv);
-      billed += t.grand;
-      paid += t.paid;
-      due += t.balance;
+  const toggleOne = (id: string) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const togglePage = () => setSelected((s) => (allOnPage ? s.filter((id) => !selectableOnPage.includes(id)) : [...new Set([...s, ...selectableOnPage])]));
+
+  const bulkMarkSent = async () => {
+    const rows = selectedRows.filter((i) => i.status === "DRAFT");
+    if (!rows.length) return;
+    setBulkBusy(true);
+    setBulkMsg(null);
+    let ok = 0;
+    for (const inv of rows) {
+      try {
+        await apiFetch(`/capital/invoices/${inv.id}`, { method: "PATCH", body: JSON.stringify({ status: "SENT" }) });
+        ok++;
+      } catch {
+        /* counted below */
+      }
     }
-    return { billed, paid, due };
-  }, [list]);
+    setBulkMsg(`${ok}/${rows.length} marked as sent`);
+    setSelected([]);
+    setBulkBusy(false);
+    reload();
+  };
 
-  const filtered = q.trim() !== "" || status !== "" || clientId !== "" || range !== "all" || minAmt !== "" || maxAmt !== "";
+  const bulkRemind = async () => {
+    const rows = selectedRows.filter((i) => ["SENT", "VIEWED", "PARTIALLY_PAID", "OVERDUE"].includes(i.status));
+    if (!rows.length) return;
+    setBulkBusy(true);
+    setBulkMsg(null);
+    let ok = 0;
+    for (const inv of rows) {
+      try {
+        await apiFetch(`/capital/invoices/${inv.id}/reminders`, {
+          method: "POST",
+          body: JSON.stringify({ type: "manual", channel: "system", subject: `Payment reminder — ${inv.invoiceNumber}` }),
+        });
+        ok++;
+      } catch {
+        /* counted below */
+      }
+    }
+    setBulkMsg(`${ok}/${rows.length} reminders logged`);
+    setSelected([]);
+    setBulkBusy(false);
+    reload();
+  };
+
+  const bulkDownload = async () => {
+    if (!selectedRows.length) return;
+    setBulkBusy(true);
+    setBulkMsg(`Preparing ${selectedRows.length} PDFs…`);
+    let ok = 0;
+    for (const inv of selectedRows) {
+      try {
+        await downloadInvoicePdf(inv.id, branding);
+        ok++;
+      } catch {
+        /* counted below */
+      }
+    }
+    setBulkMsg(`${ok}/${selectedRows.length} PDFs downloaded`);
+    setBulkBusy(false);
+    void mutate();
+  };
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Issued" value={formatBDT(sums.billed)} sub={`${total} invoice${total === 1 ? "" : "s"} in view`} tone="primary" icon={<Wallet className="size-5" />} index={0} />
+        <StatCard label="Collected" value={formatBDT(sums.paid)} sub={sums.billed > 0 ? `${Math.round((sums.paid / sums.billed) * 100)}% of issued` : "nothing collected yet"} tone="emerald" icon={<HandCoins className="size-5" />} index={1} />
+        <StatCard label="Outstanding" value={formatBDT(sums.due)} sub={`${due7Count} due within 7 days`} tone="amber" icon={<Banknote className="size-5" />} index={2} />
+        <StatCard label="Overdue" value={formatBDT(overdueValue)} sub={`${counts.overdue} invoice${counts.overdue === 1 ? "" : "s"} past due`} tone="rose" icon={<AlarmClock className="size-5" />} index={3} />
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {quickChips.map((c) => (
+          <button
+            key={c.key}
+            onClick={() => setQuick(c.key)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition-colors",
+              quick === c.key ? "bg-brand-gradient text-white" : "border border-border bg-card text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {c.label}
+            <span className={cn("rounded-full px-1.5 py-0.5 text-[9.5px] font-bold tabular-nums", quick === c.key ? "bg-white/20" : "bg-muted")}>{c.count}</span>
+          </button>
+        ))}
+        {draftValue > 0 && (
+          <span className="ml-auto self-center text-[11px] text-amber-600 dark:text-amber-400">
+            {drafts} draft{drafts === 1 ? "" : "s"} ({formatBDT(draftValue)}) not issued
+          </span>
+        )}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -168,49 +549,91 @@ export function InvoicesTab({ invoices, error, refresh, clients, onView, onNew, 
         </div>
         <Select value={status} onChange={(e) => setStatus(e.target.value)} className="!w-40"><option value="">All statuses</option>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select>
         <Select value={clientId} onChange={(e) => setClientId(e.target.value)} className="!w-44"><option value="">All clients</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select>
-        <Select value={range} onChange={(e) => setRange(e.target.value)} className="!w-36">
-          <option value="all">All time</option>
-          <option value="today">Today</option>
-          <option value="this-week">This week</option>
-          <option value="this-month">This month</option>
-          <option value="this-quarter">This quarter</option>
-          <option value="this-year">This year</option>
-        </Select>
         <input value={minAmt} onChange={(e) => setMinAmt(e.target.value)} type="number" min={0} placeholder="Min ৳" className="w-24 rounded-xl border border-border bg-card px-3 py-2 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         <input value={maxAmt} onChange={(e) => setMaxAmt(e.target.value)} type="number" min={0} placeholder="Max ৳" className="w-24 rounded-xl border border-border bg-card px-3 py-2 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+        {hasFilters && (
+          <button onClick={() => { setQ(""); setStatus(""); setClientId(""); setMinAmt(""); setMaxAmt(""); setQuick("all"); }} className="text-[11.5px] font-bold text-primary hover:underline">
+            Reset
+          </button>
+        )}
         <div className="ml-auto"><Btn variant="primary" onClick={onNew} data-testid="new-invoice-btn"><Plus className="size-3.5" /> New Invoice</Btn></div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-card px-4 py-2.5 text-[11.5px] text-muted-foreground">
-        <span>Filtered sum: <b className="tabular-nums text-foreground">{formatBDT(sums.billed)}</b></span>
-        <span>Paid: <b className="tabular-nums text-emerald-500">{formatBDT(sums.paid)}</b></span>
-        <span>Due: <b className="tabular-nums text-rose-500">{formatBDT(sums.due)}</b></span>
-        {filtered && (
-          <button onClick={() => { setQ(""); setStatus(""); setClientId(""); setRange("all"); setMinAmt(""); setMaxAmt(""); }} className="ml-auto text-[11.5px] font-bold text-primary hover:underline">
-            Reset all filters
-          </button>
-        )}
-      </div>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2">
+          <span className="text-[11.5px] font-bold">{selected.length} selected</span>
+          <span className="text-[11px] text-muted-foreground">
+            {selectedRows.filter((i) => i.status === "DRAFT").length} draft · {selectedRows.filter((i) => ["SENT", "VIEWED", "PARTIALLY_PAID", "OVERDUE"].includes(i.status)).length} collectable
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            {bulkMsg && <span className="text-[11px] font-medium text-primary">{bulkMsg}</span>}
+            <Btn variant="outline" className="!py-1.5" onClick={bulkMarkSent} disabled={bulkBusy || !selectedRows.some((i) => i.status === "DRAFT")}>
+              Mark as sent
+            </Btn>
+            <Btn variant="outline" className="!py-1.5" onClick={bulkRemind} disabled={bulkBusy || selectedRows.every((i) => i.status === "DRAFT")}>
+              Send reminder
+            </Btn>
+            <Btn variant="outline" className="!py-1.5" onClick={bulkDownload} disabled={bulkBusy}>
+              <Download className="size-3.5" /> PDFs
+            </Btn>
+            <Btn variant="ghost" className="!py-1.5" onClick={() => setSelected([])}>Clear</Btn>
+          </div>
+        </div>
+      )}
 
-      {!invoices && !error ? (
+      {loading ? (
         <div className="flex flex-col gap-2">{[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-14" />)}</div>
-      ) : error ? (
-        <ErrorRetry message={error} onRetry={refresh} />
+      ) : loadError ? (
+        <ErrorRetry message={loadError} onRetry={reload} />
       ) : (
         <FadeIn>
-          <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{list.length} invoices</span>}>
+          <TableShell
+            footer={
+              <>
+                <span className="text-[11.5px] text-muted-foreground">
+                  {total} invoice{total === 1 ? "" : "s"} · {formatBDT(sums.billed)} issued · {formatBDT(sums.due)} due
+                </span>
+                <div className="flex items-center gap-2">
+                  {pdfErr && <span className="text-[11px] font-medium text-rose-500">{pdfErr}</span>}
+                  <Pager page={page} pages={pages} onPage={setPage} total={total} pageSize={12} label="invoices" />
+                  <Btn variant="ghost" onClick={() => exportInvoicesCsv(list)}><Download className="size-3.5" /> CSV</Btn>
+                </div>
+              </>
+            }
+          >
             <table className="w-full">
-              <THead><Th>Invoice #</Th><Th>Client</Th><Th>Issue / Due</Th><Th className="text-right">Amount</Th><Th className="text-right">Paid</Th><Th className="text-right">Balance</Th><Th>Status</Th><Th /></THead>
+              <THead>
+                <Th className="w-8">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all on this page"
+                    checked={allOnPage}
+                    onChange={togglePage}
+                    className="size-3.5 cursor-pointer accent-violet-600"
+                  />
+                </Th>
+                <Th>Invoice #</Th><Th>Client</Th><Th>Issue / Due</Th><Th className="text-right">Amount</Th><Th className="text-right">Paid</Th><Th className="text-right">Balance</Th><Th>Status</Th><Th />
+              </THead>
               <tbody>
                 {list.length === 0 && (
-                  <tr><td colSpan={8} className="px-5 py-10"><EmptyState title="No invoices match" hint="Adjust filters or create a new invoice." /></td></tr>
+                  <tr><td colSpan={9} className="px-5 py-10"><EmptyState title="No invoices match" hint="Adjust filters or create a new invoice." /></td></tr>
                 )}
                 {list.map((inv, i) => {
                   const t = invoiceTotals(inv);
                   const amount = t.grand;
                   const paidAmt = t.paid;
+                  const picked = selected.includes(inv.id);
                   return (
                     <Tr key={inv.id} index={i} onClick={() => onView(inv.id)} className="cursor-pointer">
+                      <Td onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${inv.invoiceNumber}`}
+                          checked={picked}
+                          onChange={() => toggleOne(inv.id)}
+                          className="size-3.5 cursor-pointer accent-violet-600"
+                        />
+                      </Td>
                       <Td>
                         <p className="font-medium tabular-nums">{inv.invoiceNumber}</p>
                         <p className="text-[11px] text-muted-foreground">{label(inv.invoiceType ?? "INVOICE")}</p>
@@ -218,14 +641,31 @@ export function InvoicesTab({ invoices, error, refresh, clients, onView, onNew, 
                       <Td className="text-muted-foreground">{inv.client.companyName}</Td>
                       <Td>
                         <p className="text-[11.5px]">{formatDate(inv.issueDate)}</p>
-                        <p className="text-[11px] text-muted-foreground">due {formatDate(inv.dueDate)}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          due {formatDate(inv.dueDate)}
+                          {(() => {
+                            const d = inv.dueDate ? Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86400000) : 0;
+                            return inv.status !== "DRAFT" && amount - paidAmt > 0 && d > 0 ? <span className={cn("ml-1 font-bold", d > 60 ? "text-rose-500" : d > 30 ? "text-amber-500" : "text-sky-500")}>· {d}d late</span> : null;
+                          })()}
+                        </p>
                       </Td>
                       <Td className="text-right font-semibold tabular-nums">{formatBDT(amount)}</Td>
                       <Td className={cn("text-right tabular-nums", paidAmt > 0 ? "text-emerald-500" : "text-muted-foreground/60")}>{formatBDT(paidAmt)}</Td>
-                      <Td className={cn("text-right font-medium tabular-nums", amount - paidAmt > 0 ? "text-amber-500" : "text-emerald-500")}>{formatBDT(amount - paidAmt)}</Td>
+                      <Td className={cn("text-right font-medium tabular-nums", inv.status === "DRAFT" ? "text-muted-foreground/50" : amount - paidAmt > 0 ? "text-amber-500" : "text-emerald-500")}>
+                        {inv.status === "DRAFT" ? "—" : formatBDT(amount - paidAmt)}
+                      </Td>
                       <Td><StatusBadge status={inv.status} /></Td>
                       <Td>
                         <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => void downloadOne(inv.id)}
+                            disabled={pdfId === inv.id}
+                            aria-label="Download invoice PDF"
+                            className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-50"
+                            title="Download PDF"
+                          >
+                            <Download className={cn("size-4", pdfId === inv.id && "animate-pulse")} />
+                          </button>
                           <button onClick={() => onView(inv.id)} aria-label="View invoice" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50" title="View"><Eye className="size-4" /></button>
                           <button onClick={() => onDuplicate(inv.id)} aria-label="Duplicate invoice" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50" title="Duplicate"><Copy className="size-4" /></button>
                           <button onClick={() => onDelete(inv)} aria-label="Delete invoice" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-rose-500/10 hover:text-rose-500 focus-visible:ring-2 focus-visible:ring-rose-500/50" title="Delete"><Trash2 className="size-4" /></button>
@@ -252,18 +692,79 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
   const [payOpen, setPayOpen] = useState(false);
   const [catsOpen, setCatsOpen] = useState(false);
   const [editExpense, setEditExpense] = useState<any | null>(null);
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [policy, setPolicy] = useState<any | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch<any>("/capital/approval-policy").then(setPolicy).catch(() => setPolicy(null));
+  }, [policyOpen]);
 
   const catOptions = categories ?? [];
+  const [quick, setQuick] = useState<"all" | "pending" | "approved" | "payable" | "month">("all");
   const list = useMemo(() => {
     const items = expenses ?? [];
     const ql = q.trim().toLowerCase();
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
     return items.filter((e) => {
-      if (ql && !e.description.toLowerCase().includes(ql) && !(e.vendor?.name ?? "").toLowerCase().includes(ql)) return false;
+      if (ql) {
+        const hay = `${e.description ?? ""} ${e.vendor?.name ?? ""} ${e.vendorBillNumber ?? ""} ${e.notes ?? ""} ${e.department ?? ""} ${e.client?.companyName ?? ""} ${e.project?.name ?? ""}`.toLowerCase();
+        if (!hay.includes(ql)) return false;
+      }
       if (cat && e.category !== cat) return false;
       if (status && e.approvalStatus !== status) return false;
+      if (quick === "pending" && e.approvalStatus !== "PENDING") return false;
+      if (quick === "approved" && e.approvalStatus !== "APPROVED") return false;
+      if (quick === "payable" && !(e.isPayable && Number(e.paidAmount ?? 0) < Number(e.amount))) return false;
+      if (quick === "month" && new Date(e.date) < monthStart) return false;
       return true;
     });
-  }, [expenses, q, cat, status]);
+  }, [expenses, q, cat, status, quick]);
+
+  const totals = useMemo(() => {
+    let spend = 0, billable = 0, pending = 0, owed = 0;
+    for (const e of list) {
+      const amt = Number(e.amount ?? 0);
+      spend += amt;
+      if (e.isClientBillable) billable += amt;
+      if (e.approvalStatus === "PENDING") pending += amt;
+      if (e.isPayable) owed += Math.max(0, amt - Number(e.paidAmount ?? 0));
+    }
+    return { spend, billable, pending, owed };
+  }, [list]);
+
+  // Keep the DOM to one page — a year of expenses is thousands of rows.
+  const expPg = usePaged(list, 15);
+  // The drawer reads the live row so approve/pay refreshes are reflected instantly.
+  const detail = useMemo(() => (expenses ?? []).find((e) => e.id === detailId) ?? null, [expenses, detailId]);
+
+  const quickChips = [
+    { key: "all" as const, label: "All", count: (expenses ?? []).length },
+    { key: "pending" as const, label: "Pending", count: (expenses ?? []).filter((e) => e.approvalStatus === "PENDING").length },
+    { key: "approved" as const, label: "Approved", count: (expenses ?? []).filter((e) => e.approvalStatus === "APPROVED").length },
+    { key: "payable" as const, label: "Unpaid", count: (expenses ?? []).filter((e) => e.isPayable && Number(e.paidAmount ?? 0) < Number(e.amount)).length },
+    { key: "month" as const, label: "This month", count: (expenses ?? []).filter((e) => { const m = new Date(); m.setDate(1); m.setHours(0, 0, 0, 0); return new Date(e.date) >= m; }).length },
+  ];
+
+  const exportCsv = () => {
+    const rows: (string | number)[][] = [["Date", "Description", "Category", "Vendor", "Amount", "Currency", "Client billable", "Status", "Method", "Paid"]];
+    for (const e of list) {
+      rows.push([
+        String(e.date ?? "").slice(0, 10), e.description ?? "", label(e.category ?? ""), e.vendor?.name ?? "",
+        Number(e.amount ?? 0), e.currency ?? "BDT", e.isClientBillable ? "yes" : "no", e.approvalStatus ?? "",
+        e.paymentMethod ?? "", Number(e.paidAmount ?? 0),
+      ]);
+    }
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 
   const setApproval = async (e: any, s: string) => {
     setBusyId(e.id);
@@ -280,8 +781,55 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
 
   const openPay = (e: any) => { setPayExpense(e); setPayOpen(true); };
 
+  /** Receipt upload — image or PDF, attached straight to the expense row. */
+  const uploadReceipt = async (expense: any, ev: React.ChangeEvent<HTMLInputElement>) => {
+    const file = ev.target.files?.[0];
+    ev.target.value = "";
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      await apiFetchFormData(`/capital/expenses/${expense.id}/receipt`, fd);
+      notify("Receipt attached");
+      refresh();
+    } catch (err: any) {
+      notify(err.message ?? "Receipt upload failed");
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard label="Spend in view" value={formatBDT(totals.spend)} sub={`${list.length} expense${list.length === 1 ? "" : "s"}`} tone="primary" icon={<ReceiptText className="size-5" />} index={0} />
+        <StatCard label="Client-billable" value={formatBDT(totals.billable)} sub={totals.spend > 0 ? `${Math.round((totals.billable / totals.spend) * 100)}% recoverable` : "—"} tone="sky" icon={<CircleDollarSign className="size-5" />} index={1} />
+        <StatCard label="Awaiting approval" value={formatBDT(totals.pending)} sub={`${list.filter((e) => e.approvalStatus === "PENDING").length} pending`} tone="amber" icon={<Wallet className="size-5" />} index={2} />
+        <StatCard label="Still payable" value={formatBDT(totals.owed)} sub="unpaid, payable items" tone="rose" icon={<HandCoins className="size-5" />} index={3} />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {quickChips.map((c) => (
+            <button
+              key={c.key}
+              onClick={() => setQuick(c.key)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition-colors",
+                quick === c.key ? "bg-brand-gradient text-white" : "border border-border bg-card text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {c.label}
+              <span className={cn("rounded-full px-1.5 py-0.5 text-[9.5px] font-bold tabular-nums", quick === c.key ? "bg-white/20" : "bg-muted")}>{c.count}</span>
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Btn variant="outline" onClick={onVendor}><UserPlus className="size-3.5" /> Add Vendor</Btn>
+          <Btn variant="outline" onClick={() => setCatsOpen(true)}><Pencil className="size-3.5" /> Categories</Btn>
+          <Btn variant="outline" onClick={() => setPolicyOpen(true)}><ShieldCheck className="size-3.5" /> Approval matrix</Btn>
+          <Btn variant="primary" onClick={onRecord} data-testid="record-expense-btn"><Plus className="size-3.5" /> Record Expense</Btn>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -289,12 +837,15 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
         </div>
         <Select value={cat} onChange={(e) => setCat(e.target.value)} className="!w-44"><option value="">All categories</option>{catOptions.map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select>
         <Select value={status} onChange={(e) => setStatus(e.target.value)} className="!w-36"><option value="">All statuses</option>{EXPENSE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select>
-        <div className="ml-auto flex items-center gap-2">
-          <Btn variant="outline" onClick={onVendor}><UserPlus className="size-3.5" /> Add Vendor</Btn>
-          <Btn variant="outline" onClick={() => setCatsOpen(true)}><Pencil className="size-3.5" /> Categories</Btn>
-          <Btn variant="primary" onClick={onRecord} data-testid="record-expense-btn"><Plus className="size-3.5" /> Record Expense</Btn>
-        </div>
+        {policy && (
+          <button onClick={() => setPolicyOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground" title="Open the approval matrix">
+            <ShieldCheck className={cn("size-3.5", policy.enabled ? "text-emerald-500" : "text-amber-500")} />
+            {policy.enabled ? `${policy.rules.length} approval limits on` : "Approval limits off"}
+            <span className="font-bold text-primary">View</span>
+          </button>
+        )}
       </div>
+
 
       {!expenses && !error ? (
         <div className="flex flex-col gap-2">{[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-14" />)}</div>
@@ -302,37 +853,88 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
         <ErrorRetry message={error} onRetry={refresh} />
       ) : (
         <FadeIn>
-          <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{list.length} expenses · pending approvals {list.filter((e) => e.approvalStatus === "PENDING").length} · payable {list.filter((e) => e.isPayable && Number(e.paidAmount ?? 0) < Number(e.amount)).length}</span>}>
+          <TableShell
+            footer={
+              <>
+                <span className="text-[11.5px] text-muted-foreground">
+                  {list.length} expenses · {formatBDT(totals.spend)} total · {formatBDT(totals.owed)} still payable
+                </span>
+                <div className="flex items-center gap-2">
+                  <Pager page={expPg.page} pages={expPg.pages} onPage={expPg.setPage} total={list.length} pageSize={15} label="expenses" />
+                  <Btn variant="ghost" onClick={exportCsv}><Download className="size-3.5" /> CSV</Btn>
+                </div>
+              </>
+            }
+          >
             <table className="w-full">
-              <THead><Th>Description</Th><Th>Category</Th><Th className="text-right">Amount</Th><Th>Date</Th><Th className="hidden lg:table-cell">Method</Th><Th>Status</Th><Th className="hidden xl:table-cell">By</Th><Th><span className="sr-only">Actions</span></Th></THead>
+              <THead><Th>Description</Th><Th>Category</Th><Th className="text-right">Amount</Th><Th>Date</Th><Th className="hidden lg:table-cell">Method</Th><Th>Status</Th><Th className="hidden 2xl:table-cell">By</Th><Th><span className="sr-only">Actions</span></Th></THead>
               <tbody>
                 {list.length === 0 && (
                   <tr><td colSpan={8} className="px-5 py-10"><EmptyState title="No expenses match" hint="Adjust filters or record a new expense." /></td></tr>
                 )}
-                {list.map((e, i) => {
+                {expPg.paged.map((e, i) => {
                   const catName = catOptions.find((c: any) => c.key === e.category)?.name ?? label(e.category);
                   const owing = e.isPayable && Number(e.paidAmount ?? 0) < Number(e.amount);
                   return (
-                    <Tr key={e.id} index={i}>
+                    <Tr key={e.id} index={i} onClick={() => setDetailId(e.id)} className={cn("cursor-pointer", detailId === e.id && "bg-primary/[0.04]")}>
                       <Td className="max-w-64">
                         <p className="truncate font-medium">{e.description}</p>
-                        <p className="truncate text-[11px] text-muted-foreground">{e.vendor?.name ?? "no vendor"} {e.subcategory ? `· ${e.subcategory}` : ""} {e.isClientBillable && "· billable"} {e.client && `· ${e.client.companyName}`} {e.project && `· ${e.project.name}`}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">{e.vendor?.name ?? "no vendor"}{e.vendorBillNumber ? ` · bill ${e.vendorBillNumber}` : ""} {e.subcategory ? `· ${e.subcategory}` : ""} {e.isClientBillable && "· billable"} {e.client && `· ${e.client.companyName}`} {e.project && `· ${e.project.name}`}</p>
                       </Td>
                       <Td><span className={cn("inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-semibold", CAT_TONES[e.category] ?? CAT_TONES.MISC)}>{catName}</span>{owing && <span className="ml-1.5 inline-flex whitespace-nowrap rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-500 ring-1 ring-amber-500/20">PAYABLE</span>}{e.payrollRecordId && <span className="ml-1.5 inline-flex whitespace-nowrap rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-500 ring-1 ring-sky-500/20">PAYROLL</span>}</Td>
-                      <Td className="text-right font-semibold tabular-nums">{formatBDT(e.amount)}{e.currency && e.currency !== "BDT" && <span className="ml-1 text-[10px] font-normal text-muted-foreground">{e.currency}</span>}</Td>
+                      <Td className="text-right font-semibold tabular-nums">
+                        {formatBDT(e.amount)}
+                        {e.currency && e.currency !== "BDT" && <span className="ml-1 text-[10px] font-normal text-muted-foreground">{e.currency}</span>}
+                        {e.isClientBillable && Number(e.markupPct ?? 0) > 0 && (
+                          <span className="ml-1 text-[9.5px] font-normal text-emerald-600 dark:text-emerald-400">+{e.markupPct}%</span>
+                        )}
+                      </Td>
                       <Td className="whitespace-nowrap text-muted-foreground">{formatDate(e.date)}</Td>
                       <Td className="hidden capitalize text-muted-foreground lg:table-cell">{label(e.paymentMethod ?? "N/A")}</Td>
                       <Td><StatusBadge status={e.approvalStatus} /></Td>
-                      <Td className="hidden xl:table-cell">
+                      <Td className="hidden 2xl:table-cell">
                         <p className="whitespace-nowrap text-[11.5px]">{e.submittedBy?.name ?? "—"}</p>
                         <p className="whitespace-nowrap text-[10.5px] text-muted-foreground">{e.approvalStatus === "APPROVED" ? (e.approvedBy?.name ? `by ${e.approvedBy.name}` : "approved") : e.approvalStatus === "REJECTED" ? "rejected" : "awaiting review"}</p>
                       </Td>
-                      <Td>
+                      <Td onClick={(ev) => ev.stopPropagation()}>
                         <div className="flex items-center gap-0.5">
+                          <button onClick={() => setDetailId(e.id)} aria-label="View expense details" title="View details" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/50"><Eye className="size-4" /></button>
+                          {e.receiptUrl ? (
+                            <a
+                              href={`${API_URL.replace(/\/api$/, "")}${e.receiptUrl}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label="View receipt"
+                              title="View receipt"
+                              className="rounded-lg p-2 text-sky-500 transition-colors outline-none hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-sky-500/50"
+                            >
+                              <Paperclip className="size-4" />
+                            </a>
+                          ) : (
+                            <label
+                              title="Attach receipt"
+                              className="cursor-pointer rounded-lg p-2 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+                            >
+                              <Paperclip className="size-4" />
+                              <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden" onChange={(ev) => void uploadReceipt(e, ev)} />
+                            </label>
+                          )}
                           {owing && <button onClick={() => openPay(e)} aria-label="Pay expense" className="rounded-lg p-2 text-amber-500 transition-colors outline-none hover:bg-amber-500/10 focus-visible:ring-2 focus-visible:ring-amber-500/50" title="Pay expense"><HandCoins className="size-4" /></button>}
                           {e.approvalStatus === "PENDING" && (
                             <>
-                              <button onClick={() => setApproval(e, "APPROVED")} disabled={busyId === e.id} aria-label="Approve expense" className="rounded-lg p-2 text-emerald-500 transition-colors outline-none hover:bg-emerald-500/10 focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:opacity-50" title="Approve"><Check className="size-4" /></button>
+                              {e.approval?.canApprove === false ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  aria-label={`Cannot approve: ${e.approval.reason}`}
+                                  title={`Cannot approve — ${e.approval.reason}`}
+                                  className="cursor-not-allowed rounded-lg p-2 text-muted-foreground/40"
+                                >
+                                  <Check className="size-4" />
+                                </button>
+                              ) : (
+                                <button onClick={() => setApproval(e, "APPROVED")} disabled={busyId === e.id} aria-label="Approve expense" className="rounded-lg p-2 text-emerald-500 transition-colors outline-none hover:bg-emerald-500/10 focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:opacity-50" title="Approve"><Check className="size-4" /></button>
+                              )}
                               <button onClick={() => setApproval(e, "REJECTED")} disabled={busyId === e.id} aria-label="Reject expense" className="rounded-lg p-2 text-rose-500 transition-colors outline-none hover:bg-rose-500/10 focus-visible:ring-2 focus-visible:ring-rose-500/50 disabled:opacity-50" title="Reject"><X className="size-4" /></button>
                             </>
                           )}
@@ -348,18 +950,171 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
           </TableShell>
         </FadeIn>
       )}
+      <Modal
+        open={!!detail}
+        onClose={() => setDetailId(null)}
+        eyebrow="Expense"
+        icon={<ReceiptText className="size-4" />}
+        title={detail?.description ?? ""}
+        subtitle={detail ? `${formatDate(detail.date)} · ${label(detail.category ?? "")}` : undefined}
+        size="lg"
+        footer={
+          detail ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {detail.approvalStatus === "PENDING" && (
+                <>
+                  <Btn variant="outline" className="border-rose-500/40 text-rose-600" onClick={() => setApproval(detail, "REJECTED")} disabled={busyId === detail.id}><X className="size-3.5" /> Reject</Btn>
+                  {detail.approval?.canApprove !== false && (
+                    <Btn variant="primary" onClick={() => setApproval(detail, "APPROVED")} disabled={busyId === detail.id}><Check className="size-3.5" /> Approve</Btn>
+                  )}
+                </>
+              )}
+              {detail.isPayable && Number(detail.paidAmount ?? 0) < Number(detail.amount) && (
+                <Btn variant="primary" onClick={() => { const e = detail; setDetailId(null); openPay(e); }}><HandCoins className="size-3.5" /> Record payment</Btn>
+              )}
+              <Btn variant="outline" onClick={() => { const e = detail; setDetailId(null); setEditExpense(e); }}><Pencil className="size-3.5" /> Edit</Btn>
+              <Btn variant="ghost" className="text-rose-600 hover:bg-rose-500/10" onClick={() => { const e = detail; setDetailId(null); onDelete(e); }}><Trash2 className="size-3.5" /> Delete</Btn>
+            </div>
+          ) : null
+        }
+      >
+        {detail && (
+          <div className="flex flex-col gap-3">
+            <DetailHero
+              eyebrow="Expense amount"
+              amount={formatBDT(detail.amount)}
+              chips={
+                <>
+                  <StatusBadge status={detail.approvalStatus} />
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", CAT_TONES[detail.category] ?? CAT_TONES.MISC)}>
+                    {catOptions.find((c: any) => c.key === detail.category)?.name ?? label(detail.category ?? "MISC")}
+                  </span>
+                  {detail.isClientBillable && <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-600 dark:text-sky-300">Client billable{Number(detail.markupPct ?? 0) > 0 ? ` +${detail.markupPct}%` : ""}</span>}
+                  {detail.payrollRecordId && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-300">From payroll</span>}
+                </>
+              }
+            />
+
+            <DetailSection title="Where it sits">
+              <DetailRow label="Client">{detail.client?.companyName ?? "—"}</DetailRow>
+              <DetailRow label="Project">{detail.project?.name ?? "—"}</DetailRow>
+              <DetailRow label="Vendor">{detail.vendor?.name ?? "—"}</DetailRow>
+              <DetailRow label="Vendor bill">{detail.vendorBillNumber ?? "—"}</DetailRow>
+              <DetailRow label="Subcategory">{detail.subcategory ?? "—"}</DetailRow>
+              <DetailRow label="Department">{detail.department ?? "—"}</DetailRow>
+            </DetailSection>
+
+            <DetailSection title="Payment">
+              <DetailRow label="Date">{formatDate(detail.date)}</DetailRow>
+              <DetailRow label="Method">{label(detail.paymentMethod ?? "—")}</DetailRow>
+              <DetailRow label="Paid" mono>{formatBDT(detail.paidAmount ?? 0)}</DetailRow>
+              <DetailRow label="Still payable" mono strong>{detail.isPayable ? formatBDT(Math.max(0, Number(detail.amount ?? 0) - Number(detail.paidAmount ?? 0))) : "—"}</DetailRow>
+              <DetailRow label="Currency">{detail.currency ?? "BDT"}</DetailRow>
+            </DetailSection>
+
+            <DetailSection title="Approval trail">
+              <DetailRow label="Submitted by">{detail.submittedBy?.name ?? "—"}</DetailRow>
+              <DetailRow label="Status">{label(detail.approvalStatus ?? "—")}</DetailRow>
+              <DetailRow label="Approved by">{detail.approvedBy?.name ?? "—"}</DetailRow>
+            </DetailSection>
+
+            {detail.notes && (
+              <DetailSection title="Notes">
+                <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{detail.notes}</p>
+              </DetailSection>
+            )}
+
+            <DetailSection title="Receipt">
+              {detail.receiptUrl ? (
+                <a
+                  href={`${API_URL.replace(/\/api$/, "")}${detail.receiptUrl}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2 text-[12px] font-semibold transition-colors hover:border-primary/40 hover:text-primary"
+                >
+                  <span className="flex min-w-0 items-center gap-2"><Paperclip className="size-3.5 shrink-0" /> <span className="truncate">View attached receipt</span></span>
+                  <ExternalLink className="size-3.5 shrink-0" />
+                </a>
+              ) : (
+                <p className="text-[11.5px] text-muted-foreground">No receipt attached — upload one from the expense row.</p>
+              )}
+            </DetailSection>
+          </div>
+        )}
+      </Modal>
       <PayExpenseModal expense={payExpense} open={payOpen} bankAccounts={bankAccounts} onClose={() => setPayOpen(false)} onSaved={() => { setPayOpen(false); notify("Payment recorded"); refresh(); }} />
       <EditExpenseModal expense={editExpense} onClose={() => setEditExpense(null)} onSaved={() => { setEditExpense(null); notify("Expense updated"); refresh(); }} categories={categories} />
       <CategoriesModal open={catsOpen} categories={categories} accounts={accounts} onClose={() => setCatsOpen(false)} onSaved={() => { notify("Category saved"); refresh(); }} />
+      <ApprovalPolicyModal open={policyOpen} onClose={() => setPolicyOpen(false)} notify={notify} />
     </div>
   );
 }
 
-export function IncomeTab({ income, error, refresh, stats, bankAccounts }: { income: any[] | null; error: string | null; refresh: () => void; stats: any; bankAccounts: any[] }) {
+export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients, projects }: { income: any[] | null; error: string | null; refresh: () => void; stats: any; bankAccounts: any[]; clients?: any[]; projects?: any[] }) {
   const [addOpen, setAddOpen] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [q, setQ] = useState("");
+  const [method, setMethod] = useState("");
+  const [range, setRange] = useState<"all" | "month" | "last" | "year">("all");
   const byMethod = stats?.byMethod ?? [];
   const byMethodTotal = byMethod.reduce((s: number, m: any) => s + Number(m.amount ?? 0), 0);
   const bySource = stats?.bySource ?? [];
+
+  const rows = useMemo(() => {
+    const items = income ?? [];
+    const ql = q.trim().toLowerCase();
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return items.filter((it) => {
+      const m = it.method ?? it.paymentMethod ?? "";
+      if (method && m !== method) return false;
+      if (ql) {
+        const hay = `${it.client ?? it.invoice?.client?.companyName ?? ""} ${it.project ?? ""} ${it.invoice?.invoiceNumber ?? ""} ${it.description ?? ""} ${it.reference ?? ""} ${it.notes ?? ""}`.toLowerCase();
+        if (!hay.includes(ql)) return false;
+      }
+      const d = new Date(it.date ?? it.paymentDate);
+      if (range === "month" && d < monthStart) return false;
+      if (range === "last" && (d < lastStart || d >= monthStart)) return false;
+      if (range === "year" && d < new Date(now.getFullYear(), 0, 1)) return false;
+      return true;
+    });
+  }, [income, q, method, range]);
+
+  const rowsTotal = rows.reduce((s, it) => s + Number(it.amount ?? 0), 0);
+  const incPg = usePaged(rows, 15);
+  // Live row so the drawer reflects refreshes without a stale snapshot.
+  const detail = useMemo(() => (income ?? []).find((it) => it.id === detailId) ?? null, [income, detailId]);
+  const methodOptions = Array.from(new Set((income ?? []).map((it) => it.method ?? it.paymentMethod).filter(Boolean)));
+
+  const exportCsv = () => {
+    const head = [["Date", "Client", "Project", "Invoice", "Method", "Source", "Amount", "Tax withheld", "Net received", "Currency", "Reference", "Notes", "Recorded by"]];
+    for (const it of rows) {
+      head.push([
+        String(it.date ?? it.paymentDate ?? "").slice(0, 10),
+        it.client ?? it.invoice?.client?.companyName ?? "",
+        it.project ?? it.invoice?.project?.name ?? "",
+        it.invoice?.invoiceNumber ?? (it.description ?? ""),
+        label(it.method ?? it.paymentMethod ?? ""),
+        it.source ?? "",
+        String(Number(it.amount ?? 0)),
+        String(Number(it.taxWithheld ?? 0)),
+        String(Number(it.netAmount ?? it.amount ?? 0)),
+        it.currency ?? "BDT",
+        it.reference ?? "",
+        it.notes ?? "",
+        it.recordedBy?.name ?? "system",
+      ]);
+    }
+    const csv = head.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `income-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -370,32 +1125,57 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts }: { inc
           <StatCard label="Avg Payment" value={formatBDT(stats?.avgAmount)} sub="per transaction" tone="primary" icon={<Banknote className="size-5" />} />
           <StatCard label="Top Method" value={byMethod.length ? label(byMethod[0].method) : "—"} sub={`${byMethod.length ? formatBDT(byMethod[0].amount) : "৳0"} · ${byMethodTotal ? Math.round((byMethod[0].amount / byMethodTotal) * 100) : 0}% of collections`} tone="amber" icon={<Landmark className="size-5" />} />
         </div>
+        <Btn variant="outline" onClick={() => setShowAnalytics((v) => !v)}>
+          <Eye className="size-3.5" /> {showAnalytics ? "Hide" : "Show"} analytics
+        </Btn>
         <Btn variant="primary" onClick={() => setAddOpen(true)} data-testid="record-income-btn"><Plus className="size-3.5" /> Record Income</Btn>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {byMethod.length > 1 && (
-          <CardShell>
-            <SectionTitle title="By Method" subtitle="collected income by payment channel" />
-            <PaymentDonut data={byMethod} />
-          </CardShell>
-        )}
-        {bySource.length > 0 && (
-          <CardShell>
-            <SectionTitle title="By Source" subtitle="invoice payments vs manual income" />
-            <div className="flex flex-col gap-3">
-              {bySource.map((s: any) => (
-                <div key={s.source} className="flex items-center gap-2.5">
-                  <span className="w-28 shrink-0 text-[12px] capitalize text-muted-foreground">{label(s.source)}</span>
-                  <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
-                    <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${(Number(s.amount ?? 0) / Math.max(bySource.reduce((a: number, b: any) => a + Number(b.amount ?? 0), 0), 1)) * 100}%` }} />
+      {showAnalytics && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          {byMethod.length > 1 && (
+            <CardShell>
+              <SectionTitle title="By Method" subtitle="collected income by payment channel" />
+              <PaymentDonut data={byMethod} />
+            </CardShell>
+          )}
+          {bySource.length > 0 && (
+            <CardShell>
+              <SectionTitle title="By Source" subtitle="invoice payments vs manual income" />
+              <div className="flex flex-col gap-3">
+                {bySource.map((s: any) => (
+                  <div key={s.source} className="flex items-center gap-2.5">
+                    <span className="w-28 shrink-0 text-[12px] capitalize text-muted-foreground">{label(s.source)}</span>
+                    <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${(Number(s.amount ?? 0) / Math.max(bySource.reduce((a: number, b: any) => a + Number(b.amount ?? 0), 0), 1)) * 100}%` }} />
+                    </div>
+                    <span className="w-20 shrink-0 text-right text-[12px] font-bold tabular-nums">{formatBDT(s.amount)}</span>
                   </div>
-                  <span className="w-20 shrink-0 text-right text-[12px] font-bold tabular-nums">{formatBDT(s.amount)}</span>
-                </div>
-              ))}
-            </div>
-          </CardShell>
-        )}
+                ))}
+              </div>
+            </CardShell>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative max-w-sm flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search client, project or invoice…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+        </div>
+        <Select value={method} onChange={(e) => setMethod(e.target.value)} className="!w-40">
+          <option value="">All methods</option>
+          {methodOptions.map((m: any) => <option key={m} value={m}>{label(m)}</option>)}
+        </Select>
+        <Select value={range} onChange={(e) => setRange(e.target.value as any)} className="!w-40">
+          <option value="all">All time</option>
+          <option value="month">This month</option>
+          <option value="last">Last month</option>
+          <option value="year">This year</option>
+        </Select>
+        <span className="ml-auto rounded-xl border border-border/60 bg-card px-3 py-2 text-[11.5px] text-muted-foreground">
+          In view: <b className="tabular-nums text-foreground">{formatBDT(rowsTotal)}</b>
+        </span>
       </div>
 
       {!income && !error ? (
@@ -404,33 +1184,93 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts }: { inc
         <ErrorRetry message={error} onRetry={refresh} />
       ) : (
         <FadeIn>
-          <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{income?.length ?? 0} income entries</span>}>
+          <TableShell
+            footer={
+              <>
+                <span className="text-[11.5px] text-muted-foreground">{rows.length} of {(income ?? []).length} entries · {formatBDT(rowsTotal)}</span>
+                <div className="flex items-center gap-2">
+                  <Pager page={incPg.page} pages={incPg.pages} onPage={incPg.setPage} total={rows.length} pageSize={15} label="entries" />
+                  <Btn variant="ghost" onClick={exportCsv}><Download className="size-3.5" /> CSV</Btn>
+                </div>
+              </>
+            }
+          >
             <table className="w-full">
-              <THead><Th>Date</Th><Th>Client</Th><Th>Project</Th><Th>Invoice</Th><Th>Method</Th><Th>Source</Th><Th className="text-right">Amount</Th><Th>Recorded by</Th></THead>
+              <THead><Th>Date</Th><Th>Client</Th><Th className="hidden 2xl:table-cell">Project</Th><Th>Invoice</Th><Th className="hidden xl:table-cell">Method</Th><Th className="hidden 2xl:table-cell">Bank</Th><Th>Source</Th><Th className="text-right">Amount</Th><Th className="hidden 2xl:table-cell">Recorded by</Th></THead>
               <tbody>
-                {income?.length === 0 && (
-                  <tr><td colSpan={8} className="px-5 py-10"><EmptyState title="No income recorded" hint="Collections will appear here as invoices are paid." /></td></tr>
+                {rows.length === 0 && (
+                  <tr><td colSpan={9} className="px-5 py-10"><EmptyState title="No income in this view" hint="Collections appear here as invoices are paid." /></td></tr>
                 )}
-                {(income ?? []).map((it, i) => {
+                {incPg.paged.map((it, i) => {
                   const isManual = it.source === "MANUAL" || it.source === "manual";
+                  const isDollar = it.source === "dollar";
                   return (
-                    <Tr key={it.id} index={i}>
+                    <Tr key={it.id} index={i} onClick={() => setDetailId(it.id)} className={cn("cursor-pointer", detailId === it.id && "bg-primary/[0.04]")}>
                       <Td className="text-muted-foreground">{formatDate(it.date ?? it.paymentDate)}</Td>
                       <Td className="font-medium">{it.client ?? it.invoice?.client?.companyName ?? "—"}</Td>
-                      <Td className="text-muted-foreground">{it.project ?? it.invoice?.project?.name ?? "—"}</Td>
+                      <Td className="hidden text-muted-foreground 2xl:table-cell">{it.project ?? it.invoice?.project?.name ?? "—"}</Td>
                       <Td className="tabular-nums text-muted-foreground">
                         {it.invoice?.id ? (
-                          <Link href={`/capital/invoices?inv=${it.invoice.id}`} className="font-medium text-primary hover:underline">
+                          <Link href={`/capital/invoices?inv=${it.invoice.id}`} onClick={(ev) => ev.stopPropagation()} className="font-medium text-primary hover:underline">
                             {it.invoice.invoiceNumber}
                           </Link>
                         ) : (
                           it.invoice?.invoiceNumber ?? (isManual ? "—" : it.description ?? "—")
                         )}
                       </Td>
-                      <Td className="text-muted-foreground">{label(it.method ?? it.paymentMethod)}</Td>
-                      <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold", isManual ? "bg-sky-500/10 text-sky-500 ring-1 ring-sky-500/20" : "bg-emerald-500/10 text-emerald-500 ring-1 ring-emerald-500/20")}>{isManual ? "MANUAL" : "INVOICE"}</span></Td>
-                      <Td className="text-right font-semibold tabular-nums text-emerald-500">{formatBDT(it.amount)}{it.currency && it.currency !== "BDT" && <span className="ml-1 text-[10px] font-normal text-muted-foreground">{it.currency}</span>}</Td>
-                      <Td className="text-muted-foreground">{it.recordedBy?.name ?? it.recordedBy ?? "system"}</Td>
+                      <Td className="hidden text-muted-foreground xl:table-cell">{label(it.method ?? it.paymentMethod)}</Td>
+                      <Td className="hidden xl:table-cell">
+                        {/* Where the money landed, and whether the bank statement
+                            line has been matched — the one thing a reconciliation
+                            review needs from this table. */}
+                        {isDollar ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[11.5px] text-muted-foreground">Auto (FX ledger)</span>
+                            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-teal-500/10 px-1.5 py-0.5 text-[9px] font-bold text-teal-600 ring-1 ring-teal-500/20 dark:text-teal-300">
+                              FX gain
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[11.5px] text-muted-foreground">{it.bankAccount ?? "—"}</span>
+                            {it.reconciled ? (
+                              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-600 ring-1 ring-emerald-500/20 dark:text-emerald-300">
+                                <Check className="size-2.5" /> matched
+                              </span>
+                            ) : (
+                              <Link href="/capital/reports" onClick={(ev) => ev.stopPropagation()} className="inline-flex w-fit items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 ring-1 ring-amber-500/20 hover:underline dark:text-amber-400">
+                                reconcile →
+                              </Link>
+                            )}
+                          </div>
+                        )}
+                      </Td>
+                      <Td>
+                        <span className={cn(
+                          "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold",
+                          isDollar
+                            ? "bg-teal-500/10 text-teal-600 ring-1 ring-teal-500/20 dark:text-teal-300"
+                            : isManual
+                              ? "bg-sky-500/10 text-sky-500 ring-1 ring-sky-500/20"
+                              : "bg-emerald-500/10 text-emerald-500 ring-1 ring-emerald-500/20"
+                        )}>
+                          {isDollar ? "DOLLAR" : isManual ? "MANUAL" : "INVOICE"}
+                        </span>
+                      </Td>
+                      <Td className={cn("text-right font-semibold tabular-nums", Number(it.amount) < 0 ? "text-rose-500" : "text-emerald-500")}>
+                        {formatBDT(it.amount)}
+                        {isDollar && it.fx && <span className="ml-1 text-[9.5px] font-normal text-muted-foreground">on {formatBDT(it.fx.bdt)}</span>}
+                        {isManual && Number(it.taxWithheld ?? 0) > 0 && (
+                          <span className="ml-1 text-[9.5px] font-normal text-muted-foreground">net {formatBDT(it.netAmount)}</span>
+                        )}
+                        {it.currency && it.currency !== "BDT" && <span className="ml-1 text-[10px] font-normal text-muted-foreground">{it.currency}</span>}
+                      </Td>
+                      <Td className="hidden text-muted-foreground 2xl:table-cell">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="truncate">{it.recordedBy?.name ?? it.recordedBy ?? "system"}</span>
+                          <button onClick={(ev) => { ev.stopPropagation(); setDetailId(it.id); }} aria-label="View income details" title="View details" className="shrink-0 rounded-lg p-1 text-muted-foreground/70 transition-colors hover:bg-primary/10 hover:text-primary"><Eye className="size-3.5" /></button>
+                        </span>
+                      </Td>
                     </Tr>
                   );
                 })}
@@ -439,7 +1279,86 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts }: { inc
           </TableShell>
         </FadeIn>
       )}
-      <AddIncomeModal open={addOpen} bankAccounts={bankAccounts} onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); refresh(); }} />
+      <Modal
+        open={!!detail}
+        onClose={() => setDetailId(null)}
+        eyebrow="Income entry"
+        icon={<HandCoins className="size-4" />}
+        title={detail ? (detail.client ?? detail.invoice?.client?.companyName ?? detail.description ?? "Collection") : ""}
+        subtitle={detail ? `${formatDate(detail.date ?? detail.paymentDate)} · ${label(detail.method ?? detail.paymentMethod ?? "")}` : undefined}
+        size="lg"
+      >
+        {detail && (() => {
+          const isManual = detail.source === "MANUAL" || detail.source === "manual";
+          const isDollar = detail.source === "dollar";
+          return (
+            <div className="flex flex-col gap-3">
+              <DetailHero
+                eyebrow="Amount received"
+                tone="emerald"
+                amount={formatBDT(detail.amount)}
+                chips={
+                  <>
+                    <span className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                      isDollar
+                        ? "bg-teal-500/10 text-teal-600 dark:text-teal-300"
+                        : isManual
+                          ? "bg-sky-500/10 text-sky-600 dark:text-sky-300"
+                          : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                    )}>
+                      {isDollar ? "DOLLAR DESK" : isManual ? "MANUAL" : "INVOICE PAYMENT"}
+                    </span>
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{label(detail.method ?? detail.paymentMethod ?? "—")}</span>
+                    {detail.currency && detail.currency !== "BDT" && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{detail.currency}</span>}
+                  </>
+                }
+                caption={detail.notes}
+              />
+
+              <DetailSection title="Collection">
+                <DetailRow label="Date">{formatDate(detail.date ?? detail.paymentDate)}</DetailRow>
+                <DetailRow label="Client">{detail.client ?? detail.invoice?.client?.companyName ?? "—"}</DetailRow>
+                <DetailRow label="Project">{detail.project ?? detail.invoice?.project?.name ?? "—"}</DetailRow>
+                <DetailRow label="Invoice">
+                  {detail.invoice?.id ? (
+                    <Link href={`/capital/invoices?inv=${detail.invoice.id}`} className="font-semibold text-primary hover:underline">
+                      {detail.invoice.invoiceNumber}
+                    </Link>
+                  ) : (
+                    detail.invoice?.invoiceNumber ?? "—"
+                  )}
+                </DetailRow>
+                <DetailRow label="Bank account">{detail.bankAccount ?? (isDollar ? "Auto (FX ledger)" : "—")}</DetailRow>
+                <DetailRow label="Reference">{detail.reference ?? "—"}</DetailRow>
+                <DetailRow label="Recorded by">{detail.recordedBy?.name ?? detail.recordedBy ?? "system"}</DetailRow>
+                <DetailRow label="Reconciliation">
+                  {detail.reconciled ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-300"><Check className="size-3" /> matched</span>
+                  ) : (
+                    <span className="inline-flex items-center rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-300">unreconciled</span>
+                  )}
+                </DetailRow>
+              </DetailSection>
+
+              <DetailSection title="Amounts">
+                <DetailRow label="Gross" mono>{formatBDT(detail.amount)}</DetailRow>
+                <DetailRow label="Tax withheld" mono>{formatBDT(detail.taxWithheld ?? 0)}</DetailRow>
+                <DetailRow label="Net received" mono strong>{formatBDT(detail.netAmount ?? detail.amount)}</DetailRow>
+                {isDollar && detail.fx && <DetailRow label="FX value" mono>{formatBDT(detail.fx.bdt)}</DetailRow>}
+                <DetailRow label="Currency">{detail.currency ?? "BDT"}</DetailRow>
+              </DetailSection>
+
+              {detail.notes && (
+                <DetailSection title="Notes">
+                  <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{detail.notes}</p>
+                </DetailSection>
+              )}
+            </div>
+          );
+        })()}
+      </Modal>
+      <AddIncomeModal open={addOpen} bankAccounts={bankAccounts} clients={clients ?? []} projects={projects ?? []} onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); refresh(); }} />
     </div>
   );
 }
@@ -475,6 +1394,14 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
   const [reconOpen, setReconOpen] = useState(false);
   const [reconBusy, setReconBusy] = useState(false);
 
+  // ── downloadable reports ──
+  const { branding } = useBranding();
+  const [monthValue, setMonthValue] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [reportBusy, setReportBusy] = useState<string | null>(null);
+
   useEffect(() => {
     if (!reconAccount) return;
     let cancelled = false;
@@ -499,16 +1426,220 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
     }
   };
 
+  /** Monthly / six-month PDF: fetch the window, then render an A4 sheet. */
+  const downloadPeriodReport = async (kind: "monthly" | "six-month") => {
+    if (reportBusy) return;
+    setReportBusy(kind);
+    try {
+      const bounds = kind === "monthly" ? monthBounds(monthValue) : sixMonthBounds(monthValue);
+      const data = await apiFetch<any>(
+        `/capital/reports/period?from=${bounds.from}&to=${bounds.to}`
+      );
+      const doc = await buildBusinessReportPdf(
+        {
+          kind,
+          title: kind === "monthly" ? "Monthly Financial Report" : "Six-Month Financial Report",
+          periodLabel: bounds.label,
+          generatedAt: new Date(),
+          summary: data.totals,
+          monthly: data.monthly,
+          byCategory: data.byCategory,
+          byMethod: data.byMethod,
+          byStatus: data.byStatus,
+          expensesByCategory: data.expensesByCategory,
+          topClients: data.topClients,
+          invoices: data.invoices,
+          expenses: data.expenses,
+        },
+        branding ?? undefined
+      );
+      doc.save(`${kind}-report-${bounds.from}-to-${bounds.to}.pdf`);
+      notify(kind === "monthly" ? "Monthly report downloaded" : "Six-month report downloaded");
+    } catch (e: any) {
+      notify(e.message ?? "Report download failed");
+    } finally {
+      setReportBusy(null);
+    }
+  };
+
+  /** All-time snapshot, built from the data already loaded on this page. */
+  const downloadFullReport = async () => {
+    if (reportBusy) return;
+    setReportBusy("full");
+    try {
+      const invoiced = Number(km.totalInvoiced ?? 0);
+      const collected = Number(km.totalCollected ?? 0);
+      const spent = Number(km.totalExpenses ?? 0);
+      const profit = invoiced - spent;
+      // The statement cards may still be loading when the button is pressed.
+      // Fetch them rather than printing an empty "Statement Highlights" block.
+      let stmts = statements;
+      if (!stmts?.profitLoss || !stmts?.trialBalance) {
+        const [tb, pl, bs, cf] = await Promise.all([
+          apiFetch<any>("/capital/statements/trial-balance").catch(() => null),
+          apiFetch<any>("/capital/statements/profit-loss").catch(() => null),
+          apiFetch<any>("/capital/statements/balance-sheet").catch(() => null),
+          apiFetch<any>("/capital/statements/cash-flow").catch(() => null),
+        ]);
+        stmts = { trialBalance: tb, profitLoss: pl, balanceSheet: bs, cashFlow: cf };
+      }
+      const doc = await buildBusinessReportPdf(
+        {
+          kind: "full",
+          title: "Financial Report",
+          periodLabel: "All-time snapshot",
+          generatedAt: new Date(),
+          summary: {
+            invoiced,
+            collected,
+            expenses: spent,
+            profit,
+            margin: km.profitMargin ?? (invoiced ? (profit / invoiced) * 100 : 0),
+            collectionRate: km.collectionRate ?? 0,
+            outstanding: Number(aging?.totalOutstanding ?? 0),
+          },
+          monthly: (reports?.trend8 ?? []).map((t: any) => ({
+            label: String(t.month ?? ""),
+            invoiced: Number(t.revenue ?? 0),
+            collected: Number(t.collected ?? 0),
+            expenses: Number(t.expenses ?? 0),
+            profit: Number(t.profit ?? 0),
+          })),
+          byCategory,
+          byMethod,
+          expensesByCategory: (budget ?? []).map((b: any) => ({
+            name: b.name,
+            amount: Number(b.actual ?? 0),
+          })),
+          statements: stmts,
+        },
+        branding ?? undefined
+      );
+      doc.save("financial-report.pdf");
+      notify("Financial report downloaded");
+    } catch (e: any) {
+      notify(e.message ?? "Report download failed");
+    } finally {
+      setReportBusy(null);
+    }
+  };
+
+  /** Trial balance / P&L / balance sheet / cash flow as a standalone PDF. */
+  const downloadStatement = async (kind: StatementType) => {
+    if (reportBusy) return;
+    setReportBusy(kind);
+    try {
+      const source: Record<StatementType, any> = {
+        "trial-balance": statements?.trialBalance,
+        "profit-loss": statements?.profitLoss,
+        "balance-sheet": statements?.balanceSheet,
+        "cash-flow": statements?.cashFlow,
+      };
+      const endpoint: Record<StatementType, string> = {
+        "trial-balance": "/capital/statements/trial-balance",
+        "profit-loss": "/capital/statements/profit-loss",
+        "balance-sheet": "/capital/statements/balance-sheet",
+        "cash-flow": "/capital/statements/cash-flow",
+      };
+      // Always refresh from the API: the page may still be loading its queries
+      // when the button is pressed, and a stale/empty prop must not print an
+      // empty statement.
+      let data = source[kind];
+      try {
+        data = await apiFetch<any>(endpoint[kind]);
+      } catch {
+        /* fall back to the already-loaded data */
+      }
+      const doc = await buildStatementPdf(kind, data, branding ?? undefined);
+      doc.save(`${kind}.pdf`);
+      notify(`${statementLabel(kind)} downloaded`);
+    } catch (e: any) {
+      notify(e.message ?? "Statement download failed");
+    } finally {
+      setReportBusy(null);
+    }
+  };
+
+  const STATEMENT_DOWNLOADS: { kind: StatementType; label: string }[] = [
+    { kind: "trial-balance", label: "Trial Balance" },
+    { kind: "profit-loss", label: "Profit & Loss" },
+    { kind: "balance-sheet", label: "Balance Sheet" },
+    { kind: "cash-flow", label: "Cash Flow" },
+  ];
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Sticky section jump — the report is long; one click beats scrolling. */}
+      <div className="sticky top-[58px] z-30 -mx-1 flex gap-1 overflow-x-auto rounded-xl border border-border/60 bg-card/95 p-1 shadow-sm backdrop-blur">
+        {[
+          { id: "rep-kpis", label: "Key metrics" },
+          { id: "rep-trend", label: "Trend" },
+          { id: "rep-tax", label: "Tax" },
+          { id: "rep-aging", label: "Receivable aging" },
+          { id: "rep-forecast", label: "Forecast" },
+          { id: "rep-statements", label: "GL statements" },
+          { id: "rep-payables", label: "Payable aging" },
+          { id: "rep-budgets", label: "Budgets" },
+          { id: "rep-recon", label: "Reconciliation" },
+        ].map((s) => (
+          <button
+            key={s.id}
+            onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "auto", block: "start" })}
+            className="shrink-0 rounded-lg px-2.5 py-1.5 text-[10.5px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      <CardShell>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <SectionTitle
+              title="Download reports"
+              subtitle="Pick a month, then export a print-ready A4 PDF — with company header, signature and page numbers"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+              Month
+              <input
+                type="month"
+                value={monthValue}
+                onChange={(e) => setMonthValue(e.target.value)}
+                className="rounded-lg border border-border bg-background px-2 py-1.5 text-[12px] font-medium normal-case tracking-normal text-foreground outline-none focus:border-primary/50"
+              />
+            </label>
+            <Btn variant="primary" onClick={() => void downloadPeriodReport("monthly")} disabled={!!reportBusy}>
+              <FileDown className="size-3.5" /> {reportBusy === "monthly" ? "Building…" : "Monthly report"}
+            </Btn>
+            <Btn variant="outline" onClick={() => void downloadPeriodReport("six-month")} disabled={!!reportBusy}>
+              <FileDown className="size-3.5" /> {reportBusy === "six-month" ? "Building…" : "6-month report"}
+            </Btn>
+            <Btn variant="outline" onClick={() => void downloadFullReport()} disabled={!!reportBusy}>
+              <FileDown className="size-3.5" /> {reportBusy === "full" ? "Building…" : "Full report"}
+            </Btn>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
+          <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+            Download statement
+          </span>
+          {STATEMENT_DOWNLOADS.map((s) => (
+            <Btn key={s.kind} variant="outline" onClick={() => void downloadStatement(s.kind)} disabled={!!reportBusy}>
+              <Download className="size-3.5" /> {reportBusy === s.kind ? "Building…" : s.label}
+            </Btn>
+          ))}
+        </div>
+      </CardShell>
+
+      <div id="rep-kpis" className="grid scroll-mt-24 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Avg Invoice Value" value={formatBDT(km.avgInvoiceValue)} sub="per invoice" tone="primary" icon={<ReceiptText className="size-5" />} />
         <StatCard label="Profit Margin" value={km.profitMargin != null ? `${Math.round(km.profitMargin)}%` : "—"} sub="recognized revenue basis" tone="sky" icon={<CircleDollarSign className="size-5" />} />
         <StatCard label="Collection Rate" value={km.collectionRate != null ? `${Math.round(km.collectionRate)}%` : "—"} sub="collected vs invoiced" tone="emerald" icon={<HandCoins className="size-5" />} />
         <StatCard label="Tax Year" value={tax.fiscalYear ?? "—"} sub={`rate ${tax.taxRate ?? 22}%`} tone="amber" icon={<Landmark className="size-5" />} />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <div id="rep-trend" className="grid scroll-mt-24 grid-cols-1 gap-4 xl:grid-cols-3">
         <CardShell className="xl:col-span-2">
           <SectionTitle title="8-Month Trend" subtitle="invoiced vs collected vs expenses" />
           <RevenueAreaChart data={(reports?.trend8 ?? []).map((t: any) => ({ ...t, month: String(t.month).slice(0, 3) }))} />
@@ -585,7 +1716,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         </CardShell>
       </div>
 
-      <CardShell>
+      <CardShell id="rep-tax">
         <SectionTitle title="Tax Report" subtitle={`estimated tax at ${tax.taxRate ?? 22}% · fiscal year ${tax.fiscalYear ?? "—"}`} />
         <TableShell>
           <table className="w-full">
@@ -620,7 +1751,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         <SectionTitle title="Accounts Receivable Aging" subtitle={`${formatBDT(aging?.totalOutstanding ?? 0)} outstanding as of today`} />
         <Btn variant="outline" onClick={onRunRecurring} className={running ? "opacity-60" : ""}><RefreshCw className="size-3.5" /> {running ? "Running…" : "Run recurring billing"}</Btn>
       </div>
-      <CardShell>
+      <CardShell id="rep-aging">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {AGING_KEYS.map((b) => (
             <div key={b.key} className="rounded-xl border border-border/60 px-3 py-2.5">
@@ -659,7 +1790,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         </div>
       </CardShell>
 
-      <CardShell>
+      <CardShell id="rep-forecast">
         <SectionTitle title="90-Day Cash Flow Forecast" subtitle={`cash position ${formatBDT(forecast?.cashPosition ?? 0)} · projected inflow ${formatBDT(forecast?.totalInflow ?? 0)} vs outflow ${formatBDT(forecast?.totalOutflow ?? 0)}`} />
         <div className="flex flex-col gap-3">
           {forecastBuckets.length === 0 && <p className="text-[12px] text-muted-foreground">Nothing scheduled in the next 90 days.</p>}
@@ -686,7 +1817,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         <SectionTitle title="GL Statements" subtitle="double-entry ledger · all figures in BDT" />
         {statements?.trialBalance && <p className={cn("text-[11.5px] font-bold", Number(statements.trialBalance.totalDebit) === Number(statements.trialBalance.totalCredit) ? "text-emerald-500" : "text-rose-500")}>Balanced: {formatBDT(statements.trialBalance.totalDebit)} = {formatBDT(statements.trialBalance.totalCredit)}</p>}
       </div>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div id="rep-statements" className="grid scroll-mt-24 grid-cols-1 gap-4 xl:grid-cols-2">
         <CardShell>
           <SectionTitle title="Trial Balance" subtitle="all ledger accounts" />
           <TableShell>
@@ -778,7 +1909,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         </CardShell>
       </div>
 
-      <CardShell>
+      <CardShell id="rep-payables">
         <SectionTitle title="Accounts Payable Aging" subtitle={`${formatBDT(apAging?.totalPayable ?? 0)} payable to vendors as of today`} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {AGING_KEYS.map((b) => (
@@ -815,7 +1946,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         <SectionTitle title="Budget Plans" subtitle={`${budgets?.length ?? 0} budgets set`} />
         <Btn variant="outline" onClick={() => { setBudgetEdit(null); setBudgetOpen(true); }}><Plus className="size-3.5" /> New Budget</Btn>
       </div>
-      <CardShell>
+      <CardShell id="rep-budgets">
         <TableShell>
           <table className="w-full">
             <THead><Th>Scope</Th><Th>Target</Th><Th className="text-right">Budget</Th><Th className="text-right">Spent</Th><Th className="text-right">Remaining</Th><Th>Period</Th><Th /></THead>
@@ -853,7 +1984,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
           <Btn variant="primary" onClick={() => setReconOpen(true)}><Plus className="size-3.5" /> Add Entry</Btn>
         </div>
       </div>
-      <CardShell>
+      <CardShell id="rep-recon">
         {reconErr && <p className="mb-2 text-[12px] font-medium text-rose-400">{reconErr}</p>}
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div>
@@ -979,6 +2110,7 @@ export function ProfitabilityTab({ data }: { data: any }) {
 export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSaved }: { accounts: any[]; balances: any[]; onEdit: (a: any) => void; onAdd: () => void; onDelete: (a: any) => void; onSaved: () => void }) {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
+  const [detailId, setDetailId] = useState<string | null>(null);
   const list = useMemo(() => {
     const ql = q.trim().toLowerCase();
     return accounts.filter((a) => {
@@ -988,6 +2120,7 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
     });
   }, [accounts, q, cat]);
   const balanceOf = (id: string) => balances.find((b: any) => b.accountId === id)?.balance ?? 0;
+  const detail = useMemo(() => accounts.find((a) => a.id === detailId) ?? null, [accounts, detailId]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -1011,14 +2144,15 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
                 <tr><td colSpan={6} className="px-5 py-10"><EmptyState title="No accounts match" hint="Adjust filters or add a new account." /></td></tr>
               )}
               {list.map((a, i) => (
-                <Tr key={a.id} index={i}>
+                <Tr key={a.id} index={i} onClick={() => setDetailId(a.id)} className={cn("cursor-pointer", detailId === a.id && "bg-primary/[0.04]")}>
                   <Td className="font-mono text-[12px] tabular-nums text-muted-foreground">{a.code ?? "—"}</Td>
                   <Td className="font-medium">{a.name}</Td>
                   <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold", a.category === "ASSET" ? "bg-emerald-500/10 text-emerald-500 ring-1 ring-emerald-500/20" : a.category === "LIABILITY" ? "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20" : a.category === "REVENUE" ? "bg-primary/10 text-primary ring-1 ring-primary/20" : "bg-sky-500/10 text-sky-500 ring-1 ring-sky-500/20")}>{label(a.category)}</span></Td>
                   <Td className={cn("text-right font-semibold tabular-nums", balanceOf(a.id) < 0 ? "text-rose-500" : "")}>{formatBDT(balanceOf(a.id))}</Td>
                   <Td><StatusBadge status={a.isActive ? "Active" : "Inactive"} /></Td>
-                  <Td>
+                  <Td onClick={(ev) => ev.stopPropagation()}>
                     <div className="flex items-center gap-0.5">
+                      <button onClick={() => setDetailId(a.id)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="View details"><Eye className="size-3.5" /></button>
                       <button onClick={() => onEdit(a)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="Edit"><Pencil className="size-3.5" /></button>
                       {a.isActive && <button onClick={() => onDelete(a)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500" title="Deactivate"><Trash2 className="size-3.5" /></button>}
                     </div>
@@ -1029,12 +2163,60 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
           </table>
         </TableShell>
       </FadeIn>
+
+      <Modal
+        open={!!detail}
+        onClose={() => setDetailId(null)}
+        eyebrow="Ledger account"
+        icon={<Landmark className="size-4" />}
+        title={detail?.name ?? ""}
+        subtitle={detail ? `${detail.code ?? "—"} · ${label(detail.category ?? "")}` : undefined}
+        size="lg"
+        footer={
+          detail ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Btn variant="outline" onClick={() => { const a = detail; setDetailId(null); onEdit(a); }}><Pencil className="size-3.5" /> Edit account</Btn>
+              {detail.isActive && <Btn variant="ghost" className="text-rose-600 hover:bg-rose-500/10" onClick={() => { const a = detail; setDetailId(null); onDelete(a); }}><Trash2 className="size-3.5" /> Deactivate</Btn>}
+            </div>
+          ) : null
+        }
+      >
+        {detail && (
+          <div className="flex flex-col gap-3">
+            <DetailHero
+              eyebrow="Ledger balance"
+              tone={balanceOf(detail.id) < 0 ? "rose" : "primary"}
+              amount={formatBDT(balanceOf(detail.id))}
+              chips={
+                <>
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{label(detail.category ?? "")}</span>
+                  <StatusBadge status={detail.isActive ? "Active" : "Inactive"} />
+                </>
+              }
+              caption={detail.description}
+            />
+            <DetailSection title="Account">
+              <DetailRow label="Code" mono>{detail.code ?? "—"}</DetailRow>
+              <DetailRow label="Name" strong>{detail.name}</DetailRow>
+              <DetailRow label="Category">{label(detail.category ?? "")}</DetailRow>
+              <DetailRow label="Status">{detail.isActive ? "Active" : "Inactive"}</DetailRow>
+              <DetailRow label="Normal side">{["LIABILITY", "REVENUE", "EQUITY"].includes(detail.category) ? "Credit" : "Debit"}</DetailRow>
+            </DetailSection>
+            {detail.description && (
+              <DetailSection title="Description">
+                <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{detail.description}</p>
+              </DetailSection>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
 
 export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved }: { vendors: any[]; expenses: any[]; onEdit: (v: any) => void; onAdd: () => void; onDelete: (v: any) => void; onSaved: () => void }) {
   const [q, setQ] = useState("");
+  const [detailId, setDetailId] = useState<string | null>(null);
   const list = useMemo(() => {
     const ql = q.trim().toLowerCase();
     return vendors.filter((v) => !ql || v.name.toLowerCase().includes(ql) || (v.email ?? "").toLowerCase().includes(ql));
@@ -1050,6 +2232,13 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
     }
     return m;
   }, [expenses]);
+
+  const detail = useMemo(() => vendors.find((v) => v.id === detailId) ?? null, [vendors, detailId]);
+  const detailStat = detail ? expByVendor.get(detail.id) : undefined;
+  const detailExpenses = useMemo(
+    () => (detail ? expenses.filter((e) => e.vendorId === detail.id).slice(0, 8) : []),
+    [detail, expenses]
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -1074,15 +2263,16 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
               {list.map((v, i) => {
                 const stat = expByVendor.get(v.id);
                 return (
-                  <Tr key={v.id} index={i}>
+                  <Tr key={v.id} index={i} onClick={() => setDetailId(v.id)} className={cn("cursor-pointer", detailId === v.id && "bg-primary/[0.04]")}>
                     <Td className="font-medium">{v.name}</Td>
                     <Td className="text-[11.5px] text-muted-foreground">{v.email ? <p>{v.email}</p> : null}{v.phone ? <p>{v.phone}</p> : null}{!v.email && !v.phone ? "—" : null}</Td>
                     <Td className="text-[11.5px] text-muted-foreground">{v.paymentTerms ?? "—"}</Td>
                     <Td className="text-right tabular-nums">{stat?.count ?? 0}</Td>
                     <Td className={cn("text-right font-semibold tabular-nums", (stat?.payable ?? 0) > 0 ? "text-amber-500" : "text-muted-foreground")}>{formatBDT(stat?.payable ?? 0)}</Td>
                     <Td><StatusBadge status={v.isActive ? "Active" : "Inactive"} /></Td>
-                    <Td>
+                    <Td onClick={(ev) => ev.stopPropagation()}>
                       <div className="flex items-center gap-0.5">
+                        <button onClick={() => setDetailId(v.id)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="View details"><Eye className="size-3.5" /></button>
                         <button onClick={() => onEdit(v)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="Edit"><Pencil className="size-3.5" /></button>
                         <button onClick={() => onDelete(v)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500" title="Delete"><Trash2 className="size-3.5" /></button>
                       </div>
@@ -1094,11 +2284,86 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
           </table>
         </TableShell>
       </FadeIn>
+
+      <Modal
+        open={!!detail}
+        onClose={() => setDetailId(null)}
+        eyebrow="Vendor"
+        icon={<Building2 className="size-4" />}
+        title={detail?.name ?? ""}
+        subtitle={detail ? (detail.category ?? detail.paymentTerms ?? "Supplier") : undefined}
+        size="lg"
+        footer={
+          detail ? (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Btn variant="outline" onClick={() => { const v = detail; setDetailId(null); onEdit(v); }}><Pencil className="size-3.5" /> Edit vendor</Btn>
+              <Btn variant="ghost" className="text-rose-600 hover:bg-rose-500/10" onClick={() => { const v = detail; setDetailId(null); onDelete(v); }}><Trash2 className="size-3.5" /> Delete</Btn>
+            </div>
+          ) : null
+        }
+      >
+        {detail && (
+          <div className="flex flex-col gap-3">
+            <DetailHero
+              eyebrow="Payable to this vendor"
+              tone="amber"
+              amount={formatBDT(detailStat?.payable ?? 0)}
+              chips={
+                <>
+                  <StatusBadge status={detail.isActive ? "Active" : "Inactive"} />
+                  {detail.paymentTerms && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{detail.paymentTerms}</span>}
+                </>
+              }
+              caption={`${detailStat?.count ?? 0} expense${(detailStat?.count ?? 0) === 1 ? "" : "s"} recorded with this vendor`}
+            />
+
+            <DetailSection title="Contact">
+              <DetailRow label="Email">
+                {detail.email ? <a href={`mailto:${detail.email}`} className="text-primary hover:underline">{detail.email}</a> : "—"}
+              </DetailRow>
+              <DetailRow label="Phone">
+                {detail.phone ? <a href={`tel:${detail.phone}`} className="text-primary hover:underline">{detail.phone}</a> : "—"}
+              </DetailRow>
+              <DetailRow label="Payment terms">{detail.paymentTerms ?? "—"}</DetailRow>
+              <DetailRow label="Category">{detail.category ?? "—"}</DetailRow>
+            </DetailSection>
+
+            <DetailSection title="Spend">
+              <DetailRow label="Expenses" mono>{detailStat?.count ?? 0}</DetailRow>
+              <DetailRow label="Still payable" mono strong>{formatBDT(detailStat?.payable ?? 0)}</DetailRow>
+            </DetailSection>
+
+            {detailExpenses.length > 0 && (
+              <DetailSection title="Recent expenses">
+                <div className="flex flex-col divide-y divide-border/40">
+                  {detailExpenses.map((e: any) => (
+                    <div key={e.id} className="flex items-center justify-between gap-3 py-1.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-[11.5px] font-medium">{e.description}</p>
+                        <p className="text-[10px] text-muted-foreground">{formatDate(e.date)} · {label(e.approvalStatus ?? "")}</p>
+                      </div>
+                      <span className="shrink-0 text-[11.5px] font-bold tabular-nums">{formatBDT(e.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              </DetailSection>
+            )}
+
+            {detail.notes && (
+              <DetailSection title="Notes">
+                <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{detail.notes}</p>
+              </DetailSection>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
 
 export function ActivityTab({ activity, refresh }: { activity: any[] | null; refresh: () => void }) {
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const detail = useMemo(() => (activity ?? []).find((a) => a.id === detailId) ?? null, [activity, detailId]);
   return (
     <div className="flex flex-col gap-4">
       {!activity ? (
@@ -1112,7 +2377,7 @@ export function ActivityTab({ activity, refresh }: { activity: any[] | null; ref
             ) : (
               <div className="flex flex-col gap-2.5">
                 {activity.map((a) => (
-                  <div key={a.id} className="flex items-start gap-3">
+                  <div key={a.id} onClick={() => setDetailId(a.id)} className="flex cursor-pointer items-start gap-3 rounded-xl transition-colors hover:bg-muted/40">
                     <span className={cn("mt-1 size-2 shrink-0 rounded-full", a.entityType === "PAYMENT" ? "bg-emerald-500" : a.entityType === "EXPENSE" ? "bg-amber-400" : a.entityType === "INVOICE" ? "bg-primary" : "bg-sky-400")} />
                     <div className="min-w-0 flex-1 rounded-xl border border-border/60 px-3 py-2">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -1131,6 +2396,34 @@ export function ActivityTab({ activity, refresh }: { activity: any[] | null; ref
           </CardShell>
         </FadeIn>
       )}
+
+      <Modal
+        open={!!detail}
+        onClose={() => setDetailId(null)}
+        eyebrow={detail ? label(detail.entityType ?? "Activity") : "Activity"}
+        icon={<Clock className="size-4" />}
+        title={detail?.action ?? ""}
+        subtitle={detail ? `${timeAgo(detail.timestamp)} · ${detail.performedBy?.name ?? "system"}` : undefined}
+        size="lg"
+      >
+        {detail && (
+          <div className="flex flex-col gap-3">
+            <DetailSection title="Event">
+              <DetailRow label="Entity">{label(detail.entityType ?? "—")}</DetailRow>
+              <DetailRow label="Action">{detail.action}</DetailRow>
+              <DetailRow label="Actor">{detail.performedBy?.name ?? "system"}</DetailRow>
+              <DetailRow label="When">{new Date(detail.timestamp).toLocaleString()}</DetailRow>
+              {detail.entityId && <DetailRow label="Record id" mono>{detail.entityId}</DetailRow>}
+            </DetailSection>
+            <DetailSection title="Before">
+              <pre className="max-h-56 overflow-auto rounded-xl bg-muted/40 p-3 font-mono text-[10.5px] leading-relaxed">{detail.beforeValue == null ? "—" : JSON.stringify(detail.beforeValue, null, 2)}</pre>
+            </DetailSection>
+            <DetailSection title="After">
+              <pre className="max-h-56 overflow-auto rounded-xl bg-muted/40 p-3 font-mono text-[10.5px] leading-relaxed">{detail.afterValue == null ? "—" : JSON.stringify(detail.afterValue, null, 2)}</pre>
+            </DetailSection>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -4,7 +4,7 @@ async function login(page: import("@playwright/test").Page) {
   await page.goto("/login");
   await page.getByPlaceholder("you@zoolyum.com").fill("sakib@zoolyum.com");
   await page.locator('input[type="password"]').fill("zoolyum123");
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await page.waitForURL(/\/dashboard/);
 }
 
@@ -29,7 +29,8 @@ test("staff sees finance-pro UI on expenses & reports tabs", async ({ page }) =>
 
   await page.goto("/capital?tab=income");
   await expect(page.getByRole("button", { name: "Record Income" })).toBeVisible();
-  await expect(page.getByText("MANUAL", { exact: true }).first()).toBeVisible();
+  await page.getByRole("button", { name: /Show analytics/i }).click();
+  await expect(page.getByText("By Source", { exact: true })).toBeVisible();
 
   await page.goto("/capital?tab=profitability");
   await expect(page.getByText("Project Profitability", { exact: true })).toBeVisible();
