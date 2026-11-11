@@ -425,13 +425,13 @@ html {
   padding-bottom: var(--safe-bottom);
 }
 
-/* Full-height sheets on phones (100dvh handles the browser chrome). */
-.sheet-mobile {
-  height: 100dvh;
-  max-height: 100dvh;
-}
-@supports not (height: 100dvh) {
-  .sheet-mobile { height: 100vh; max-height: 100vh; }
+/* Full-height sheet used by phone modals (the component applies 100dvh itself;
+   this class is kept for any standalone consumer). */
+@media (max-width: 639px) {
+  .sheet-mobile {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
 }
 
 .sheet-footer-safe {

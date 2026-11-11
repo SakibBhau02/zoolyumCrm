@@ -44,7 +44,9 @@ Plus visual review of each module with Playwright screenshots at each width.
 
 - `Modal` becomes a **true full-screen sheet** on phones: `100dvh`, square
   corners, sticky header and footer, body scrolls, safe-area footer padding.
-  Desktop keeps the centred dialog with its size presets.
+  From `sm` up it is a **centred dialog** again (`justify-center`,
+  `max-h: 92vh`, width from the `size` preset: md 448 / lg 672 / xl 896 /
+  2xl 1024 / 3xl 1152 px).
 - `Drawer` got 40 px close target, safe-area footer and `overscroll-contain`.
 - Mobile nav drawer: `aria-modal`, Escape to close, focus moved into the panel,
   scroll lock, `overscroll-contain`.

@@ -453,11 +453,12 @@ export function Modal({
           ? "h-[calc(100dvh-9.5rem)] min-h-[520px] rounded-2xl shadow-sm"
           : "shadow-2xl shadow-primary/10",
         // Phones: a true full-screen sheet (100dvh, no rounded corners) so
-        // forms have the whole viewport; desktop keeps the centred dialog.
+        // forms have the whole viewport; from `sm` up it becomes the centred
+        // dialog again with its own max width and height.
         !bare &&
           (isFull
             ? "h-full max-w-[1500px] rounded-none sm:rounded-2xl"
-            : "sheet-mobile w-full max-w-none rounded-none border-0 sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:border"),
+            : "h-[100dvh] max-h-[100dvh] w-full max-w-none rounded-none border-0 sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:border"),
         !bare && size === "md" && "sm:max-w-md",
         !bare && size === "lg" && "sm:max-w-2xl",
         !bare && size === "xl" && "sm:max-w-4xl",
@@ -536,7 +537,7 @@ export function Modal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className={cn(
-            "fixed inset-0 z-50 flex bg-black/50 backdrop-blur-sm",
+            "fixed inset-0 z-50 flex justify-center overflow-y-auto bg-black/50 backdrop-blur-sm",
             isFull ? "items-stretch p-0 sm:p-4 lg:p-6" : "items-stretch p-0 sm:items-center sm:p-4"
           )}
           onClick={() => closeOnBackdrop && onClose()}
