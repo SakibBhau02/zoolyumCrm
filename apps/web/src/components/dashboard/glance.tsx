@@ -92,12 +92,12 @@ export function BusinessHealth({ scorecard, alerts }: { scorecard: any; alerts?:
       <div className="pointer-events-none absolute -right-16 -top-16 size-40 rounded-full bg-primary/5 blur-2xl" />
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-widest text-muted-foreground">
             <ShieldAlert className="size-3.5" /> Business health
           </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Weighted from cash, delivery, team &amp; clients</p>
+          <p className="mt-0.5 text-meta text-muted-foreground">Weighted from cash, delivery, team &amp; clients</p>
         </div>
-        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", score >= 80 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : score >= 60 ? SEV.warning.tile : SEV.critical.tile)}>
+        <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold uppercase tracking-wide", score >= 80 ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : score >= 60 ? SEV.warning.tile : SEV.critical.tile)}>
           {grade}
         </span>
       </div>
@@ -108,8 +108,8 @@ export function BusinessHealth({ scorecard, alerts }: { scorecard: any; alerts?:
           {components.map((c: any) => (
             <div key={c.key}>
               <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-[10.5px] text-muted-foreground">{c.label}</span>
-                <span className="text-[11px] font-bold tabular-nums">{Math.round(c.value)}</span>
+                <span className="truncate text-micro text-muted-foreground">{c.label}</span>
+                <span className="text-meta font-bold tabular-nums">{Math.round(c.value)}</span>
               </div>
               <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-muted">
                 <div className={cn("h-full rounded-full", barTone(c.value))} style={{ width: `${Math.max(2, Math.min(100, c.value))}%` }} />
@@ -120,9 +120,9 @@ export function BusinessHealth({ scorecard, alerts }: { scorecard: any; alerts?:
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-2.5">
-        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Signals</span>
+        <span className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Signals</span>
         {(Object.keys(counts) as Severity[]).map((s) => (
-          <span key={s} className={cn("inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9.5px] font-bold tabular-nums", SEV[s].tile)}>
+          <span key={s} className={cn("inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-micro font-bold tabular-nums", SEV[s].tile)}>
             <span className={cn("size-1.5 rounded-full", SEV[s].dot)} />
             {counts[s]} {SEV[s].label.toLowerCase()}
           </span>
@@ -148,15 +148,15 @@ export function DecisionQueue({ alerts }: { alerts: any[] }) {
     <CardShell className="relative overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-widest text-muted-foreground">
             <AlertTriangle className="size-3.5" /> Needs attention
           </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Ranked by severity, then impact — act top-down.</p>
+          <p className="mt-0.5 text-meta text-muted-foreground">Ranked by severity, then impact — act top-down.</p>
         </div>
         <div className="flex items-center gap-1">
           {(["critical", "warning", "info"] as Severity[]).map((s) =>
             counts[s] ? (
-              <span key={s} className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums", SEV[s].tile)}>
+              <span key={s} className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro font-bold tabular-nums", SEV[s].tile)}>
                 <span className={cn("size-1.5 rounded-full", SEV[s].dot)} />
                 {counts[s]}
               </span>
@@ -166,8 +166,8 @@ export function DecisionQueue({ alerts }: { alerts: any[] }) {
       </div>
 
       {list.length === 0 ? (
-        <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-500/5 px-3 py-4 text-[12px] text-emerald-600 dark:text-emerald-400">
-          <Check className="size-4" /> Nothing is on fire. Keep the momentum.
+        <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-500/5 px-3 py-4 text-body text-emerald-600 dark:text-emerald-400">
+          <Check className="size-3.5" /> Nothing is on fire. Keep the momentum.
         </div>
       ) : (
         <div className="mt-3 flex flex-col gap-1.5">
@@ -186,14 +186,14 @@ export function DecisionQueue({ alerts }: { alerts: any[] }) {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline gap-2">
-                    <span className="truncate text-[12px] font-semibold">{a.label}</span>
-                    <span className={cn("shrink-0 text-[13px] font-bold tabular-nums", sev.text)}>{alertMetric(a)}</span>
+                    <span className="truncate text-body font-semibold">{a.label}</span>
+                    <span className={cn("shrink-0 text-body-lg font-bold tabular-nums", sev.text)}>{alertMetric(a)}</span>
                   </span>
-                  <span className="block truncate text-[11px] text-muted-foreground">{a.hint}</span>
+                  <span className="block truncate text-meta text-muted-foreground">{a.hint}</span>
                 </span>
-                <span className="hidden shrink-0 items-center gap-1 text-[10px] font-semibold text-primary sm:flex">
+                <span className="hidden shrink-0 items-center gap-1 text-micro font-semibold text-primary sm:flex">
                   {a.action}
-                  <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+                  <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                 </span>
               </Link>
             );
@@ -201,7 +201,7 @@ export function DecisionQueue({ alerts }: { alerts: any[] }) {
           {list.length > 4 && (
             <button
               onClick={() => setExpanded((v) => !v)}
-              className="mt-0.5 self-start rounded-lg px-2 py-1 text-[10.5px] font-semibold text-primary hover:underline"
+              className="mt-0.5 self-start rounded-lg px-2 py-1 text-micro font-semibold text-primary hover:underline"
             >
               {expanded ? "Show less" : `Show all ${list.length} signals`}
             </button>
@@ -471,12 +471,12 @@ const MODULES: ModuleDef[] = [
     viz: (m) => (
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-          <p className="text-[14px] font-bold tabular-nums leading-none">{m.connectedIntegrations}</p>
-          <p className="mt-0.5 text-[9px] text-muted-foreground">integrations</p>
+          <p className="text-body-lg font-bold tabular-nums leading-none">{m.connectedIntegrations}</p>
+          <p className="mt-0.5 text-micro text-muted-foreground">integrations</p>
         </div>
         <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-          <p className="text-[14px] font-bold tabular-nums leading-none">{m.auditToday}</p>
-          <p className="mt-0.5 text-[9px] text-muted-foreground">audit events</p>
+          <p className="text-body-lg font-bold tabular-nums leading-none">{m.auditToday}</p>
+          <p className="mt-0.5 text-micro text-muted-foreground">audit events</p>
         </div>
       </div>
     ),
@@ -596,12 +596,12 @@ function ModuleSignals({ id, m, data }: { id: string; m: any; data: Record<strin
   if (!items.length) return null;
   return (
     <section className="rounded-2xl border border-border/60 bg-card p-4">
-      <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">
         <Sparkles className="size-3.5 text-primary" /> What this means
       </p>
       <ul className="mt-2 flex flex-col gap-1.5">
         {items.map((s, i) => (
-          <li key={i} className="flex gap-2 text-[12px] leading-relaxed">
+          <li key={i} className="flex gap-2 text-body leading-relaxed">
             <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", SIGNAL_DOT[s.tone ?? "sky"])} />
             <span className="text-foreground/85">{s.text}</span>
           </li>
@@ -615,7 +615,7 @@ function ModuleAlerts({ alerts }: { alerts: any[] }) {
   if (!alerts.length) return null;
   return (
     <section className="flex flex-col gap-2">
-      <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">
         <AlertTriangle className="size-3.5 text-amber-500" /> Live signals
       </p>
       {alerts.map((a) => {
@@ -623,15 +623,15 @@ function ModuleAlerts({ alerts }: { alerts: any[] }) {
         return (
           <div key={a.id} className={cn("rounded-xl border px-3 py-2.5", sev.border)}>
             <div className="flex items-start justify-between gap-2">
-              <span className={cn("text-[11.5px] font-bold leading-snug", sev.text)}>{a.label}</span>
-              <span className={cn("shrink-0 text-[12px] font-bold tabular-nums", sev.text)}>
+              <span className={cn("text-meta font-bold leading-snug", sev.text)}>{a.label}</span>
+              <span className={cn("shrink-0 text-body font-bold tabular-nums", sev.text)}>
                 {a.kind === "money" ? formatBDT(a.metric) : a.kind === "percent" ? `${a.metric}%` : a.kind === "ratio" ? `${a.metric}x` : a.metric}
               </span>
             </div>
-            <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted-foreground">{a.hint}</p>
+            <p className="mt-0.5 text-micro leading-relaxed text-muted-foreground">{a.hint}</p>
             {a.href && (
-              <Link href={a.href} className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-bold text-primary hover:underline">
-                {a.action ?? "Open"} <ArrowUpRight className="size-3" />
+              <Link href={a.href} className="mt-1.5 inline-flex items-center gap-1 text-micro font-bold text-primary hover:underline">
+                {a.action ?? "Open"} <ArrowUpRight className="size-3.5" />
               </Link>
             )}
           </div>
@@ -660,10 +660,10 @@ export function ModuleBoard({
     <div>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <p className="font-heading text-[16px] font-semibold">Every module at a glance</p>
-          <p className="text-[11.5px] text-muted-foreground">Tap a card for the breakdown and the decisions behind it.</p>
+          <p className="font-heading text-section font-semibold">Every module at a glance</p>
+          <p className="text-meta text-muted-foreground">Tap a card for the breakdown and the decisions behind it.</p>
         </div>
-        <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-primary">
+        <span className="rounded-full bg-primary/10 px-2.5 py-1 text-micro font-bold uppercase tracking-wider text-primary">
           {visible.length} modules live
         </span>
       </div>
@@ -690,8 +690,8 @@ export function ModuleBoard({
                 <div className="flex min-w-0 items-center gap-2">
                   <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-xl", d.tile)}>{d.icon}</span>
                   <span className="min-w-0">
-                    <span className="block truncate text-[12px] font-semibold leading-tight">{d.title}</span>
-                    <span className="block truncate text-[9.5px] text-muted-foreground">{d.subtitle}</span>
+                    <span className="block truncate text-body font-semibold leading-tight">{d.title}</span>
+                    <span className="block truncate text-micro text-muted-foreground">{d.subtitle}</span>
                   </span>
                 </div>
                 <span className="flex shrink-0 items-center gap-1">
@@ -700,7 +700,7 @@ export function ModuleBoard({
                       title={`${alert.count} ${alert.severity} signal${alert.count === 1 ? "" : "s"} in ${d.title}`}
                       aria-label={`${alert.count} ${alert.severity} signal${alert.count === 1 ? "" : "s"}`}
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                        "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-micro font-bold uppercase",
                         SEV[alert.severity as Severity]?.tile
                       )}
                     >
@@ -708,23 +708,23 @@ export function ModuleBoard({
                       {alert.count}
                     </span>
                   )}
-                  <ChevronRight className="size-4 text-muted-foreground/40 transition-colors group-hover:text-primary" />
+                  <ChevronRight className="size-3.5 text-muted-foreground/40 transition-colors group-hover:text-primary" />
                 </span>
               </div>
 
               <div className="mt-2.5 flex items-baseline gap-1.5">
-                <span className="font-heading text-[24px] font-bold leading-none tracking-tight tabular-nums">{primary.value}</span>
+                <span className="font-heading text-page font-bold leading-none tracking-tight tabular-nums">{primary.value}</span>
               </div>
-              <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{primary.label}</p>
+              <p className="mt-1 text-micro font-medium uppercase tracking-wide text-muted-foreground">{primary.label}</p>
 
               <div className="mt-3 flex-1">
                 <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <span className="truncate text-[9px] font-bold uppercase tracking-wider text-muted-foreground">{d.vizLabel(m)}</span>
-                  {d.vizHint && <span className="shrink-0 text-[9px] font-semibold text-muted-foreground/80">{d.vizHint(m)}</span>}
+                  <span className="truncate text-micro font-bold uppercase tracking-wider text-muted-foreground">{d.vizLabel(m)}</span>
+                  {d.vizHint && <span className="shrink-0 text-micro font-semibold text-muted-foreground/80">{d.vizHint(m)}</span>}
                 </div>
                 {d.viz(m)}
               </div>
-              <p className="mt-2.5 truncate text-[9.5px] text-muted-foreground">{d.note(m)}</p>
+              <p className="mt-2.5 truncate text-micro text-muted-foreground">{d.note(m)}</p>
             </button>
           );
         })}
@@ -739,12 +739,12 @@ export function ModuleBoard({
             <span className="flex items-start gap-3">
               <span className={cn("flex size-10 shrink-0 items-center justify-center rounded-xl", selected.tile)}>{selected.icon}</span>
               <span className="min-w-0">
-                <span className="block truncate font-heading text-[18px] font-bold leading-tight">{selected.title}</span>
-                <span className="block text-[11.5px] text-muted-foreground">{selected.subtitle}</span>
+                <span className="block truncate font-heading text-title font-bold leading-tight">{selected.title}</span>
+                <span className="block text-meta text-muted-foreground">{selected.subtitle}</span>
               </span>
               <span className="ml-auto hidden shrink-0 flex-col items-end sm:flex">
-                <span className="font-heading text-[20px] font-bold leading-none tabular-nums">{selected.primary(modules![selected.key]).value}</span>
-                <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{selected.primary(modules![selected.key]).label}</span>
+                <span className="font-heading text-stat font-bold leading-none tabular-nums">{selected.primary(modules![selected.key]).value}</span>
+                <span className="mt-0.5 text-micro font-semibold uppercase tracking-wider text-muted-foreground">{selected.primary(modules![selected.key]).label}</span>
               </span>
             </span>
           ) : null
@@ -753,7 +753,7 @@ export function ModuleBoard({
           selected ? (
             <Link
               href={selected.href}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-[12.5px] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-body font-semibold text-primary-foreground transition-opacity hover:opacity-90"
             >
               Open {selected.title} <ArrowUpRight className="size-3.5" />
             </Link>
@@ -772,10 +772,10 @@ export function ModuleBoard({
               <aside className="flex min-w-0 flex-col gap-3">
                 <ModuleAlerts alerts={alerts} />
                 <div className="rounded-2xl border border-border/60 bg-muted/20 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">At a glance</p>
-                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{selected.note(m)}</p>
-                  <Link href={selected.href} className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
-                    Open {selected.title} <ArrowUpRight className="size-3" />
+                  <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">At a glance</p>
+                  <p className="mt-1 text-body leading-relaxed text-muted-foreground">{selected.note(m)}</p>
+                  <Link href={selected.href} className="mt-2 inline-flex items-center gap-1 text-meta font-bold text-primary hover:underline">
+                    Open {selected.title} <ArrowUpRight className="size-3.5" />
                   </Link>
                 </div>
               </aside>
@@ -792,23 +792,23 @@ export function ModuleBoard({
 function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: string }) {
   return (
     <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
-      <p className={cn("text-[15px] font-bold tabular-nums leading-tight", tone)}>{value}</p>
-      <p className="mt-0.5 text-[9.5px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("text-section font-bold tabular-nums leading-tight", tone)}>{value}</p>
+      <p className="mt-0.5 text-micro uppercase tracking-wide text-muted-foreground">{label}</p>
     </div>
   );
 }
 
 function Rows({ items }: { items: { label: string; value: ReactNode; sub?: string; tone?: string }[] }) {
-  if (!items.length) return <p className="py-6 text-center text-[11.5px] text-muted-foreground">Nothing to show.</p>;
+  if (!items.length) return <p className="py-6 text-center text-meta text-muted-foreground">Nothing to show.</p>;
   return (
     <div className="flex flex-col divide-y divide-border/50">
       {items.map((r, i) => (
         <div key={`${r.label}-${i}`} className="flex items-center justify-between gap-3 py-2">
           <span className="min-w-0">
-            <span className="block truncate text-[12px] font-medium">{r.label}</span>
-            {r.sub && <span className="block truncate text-[10px] text-muted-foreground">{r.sub}</span>}
+            <span className="block truncate text-body font-medium">{r.label}</span>
+            {r.sub && <span className="block truncate text-micro text-muted-foreground">{r.sub}</span>}
           </span>
-          <span className={cn("shrink-0 text-[12px] font-semibold tabular-nums", r.tone)}>{r.value}</span>
+          <span className={cn("shrink-0 text-body font-semibold tabular-nums", r.tone)}>{r.value}</span>
         </div>
       ))}
     </div>
@@ -829,7 +829,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="New this week" value={m.newThisWeek ?? 0} tone="text-primary" />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Pipeline by stage</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Pipeline by stage</p>
           <div className="space-y-2">
             {stages.map((s: any) => (
               <MeterRow key={s.stage} label={s.stage} value={s.count} max={Math.max(...stages.map((x: any) => x.count), 1)} display={`${s.count} · ${formatBDT(s.value)}`} tone="bg-primary" />
@@ -838,7 +838,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
         </div>
         {stages.length > 0 && (
           <div>
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Share of active leads</p>
+            <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Share of active leads</p>
             <div className="space-y-2">
               {stages.map((s: any) => {
                 const total = stages.reduce((n: number, x: any) => n + Number(x.count ?? 0), 0) || 1;
@@ -858,7 +858,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           </div>
         )}
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Signal</p>
+          <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Signal</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Stat label="Hot leads" value={m.hotLeads} tone="text-rose-500" />
             <Stat label="Stale >7d" value={m.staleLeads} tone="text-amber-500" />
@@ -880,7 +880,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Churn risk" value={m.churnRisks} tone="text-rose-500" />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Health mix</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Health mix</p>
           <SegmentedBar
             height={12}
             segments={[
@@ -891,7 +891,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           />
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Renewals &amp; churn</p>
+          <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Renewals &amp; churn</p>
           <Rows
             items={[
               { label: "Renewals in 30 days", value: m.renewals30, sub: "Start renewal conversations early" },
@@ -901,8 +901,8 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           />
         </div>
         <div className="flex gap-1.5">
-          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">avg {health.avgHealth ?? m.avgHealth}</span>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{m.total} accounts</span>
+          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro font-semibold text-emerald-600 dark:text-emerald-400">avg {health.avgHealth ?? m.avgHealth}</span>
+          <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-semibold text-muted-foreground">{m.total} accounts</span>
         </div>
       </div>
     );
@@ -918,7 +918,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Milestones 30d" value={m.upcomingMilestones} />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Delivery health</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Delivery health</p>
           <SegmentedBar
             height={12}
             segments={[
@@ -929,7 +929,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           />
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Projects needing a decision</p>
+          <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Projects needing a decision</p>
           <Rows
             items={(data.flow?.atRisk ?? []).map((p: any) => ({
               label: p.name,
@@ -961,7 +961,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Hours logged" value={`${m.hoursThisWeek ?? 0}h`} />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Work distribution</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Work distribution</p>
           <SegmentedBar
             height={12}
             segments={[
@@ -974,7 +974,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           />
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Priority mix (open)</p>
+          <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Priority mix (open)</p>
           <div className="space-y-2">
             {[
               { label: "Urgent", value: m.byPriority?.URGENT ?? 0, tone: "bg-rose-500" },
@@ -987,7 +987,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           </div>
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Highest priority open</p>
+          <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Highest priority open</p>
           <Rows
             items={(data.tasks?.highPriority ?? []).map((t: any) => ({
               label: t.title,
@@ -1011,7 +1011,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Utilization" value={`${m.utilization}%`} />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Last 7 days</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Last 7 days</p>
           <MiniBars data={m.attendance7d ?? []} className="text-amber-500" height={64} highlightLast showLabels />
         </div>
         <SegmentedBar
@@ -1041,21 +1041,21 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Cash" value={formatBDT(m.cash)} />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Collected by month</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Collected by month</p>
           {(m.trend ?? []).length > 1 ? (
             <div>
               <Sparkline points={(m.trend ?? []).map((t: any) => t.value)} className="text-emerald-500" height={64} />
-              <div className="mt-1 flex justify-between text-[9px] text-muted-foreground">
+              <div className="mt-1 flex justify-between text-micro text-muted-foreground">
                 <span>{m.trend[0].label}</span>
                 <span>{m.trend[m.trend.length - 1].label}</span>
               </div>
             </div>
           ) : (
-            <p className="text-[11px] text-muted-foreground">Not enough history yet.</p>
+            <p className="text-meta text-muted-foreground">Not enough history yet.</p>
           )}
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Collection health</p>
+          <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Collection health</p>
           <div className="space-y-2">
             <MeterRow label="Collection rate" value={m.collectionRate} display={`${m.collectionRate}%`} tone={m.collectionRate >= 80 ? "bg-emerald-500" : "bg-amber-500"} />
             <MeterRow label="Monthly recurring" value={m.monthlyRecurring} max={Math.max(m.monthlyRecurring, m.collected, 1)} display={formatBDT(m.monthlyRecurring)} tone="bg-primary" />
@@ -1063,7 +1063,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           </div>
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Overdue invoices</p>
+          <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Overdue invoices</p>
           <Rows
             items={(data.capital?.overdueInvoices ?? []).slice(0, 6).map((i: any) => ({
               label: i.invoiceNumber,
@@ -1091,7 +1091,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Conv. value" value={formatBDT(m.adConversionValue)} />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Spend last 6 months</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Spend last 6 months</p>
           <MiniBars data={m.adTrend ?? []} className="text-fuchsia-500" height={64} highlightLast showLabels />
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -1101,7 +1101,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Correlations" value={m.correlations} />
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Latest insights</p>
+          <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Latest insights</p>
           <Rows
             items={(data.insight?.insights ?? []).map((i: any) => ({
               label: i.description,
@@ -1122,11 +1122,11 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Milestones 30d" value={m.upcomingMilestones} />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Next 7 days</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Next 7 days</p>
           <MiniBars data={m.next7 ?? []} className="text-sky-500" height={64} showLabels />
         </div>
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Today</p>
+          <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Today</p>
           <Rows
             items={(data.today?.events ?? []).map((e: any) => ({
               label: e.title,
@@ -1148,12 +1148,12 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Deliverables" value={m.pendingDeliverables} tone={m.pendingDeliverables ? "text-amber-500" : undefined} />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Client comments, last 7 days</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Client comments, last 7 days</p>
           <MiniBars data={m.commentsSeries ?? []} className="text-cyan-500" height={64} highlightLast showLabels />
         </div>
         <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-          <p className="flex items-center gap-1.5 text-[11.5px] font-semibold"><Info className="size-3.5 text-cyan-500" /> What to do</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-meta font-semibold"><Info className="size-3.5 text-cyan-500" /> What to do</p>
+          <p className="mt-1 text-meta leading-relaxed text-muted-foreground">
             {m.pendingDeliverables > 0
               ? `${m.pendingDeliverables} deliverable${m.pendingDeliverables === 1 ? "" : "s"} waiting on client approval — nudge the client or follow up in the portal.`
               : "No approvals pending. Keep the portal fresh with progress updates so clients stay engaged."}
@@ -1174,7 +1174,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="All-time profit" value={formatBDT(m.profitAll ?? 0)} />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Profit, last 6 months</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Profit, last 6 months</p>
           <MiniBars data={m.monthly ?? []} className="text-teal-500" height={64} highlightLast showLabels />
         </div>
         <Rows
@@ -1192,8 +1192,8 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           ]}
         />
         <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-          <p className="flex items-center gap-1.5 text-[11.5px] font-semibold"><CircleDollarSign className="size-3.5 text-teal-500" /> Next action</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-meta font-semibold"><CircleDollarSign className="size-3.5 text-teal-500" /> Next action</p>
+          <p className="mt-1 text-meta leading-relaxed text-muted-foreground">
             {(m.lossCount ?? 0) > 0
               ? "Review the loss-making sales — either the sell rate was too low or the cost rate changed."
               : (m.countMtd ?? 0) === 0
@@ -1215,7 +1215,7 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           <Stat label="Vendors" value={m.vendors ?? 0} />
         </div>
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Paid vs still owed</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Paid vs still owed</p>
           <SegmentedBar
             height={12}
             segments={[
@@ -1235,8 +1235,8 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
           ]}
         />
         <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-          <p className="flex items-center gap-1.5 text-[11.5px] font-semibold"><HandCoins className="size-3.5 text-orange-500" /> Next action</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-meta font-semibold"><HandCoins className="size-3.5 text-orange-500" /> Next action</p>
+          <p className="mt-1 text-meta leading-relaxed text-muted-foreground">
             {(m.overdue ?? 0) > 0
               ? "Settle the overdue balances first — vendors stop prioritising teams that pay late."
               : (m.dueWeek ?? 0) > 0
@@ -1256,8 +1256,8 @@ function ModuleDetail({ id, m, data }: { id: string; m: any; data: Record<string
         <Stat label="Audit today" value={m.auditToday} />
       </div>
       <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-        <p className="flex items-center gap-1.5 text-[11.5px] font-semibold"><Settings2 className="size-3.5" /> Admin implies action</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="flex items-center gap-1.5 text-meta font-semibold"><Settings2 className="size-3.5" /> Admin implies action</p>
+        <p className="mt-1 text-meta leading-relaxed text-muted-foreground">
           {m.connectedIntegrations === 0
             ? "No integrations connected. Connect the tools the team already uses so data stays in one place."
             : "Review audit events weekly and keep the integration list current."}

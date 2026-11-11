@@ -38,15 +38,15 @@ function TaskRow({ task, dense = false }: { task: any; dense?: boolean }) {
     >
       <span className={cn("size-1.5 shrink-0 rounded-full", PRIORITY_DOT[task.priority] ?? PRIORITY_DOT.LOW)} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12px] font-medium">{task.title}</span>
+        <span className="block truncate text-body font-medium">{task.title}</span>
         {!dense && (
-          <span className="block truncate text-[10px] text-muted-foreground">
+          <span className="block truncate text-micro text-muted-foreground">
             {task.projectName ?? "No project"}
             {task.dueDate ? ` · due ${formatDay(task.dueDate)}` : ""}
           </span>
         )}
       </span>
-      <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+      <span className="shrink-0 text-micro font-bold uppercase tracking-wide text-muted-foreground">
         {String(task.priority ?? "").replace(/_/g, " ")}
       </span>
     </Link>
@@ -69,13 +69,13 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
   const approvals = t?.approvals ?? { expenses: 0, leave: 0, deliverables: 0 };
   const approvalRows = [
     ...(["owner", "admin", "finance"].includes(view)
-      ? [{ label: "Expense approvals", value: approvals.expenses, href: "/capital/expenses", icon: <HandCoins className="size-3.5" /> }]
+      ? [{ label: "Expense approvals", value: approvals.expenses, href: "/capital/expenses", icon: <HandCoins className="size-4" /> }]
       : []),
     ...(["owner", "admin", "manager", "hr"].includes(view)
-      ? [{ label: "Leave requests", value: approvals.leave, href: "/people/leave", icon: <CalendarDays className="size-3.5" /> }]
+      ? [{ label: "Leave requests", value: approvals.leave, href: "/people/leave", icon: <CalendarDays className="size-4" /> }]
       : []),
     ...(["owner", "admin", "manager"].includes(view)
-      ? [{ label: "Client deliverables", value: approvals.deliverables, href: "/flow", icon: <FileText className="size-3.5" /> }]
+      ? [{ label: "Client deliverables", value: approvals.deliverables, href: "/flow", icon: <FileText className="size-4" /> }]
       : []),
   ];
   const approvalTotal = approvalRows.reduce((s, a) => s + a.value, 0);
@@ -112,18 +112,18 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-widest text-primary">
-            <Sparkles className="size-3" /> Today&apos;s work
+          <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-widest text-primary">
+            <Sparkles className="size-3.5" /> Today&apos;s work
           </p>
-          <p className="mt-1 font-heading text-[18px] font-bold">
+          <p className="mt-1 font-heading text-title font-bold">
             {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {chips.map((c) => (
             <span key={c.label} className="inline-flex items-baseline gap-1 rounded-full border border-border/60 bg-card px-2.5 py-1">
-              <span className={cn("text-[13px] font-bold tabular-nums", c.tone)}>{c.value}</span>
-              <span className="text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">{c.label}</span>
+              <span className={cn("text-body-lg font-bold tabular-nums", c.tone)}>{c.value}</span>
+              <span className="text-micro font-semibold uppercase tracking-wide text-muted-foreground">{c.label}</span>
             </span>
           ))}
         </div>
@@ -139,20 +139,20 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
             <ArrowRight className="size-3.5" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="text-[9.5px] font-bold uppercase tracking-widest text-rose-500">Do first</span>
-            <span className="block truncate text-[12.5px] font-semibold">{doFirst.title}</span>
-            <span className="block truncate text-[10px] text-muted-foreground">
+            <span className="text-micro font-bold uppercase tracking-widest text-rose-500">Do first</span>
+            <span className="block truncate text-body font-semibold">{doFirst.title}</span>
+            <span className="block truncate text-micro text-muted-foreground">
               {doFirst.projectName ?? "No project"}
               {doFirst.dueDate ? ` · ${formatDay(doFirst.dueDate)}` : ""}
               {doFirst.assignee ? ` · ${doFirst.assignee}` : ""}
             </span>
           </span>
-          <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+          <span className="shrink-0 rounded-full bg-card px-2 py-0.5 text-micro font-bold uppercase tracking-wide text-muted-foreground">
             {String(doFirst.priority ?? "").replace(/_/g, " ")}
           </span>
         </Link>
       ) : (
-        <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] px-3 py-2 text-[11.5px] text-emerald-600 dark:text-emerald-400">
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] px-3 py-2 text-meta text-emerald-600 dark:text-emerald-400">
           <Check className="size-3.5" /> {attention > 0 ? "No task due today — clear the items on the right." : "You are clear for today. Nice."}
         </div>
       )}
@@ -161,10 +161,10 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
         {/* 1 — My focus */}
         <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
           <div className="mb-1.5 flex items-center justify-between">
-            <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              <ListTodo className="size-3" /> My focus
+            <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">
+              <ListTodo className="size-3.5" /> My focus
             </p>
-            <Link href="/tasks?mine=true" className="text-[10px] font-semibold text-primary hover:underline">
+            <Link href="/tasks?mine=true" className="text-micro font-semibold text-primary hover:underline">
               All
             </Link>
           </div>
@@ -175,22 +175,22 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
               ))}
             </div>
           ) : (
-            <p className="rounded-lg bg-emerald-500/5 px-2 py-3 text-[11px] text-emerald-600 dark:text-emerald-400">
+            <p className="rounded-lg bg-emerald-500/5 px-2 py-3 text-meta text-emerald-600 dark:text-emerald-400">
               {focusTasks.length === 0 ? "No open tasks assigned to you." : "Nothing else queued — stay on the task above."}
             </p>
           )}
           {myEvents.length > 0 && (
             <div className="mt-2 border-t border-border/50 pt-2">
-              <p className="mb-1 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
-                <CalendarClock className="size-2.5" /> Today&apos;s meetings
+              <p className="mb-1 flex items-center gap-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">
+                <CalendarClock className="size-3.5" /> Today&apos;s meetings
               </p>
               {myEvents.slice(0, 2).map((e: any) => (
-                <p key={e.id} className="truncate text-[11px] text-muted-foreground">• {e.title}</p>
+                <p key={e.id} className="truncate text-meta text-muted-foreground">• {e.title}</p>
               ))}
             </div>
           )}
           {data?.moduleInsights?.tasks && (
-            <p className="mt-2 border-t border-border/50 pt-2 text-[10px] text-muted-foreground">
+            <p className="mt-2 border-t border-border/50 pt-2 text-micro text-muted-foreground">
               {data.moduleInsights.tasks.completedThisWeek} done this week · {data.moduleInsights.tasks.hoursThisWeek}h logged
             </p>
           )}
@@ -199,11 +199,11 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
         {/* 2 — Team pulse (visual) */}
         <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
           <div className="mb-2 flex items-center justify-between">
-            <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              {isEmployee ? <CalendarClock className="size-3" /> : <ClipboardList className="size-3" />}
+            <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">
+              {isEmployee ? <CalendarClock className="size-3.5" /> : <ClipboardList className="size-4" />}
               {isEmployee ? "My schedule" : "Team today"}
             </p>
-            <Link href={isEmployee ? "/calendar" : "/people/attendance"} className="text-[10px] font-semibold text-primary hover:underline">
+            <Link href={isEmployee ? "/calendar" : "/people/attendance"} className="text-micro font-semibold text-primary hover:underline">
               Open
             </Link>
           </div>
@@ -214,14 +214,14 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
                 {myEvents.map((e: any) => (
                   <div key={e.id} className="flex items-center gap-2 rounded-lg px-1 py-1">
                     <span className="flex size-6 items-center justify-center rounded-md bg-sky-500/10 text-sky-500">
-                      <CalendarClock className="size-3" />
+                      <CalendarClock className="size-3.5" />
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-[11.5px]">{e.title}</span>
+                    <span className="min-w-0 flex-1 truncate text-meta">{e.title}</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="px-1 py-3 text-[11px] text-muted-foreground">No events today.</p>
+              <p className="px-1 py-3 text-meta text-muted-foreground">No events today.</p>
             )
           ) : (
             <>
@@ -234,8 +234,8 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
                   label={`${attendanceRate}%`}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-bold tabular-nums">
-                    {team.present} <span className="text-[10px] font-medium text-muted-foreground">of {team.headcount} in</span>
+                  <p className="text-body-lg font-bold tabular-nums">
+                    {team.present} <span className="text-micro font-medium text-muted-foreground">of {team.headcount} in</span>
                   </p>
                   <SegmentedBar
                     height={7}
@@ -246,7 +246,7 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
                       { label: "absent", value: team.absent, className: "bg-rose-500/60" },
                     ]}
                   />
-                  <p className="mt-1.5 truncate text-[10px] text-muted-foreground">
+                  <p className="mt-1.5 truncate text-micro text-muted-foreground">
                     {team.onLeave} on leave · {team.absent} absent
                   </p>
                 </div>
@@ -254,8 +254,8 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
               {people?.attendance7d && (
                 <div className="mt-2 border-t border-border/50 pt-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Last 7 days</p>
-                    <p className="text-[9px] text-muted-foreground">checked in</p>
+                    <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Last 7 days</p>
+                    <p className="text-micro text-muted-foreground">checked in</p>
                   </div>
                   <MiniBars data={people.attendance7d} className="text-primary" height={34} highlightLast />
                 </div>
@@ -266,8 +266,8 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
 
         {/* 3 — Approvals & follow-ups */}
         <div className="rounded-xl border border-border/60 bg-muted/10 p-3">
-          <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            {isEmployee ? <CalendarDays className="size-3" /> : <Inbox className="size-3" />}
+          <p className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">
+            {isEmployee ? <CalendarDays className="size-3.5" /> : <Inbox className="size-3.5" />}
             {isEmployee ? "My leave" : "Waiting on you"}
           </p>
 
@@ -275,14 +275,14 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
             myLeaves.length ? (
               <div className="flex flex-col gap-1">
                 {myLeaves.map((l: any) => (
-                  <div key={l.id} className="flex items-center justify-between rounded-lg px-1 py-1.5 text-[11px]">
+                  <div key={l.id} className="flex items-center justify-between rounded-lg px-1 py-1.5 text-meta">
                     <span className="capitalize">{String(l.leaveType).replace(/_/g, " ").toLowerCase()}</span>
                     <StatusBadge status={l.status} />
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="px-1 py-3 text-[11px] text-muted-foreground">No pending leave.</p>
+              <p className="px-1 py-3 text-meta text-muted-foreground">No pending leave.</p>
             )
           ) : (
             <>
@@ -293,15 +293,15 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
                       <span className={cn("flex size-6 items-center justify-center rounded-md", a.value > 0 ? "bg-violet-500/10 text-violet-500" : "bg-muted text-muted-foreground")}>
                         {a.icon}
                       </span>
-                      <span className="flex-1 text-[11.5px]">{a.label}</span>
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums", a.value > 0 ? "bg-violet-500/10 text-violet-600 dark:text-violet-400" : "bg-muted text-muted-foreground")}>
+                      <span className="flex-1 text-meta">{a.label}</span>
+                      <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold tabular-nums", a.value > 0 ? "bg-violet-500/10 text-violet-600 dark:text-violet-400" : "bg-muted text-muted-foreground")}>
                         {a.value}
                       </span>
                     </Link>
                   ))}
                 </div>
               ) : (
-                <p className="px-1 py-3 text-[11px] text-muted-foreground">Nothing waiting on you.</p>
+                <p className="px-1 py-3 text-meta text-muted-foreground">Nothing waiting on you.</p>
               )}
 
               {["owner", "admin", "finance"].includes(view) && payables && (payables.overdueCount > 0 || payables.dueWeekCount > 0) && (
@@ -313,14 +313,14 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
                     <Banknote className="size-3.5" />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[11.5px] font-medium">Vendor payables</span>
-                    <span className="block text-[9.5px] text-muted-foreground">
+                    <span className="block text-meta font-medium">Vendor payables</span>
+                    <span className="block text-micro text-muted-foreground">
                       {payables.overdueCount > 0
                         ? `${formatBDT(payables.overdueAmount)} overdue`
                         : `${formatBDT(payables.dueWeekAmount)} due within 7 days`}
                     </span>
                   </span>
-                  <span className="shrink-0 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold tabular-nums text-rose-600 dark:text-rose-400">
+                  <span className="shrink-0 rounded-full bg-rose-500/10 px-2 py-0.5 text-micro font-bold tabular-nums text-rose-600 dark:text-rose-400">
                     {payables.overdueCount > 0 ? payables.overdueCount : payables.dueWeekCount}
                   </span>
                 </Link>
@@ -329,13 +329,13 @@ export function TodayWorkBoard({ data, personal, view }: { data: any; personal: 
               {showFollowUps && (
                 <div className="mt-2 border-t border-border/50 pt-2">
                   <div className="mb-1 flex items-center justify-between">
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-primary">
+                    <p className="text-micro font-bold uppercase tracking-wider text-primary">
                       {t?.followUpsCount ?? 0} follow-up{(t?.followUpsCount ?? 0) === 1 ? "" : "s"} due
                     </p>
-                    <Link href="/pulse" className="text-[9px] font-semibold text-primary hover:underline">Pipeline</Link>
+                    <Link href="/pulse" className="text-micro font-semibold text-primary hover:underline">Pipeline</Link>
                   </div>
                   {followUps.slice(0, 2).map((l: any) => (
-                    <Link key={l.id} href="/pulse" className="block truncate rounded px-1 py-0.5 text-[11px] text-muted-foreground hover:text-primary">
+                    <Link key={l.id} href="/pulse" className="block truncate rounded px-1 py-0.5 text-meta text-muted-foreground hover:text-primary">
                       • {l.name}
                       {l.company ? ` · ${l.company}` : ""}
                       <span className="ml-1 font-semibold text-foreground/70">{formatBDT(l.estimatedDealSize)}</span>

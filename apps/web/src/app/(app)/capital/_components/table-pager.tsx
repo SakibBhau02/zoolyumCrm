@@ -40,7 +40,7 @@ export function Pager({
   const to = Math.min((page + 1) * pageSize, total);
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="text-[11.5px] text-muted-foreground">
+      <span className="text-meta text-muted-foreground">
         {from}–{to} of {total} {label}
       </span>
       {pages > 1 && (
@@ -53,7 +53,7 @@ export function Pager({
           >
             <ChevronLeft className="size-3.5" />
           </button>
-          <span className="px-1 text-[11px] font-semibold tabular-nums text-muted-foreground">
+          <span className="px-1 text-meta font-semibold tabular-nums text-muted-foreground">
             {page + 1} / {pages}
           </span>
           <button

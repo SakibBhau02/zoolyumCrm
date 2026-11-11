@@ -92,7 +92,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-3">
         {visible.map((group) => (
           <div key={group.section} className="mb-4">
-            <p className="mb-1.5 px-2 text-[10px] font-semibold uppercase tracking-widest text-white/35">
+            <p className="mb-1.5 px-2 text-micro font-semibold uppercase tracking-widest text-white/60">
               {group.section}
             </p>
             <div className="flex flex-col gap-0.5">
@@ -103,7 +103,7 @@ export function Sidebar() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[12.5px] font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+                      "group flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-body font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-white/40",
                       active
                         ? "bg-sidebar-primary text-white shadow-primary/25"
                         : "text-white/70 hover:bg-sidebar-accent hover:text-white"
@@ -119,8 +119,8 @@ export function Sidebar() {
                     {item.badge && (
                       <span
                         className={cn(
-                          "rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide",
-                          active ? "bg-white/25 text-white" : "bg-primary/15 text-primary"
+                          "rounded-full px-1.5 py-0.5 text-micro font-semibold uppercase tracking-wide",
+                          active ? "bg-white/25 text-white" : "bg-primary/20 text-white/90"
                         )}
                       >
                         {item.badge}
@@ -138,12 +138,12 @@ export function Sidebar() {
         <div className="flex items-center gap-2.5 rounded-xl bg-sidebar-accent p-2.5">
           <Avatar name={user?.name ?? "Z"} size="size-8" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[12px] font-semibold">{user?.name ?? "Zoolyum"}</p>
-            <p className="truncate text-[10.5px] text-white/50">{user?.role ?? "Loading…"}</p>
+            <p className="truncate text-body font-semibold">{user?.name ?? "Zoolyum"}</p>
+            <p className="truncate text-micro text-white/50">{user?.role ?? "Loading…"}</p>
           </div>
           <button
             onClick={logout}
-            className="rounded-lg px-2 py-1 text-[10.5px] font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded-lg px-2 py-1 text-micro font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white"
           >
             Exit
           </button>
@@ -189,7 +189,7 @@ export function Sidebar() {
                   aria-label="Close navigation menu"
                   className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/10 hover:text-white"
                 >
-                  <X className="size-5" />
+                  <X className="size-3.5" />
                 </button>
               </div>
               <div className="flex min-h-0 flex-1 flex-col">

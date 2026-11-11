@@ -197,6 +197,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
           title: f.title.trim(), description: f.description.trim() || undefined,
           projectId: f.projectId || undefined, assignedToId: f.assignedToId || undefined,
           // reporterId is no longer sent — the server sets it from the caller
+          status: f.status,
           priority: f.priority, taskType: f.taskType,
           dueDate: f.dueDate || null, startDate: f.startDate || null,
           estimatedHours: f.estimatedHours ? Number(f.estimatedHours) : undefined,
@@ -236,7 +237,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
           busy={busy}
           cancel={onClose}
           submitLabel={editing ? "Save changes" : "Create task"}
-          submitIcon={<Check className="size-3.5" />}
+          submitIcon={<Check className="size-4" />}
           hint={f.dueDate ? `Due ${new Date(f.dueDate).toLocaleDateString()}` : "Fields marked * are required"}
         />
       }
@@ -254,7 +255,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
               }}
               placeholder="Ship the onboarding flow"
               autoFocus
-              className="!py-2.5 !text-[14px] font-medium"
+              className="!py-2.5 !text-body-lg font-medium"
             />
           </Field>
           <Field
@@ -276,7 +277,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
         </div>
 
         {/* ── 2. Owner, deadline and urgency. ── */}
-        <FormSection icon={<CalendarDays className="size-3.5" />} title="Owner & schedule">
+        <FormSection icon={<CalendarDays className="size-4" />} title="Owner & schedule">
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
             <Field label="Assignee" hint={f.assignedToId ? "Only they can move this to Done" : "Leave empty to keep it unassigned"}>
               <Select value={f.assignedToId} onChange={(e) => setF({ ...f, assignedToId: e.target.value })}>
@@ -300,7 +301,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
                     type="button"
                     onClick={() => setF({ ...f, dueDate: dayFromNow(p.days) })}
                     className={cn(
-                      "rounded-md border px-2 py-0.5 text-[10.5px] font-semibold transition-colors",
+                      "rounded-md border px-2 py-0.5 text-micro font-semibold transition-colors",
                       f.dueDate === dayFromNow(p.days)
                         ? "border-primary/40 bg-primary/10 text-primary"
                         : "border-border text-muted-foreground hover:border-primary/25 hover:text-foreground"
@@ -331,11 +332,11 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
           {f.assignedToId && (
             <div className="mt-3.5 flex items-center gap-2 rounded-xl border border-primary/25 bg-primary/[0.04] px-3 py-2.5">
               <Info className="size-3.5 shrink-0 text-primary" />
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-[11.5px]">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-meta">
                 <span className="font-bold text-primary">{me?.name ?? "You"}</span>
                 <span className="text-muted-foreground">assigns this to</span>
                 <span className="font-bold">{assigneeName ?? "—"}</span>
-                <ArrowRight className="size-3 shrink-0 text-muted-foreground" />
+                <ArrowRight className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="text-muted-foreground">
                   only {assigneeName ?? "the assignee"} can change status; you and the PM can edit the brief
                 </span>
@@ -349,7 +350,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
 
         {/* ── 3. Advanced, folded away. ── */}
         <Collapsible
-          icon={<SlidersHorizontal className="size-3.5" />}
+          icon={<SlidersHorizontal className="size-4" />}
           title="Scheduling & details"
           hint="Status, type, estimate, tags, collaboration"
           badge={
@@ -402,7 +403,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
                   type="button"
                   onClick={() => toggleExtra(u.id)}
                   className={cn(
-                    "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                    "rounded-full border px-2.5 py-1 text-meta font-semibold transition-colors",
                     f.extraAssignees.includes(u.id)
                       ? "border-primary/40 bg-primary/10 text-primary"
                       : "border-border text-muted-foreground hover:text-foreground"
@@ -412,7 +413,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
                 </button>
               ))}
               {users.filter((u) => u.id !== f.assignedToId).length === 0 && (
-                <span className="text-[11px] text-muted-foreground/70">No other team members.</span>
+                <span className="text-meta text-muted-foreground/70">No other team members.</span>
               )}
             </div>
           </div>
@@ -443,7 +444,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
         </Collapsible>
 
         <Collapsible
-          icon={<Paperclip className="size-3.5" />}
+          icon={<Paperclip className="size-4" />}
           title="References, files & custom fields"
           hint="Anything the assignee needs to do this without asking"
           badge={extraCount > 0 ? <CountBadge>{extraCount}</CountBadge> : undefined}
@@ -477,19 +478,19 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
             <button
               type="button"
               onClick={() => setF({ ...f, referenceLinks: [...f.referenceLinks, { id: `l${Date.now()}`, title: "", url: "" }] })}
-              className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-[11px] font-bold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5"
+              className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-meta font-bold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5"
             >
               + Add reference link
             </button>
             {f.referenceLinks.length === 0 && (
-              <p className="text-[11px] text-muted-foreground/70">No links yet — Figma, Drive, PR links all work.</p>
+              <p className="text-meta text-muted-foreground/70">No links yet — Figma, Drive, PR links all work.</p>
             )}
           </div>
 
           <div className="mt-4 flex flex-col gap-2 border-t border-border/60 pt-3.5">
             <FieldLabel>Attachments</FieldLabel>
-            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border bg-card px-3 py-2 text-[11px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground">
-              <Paperclip className="size-3" />
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border bg-card px-3 py-2 text-meta font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground">
+              <Paperclip className="size-3.5" />
               Upload a file the assignee will see
               <input
                 type="file"
@@ -516,7 +517,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
               />
             </label>
             {f.attachments.map((a, i) => (
-              <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-1.5 text-[11px]">
+              <div key={a.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-1.5 text-meta">
                 <span className="truncate font-medium">{a.name} · {a.size}</span>
                 <button
                   type="button"
@@ -528,7 +529,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
                 </button>
               </div>
             ))}
-            {f.attachments.length === 0 && <p className="text-[11px] text-muted-foreground/70">No files yet.</p>}
+            {f.attachments.length === 0 && <p className="text-meta text-muted-foreground/70">No files yet.</p>}
           </div>
 
           <div className="mt-4 flex flex-col gap-2 border-t border-border/60 pt-3.5">
@@ -560,7 +561,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
             <button
               type="button"
               onClick={() => setF({ ...f, customFields: [...f.customFields, { id: `cf${Date.now()}`, key: "", value: "" }] })}
-              className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-[11px] font-bold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5"
+              className="self-start rounded-lg border border-dashed border-border px-3 py-1 text-meta font-bold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5"
             >
               + Add custom field
             </button>

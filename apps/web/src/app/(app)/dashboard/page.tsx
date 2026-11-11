@@ -93,11 +93,11 @@ function Kpi({
         {href && <ArrowUpRight className="size-3.5 text-muted-foreground/50 transition-colors group-hover:text-primary" />}
       </div>
       <div className="mt-3">
-        <p className={cn("font-heading text-[22px] font-bold leading-none tracking-tight tabular-nums", tone)}>{value}</p>
-        <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className={cn("font-heading text-stat font-bold leading-none tracking-tight tabular-nums", tone)}>{value}</p>
+        <p className="mt-1.5 text-meta font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
         {(hint || trend) && (
-          <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-            {trend && <TrendingUp className="size-3 text-emerald-500" />}
+          <p className="mt-1 flex items-center gap-1 text-meta text-muted-foreground">
+            {trend && <TrendingUp className="size-3.5 text-emerald-500" />}
             {trend ?? hint}
           </p>
         )}
@@ -111,7 +111,7 @@ function QuickAction({ href, label, icon }: { href: string; label: string; icon:
   return (
     <Link
       href={href}
-      className="inline-flex items-center gap-1.5 rounded-xl border border-border/70 bg-card/80 px-3 py-2 text-[11.5px] font-semibold text-foreground backdrop-blur transition-colors hover:border-primary/40 hover:bg-primary/5"
+      className="inline-flex items-center gap-1.5 rounded-xl border border-border/70 bg-card/80 px-3 py-2 text-meta font-semibold text-foreground backdrop-blur transition-colors hover:border-primary/40 hover:bg-primary/5"
     >
       {icon} {label}
     </Link>
@@ -123,8 +123,8 @@ function AttentionRow({ title, sub, tone, icon, href }: { title: string; sub: st
     <div className="flex items-start gap-2.5 rounded-xl p-2 transition-colors hover:bg-muted/50">
       <span className={cn("mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg", tone)}>{icon}</span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[12.5px] font-medium">{title}</p>
-        <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
+        <p className="truncate text-body font-medium">{title}</p>
+        <p className="truncate text-meta text-muted-foreground">{sub}</p>
       </div>
       {href && <ChevronRight className="mt-1 size-3.5 shrink-0 text-muted-foreground/50" />}
     </div>
@@ -163,8 +163,8 @@ function InboxCard() {
         title="Inbox"
         subtitle={summary ? `${summary.unread} unread · ${summary.today} today` : "Latest updates"}
         action={
-          <Link href="/notifications" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">
-            Open <ArrowRight className="size-3" />
+          <Link href="/notifications" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">
+            Open <ArrowRight className="size-3.5" />
           </Link>
         }
       />
@@ -174,8 +174,8 @@ function InboxCard() {
             <span className="flex size-10 items-center justify-center rounded-2xl bg-muted">
               <CheckCheck className="size-4 text-muted-foreground" />
             </span>
-            <p className="text-[12px] font-medium">All caught up</p>
-            <p className="text-[11px] text-muted-foreground">Nothing needs your attention.</p>
+            <p className="text-body font-medium">All caught up</p>
+            <p className="text-meta text-muted-foreground">Nothing needs your attention.</p>
           </div>
         ) : (
           <div className="flex flex-col gap-1">
@@ -192,13 +192,13 @@ function InboxCard() {
                     <Icon className="size-3.5" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-1.5 truncate text-[12px] font-semibold">
+                    <p className="flex items-center gap-1.5 truncate text-body font-semibold">
                       {!n.isRead && <span className="size-1.5 shrink-0 rounded-full bg-primary" />}
                       <span className="truncate">{n.title}</span>
                     </p>
-                    <p className="truncate text-[11px] text-muted-foreground">{n.message}</p>
+                    <p className="truncate text-meta text-muted-foreground">{n.message}</p>
                   </div>
-                  <span className="shrink-0 text-[10px] text-muted-foreground/70">{timeAgo(n.createdAt)}</span>
+                  <span className="shrink-0 text-micro text-muted-foreground/70">{timeAgo(n.createdAt)}</span>
                 </Link>
               );
             })}
@@ -209,7 +209,7 @@ function InboxCard() {
         <button
           onClick={markAll}
           disabled={busy}
-          className="mt-3 flex items-center justify-center gap-1.5 rounded-xl border border-border py-2 text-[11.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+          className="mt-3 flex items-center justify-center gap-1.5 rounded-xl border border-border py-2 text-meta font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
         >
           <CheckCheck className="size-3.5" /> Mark all read
         </button>
@@ -223,7 +223,7 @@ function ActivityCard({ items }: { items: any[] }) {
     <CardShell className="flex h-full flex-col">
       <SectionTitle title="Recent activity" subtitle="Portal, tasks & system" />
       <div className="flex flex-1 flex-col gap-3">
-        {items.length === 0 && <p className="text-[12px] text-muted-foreground">No activity yet.</p>}
+        {items.length === 0 && <p className="text-body text-muted-foreground">No activity yet.</p>}
         {items.slice(0, 7).map((a) => (
           <div key={a.id} className="flex items-start gap-2.5">
             <span
@@ -233,8 +233,8 @@ function ActivityCard({ items }: { items: any[] }) {
               )}
             />
             <div className="min-w-0">
-              <p className="line-clamp-2 text-[12px] leading-snug">{a.text}</p>
-              <p className="text-[10.5px] text-muted-foreground">{timeAgo(a.at)}</p>
+              <p className="line-clamp-2 text-body leading-snug">{a.text}</p>
+              <p className="text-micro text-muted-foreground">{timeAgo(a.at)}</p>
             </div>
           </div>
         ))}
@@ -250,20 +250,20 @@ function TopClientsCard({ clients }: { clients: any[] }) {
         title="Top clients"
         subtitle="Recognized revenue"
         action={
-          <Link href="/accounts" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">
-            All <ArrowRight className="size-3" />
+          <Link href="/accounts" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">
+            All <ArrowRight className="size-3.5" />
           </Link>
         }
       />
       <div className="flex flex-col gap-2">
-        {clients.length === 0 && <p className="text-[12px] text-muted-foreground">No client revenue yet.</p>}
+        {clients.length === 0 && <p className="text-body text-muted-foreground">No client revenue yet.</p>}
         {clients.map((c, i) => (
           <div key={c.id} className="flex items-center gap-3">
-            <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold", i === 0 ? "bg-amber-500/15 text-amber-600 dark:text-amber-300" : "bg-muted text-muted-foreground")}>
+            <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg text-micro font-bold", i === 0 ? "bg-amber-500/15 text-amber-600 dark:text-amber-300" : "bg-muted text-muted-foreground")}>
               {i === 0 ? <Trophy className="size-3.5" /> : i + 1}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[12.5px] font-medium">{c.companyName}</p>
+              <p className="truncate text-body font-medium">{c.companyName}</p>
               <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full bg-primary"
@@ -272,7 +272,7 @@ function TopClientsCard({ clients }: { clients: any[] }) {
               </div>
             </div>
             <div className="shrink-0 text-right">
-              <p className="text-[12px] font-bold tabular-nums">{compact(c.revenue)}</p>
+              <p className="text-body font-bold tabular-nums">{compact(c.revenue)}</p>
               <StatusBadge status={c.healthLevel ?? "GREEN"} />
             </div>
           </div>
@@ -289,20 +289,20 @@ function OverdueTable({ invoices }: { invoices: any[] }) {
         title="Overdue receivables"
         subtitle={invoices.length ? `${invoices.length} invoice(s) need chasing` : "Nothing overdue"}
         action={
-          <Link href="/capital/invoices" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">
-            Invoices <ArrowRight className="size-3" />
+          <Link href="/capital/invoices" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">
+            Invoices <ArrowRight className="size-3.5" />
           </Link>
         }
       />
       {invoices.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-xl bg-emerald-500/5 px-3 py-4 text-[12px] text-emerald-600 dark:text-emerald-400">
-          <Check className="size-4" /> Every invoice is within terms.
+        <div className="flex items-center gap-2 rounded-xl bg-emerald-500/5 px-3 py-4 text-body text-emerald-600 dark:text-emerald-400">
+          <Check className="size-3.5" /> Every invoice is within terms.
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl border border-border/60">
           <table className="w-full">
             <thead>
-              <tr className="bg-muted/40 text-left text-[10px] uppercase tracking-wider text-muted-foreground">
+              <tr className="bg-muted/40 text-left text-micro uppercase tracking-wider text-muted-foreground">
                 <th className="px-3 py-2 font-semibold">Invoice</th>
                 <th className="px-3 py-2 font-semibold">Due</th>
                 <th className="px-3 py-2 text-right font-semibold">Balance</th>
@@ -310,7 +310,7 @@ function OverdueTable({ invoices }: { invoices: any[] }) {
             </thead>
             <tbody>
               {invoices.slice(0, 6).map((i) => (
-                <tr key={i.id} className="border-t border-border/50 text-[12px]">
+                <tr key={i.id} className="border-t border-border/50 text-body">
                   <td className="px-3 py-2 font-medium">
                     <Link href={`/capital/invoices?id=${i.id}`} className="hover:text-primary hover:underline">{i.invoiceNumber}</Link>
                   </td>
@@ -333,12 +333,12 @@ function TaskList({ tasks, empty }: { tasks: any[]; empty: string }) {
       {tasks.map((t) => (
         <Link key={t.id} href="/tasks" className="flex items-center gap-2.5 rounded-xl border border-border/50 px-3 py-2 transition-colors hover:bg-muted/40">
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12.5px] font-medium">{t.title}</span>
-            <span className="block truncate text-[10.5px] text-muted-foreground">
+            <span className="block truncate text-body font-medium">{t.title}</span>
+            <span className="block truncate text-micro text-muted-foreground">
               {t.project?.name ?? "No project"} · due {formatDay(t.dueDate)}
             </span>
           </span>
-          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9.5px] font-bold", priorityTone[t.priority] ?? priorityTone.LOW)}>
+          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-micro font-bold", priorityTone[t.priority] ?? priorityTone.LOW)}>
             {String(t.priority ?? "LOW").replace(/_/g, " ")}
           </span>
           <StatusBadge status={t.status} />
@@ -358,8 +358,8 @@ function EventList({ events }: { events: any[] }) {
             <CalendarClock className="size-3.5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[12.5px] font-medium">{e.title}</p>
-            <p className="text-[10.5px] text-muted-foreground">{String(e.type ?? "event").replace(/_/g, " ")}</p>
+            <p className="truncate text-body font-medium">{e.title}</p>
+            <p className="text-micro text-muted-foreground">{String(e.type ?? "event").replace(/_/g, " ")}</p>
           </div>
         </div>
       ))}
@@ -396,45 +396,45 @@ function Hero({ data, userName, roleName }: { data: any; userName?: string; role
   const actions =
     view === "owner" || view === "admin" ? (
       <>
-        <QuickAction href="/capital/invoices" label="New invoice" icon={<ReceiptText className="size-3.5" />} />
-        <QuickAction href="/pulse" label="New lead" icon={<Zap className="size-3.5" />} />
-        <QuickAction href="/flow" label="Projects" icon={<Workflow className="size-3.5" />} />
-        <QuickAction href="/control" label="Admin panel" icon={<Settings2 className="size-3.5" />} />
+        <QuickAction href="/capital/invoices" label="New invoice" icon={<ReceiptText className="size-4" />} />
+        <QuickAction href="/pulse" label="New lead" icon={<Zap className="size-4" />} />
+        <QuickAction href="/flow" label="Projects" icon={<Workflow className="size-4" />} />
+        <QuickAction href="/control" label="Admin panel" icon={<Settings2 className="size-4" />} />
       </>
     ) : view === "finance" ? (
       <>
-        <QuickAction href="/capital/invoices" label="New invoice" icon={<ReceiptText className="size-3.5" />} />
-        <QuickAction href="/capital/expenses" label="Record expense" icon={<Wallet className="size-3.5" />} />
-        <QuickAction href="/capital/reports" label="Reports" icon={<FileText className="size-3.5" />} />
-        <QuickAction href="/capital" label="Finance" icon={<CircleDollarSign className="size-3.5" />} />
+        <QuickAction href="/capital/invoices" label="New invoice" icon={<ReceiptText className="size-4" />} />
+        <QuickAction href="/capital/expenses" label="Record expense" icon={<Wallet className="size-4" />} />
+        <QuickAction href="/capital/reports" label="Reports" icon={<FileText className="size-4" />} />
+        <QuickAction href="/capital" label="Finance" icon={<CircleDollarSign className="size-4" />} />
       </>
     ) : view === "manager" ? (
       <>
-        <QuickAction href="/tasks" label="New task" icon={<Plus className="size-3.5" />} />
-        <QuickAction href="/flow" label="Projects" icon={<Workflow className="size-3.5" />} />
-        <QuickAction href="/people/attendance" label="Attendance" icon={<Clock className="size-3.5" />} />
-        <QuickAction href="/calendar" label="Calendar" icon={<CalendarClock className="size-3.5" />} />
+        <QuickAction href="/tasks" label="New task" icon={<Plus className="size-4" />} />
+        <QuickAction href="/flow" label="Projects" icon={<Workflow className="size-4" />} />
+        <QuickAction href="/people/attendance" label="Attendance" icon={<Clock className="size-4" />} />
+        <QuickAction href="/calendar" label="Calendar" icon={<CalendarClock className="size-4" />} />
       </>
     ) : view === "hr" ? (
       <>
-        <QuickAction href="/people" label="People" icon={<Users className="size-3.5" />} />
-        <QuickAction href="/people/leave" label="Leave" icon={<CalendarClock className="size-3.5" />} />
-        <QuickAction href="/people/payroll" label="Payroll" icon={<Wallet className="size-3.5" />} />
-        <QuickAction href="/people/attendance" label="Attendance" icon={<Clock className="size-3.5" />} />
+        <QuickAction href="/people" label="People" icon={<Users className="size-4" />} />
+        <QuickAction href="/people/leave" label="Leave" icon={<CalendarClock className="size-4" />} />
+        <QuickAction href="/people/payroll" label="Payroll" icon={<Wallet className="size-4" />} />
+        <QuickAction href="/people/attendance" label="Attendance" icon={<Clock className="size-4" />} />
       </>
     ) : view === "sales" ? (
       <>
-        <QuickAction href="/pulse" label="New lead" icon={<Zap className="size-3.5" />} />
-        <QuickAction href="/pulse" label="Pipeline" icon={<Target className="size-3.5" />} />
-        <QuickAction href="/accounts" label="Clients" icon={<Building2 className="size-3.5" />} />
-        <QuickAction href="/calendar" label="Calendar" icon={<CalendarClock className="size-3.5" />} />
+        <QuickAction href="/pulse" label="New lead" icon={<Zap className="size-4" />} />
+        <QuickAction href="/pulse" label="Pipeline" icon={<Target className="size-4" />} />
+        <QuickAction href="/accounts" label="Clients" icon={<Building2 className="size-4" />} />
+        <QuickAction href="/calendar" label="Calendar" icon={<CalendarClock className="size-4" />} />
       </>
     ) : (
       <>
-        <QuickAction href="/tasks" label="My tasks" icon={<ListTodo className="size-3.5" />} />
-        <QuickAction href="/people/me" label="My profile" icon={<UserCheck className="size-3.5" />} />
-        <QuickAction href="/people/leave" label="Leave" icon={<CalendarClock className="size-3.5" />} />
-        <QuickAction href="/calendar" label="Calendar" icon={<CalendarClock className="size-3.5" />} />
+        <QuickAction href="/tasks" label="My tasks" icon={<ListTodo className="size-4" />} />
+        <QuickAction href="/people/me" label="My profile" icon={<UserCheck className="size-4" />} />
+        <QuickAction href="/people/leave" label="Leave" icon={<CalendarClock className="size-4" />} />
+        <QuickAction href="/calendar" label="Calendar" icon={<CalendarClock className="size-4" />} />
       </>
     );
 
@@ -445,25 +445,25 @@ function Hero({ data, userName, roleName }: { data: any; userName?: string; role
         <div className="pointer-events-none absolute inset-y-0 right-0 w-1/3 grid-pattern opacity-40" />
         <div className="relative">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider text-primary">
-              <Sparkles className="size-3" /> {label}
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-micro font-bold uppercase tracking-wider text-primary">
+              <Sparkles className="size-3.5" /> {label}
             </span>
             {roleName && (
-              <span className="rounded-full border border-border bg-card/70 px-2.5 py-1 text-[10.5px] font-semibold text-muted-foreground">
+              <span className="rounded-full border border-border bg-card/70 px-2.5 py-1 text-micro font-semibold text-muted-foreground">
                 {roleName}
               </span>
             )}
-            <span className="text-[10.5px] text-muted-foreground">
+            <span className="text-micro text-muted-foreground">
               Updated {timeAgo(data.generatedAt)}
             </span>
           </div>
 
           <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0">
-              <h1 className="font-heading text-[26px] font-bold tracking-tight sm:text-[30px]">
+              <h1 className="font-heading text-page font-bold tracking-tight sm:text-hero">
                 Welcome back, {userName?.split(" ")[0] ?? "there"}
               </h1>
-              <p className="mt-1.5 max-w-2xl text-[12.5px] leading-relaxed text-muted-foreground">{line}</p>
+              <p className="mt-1.5 max-w-2xl text-body leading-relaxed text-muted-foreground">{line}</p>
             </div>
             <div className="flex flex-wrap gap-2">{actions}</div>
           </div>
@@ -481,16 +481,16 @@ function OwnerView({ data }: { data: any }) {
   const attention = useMemo(() => {
     const rows: any[] = [];
     for (const i of (c.overdueInvoices ?? []).slice(0, 3)) {
-      rows.push({ key: `i-${i.id}`, title: `${i.invoiceNumber} overdue`, sub: `${money(i.amount)} · due ${formatDay(i.dueDate)}`, tone: "bg-rose-500/10 text-rose-500", icon: <AlertTriangle className="size-3.5" />, href: "/capital/invoices" });
+      rows.push({ key: `i-${i.id}`, title: `${i.invoiceNumber} overdue`, sub: `${money(i.amount)} · due ${formatDay(i.dueDate)}`, tone: "bg-rose-500/10 text-rose-500", icon: <AlertTriangle className="size-4" />, href: "/capital/invoices" });
     }
     for (const p of (data.flow?.atRisk ?? []).slice(0, 3)) {
-      rows.push({ key: `p-${p.id}`, title: p.name, sub: `${String(p.healthStatus).replace(/_/g, " ")} · risk ${p.riskScore ?? "—"}`, tone: "bg-amber-500/10 text-amber-500", icon: <Flame className="size-3.5" />, href: "/flow" });
+      rows.push({ key: `p-${p.id}`, title: p.name, sub: `${String(p.healthStatus).replace(/_/g, " ")} · risk ${p.riskScore ?? "—"}`, tone: "bg-amber-500/10 text-amber-500", icon: <Flame className="size-4" />, href: "/flow" });
     }
     if ((c.pendingExpenses ?? 0) > 0) {
-      rows.push({ key: "exp", title: `${c.pendingExpenses} expense(s) awaiting approval`, sub: "Finance approvals queue", tone: "bg-sky-500/10 text-sky-500", icon: <HandCoins className="size-3.5" />, href: "/capital/expenses" });
+      rows.push({ key: "exp", title: `${c.pendingExpenses} expense(s) awaiting approval`, sub: "Finance approvals queue", tone: "bg-sky-500/10 text-sky-500", icon: <HandCoins className="size-4" />, href: "/capital/expenses" });
     }
     if (!rows.length) {
-      rows.push({ key: "ok", title: "No urgent items", sub: "Pipeline, delivery and cash are on track", tone: "bg-emerald-500/10 text-emerald-500", icon: <Check className="size-3.5" /> });
+      rows.push({ key: "ok", title: "No urgent items", sub: "Pipeline, delivery and cash are on track", tone: "bg-emerald-500/10 text-emerald-500", icon: <Check className="size-4" /> });
     }
     return rows;
   }, [c, data.flow]);
@@ -512,7 +512,7 @@ function OwnerView({ data }: { data: any }) {
             <SectionTitle
               title="Revenue trend"
               subtitle="Invoiced vs collected vs expenses — last 8 months"
-              action={<Link href="/capital/reports" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">Report <ArrowRight className="size-3" /></Link>}
+              action={<Link href="/capital/reports" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">Report <ArrowRight className="size-3.5" /></Link>}
             />
             <RevenueAreaChart data={c.revenueTrend ?? []} />
           </CardShell>
@@ -526,7 +526,7 @@ function OwnerView({ data }: { data: any }) {
             <SectionTitle
               title="Pipeline by stage"
               subtitle={`${compact(data.pulse?.pipelineValue)} total · ${compact(data.pulse?.weightedForecast)} weighted`}
-              action={<Link href="/pulse" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">Pipeline <ArrowRight className="size-3" /></Link>}
+              action={<Link href="/pulse" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">Pipeline <ArrowRight className="size-3.5" /></Link>}
             />
             <StageBarChart data={data.pulse?.leadsByStage ?? []} />
           </CardShell>
@@ -565,7 +565,7 @@ function FinanceView({ data }: { data: any }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <FadeIn delay={0.05} className="xl:col-span-2">
           <CardShell>
-            <SectionTitle title="Cash movement" subtitle="Invoiced vs collected vs expenses" action={<Link href="/capital/reports" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">Statements <ArrowRight className="size-3" /></Link>} />
+            <SectionTitle title="Cash movement" subtitle="Invoiced vs collected vs expenses" action={<Link href="/capital/reports" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">Statements <ArrowRight className="size-3.5" /></Link>} />
             <RevenueAreaChart data={c.revenueTrend ?? []} />
           </CardShell>
         </FadeIn>
@@ -575,12 +575,12 @@ function FinanceView({ data }: { data: any }) {
             {c.paymentSplit?.length ? <PaymentDonut data={c.paymentSplit} /> : <EmptyState title="No payments recorded yet" />}
             <div className="mt-4 grid grid-cols-2 gap-2 border-t border-border/60 pt-4">
               <div>
-                <p className="text-[10.5px] uppercase tracking-wider text-muted-foreground">Cash position</p>
-                <p className="text-[15px] font-heading font-bold tabular-nums">{compact(c.cashPosition)}</p>
+                <p className="text-micro uppercase tracking-wider text-muted-foreground">Cash position</p>
+                <p className="text-section font-heading font-bold tabular-nums">{compact(c.cashPosition)}</p>
               </div>
               <div>
-                <p className="text-[10.5px] uppercase tracking-wider text-muted-foreground">Pending approvals</p>
-                <p className="text-[15px] font-heading font-bold tabular-nums">{c.pendingExpenses ?? 0}</p>
+                <p className="text-micro uppercase tracking-wider text-muted-foreground">Pending approvals</p>
+                <p className="text-section font-heading font-bold tabular-nums">{c.pendingExpenses ?? 0}</p>
               </div>
             </div>
           </CardShell>
@@ -624,23 +624,23 @@ function ManagerView({ data }: { data: any }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <FadeIn delay={0.05} className="xl:col-span-2">
           <CardShell>
-            <SectionTitle title="Project health" subtitle={`${f.activeProjects ?? 0} active · ${f.atRisk?.length ?? 0} at risk · avg risk ${f.avgRisk ?? 0}`} action={<Link href="/flow" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">All projects <ArrowRight className="size-3" /></Link>} />
+            <SectionTitle title="Project health" subtitle={`${f.activeProjects ?? 0} active · ${f.atRisk?.length ?? 0} at risk · avg risk ${f.avgRisk ?? 0}`} action={<Link href="/flow" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">All projects <ArrowRight className="size-3.5" /></Link>} />
             <div className="grid grid-cols-3 gap-3">
               {health.map((h) => (
                 <div key={h.name} className="rounded-xl border border-border/60 px-3 py-2.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{h.name}</p>
-                  <p className="mt-1 font-heading text-[20px] font-bold tabular-nums">{h.value}</p>
+                  <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">{h.name}</p>
+                  <p className="mt-1 font-heading text-stat font-bold tabular-nums">{h.value}</p>
                 </div>
               ))}
             </div>
             <div className="mt-4 flex flex-col gap-1.5">
-              {(f.atRisk ?? []).length === 0 && <p className="rounded-xl bg-emerald-500/5 px-3 py-3 text-[12px] text-emerald-600 dark:text-emerald-400">No projects at risk.</p>}
+              {(f.atRisk ?? []).length === 0 && <p className="rounded-xl bg-emerald-500/5 px-3 py-3 text-body text-emerald-600 dark:text-emerald-400">No projects at risk.</p>}
               {(f.atRisk ?? []).map((pr: any) => (
                 <Link key={pr.id} href={`/flow?project=${pr.id}`} className="flex items-center gap-2.5 rounded-xl border border-border/50 px-3 py-2 transition-colors hover:bg-muted/40">
                   <span className="flex size-7 items-center justify-center rounded-lg bg-rose-500/10 text-rose-500"><Flame className="size-3.5" /></span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12.5px] font-medium">{pr.name}</span>
-                    <span className="block text-[10.5px] text-muted-foreground">{String(pr.healthStatus).replace(/_/g, " ")} · risk {pr.riskScore ?? "—"}{pr.riskDriver ? ` · ${pr.riskDriver}` : ""}</span>
+                    <span className="block truncate text-body font-medium">{pr.name}</span>
+                    <span className="block text-micro text-muted-foreground">{String(pr.healthStatus).replace(/_/g, " ")} · risk {pr.riskScore ?? "—"}{pr.riskDriver ? ` · ${pr.riskDriver}` : ""}</span>
                   </span>
                   <ChevronRight className="size-3.5 text-muted-foreground/50" />
                 </Link>
@@ -654,7 +654,7 @@ function ManagerView({ data }: { data: any }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <FadeIn delay={0.05} className="xl:col-span-2">
           <CardShell>
-            <SectionTitle title="My tasks" subtitle="Assigned to me — nearest due first" action={<Link href="/tasks?mine=true" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">All tasks <ArrowRight className="size-3" /></Link>} />
+            <SectionTitle title="My tasks" subtitle="Assigned to me — nearest due first" action={<Link href="/tasks?mine=true" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">All tasks <ArrowRight className="size-3.5" /></Link>} />
             <TaskList tasks={p.tasks ?? []} empty="No open tasks assigned to you" />
           </CardShell>
         </FadeIn>
@@ -686,20 +686,20 @@ function PeopleView({ data }: { data: any }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <FadeIn delay={0.05} className="xl:col-span-2">
           <CardShell>
-            <SectionTitle title="Team attendance" subtitle="Today's check-in snapshot" action={<Link href="/people/attendance" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">Attendance <ArrowRight className="size-3" /></Link>} />
+            <SectionTitle title="Team attendance" subtitle="Today's check-in snapshot" action={<Link href="/people/attendance" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">Attendance <ArrowRight className="size-3.5" /></Link>} />
             <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-xl bg-emerald-500/5 px-3 py-3 text-center"><p className="font-heading text-[22px] font-bold text-emerald-600 dark:text-emerald-400">{people.presentToday ?? 0}</p><p className="text-[10.5px] uppercase tracking-wider text-muted-foreground">Present</p></div>
-              <div className="rounded-xl bg-amber-500/5 px-3 py-3 text-center"><p className="font-heading text-[22px] font-bold text-amber-600 dark:text-amber-400">{people.onLeaveToday ?? 0}</p><p className="text-[10.5px] uppercase tracking-wider text-muted-foreground">On leave</p></div>
-              <div className="rounded-xl bg-muted px-3 py-3 text-center"><p className="font-heading text-[22px] font-bold">{Math.max((people.totalEmployees ?? 0) - (people.presentToday ?? 0) - (people.onLeaveToday ?? 0), 0)}</p><p className="text-[10.5px] uppercase tracking-wider text-muted-foreground">Absent</p></div>
+              <div className="rounded-xl bg-emerald-500/5 px-3 py-3 text-center"><p className="font-heading text-stat font-bold text-emerald-600 dark:text-emerald-400">{people.presentToday ?? 0}</p><p className="text-micro uppercase tracking-wider text-muted-foreground">Present</p></div>
+              <div className="rounded-xl bg-amber-500/5 px-3 py-3 text-center"><p className="font-heading text-stat font-bold text-amber-600 dark:text-amber-400">{people.onLeaveToday ?? 0}</p><p className="text-micro uppercase tracking-wider text-muted-foreground">On leave</p></div>
+              <div className="rounded-xl bg-muted px-3 py-3 text-center"><p className="font-heading text-stat font-bold">{Math.max((people.totalEmployees ?? 0) - (people.presentToday ?? 0) - (people.onLeaveToday ?? 0), 0)}</p><p className="text-micro uppercase tracking-wider text-muted-foreground">Absent</p></div>
             </div>
             <div className="mt-4">
-              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">My pending leave</p>
+              <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">My pending leave</p>
               {(p.leaves ?? []).length === 0 ? (
-                <p className="text-[12px] text-muted-foreground">No pending leave requests.</p>
+                <p className="text-body text-muted-foreground">No pending leave requests.</p>
               ) : (
                 <div className="flex flex-col gap-1.5">
                   {(p.leaves ?? []).map((l: any) => (
-                    <div key={l.id} className="flex items-center justify-between rounded-xl border border-border/50 px-3 py-2 text-[12px]">
+                    <div key={l.id} className="flex items-center justify-between rounded-xl border border-border/50 px-3 py-2 text-body">
                       <span className="font-medium capitalize">{String(l.leaveType).replace(/_/g, " ").toLowerCase()}</span>
                       <span className="text-muted-foreground">{formatDate(l.startDate)} → {formatDate(l.endDate)}</span>
                       <StatusBadge status={l.status} />
@@ -739,7 +739,7 @@ function SalesView({ data }: { data: any }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <FadeIn delay={0.05} className="xl:col-span-2">
           <CardShell>
-            <SectionTitle title="Pipeline by stage" subtitle={`${compact(pulse.pipelineValue)} total · ${compact(pulse.weightedForecast)} weighted`} action={<Link href="/pulse" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">Open pipeline <ArrowRight className="size-3" /></Link>} />
+            <SectionTitle title="Pipeline by stage" subtitle={`${compact(pulse.pipelineValue)} total · ${compact(pulse.weightedForecast)} weighted`} action={<Link href="/pulse" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">Open pipeline <ArrowRight className="size-3.5" /></Link>} />
             <StageBarChart data={pulse.leadsByStage ?? []} />
           </CardShell>
         </FadeIn>
@@ -749,7 +749,7 @@ function SalesView({ data }: { data: any }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <FadeIn delay={0.05} className="xl:col-span-2">
           <CardShell>
-            <SectionTitle title="My leads" subtitle="Nearest follow-up first" action={<Link href="/pulse" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">All leads <ArrowRight className="size-3" /></Link>} />
+            <SectionTitle title="My leads" subtitle="Nearest follow-up first" action={<Link href="/pulse" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">All leads <ArrowRight className="size-3.5" /></Link>} />
             {myOpen.length === 0 ? (
               <EmptyState title="No open leads assigned to you" hint="New assignments will show up here." />
             ) : (
@@ -757,10 +757,10 @@ function SalesView({ data }: { data: any }) {
                 {myOpen.slice(0, 7).map((l: any) => (
                   <Link key={l.id} href="/pulse" className="flex items-center gap-2.5 rounded-xl border border-border/50 px-3 py-2 transition-colors hover:bg-muted/40">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[12.5px] font-medium">{l.name}{l.company ? ` · ${l.company}` : ""}</span>
-                      <span className="block text-[10.5px] text-muted-foreground">{String(l.stage).replace(/_/g, " ")} · score {l.leadScore ?? "—"}</span>
+                      <span className="block truncate text-body font-medium">{l.name}{l.company ? ` · ${l.company}` : ""}</span>
+                      <span className="block text-micro text-muted-foreground">{String(l.stage).replace(/_/g, " ")} · score {l.leadScore ?? "—"}</span>
                     </span>
-                    <span className="shrink-0 text-[12px] font-bold tabular-nums">{compact(l.estimatedDealSize)}</span>
+                    <span className="shrink-0 text-body font-bold tabular-nums">{compact(l.estimatedDealSize)}</span>
                   </Link>
                 ))}
               </div>
@@ -788,7 +788,7 @@ function EmployeeView({ data }: { data: any }) {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <FadeIn delay={0.05} className="xl:col-span-2">
           <CardShell>
-            <SectionTitle title="My tasks" subtitle="Nearest due first" action={<Link href="/tasks?mine=true" className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">All tasks <ArrowRight className="size-3" /></Link>} />
+            <SectionTitle title="My tasks" subtitle="Nearest due first" action={<Link href="/tasks?mine=true" className="inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">All tasks <ArrowRight className="size-3.5" /></Link>} />
             <TaskList tasks={p.tasks ?? []} empty="No open tasks assigned to you" />
           </CardShell>
         </FadeIn>

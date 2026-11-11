@@ -51,8 +51,8 @@ export function PeopleHero({
             </span>
           )}
           <div className="min-w-0">
-            <h1 className="truncate font-heading text-[16px] font-bold leading-tight">{title}</h1>
-            {subtitle && <p className="truncate text-[10.5px] text-muted-foreground">{subtitle}</p>}
+            <h1 className="truncate font-heading text-section font-bold leading-tight">{title}</h1>
+            {subtitle && <p className="truncate text-micro text-muted-foreground">{subtitle}</p>}
           </div>
         </div>
 
@@ -64,10 +64,10 @@ export function PeopleHero({
                 className="min-w-[68px] rounded-lg border border-border/50 bg-muted/25 px-2 py-1"
                 title={`${s.label}${s.sub ? ` — ${s.sub}` : ""}`}
               >
-                <p className="truncate text-[8.5px] font-bold uppercase tracking-wide text-muted-foreground">{s.label}</p>
-                <p className={cn("font-heading text-[13px] font-bold leading-tight tabular-nums", TONE[s.tone ?? "default"])}>
+                <p className="truncate text-micro font-bold uppercase tracking-wide text-muted-foreground">{s.label}</p>
+                <p className={cn("font-heading text-body-lg font-bold leading-tight tabular-nums", TONE[s.tone ?? "default"])}>
                   {s.value}
-                  {s.sub && <span className="ml-1 text-[9.5px] font-medium text-muted-foreground">{s.sub}</span>}
+                  {s.sub && <span className="ml-1 text-micro font-medium text-muted-foreground">{s.sub}</span>}
                 </p>
               </div>
             ))}
@@ -104,7 +104,7 @@ export function PeopleTabs<T extends string>({
             aria-current={active ? "page" : undefined}
             onClick={() => onChange(t.id)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
+              "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-meta font-semibold transition-colors",
               active
                 ? "bg-brand-gradient text-white shadow-sm"
                 : "border border-border bg-card text-muted-foreground hover:text-foreground"
@@ -114,7 +114,7 @@ export function PeopleTabs<T extends string>({
             {t.count != null && t.count > 0 && (
               <span
                 className={cn(
-                  "rounded-full px-1.5 py-px text-[9px] font-bold tabular-nums",
+                  "rounded-full px-1.5 py-px text-micro font-bold tabular-nums",
                   active ? "bg-white/20 text-white" : "bg-muted text-muted-foreground"
                 )}
               >
@@ -148,10 +148,10 @@ export function DenseCard({
     <div className={cn("flex min-h-0 flex-col rounded-2xl border border-border/60 bg-card p-3 shadow-sm", className)}>
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 truncate text-[12px] font-heading font-semibold">
+          <p className="flex items-center gap-1.5 truncate text-body font-heading font-semibold">
             {icon}{title}
           </p>
-          {hint && <p className="truncate text-[10px] text-muted-foreground">{hint}</p>}
+          {hint && <p className="truncate text-micro text-muted-foreground">{hint}</p>}
         </div>
         {action}
       </div>

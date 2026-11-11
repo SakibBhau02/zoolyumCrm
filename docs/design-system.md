@@ -1,322 +1,232 @@
-# EduTrack 360° — Design System & UI/UX Documentation
+# Zoolyum OS — Design System
 
-> সম্পূর্ণ frontend design এর বিস্তারিত ডকুমেন্টেশন — রঙ, টাইপোগ্রাফি, গ্রাফ/চার্ট, অ্যানিমেশন, কম্পোনেন্ট এবং পেজ-বাই-পেজ ডিজাইন।
+> Single reference for typography, icons, colour, surfaces, motion and the component
+> primitives every internal module builds on. If a screen looks different from its
+> siblings, the cause is almost always a value that did not come from this page.
 
-**স্ট্যাক:** Next.js 16 (App Router, Turbopack) · React 19 · Tailwind CSS v4 · shadcn/ui (`base-nova` = Base UI primitives) · Recharts 3 · Framer Motion 12 · lucide-react icons
-
----
-
-## ১. Design Philosophy
-
-| নীতি | বাস্তবায়ন |
-|---|---|
-| **Brand-first** | Violet→Fuchsia→Sky গ্র্যাডিয়েন্ট (EduTrack "360°" identity), সর্বত্র consistent |
-| **Bangladesh-ready** | bKash/Nagad/payemnt split, বাংলা সংখ্যা ফরম্যাট (৳9.42L), BISE/MPO/BANBEIS reference |
-| **Glass + Depth** | Light mode-এ glassmorphism, dark sidebar, layered shadows |
-| **Motion with purpose** | Staggered entrance, hover lifts, number/count transitions — সবকিছু 0.3–1.2s easing `[0.22, 1, 0.36, 1]` |
-| **Accessible contrast** | OKLCH color space, সব state-এ ring/focus visible |
+**Stack:** Next.js 16 (App Router) · React 19 · Tailwind CSS v4 · lucide-react · Recharts 3 · Framer Motion 12
 
 ---
 
-## ২. Color System (OKLCH)
+## 1. Typography
 
-**Core tokens** — `:root` (light) & `.dark` — সংজ্ঞায়িত `src/app/globals.css`-এ।
+### 1.1 Fonts
 
-### Light mode
-```css
---background: oklch(0.985 0.004 285)   /* প্রায় সাদা, faint violet tint */
---foreground: oklch(0.22 0.03 285)     /* গাঢ় indigo-black text */
---card:       oklch(1 0 0)             /* pure white cards */
---primary:    oklch(0.52 0.22 290)     /* vibrant violet */
---muted:      oklch(0.955 0.01 285)
---border:     oklch(0.91 0.012 285)
-```
-
-### Dark mode
-```css
---background: oklch(0.18 0.02 285)
---card:       oklch(0.22 0.025 285)
---primary:    oklch(0.68 0.18 290)     /* হালকা violet */
---border:     oklch(1 0 0 / 10%)       /* white-alpha borders */
-```
-
-### Chart palette (5-সিরিজ)
-| Token | Light | Dark | ব্যবহার |
+| Role | Family | CSS variable | Notes |
 |---|---|---|---|
-| `--chart-1` | `0.56 0.23 290` (violet) | `0.68 0.18 290` | Primary series |
-| `--chart-2` | `0.62 0.14 220` (sky) | `0.68 0.12 220` | Secondary series |
-| `--chart-3` | `0.66 0.16 170` (emerald) | `0.7 0.14 170` | Positive/teal |
-| `--chart-4` | `0.72 0.16 70` (amber) | `0.74 0.14 70` | Warning |
-| `--chart-5` | `0.62 0.21 330` (fuchsia) | `0.68 0.17 330` | Accent |
+| Body / UI | **Inter** | `--font-inter` → `--font-sans` | Everything by default |
+| Headings / numbers | **Outfit** | `--font-display` → `--font-heading` | Applied automatically to `h1–h4` (see base layer) |
+| Bangla + ৳ glyph | **Noto Sans Bengali** | `--font-bangla` | Fallback in `--font-sans` / `--font-heading`; renders only for Bangla code points and the taka sign |
+| Mono | **Geist Mono** | `--font-geist-mono` → `--font-mono` | Invoice numbers, tokens, URLs |
 
-### Brand gradients (utilities)
-| Utility | Direction | Stops | ব্যবহার |
+Fonts are loaded in `apps/web/src/app/layout.tsx`; the `--font-*` tokens live in the
+`@theme inline` block of `globals.css`.
+
+### 1.2 The type scale (source of truth)
+
+Defined once in `apps/web/src/app/globals.css` inside `@theme`, emitted to `:root`,
+consumed as Tailwind utilities (`text-body`, `text-meta`, …).
+
+| Utility | px | Line-height | Used for |
 |---|---|---|---|
-| `bg-brand-gradient` | 135° | violet(0.56/0.23/290) → fuchsia(0.6/0.21/310) → sky(0.62/0.16/220) | Primary CTA buttons, logo, hero accents |
-| `bg-brand-gradient-soft` | 135° | একই 3 রং, 10–12% alpha | Icon chips, subtle backgrounds |
-| `text-gradient` | 110° | violet→fuchsia→sky | Headings, "360°" logo text |
-| `text-gradient-warm` | 110° | violet→indigo→emerald | Sidebar logo tag |
-| `bg-emerald-gradient` | 135° | emerald→teal | Success accents |
-| `bg-mesh` | 4 radial-gradients | violet 10% / sky 10% / emerald 10% / fuchsia 8% | App main background texture |
+| `text-micro` | 10.5 | 1.4 | Badges, uppercase labels, chip text, micro captions |
+| `text-meta` | 11.5 | 1.45 | Secondary/muted text, hints, timestamps, table meta |
+| `text-body` | **12.5** | 1.5 | **Default reading size** — table cells, paragraphs, form values |
+| `text-body-lg` | 13 | 1.45 | Bold values, names, modal body, primary buttons |
+| `text-section` | 15 | 1.4 | Section + card headings (`SectionTitle`, card titles) |
+| `text-title` | 17 | 1.3 | Modal titles, record/detail titles, compact module headers |
+| `text-stat` | 22 | 1.15 | KPI numbers (`StatCard`) |
+| `text-page` | 24 | 1.2 | Page titles (`PageHeader`) |
+| `text-stat-lg` | 28 | 1.05 | Hero KPI number (one per page at most) |
+| `text-hero` | 30 | 1.15 | Hero/banner headline (Dashboard welcome) |
+| `text-display` | 42 | 1 | 404 / oversized display numerals |
 
-### Semantic states
-- **Success:** emerald (`emerald-500` badge bg `emerald-500/10`)
-- **Warning:** amber (`amber-400/500`)
-- **Danger:** rose/red (`rose-500/10`, `red-500`)
-- **Info:** sky/blue
-- **Brand:** violet-600 (text/icon), hover → violet-700
+**Rules**
+
+1. Never write `text-[<number>px]`. If a size is genuinely missing, add a step to
+   `@theme` — that is the only place sizes are allowed to be invented.
+2. Never use named Tailwind sizes (`text-sm`, `text-lg`, `text-xl`, `text-2xl`) in
+   internal modules. They are browser/rem dependent and were the reason Pulse rendered
+   body copy at 14px while Accounts rendered its table at 10px.
+3. `body` is set to `var(--text-body)`, so unstyled text is already correct.
+4. Numbers that align in columns (KPIs, money, counts, durations) get `tabular-nums`.
+5. `h1–h4` inherit `--font-heading` + `font-weight: 600` + `letter-spacing: -0.01em`
+   from the base layer. Do not re-apply `font-heading` by hand.
+
+### 1.3 Where each step is expected to appear
+
+| Element | Size |
+|---|---|
+| Page title | `text-page` (People: `text-title` — deliberately slim layout, see `people/layout.tsx`) |
+| Page subtitle | `text-body` + `text-muted-foreground` |
+| Section/card heading | `text-section` |
+| Card subtitle / hint | `text-meta` |
+| Table header | `text-micro` uppercase, `tracking-wide`, muted |
+| Table cell | `text-body`; first column (name/id) `text-body-lg font-semibold` |
+| Input / select / textarea value | `text-body-lg` |
+| Field label | `text-meta font-semibold` |
+| Badge / status chip | `text-micro font-bold` |
+| Button | `text-body-lg font-semibold` (large) / `text-meta` (small) |
+| Stat label | `text-micro uppercase tracking-wide muted` |
+| Stat value | `text-stat` (hero: `text-stat-lg`) |
+| Modal title | `text-title` |
+| Chart axis tick | 11.5 (inline `fontSize`) |
+| Chart tooltip | 12.5 (inline `fontSize`) |
+
+Chart sizes are raw numbers inside `components/charts.tsx` because Recharts takes
+numbers, not classes — keep them in sync with `meta`/`body` manually.
 
 ---
 
-## ৩. Typography
+## 2. Icons
 
-| Font | Role | CSS var |
+`lucide-react`, always sized with an explicit utility class. **Four sizes only:**
+
+| Class | px | Tier | Examples |
+|---|---|---|---|
+| `size-3` | 12 | Badge / micro | Inline glyphs inside `text-micro` chips and badges |
+| `size-3.5` | 14 | Inline action | **Default** — table row actions, buttons, breadcrumbs, meta rows |
+| `size-4` | 16 | Tile / nav / modal | Sidebar nav, tab headers, icon chips (`size-8/9/10` wrapper), stat cards, modal close |
+| `size-5` | 20 | Hero / empty state | Empty-state hero glyph, oversized banner icons |
+
+**How to choose:** if the icon sits in a fixed wrapper, wrapper ≥ 32px → `size-4`,
+wrapper ≥ 24px → `size-3.5`. Otherwise `icon={<…/>}` props and first-child positions
+→ `size-4`; inline text/accompanying actions → `size-3.5`; inside a `text-micro`
+badge → `size-3`.
+
+Rules:
+- Never leave an icon without a size class, and never use `w-*`/`h-*` or inline width.
+- No `strokeWidth` overrides — lucide's default (2) is the house weight.
+- Do not use emoji as icons (`⚑ ⚠ 📅 ✓ ↗`). Use `Flag`, `AlertTriangle`,
+  `CalendarDays`, `Check`, `ArrowUpRight`. Emoji are fine only where they *are* the
+  content (e.g. the reaction picker in Tasks) or inside prose.
+
+---
+
+## 3. Colour
+
+OKLCH, all tokens in `globals.css`.
+
+| Token | Light | Dark |
 |---|---|---|
-| **Geist** | Body UI (default sans) | `--font-sans` |
-| **Geist Mono** | Code/mono | `--font-geist-mono` |
-| **Space Grotesk** | Display/Headings (`font-heading`) | `--font-display` |
-| **Hind Siliguri** | বাংলা টেক্সট (`font-bangla`) | `--font-bangla` |
+| `--background` | `oklch(0.985 0.004 285)` | `oklch(0.18 0.02 285)` |
+| `--foreground` | `oklch(0.22 0.03 285)` | `oklch(0.94 0.01 285)` |
+| `--card` | `oklch(1 0 0)` | `oklch(0.22 0.025 285)` |
+| `--primary` | `oklch(0.52 0.22 290)` | `oklch(0.68 0.18 290)` |
+| `--secondary` | `oklch(0.62 0.14 220)` | `oklch(0.68 0.12 220)` |
+| `--muted` | `oklch(0.955 0.01 285)` | `oklch(0.26 0.02 285)` |
+| `--muted-foreground` | `oklch(0.52 0.03 285)` | `oklch(0.7 0.02 285)` |
+| `--border` | `oklch(0.91 0.012 285)` | `oklch(1 0 0 / 10%)` |
+| `--sidebar` | `oklch(0.21 0.035 285)` | same (always dark) |
 
-**Scale pattern:**
-- Page title: `text-2xl font-heading font-semibold tracking-tight`
-- Section title: `text-[15px] font-heading font-semibold`
-- Card body: `text-[13px]` (নিয়মিত data row)
-- Metadata: `text-[11px] text-muted-foreground`
-- Numbers: সব KPI/মেট্রিক্সে `tabular-nums` (সংখ্যা লাইন আপ)
-- Sidebar labels: `text-[10px] tracking-widest uppercase`
+Chart series: `--chart-1` violet · `--chart-2` sky · `--chart-3` emerald ·
+`--chart-4` amber · `--chart-5` fuchsia.
 
----
+Semantic states use Tailwind hues, not new tokens:
+success `emerald-500`, warning `amber-500`, danger `rose-500`, info `sky-500`,
+each as `bg-*-500/10` + `text-*-600 dark:text-*-400`.
 
-## ৪. Radius & Elevation
-
-- Base radius: `0.75rem` (টোকেন `--radius`), scaled: `--radius-sm`(0.6×) → `--radius-4xl`(2.6×)
-- **Cards:** `rounded-2xl` + `border-border/60` + `shadow-sm`
-- **Buttons:** `rounded-xl` (প্রাইমারি), `rounded-lg` (সেকেন্ডারি), `rounded-full` (pills/toggles)
-- **Avatar/icon chips:** `rounded-full` / `rounded-xl`
-- **Hover lift (`.card-lift`):** `translateY(-4px)` + `box-shadow: 0 20px 40px -12px oklch(0.5 0.15 290 / 25%)`, transition `0.3s cubic-bezier(0.22,1,0.36,1)`
-- **Glass:** `bg-white/60 + backdrop-blur-xl + border-white/40` (light) / `bg-white/5 + border-white/10` (dark)
+Utility classes: `bg-brand-gradient` (solid `--primary`, no gradients on primary
+buttons by branding decision), `bg-brand-gradient-soft`, `text-gradient`,
+`bg-emerald-gradient`, `bg-mesh`.
 
 ---
 
-## ৫. Animation & Motion (Framer Motion)
+## 4. Surfaces, radius, elevation
 
-| Pattern | Spec | Location |
+- `--radius: 0.75rem`; cards `rounded-2xl`, buttons `rounded-xl`, inputs `rounded-xl`,
+  chips/pills `rounded-full`.
+- Card: `border border-border/60 bg-card shadow-sm`, padding `p-4`/`p-5`.
+- `.card-lift`: `translateY(-4px)` + soft primary shadow on hover (0.3s).
+- `.glass`: translucent + `backdrop-blur-xl` (topbar, popovers).
+- `.grid-pattern`, `.bg-mesh` for hero/background texture.
+
+---
+
+## 5. Motion
+
+| Pattern | Spec |
+|---|---|
+| `<FadeIn>` | opacity 0→1, y 16→0, 0.5s, `cubic-bezier(0.22,1,0.36,1)` |
+| Stagger | `staggerChildren: 0.08` |
+| Row entrance | opacity 0→1, y 8→0, 0.35s, delay `i × 0.04` |
+| Charts | Recharts `animationDuration` 1000–1200ms |
+| Keyframes | `marquee` 40s, `float` 8s/12s, `shimmer` 2.5s, `pulse-glow` 4s, `pop-in` 160ms |
+
+Respect `prefers-reduced-motion` for new keyframe animations (see `.animate-pop-in`).
+
+---
+
+## 6. Component primitives
+
+| File | Exports | Notes |
 |---|---|---|
-| **Stagger container** | `staggerChildren: 0.08` | Dashboard root |
-| **Item fade-up** | `opacity 0→1, y 18→0, 0.5s, ease [0.22,1,0.36,1]` | Dashboard items |
-| **`<FadeIn>` wrapper** | `opacity 0→1, y 16→0, 0.5s` + optional `delay` | সব পেজ |
-| **Table row entrance** | `opacity 0→1, y 8→0, 0.35s, delay i×0.04` | Students/Exams rows |
-| **List slide-in** | `opacity 0→1, x -12→0, 0.4s, delay i×0.06` | Merit list |
-| **Kanban card** | `opacity 0→1, scale 0.96→1, 0.35s` | Admission pipeline |
-| **Chart draw** | `animationDuration: 1000–1200ms` (Recharts native) | সব charts |
-| **Heatmap cell** | `hover:scale-110`, `transition 200ms` | Dashboard heatmap |
+| `components/shared.tsx` | `PageHeader`, `SectionTitle`, `StatCard`, `StatusBadge`, `EmptyState`, `Avatar`, `FadeIn`, `SkeletonBlock`, `cn` | `PageHeader` = `text-page` title + `text-body` subtitle + action cluster |
+| `components/table.tsx` | `TableShell`, `THead`, `Th`, `Td`, `Tr`, `Btn` | Header `text-micro` uppercase; cells `text-body` |
+| `components/ui.tsx` | `Modal`, `Field`, `FieldLabel`, `ChipGroup`, `FormActions`, `inputCls` | Modal title `text-title`; field labels `text-meta` |
+| `components/charts.tsx` | `SourceBarChart`, `StageBarChart`, others | Shared `tooltipStyle`, `gridStyle` |
+| `components/sidebar.tsx` | Module nav | Dark rail, `text-micro` section labels, `size-4` icons |
+| `components/topbar.tsx` | Sticky bar | `text-meta` chips, `size-3.5` icon buttons |
+| `components/app-shell.tsx` | Auth-gated shell | |
+| `components/brand-logo.tsx` | Logo mark | |
 
-### CSS keyframes (`globals.css`)
-| Name | Spec | ব্যবহার |
+Module-specific kit lives under `components/<module>/` and
+`app/(app)/<module>/_components/`.
+
+---
+
+## 7. Module map (internal app)
+
+Sidebar order, all under `app/(app)/`:
+
+| Module | Route | Group |
 |---|---|---|
-| `marquee` | `translateX 0→-50%`, 40s linear infinite | Landing trust strip |
-| `float` | `translateY ±14px`, 8s / 12s (slow) ease-in-out infinite | Landing hero cards |
-| `shimmer` | `background-position -200%→200%`, 2.5s | Skeleton surfaces |
-| `pulse-glow` | `opacity 0.55→1`, 4s ease-in-out | Hero blobs, notification ping |
-| `animate-ping` (Tailwind) | — | Notification dot (violet-500) |
+| Dashboard | `/dashboard` | Overview |
+| Pulse | `/pulse` | Business — CRM |
+| Accounts | `/accounts` | Business — Clients |
+| Flow | `/flow` | Business — Projects |
+| Tasks | `/tasks` | Business |
+| People | `/people/*` | Operations — HRM |
+| Capital | `/capital/*` | Operations — Finance |
+| Insight | `/insight` | Operations — Reports |
+| Calendar | `/calendar` | Operations |
+| Portal (internal preview) | `/portal` | Operations — Client |
+| Control | `/control/*` | System — Admin |
+| Notifications | `/notifications` | System |
+
+**Out of scope for this system:** the client-facing portal (`/portal-client`,
+`/portal-login`, `/p`), print/PDF output (`invoice-print-view.tsx`, `lib/*-pdf.ts`)
+and the marketing landing page (`app/page.tsx`). They intentionally use their own
+sizes (`text-[Npx]`, `text-4xl md:text-6xl`) because they are rendered for
+non-app contexts (print sheet, public marketing page).
 
 ---
 
-## ৬. Chart & Graph Components (`src/components/charts.tsx`)
+## 8. Conventions checklist
 
-> সব chart ResponsiveContainer-এ (parent width অনুযায়ী resize)। Unified **tooltipStyle**: dark bg `oklch(0.18 0.02 285)`, radius 12px, fontSize 12px, white text, shadow `0 16px 40px -8px rgba(0,0,0,.4)`, border `oklch(1 0 0 / 10%)`।
+Before shipping a UI change:
 
-### ৬.১ `AttendanceAreaChart` — Daily Present vs Absent
-| Property | Value |
-|---|---|
-| Type | Recharts `AreaChart` (2-series stackless) |
-| Height | 240px · margin `{top:8, right:4, bottom:0, left:-18}` |
-| Data | `[{ date, present, absent }]` — July 2026 daily |
-| Fill | `linearGradient` y-অক্ষ বরাবর: Present `violet 0.35→0 opacity`, Absent `rose 0.25→0` |
-| Stroke | Present `oklch(0.56 0.23 290)` 2.5px · Absent `oklch(0.66 0.15 25)` 2px |
-| Curve | `type="monotone"` (smooth) |
-| Grid | `strokeDasharray 3 3`, `stroke oklch(0.5 0.05 285 / 0.15)`, **vertical:false** (শুধু horizontal lines) |
-| Axes | X tick fontSize 11 `interval={4}`; Y domain `[0, 520]`; axisLine/tickLine hidden |
-| Hover | Tooltip custom + cursor `violet 0.4` vertical line |
-| Animation | 1200ms |
-
-### ৬.২ `FeeBarChart` — Collected vs Due (৳'000)
-| Property | Value |
-|---|---|
-| Type | `BarChart` grouped, `barGap={3}` |
-| Height | 240px · margin left `-14` |
-| Data | `[{ month, collected, due }]` |
-| Fill | collected: violet→sky gradient; due: `rose 0.5→0.15 alpha` gradient |
-| Radius | `[6,6,0,0]` (top-rounded bars) |
-| Grid | dashed, horizontal only |
-| Y domain | `[0, 550]` |
-| Cursor | `fill oklch(0.5 0.05 285 / 0.08)` (column highlight) |
-| Animation | 1000ms |
-
-### ৬.৩ `MfsDonut` — Payment Split (bKash/Nagad/Cash)
-| Property | Value |
-|---|---|
-| Type | `PieChart` donut |
-| Size | 170×170px · innerRadius 52 · outerRadius 72 |
-| Styling | `paddingAngle={4}` (slice gap), `cornerRadius={8}` (rounded ends), `strokeWidth={0}` |
-| Colors | Per-slice data-defined (bKash pink `#E2136E`-family, Nagad orange, cash emerald), gradient 0.85→1 opacity |
-| Legend | Beside chart (flex), dot 2.5px round + name + bold value%, `tabular-nums` |
-| Animation | 1100ms |
-| Layout | `flex items-center gap-6` — chart + legend side-by-side |
-
-### ৬.৪ `SubjectBarChart` — Pass Rate by Subject
-| Property | Value |
-|---|---|
-| Type | `BarChart` **horizontal (layout="vertical")** |
-| Height | 260px · Y-axis width 92 (subject names) |
-| Data | `[{ subject, passRate }]` |
-| Fill | violet→sky horizontal gradient |
-| Radius | `[0,6,6,0]` (right-rounded) |
-| X domain | `[0, 100]` with `unit="%"` |
-| Grid | dashed, **horizontal:false** |
-| Tooltip formatter | `["{v}%", "Pass Rate"]` |
-
-### ৬.৫ `AttendanceHeatmap` — Class × Month Matrix
-| Property | Value |
-|---|---|
-| Type | Custom HTML table (Recharts নয়) — `border-separate`, `border-spacing 1.5` |
-| Data | `number[][]` (class × month), min-width 480px + `overflow-x-auto` |
-| Cell | `aspect-square` rounded-lg, 10px bold white text, shadow-sm |
-| Color scale | ≥95% `bg-emerald-500` · 90–94% `bg-emerald-400` · 85–89% `bg-amber-400` · <85% `bg-rose-500` |
-| Hover | `scale-110` + full tooltip `title="Class · Month — N%"` |
-| Legend | Right-aligned 4-step dots (rose→emerald), 11px muted |
-
-### ৬.৬ Custom SVG Progress Ring (Exams page)
-| Property | Value |
-|---|---|
-| Type | Inline `<svg viewBox="0 0 64 64">`, 64px (size-16) |
-| Track | Circle r=28, `stroke oklch(0.9 0.01 285)` width 6 |
-| Value arc | `strokeDasharray = 2π×28`, Framer `motion.circle` animate `strokeDashoffset → (1-0.72)×C`, **1.2s** ease `[0.22,1,0.36,1]`, `strokeLinecap="round"` |
-| Gradient | violet→sky linearGradient `#gpaGrad` |
-| Center label | Absolute 13px bold `tabular-nums` (e.g. 72%) |
+- [ ] No `text-[Npx]`, no `text-sm/lg/xl/2xl` in internal modules.
+- [ ] Every lucide icon has one of `size-3 / size-3.5 / size-4 / size-5`.
+- [ ] No emoji standing in for an icon.
+- [ ] `h1–h4` untouched (base layer styles them).
+- [ ] Numbers that line up use `tabular-nums`.
+- [ ] Dark mode checked (`dark:` variants for tinted badges).
+- [ ] 1440×900 and 1366×768 both render without horizontal scroll on tables.
 
 ---
 
-## ৭. Core UI Components
+## 9. Migration notes
 
-### Layout shell (`src/app/(app)/layout.tsx`)
-- `flex h-screen overflow-hidden` — sidebar (fixed 256px) + main column
-- Main: `flex-1 overflow-y-auto bg-mesh` + `max-w-7xl p-6 lg:p-8` content container
+The typography and icon normalisation was applied with one-shot scripts kept in
+`scripts/` for reference:
 
-### Sidebar (`sidebar.tsx`)
-- Dark: `bg-sidebar oklch(0.21 0.035 285)`, w-64, `border-r border-sidebar-border`
-- Header: 36px brand-gradient logo (Sparkles icon) + "EduTrack **360°**" (`text-gradient-warm`)
-- Nav: grouped sections (`text-[10px] uppercase tracking-widest` labels), 15 icons (lucide)
-- **Active state:** `bg-sidebar-primary` violet + `shadow-lg shadow-violet-600/25` + white icon
-- Hover: `bg-sidebar-accent` (white 8%), icon `scale-110` on group-hover
-- Badges (notification counts): `bg-violet-500/15 text-violet-300` / active-এ `bg-white/25`
-- Footer: school info chip — amber gradient avatar "SI" + shortName + EIIN · year
-
-### Topbar (`topbar.tsx`)
-- Sticky, `bg-background/70 backdrop-blur-xl`, h-16, `border-b`
-- Date pill: rounded-full `border bg-card/60` — "Sun, 2 Aug 2026 · Term 2" + "July 2026" pill button
-- Global search (w-72, hidden md): rounded input, search icon, placeholder "Search students, teachers, invoices…"
-- Right cluster: dark-mode toggle (Moon/Sun), notification bell with **double-dot ping** (animate-ping violet + solid dot), divider, profile chip (gradient avatar "SR" + Sadia Rahman/School Admin + ChevronDown)
-
-### `shared.tsx` — Building blocks
-| Component | Spec |
+| Script | Does |
 |---|---|
-| `FadeIn` | Entrance motion wrapper (delay prop) |
-| `PageHeader` | Title 2xl font-heading + subtitle + action cluster, `mb-6` |
-| `StatCard` | Corner glow blob (gradient 20%→30% on hover), icon chip `bg-muted/70` hover scale-110, delta pill (emerald, SVG triangle), 2xl bold `tabular-nums` value |
-| `CardShell` | Card container: `card-lift rounded-2xl border-border/60 bg-card p-5 shadow-sm` |
-| `SectionTitle` | 15px font-heading + subtitle 12px + optional action |
-| `GradientBadge` | Brand-gradient pill, white 11px semibold, `shadow-violet-500/25` |
-| `AvatarGroup` | Overlapping avatars `-space-x-2`, `ring-2 ring-card`, 5 preset gradients |
+| `ui-typography-codemod.mjs` | `text-[Npx]` → semantic token, with per-size mapping and exclude list |
+| `ui-typography-named.mjs` | Named Tailwind sizes (`text-sm`, `text-xl`, …) → token by role |
+| `ui-icons.mjs` | Normalises every lucide size to the 4-tier scale (wrapper → prop → dominant size) |
+| `ui-audit*.mjs`, `ui-emoji.mjs`, `ui-grep.mjs` | Verification: raw-px census, named-size census, icon-size distribution, emoji scan |
 
-### Table pattern (Students / Exams / Fees)
-- `CardShell !p-0 overflow-hidden` — borderless inside
-- Header row: `hover:bg-transparent`, `pl-5` first cell
-- Body rows: motion entrance, hover `bg-violet-50/40 dark:bg-violet-950/30`
-- Progress-in-cell: 1.5px rounded bar (14/16 width) + gradient by threshold
-- Footer: `border-t` — count text + pagination/action buttons (`rounded-lg` xs)
-
----
-
-## ৮. Page-by-Page Design
-
-### ৮.১ Landing (`/`)
-- **Nav:** glass navbar, logo + "360°" gradient, Get Started pill CTA (`render={<Link/>}` pattern)
-- **Hero:** `bg-brand-gradient-soft` chip "Assalamu Alaikum!"-style greeting → headline `text-4xl→6xl` with `text-gradient`, sub-copy, dual CTA (primary gradient + ghost). 3 পিস floating glass dashboard mockup cards (`animate-float` 8s/12s) — GPA ring, attendance sparkline, fee bar — each with "Live" pulsing dot
-- **Background:** 3 pulse-glow blobs (violet/sky/emerald), `bg-mesh`
-- **Stats band:** gradient-number strip (schools/students/SMS/uptime) — `text-gradient`, 3xl–4xl bold
-- **Features grid (6):** icon chips 44px gradient per-feature, corner glow blob (8%→18% on hover), icon `scale-110 rotate-3` hover
-- **Marquee trust strip:** `animate-marquee` 40s, duplicated content, brand-gradient-soft pills ("MPO Data Ready", "BISE Export", "bKash Integration"…)
-- **CTA section:** dark panel `bg-sidebar`, pulse-glow blobs, `grid-pattern` overlay, gradient CTA
-- **Footer:** brand logo, muted links, "Made for every school in Bangladesh"
-
-### ৮.২ Dashboard (`/dashboard`)
-- **Hero banner:** `bg-sidebar` rounded-3xl — 2 pulse-glow blobs (violet/indigo), `grid-pattern` right half (6% opacity), `GradientBadge` year chip, "Assalamu Alaikum, Sadia! 👋" 2xl–3xl, white/60 sub copy with emerald highlight, 2 glass/gradient CTAs (Take Attendance, Collect Fee)
-- **Stat cards (4):** violet/sky/emerald/amber icon gradient + glow blob; deltas +3.2%, +2, +0.8%, +5.1%
-- **Charts row:** Attendance Area (2-col span) + MfsDonut, hover links "View full report →"
-- **Middle row:** Fee Bar (2-col) + Risk Flags feed (rose/amber/sky gradient icons, Flame for Critical, attendance % colored)
-- **Bottom row:** Heatmap + Today's Schedule (period chip white bg 11px bold violet, Break italic) + Notice Board (icon `bg-brand-gradient-soft`, unread dot glow `shadow-violet-400/50`, amber Exam countdown card with gradient Progress bar 72%)
-- **Merit strip:** full-width card, `bg-brand-gradient` top 4px accent bar, 5 rank cards (rank-1 amber gradient "🏆 Topper" floating badge, 2xl violet GPA)
-
-### ৮.৩ Students (`/students`) — **live API**
-- Header: Excel Import / Export / **Add Student** (gradient)
-- Filter bar: search input (icon) + status Tabs (All/Active/Promoted/TC Issued) + Filters
-- Table: Student (gradient avatar initials) · Class·Roll · Guardian · Admission · Status (emerald/sky/rose/amber badges, `ring-1`) · Actions
-- Add Student dialog (`sm:max-w-md rounded-2xl`): name, gender+section Selects, father/mother grid, gradient submit, `DialogFooter` sticky bar
-- Footer pagination: "Showing X–Y of N" + Prev/Next with page indicator
-- Skeletons during loading; empty state message
-
-### ৮.৪ Attendance (`/attendance`)
-- Date navigation + stat chips; class/section table with PRESENT/ABSENT/LATE/LEAVE cell states, summary bars, SMS alert toggle per absent row
-
-### ৮.৫ Exams (`/exams`)
-- Header: BISE Export / **Embargo On** (rose) / Enter Marks
-- **Progress ring** (72%) + 4 stat clusters (emerald/amber/violet/sky) + Trophy gradient badge "Result publish: Aug 15"
-- Subject pass-rate horizontal bars + Merit List Top-5 (gold/silver/bronze rank circles: amber gradient/slate/amber-dark; rank-1 card amber gradient bg)
-- Violet "Pass/Fail/Improvement" analysis card (3 white mini-cards)
-- Subject table: animated inline progress bars (emerald/sky/amber by threshold) + status badges (Excellent/Good/Review), footer "+2.3% vs last term" + Export CSV / Preview marksheet
-
-### ৮.৬ Fees (`/fees`)
-- KPI cards with delta badges; FeeBarChart (2-col) + MfsDonut; collector table with method badges (bKash/Nagad/cash), status chips
-
-### ৮.৭ Admissions (`/admissions`) — **Kanban**
-- 5 columns (Applied/Shortlisted/Test Scheduled/Offer Sent/Admitted), each `w-[290px] shrink-0 snap-start` horizontal scroll (`snap-x overflow-x-auto`), colored column dot + count badge
-- Cards: `cursor-grab`, avatar+name+phone, class badge (violet) + status badge (sky=New, emerald=Docs, amber=Sibling, slate=Other), **hover-reveal actions** (View + ArrowRight, opacity 0→100)
-- Dashed "Add manually" button per column; bottom analytics strip (4 colored counts + Open Dashboard)
-
----
-
-## ৯. Responsive Behavior
-| Breakpoint | Behavior |
-|---|---|
-| `<lg` | Sidebar hidden (`hidden lg:block`); main full-width |
-| `<md` | Topbar search hidden; stat grids → 2 col → 1 col |
-| `xl` | 4 stat cards এক সারিতে |
-| Tables | `overflow-x-auto` (heatmap min-w 480px) |
-| Kanban | `snap-x` horizontal scroll (290px columns) |
-| Dialogs | `max-w-[calc(100%-2rem)]` → `sm:max-w-sm/md` |
-
-## ১০. Dark Mode
-- Class-based: `@custom-variant dark` — `document.documentElement.classList.toggle("dark")` (Topbar toggle)
-- সব token-এ `.dark` override; `bg-mesh`, `glass`, `card-lift` utilities-এ `dark:` variants
-- Table hover `dark:hover:bg-violet-950/30`, badges `dark:text-*-300` (হালকা-রকম brightness)
-
-## ১১. File Map
-```
-src/app/globals.css            → tokens, gradients, keyframes, scrollbar
-src/app/layout.tsx             → fonts (Geist, Space Grotesk, Hind Siliguri)
-src/app/page.tsx               → landing
-src/app/(app)/layout.tsx       → shell (sidebar+topbar+bg-mesh)
-src/app/(app)/dashboard/page.tsx
-src/app/(app)/students/page.tsx  → live API (useEffect + debounce + pagination)
-src/app/(app)/attendance/page.tsx
-src/app/(app)/exams/page.tsx
-src/app/(app)/fees/page.tsx
-src/app/(app)/admissions/page.tsx
-src/app/login/page.tsx         → glass card auth, brand mesh bg
-src/components/sidebar.tsx     → dark nav
-src/components/topbar.tsx      → glass sticky bar
-src/components/shared.tsx      → FadeIn, StatCard, CardShell, PageHeader…
-src/components/charts.tsx      → 5 chart components + tooltipStyle
-src/lib/mock-data.ts           → chart/page data (real API-তে migrate চলছে)
-```
+Re-running the audits should report **zero** raw px and **four** icon sizes inside
+`app/(app)/` and `components/` (portal and print files excepted).

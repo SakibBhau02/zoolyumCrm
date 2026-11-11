@@ -103,7 +103,7 @@ export function EmployeeDocuments({
       <SectionTitle
         title={`Documents (${docs.length})`}
         subtitle={expiring ? `${expiring} expiring within 30 days` : "Contracts, IDs and certificates — expiry tracked"}
-        icon={<ShieldCheck className="size-3.5" />}
+        icon={<ShieldCheck className="size-4" />}
         action={<Btn variant="outline" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Add</Btn>}
       />
 
@@ -123,16 +123,16 @@ export function EmployeeDocuments({
                   {tone === "rose" || tone === "amber" ? <AlertTriangle className="size-3.5" /> : <FileText className="size-3.5" />}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12.5px] font-semibold">{d.name}</p>
-                  <p className="text-[10.5px] text-muted-foreground">
+                  <p className="truncate text-body font-semibold">{d.name}</p>
+                  <p className="text-micro text-muted-foreground">
                     {d.type ?? "Document"}
                     {d.expiresAt ? ` · expires ${formatDate(d.expiresAt)}` : ""}
                     {n != null ? n < 0 ? ` · expired ${Math.abs(n)}d ago` : ` · ${n}d left` : ""}
                   </p>
                 </div>
                 {d.url && (
-                  <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[10.5px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground">
-                    <ExternalLink className="size-3" /> Open
+                  <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-micro font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground">
+                    <ExternalLink className="size-3.5" /> Open
                   </a>
                 )}
                 <button onClick={() => remove(d)} disabled={busy} title="Remove document" aria-label={`Remove ${d.name}`} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500">
@@ -144,7 +144,7 @@ export function EmployeeDocuments({
         </div>
       )}
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Add document">
+      <Modal closeOnBackdrop={false} open={open} onClose={() => setOpen(false)} title="Add document">
         <form onSubmit={add} className="flex flex-col gap-4">
           <Field label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Employment contract 2026" autoFocus /></Field>
           <div className="grid grid-cols-2 gap-4">
@@ -160,7 +160,7 @@ export function EmployeeDocuments({
           <Field label="Link" hint="Drive / Dropbox / uploads URL">
             <Input value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} placeholder="https://…" />
           </Field>
-          {err && <p className="text-[12px] font-medium text-rose-500">{err}</p>}
+          {err && <p className="text-body font-medium text-rose-500">{err}</p>}
           <FormActions busy={busy} cancel={() => setOpen(false)} submitLabel="Add document" />
         </form>
       </Modal>

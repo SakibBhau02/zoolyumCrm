@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CalendarDays, CheckCircle2, Clock, FileText, Fingerprint,
   ListTodo, LogOut, Plus, Send, Target, Video,
@@ -52,7 +52,7 @@ const DAY_LABEL: Record<string, string> = {
 
 function DayStrip({ days }: { days: AttendanceDay[] }) {
   const last = days.slice(-30);
-  if (!last.length) return <span className="text-[10.5px] text-muted-foreground">No attendance recorded yet.</span>;
+  if (!last.length) return <span className="text-micro text-muted-foreground">No attendance recorded yet.</span>;
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1">
       {last.map((d) => (
@@ -132,16 +132,16 @@ export default function MySpacePage() {
             <TodayPill today={t} />
             {t.isWorkingDay ? (
               t.inside ? (
-                <Btn variant="outline" onClick={() => punch("out")} disabled={busy} className="!px-2.5 !py-1.5 text-[11px] text-rose-500">
+                <Btn variant="outline" onClick={() => punch("out")} disabled={busy} className="!px-2.5 !py-1.5 text-meta text-rose-500">
                   <LogOut className="size-3.5" /> {busy ? "…" : "Check out"}
                 </Btn>
               ) : (
-                <Btn variant="primary" onClick={() => punch("in")} disabled={busy} className="!px-2.5 !py-1.5 text-[11px]">
+                <Btn variant="primary" onClick={() => punch("in")} disabled={busy} className="!px-2.5 !py-1.5 text-meta">
                   <Fingerprint className="size-3.5" /> {busy ? "…" : t.checkOut ? "Check in again" : "Check in"}
                 </Btn>
               )
             ) : (
-              <span className="rounded-lg bg-muted px-2.5 py-1.5 text-[10.5px] font-semibold text-muted-foreground">
+              <span className="rounded-lg bg-muted px-2.5 py-1.5 text-micro font-semibold text-muted-foreground">
                 {t.holiday ? `Holiday · ${t.holiday}` : "Weekly off"}
               </span>
             )}
@@ -149,10 +149,10 @@ export default function MySpacePage() {
         }
       >
         <div className="flex flex-wrap items-center gap-2 rounded-xl bg-muted/30 px-2.5 py-1.5">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">My days</span>
+          <span className="text-micro font-bold uppercase tracking-wider text-muted-foreground">My days</span>
           <DayStrip days={days} />
-          <span className="ml-auto text-[9.5px] text-muted-foreground">last 30 days · hover a day</span>
-          <Link href="/people/team" className="text-[10px] font-bold text-primary hover:underline">History</Link>
+          <span className="ml-auto text-micro text-muted-foreground">last 30 days · hover a day</span>
+          <Link href="/people/team" className="text-micro font-bold text-primary hover:underline">History</Link>
         </div>
       </PeopleHero>
 
@@ -161,28 +161,28 @@ export default function MySpacePage() {
         <DenseCard
           title="Recent days"
           hint="check-in → out → worked"
-          icon={<Clock className="size-3.5" />}
-          action={<Link href="/people/team" className="text-[10px] font-bold text-primary hover:underline">All</Link>}
+          icon={<Clock className="size-4" />}
+          action={<Link href="/people/team" className="text-micro font-bold text-primary hover:underline">All</Link>}
         >
           <div className="flex flex-col gap-1">
             {days.filter((d) => !["future", "off", "before"].includes(d.kind)).slice(-4).reverse().map((d) => (
               <div key={d.date} className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-2 py-1">
-                <span className="text-[11px] font-medium">{formatDate(d.date)}</span>
+                <span className="text-meta font-medium">{formatDate(d.date)}</span>
                 <span className="flex items-center gap-1.5">
-                  <span className="text-[9.5px] tabular-nums text-muted-foreground">{time(d.checkIn)}→{time(d.checkOut)}</span>
+                  <span className="text-micro tabular-nums text-muted-foreground">{time(d.checkIn)}→{time(d.checkOut)}</span>
                   {["present", "late", "half", "absent"].includes(d.kind) ? (
                     <StatusBadge status={d.status ?? (d.kind === "half" ? "HALF_DAY" : d.kind.toUpperCase())} />
                   ) : d.kind === "unrecorded" ? (
-                    <span className="rounded-full bg-muted px-1.5 py-px text-[9px] font-bold text-muted-foreground">no record</span>
+                    <span className="rounded-full bg-muted px-1.5 py-px text-micro font-bold text-muted-foreground">no record</span>
                   ) : (
-                    <span className="rounded-full bg-sky-500/10 px-1.5 py-px text-[9px] font-bold capitalize text-sky-500">{d.kind}</span>
+                    <span className="rounded-full bg-sky-500/10 px-1.5 py-px text-micro font-bold capitalize text-sky-500">{d.kind}</span>
                   )}
-                  <span className="w-10 text-right text-[10px] font-bold tabular-nums">{fmtDur(d.workedMinutes)}</span>
+                  <span className="w-10 text-right text-micro font-bold tabular-nums">{fmtDur(d.workedMinutes)}</span>
                 </span>
               </div>
             ))}
             {days.filter((d) => !["future", "off", "before"].includes(d.kind)).length === 0 && (
-              <p className="py-2 text-[11px] text-muted-foreground">No days recorded yet.</p>
+              <p className="py-2 text-meta text-muted-foreground">No days recorded yet.</p>
             )}
           </div>
         </DenseCard>
@@ -190,11 +190,11 @@ export default function MySpacePage() {
         <DenseCard
           title="My work"
           hint={`${data.tasks.open} open · ${data.tasks.dueToday} due today`}
-          icon={<ListTodo className="size-3.5" />}
-          action={<Link href={`/tasks?assignee=${e.id}`} className="text-[10px] font-bold text-primary hover:underline">Board</Link>}
+          icon={<ListTodo className="size-4" />}
+          action={<Link href={`/tasks?assignee=${e.id}`} className="text-micro font-bold text-primary hover:underline">Board</Link>}
         >
           {data.tasks.list.length === 0 ? (
-            <p className="py-2 text-[11px] text-muted-foreground">Nothing assigned. Enjoy the quiet.</p>
+            <p className="py-2 text-meta text-muted-foreground">Nothing assigned. Enjoy the quiet.</p>
           ) : (
             <div className="flex flex-col gap-1">
               {data.tasks.list.slice(0, 3).map((task: any) => {
@@ -208,8 +208,8 @@ export default function MySpacePage() {
                       overdue ? "border-rose-500/30 bg-rose-500/5" : "border-border/60"
                     )}
                   >
-                    <span className="min-w-0 truncate text-[11px] font-medium">{task.title}</span>
-                    <span className={cn("shrink-0 text-[9.5px] tabular-nums", overdue ? "font-semibold text-rose-500" : "text-muted-foreground")}>
+                    <span className="min-w-0 truncate text-meta font-medium">{task.title}</span>
+                    <span className={cn("shrink-0 text-micro tabular-nums", overdue ? "font-semibold text-rose-500" : "text-muted-foreground")}>
                       {task.dueDate ? formatDate(task.dueDate) : "no due"}
                     </span>
                   </Link>
@@ -222,10 +222,10 @@ export default function MySpacePage() {
         <DenseCard
           title="Meetings"
           hint={nextMeeting ? `next · ${time(nextMeeting.at)}` : "today & upcoming"}
-          icon={<Video className="size-3.5" />}
+          icon={<Video className="size-4" />}
         >
           {data.meetings.today.length === 0 && data.meetings.upcoming.length === 0 ? (
-            <p className="py-2 text-[11px] text-muted-foreground">No meetings booked.</p>
+            <p className="py-2 text-meta text-muted-foreground">No meetings booked.</p>
           ) : (
             <div className="flex flex-col gap-1">
               {data.meetings.today.slice(0, 2).map((m: any) => <MeetingRow key={m.id} m={m} today />)}
@@ -237,14 +237,14 @@ export default function MySpacePage() {
         <DenseCard
           title="Leave"
           hint="balances & requests"
-          icon={<CalendarDays className="size-3.5" />}
-          action={<Btn variant="outline" onClick={() => setLeaveOpen(true)} className="!px-2 !py-1 text-[10px]"><Plus className="size-3" /> Request</Btn>}
+          icon={<CalendarDays className="size-4" />}
+          action={<Btn variant="outline" onClick={() => setLeaveOpen(true)} className="!px-2 !py-1 text-micro"><Plus className="size-3.5" /> Request</Btn>}
         >
           <div className="mb-1.5 flex flex-wrap gap-1">
-            {leave.balances.length === 0 && <span className="text-[10px] text-muted-foreground">No balances yet.</span>}
+            {leave.balances.length === 0 && <span className="text-micro text-muted-foreground">No balances yet.</span>}
             {leave.balances.map((b: any) => (
               <span key={b.leaveType} className={cn(
-                "rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
+                "rounded-full px-1.5 py-0.5 text-micro font-semibold tabular-nums",
                 Number(b.balanceDays) <= 2 ? "bg-amber-500/10 text-amber-600 dark:text-amber-300" : "bg-muted text-foreground"
               )}>
                 {label(b.leaveType)} · {b.balanceDays}d
@@ -254,32 +254,32 @@ export default function MySpacePage() {
           <div className="flex flex-col gap-1">
             {leave.requests.slice(0, 2).map((l: any) => (
               <div key={l.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-2 py-1">
-                <span className="min-w-0 truncate text-[10.5px]">
+                <span className="min-w-0 truncate text-micro">
                   <span className="font-medium">{label(l.leaveType)}</span>
                   <span className="text-muted-foreground"> · {formatDate(l.startDate)}</span>
                 </span>
                 <StatusBadge status={l.status} />
               </div>
             ))}
-            {leave.requests.length === 0 && <p className="text-[10.5px] text-muted-foreground">No leave applied for.</p>}
+            {leave.requests.length === 0 && <p className="text-micro text-muted-foreground">No leave applied for.</p>}
           </div>
         </DenseCard>
 
-        <DenseCard title="Payslip" hint="latest salary statement" icon={<FileText className="size-3.5" />}>
+        <DenseCard title="Payslip" hint="latest salary statement" icon={<FileText className="size-4" />}>
           {!payroll.latest ? (
-            <p className="py-2 text-[11px] text-muted-foreground">No payslip yet.</p>
+            <p className="py-2 text-meta text-muted-foreground">No payslip yet.</p>
           ) : (
             <>
               <div className="flex items-center justify-between gap-2 rounded-lg bg-brand-gradient-soft px-2.5 py-1.5">
                 <div>
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">Net · {payroll.latest.period}</p>
-                  <p className="font-heading text-[16px] font-extrabold tabular-nums text-violet-800 dark:text-violet-200">{formatBDT(payroll.latest.netPay)}</p>
+                  <p className="text-micro font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">Net · {payroll.latest.period}</p>
+                  <p className="font-heading text-section font-extrabold tabular-nums text-violet-800 dark:text-violet-200">{formatBDT(payroll.latest.netPay)}</p>
                 </div>
-                <Link href={`/people/payroll/payslip/${payroll.latest.id}`} className="text-[10px] font-bold text-primary hover:underline">View</Link>
+                <Link href={`/people/payroll/payslip/${payroll.latest.id}`} className="text-micro font-bold text-primary hover:underline">View</Link>
               </div>
               <div className="mt-1 flex flex-col gap-0.5">
                 {payroll.history.slice(1, 3).map((p: any) => (
-                  <Link key={p.id} href={`/people/payroll/payslip/${p.id}`} className="flex items-center justify-between rounded px-1 text-[10.5px] hover:bg-muted/60">
+                  <Link key={p.id} href={`/people/payroll/payslip/${p.id}`} className="flex items-center justify-between rounded px-1 text-micro hover:bg-muted/60">
                     <span className="text-muted-foreground">{p.period}</span>
                     <span className="font-semibold tabular-nums">{formatBDT(p.netPay)}</span>
                   </Link>
@@ -289,16 +289,16 @@ export default function MySpacePage() {
           )}
         </DenseCard>
 
-        <DenseCard title="My goals" hint="quarter progress" icon={<Target className="size-3.5" />}>
+        <DenseCard title="My goals" hint="quarter progress" icon={<Target className="size-4" />}>
           {data.okrs.length === 0 ? (
-            <p className="py-2 text-[11px] text-muted-foreground">No OKRs assigned.</p>
+            <p className="py-2 text-meta text-muted-foreground">No OKRs assigned.</p>
           ) : (
             <div className="flex flex-col gap-1.5">
               {data.okrs.slice(0, 3).map((o: any) => (
                 <div key={o.id}>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="min-w-0 truncate text-[11px] font-medium">{o.title}</p>
-                    <span className="shrink-0 text-[10px] font-bold tabular-nums text-muted-foreground">{Math.round(o.progress ?? 0)}%</span>
+                    <p className="min-w-0 truncate text-meta font-medium">{o.title}</p>
+                    <span className="shrink-0 text-micro font-bold tabular-nums text-muted-foreground">{Math.round(o.progress ?? 0)}%</span>
                   </div>
                   <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-muted">
                     <div className={cn("h-full rounded-full", (o.progress ?? 0) >= 70 ? "bg-emerald-500" : (o.progress ?? 0) >= 40 ? "bg-amber-400" : "bg-rose-500")} style={{ width: `${Math.min(o.progress ?? 0, 100)}%` }} />
@@ -309,7 +309,7 @@ export default function MySpacePage() {
           )}
         </DenseCard>
 
-        <DenseCard title="Telegram" hint="your day in chat" icon={<Send className="size-3.5" />}>
+        <DenseCard title="Telegram" hint="your day in chat" icon={<Send className="size-4" />}>
           <SelfTelegram linked={data.telegram.linked} username={data.telegram.username} notify={notify} reload={mutate} />
         </DenseCard>
       </div>
@@ -326,7 +326,7 @@ export default function MySpacePage() {
 function TodayPill({ today }: { today: any }) {
   if (!today.status) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-2.5 py-1 text-[10.5px] font-semibold text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-2.5 py-1 text-micro font-semibold text-muted-foreground">
         <span className="size-1.5 rounded-full bg-muted-foreground/40" /> Not checked in
       </span>
     );
@@ -334,13 +334,13 @@ function TodayPill({ today }: { today: any }) {
   return (
     <span className="flex flex-wrap items-center justify-end gap-1.5">
       <span className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10.5px] font-semibold",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-micro font-semibold",
         today.inside ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : "border-border bg-card text-muted-foreground"
       )}>
         <span className={cn("size-1.5 rounded-full", today.inside ? "bg-emerald-500" : "bg-muted-foreground/50")} />
         {today.inside ? `In since ${time(today.checkIn)}` : `In ${time(today.checkIn)} · out ${time(today.checkOut)}`}
       </span>
-      {today.punches > 2 && <span className="text-[9.5px] text-muted-foreground">{today.punches} punches</span>}
+      {today.punches > 2 && <span className="text-micro text-muted-foreground">{today.punches} punches</span>}
     </span>
   );
 }
@@ -349,17 +349,17 @@ function MeetingRow({ m, today }: { m: any; today?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg bg-muted/40 px-2 py-1">
       <div className="min-w-0">
-        <p className="truncate text-[11px] font-medium">{m.title}</p>
-        <p className="text-[9.5px] text-muted-foreground">
+        <p className="truncate text-meta font-medium">{m.title}</p>
+        <p className="text-micro text-muted-foreground">
           {today ? time(m.at) : formatDate(m.at)} · {m.mins}m{m.company ? ` · ${m.company}` : ""}
         </p>
       </div>
       {m.link ? (
-        <a href={m.link} target="_blank" rel="noreferrer" className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-[9.5px] font-semibold text-primary hover:border-primary/40">
+        <a href={m.link} target="_blank" rel="noreferrer" className="shrink-0 rounded-md border border-border px-1.5 py-0.5 text-micro font-semibold text-primary hover:border-primary/40">
           Join
         </a>
       ) : (
-        <span className="shrink-0 text-[9px] text-muted-foreground">{today ? "today" : ""}</span>
+        <span className="shrink-0 text-micro text-muted-foreground">{today ? "today" : ""}</span>
       )}
     </div>
   );
@@ -399,12 +399,12 @@ function SelfTelegram({ linked, username, notify, reload }: { linked: boolean; u
     return (
       <div className="flex items-center justify-between gap-2 rounded-lg bg-emerald-500/10 px-2 py-1.5">
         <span className="min-w-0">
-          <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
-            <CheckCircle2 className="size-3" /> Connected{username ? ` · @${username}` : ""}
+          <span className="flex items-center gap-1 text-meta font-semibold text-emerald-600 dark:text-emerald-300">
+            <CheckCircle2 className="size-3.5" /> Connected{username ? ` · @${username}` : ""}
           </span>
-          <span className="block truncate text-[9.5px] text-muted-foreground">Reminders arrive in chat.</span>
+          <span className="block truncate text-micro text-muted-foreground">Reminders arrive in chat.</span>
         </span>
-        <Btn variant="ghost" onClick={off} disabled={busy} className="!px-2 !py-1 text-[10px] text-rose-500 hover:bg-rose-500/10">Off</Btn>
+        <Btn variant="ghost" onClick={off} disabled={busy} className="!px-2 !py-1 text-micro text-rose-500 hover:bg-rose-500/10">Off</Btn>
       </div>
     );
   }
@@ -412,10 +412,10 @@ function SelfTelegram({ linked, username, notify, reload }: { linked: boolean; u
   if (code?.deepLink) {
     return (
       <div className="flex flex-col gap-1.5">
-        <p className="text-[10px] text-muted-foreground">Open once in Telegram · expires in {code.ttlMinutes}m.</p>
+        <p className="text-micro text-muted-foreground">Open once in Telegram · expires in {code.ttlMinutes}m.</p>
         <div className="flex items-center gap-1.5">
-          <code className="min-w-0 flex-1 truncate rounded-lg border border-border bg-muted/40 px-2 py-1 font-mono text-[9.5px]">{code.deepLink}</code>
-          <Btn variant="outline" onClick={async () => { await navigator.clipboard.writeText(code.deepLink).catch(() => null); setCopied(true); window.setTimeout(() => setCopied(false), 1800); }} className="!px-2 !py-1 text-[10px]">
+          <code className="min-w-0 flex-1 truncate rounded-lg border border-border bg-muted/40 px-2 py-1 font-mono text-micro">{code.deepLink}</code>
+          <Btn variant="outline" onClick={async () => { await navigator.clipboard.writeText(code.deepLink).catch(() => null); setCopied(true); window.setTimeout(() => setCopied(false), 1800); }} className="!px-2 !py-1 text-micro">
             {copied ? "Copied" : "Copy"}
           </Btn>
         </div>
@@ -425,8 +425,8 @@ function SelfTelegram({ linked, username, notify, reload }: { linked: boolean; u
 
   return (
     <div className="flex items-center justify-between gap-2">
-      <p className="text-[10.5px] text-muted-foreground">Not connected. One tap to link.</p>
-      <Btn variant="outline" onClick={generate} disabled={busy} className="!px-2 !py-1 text-[10px]"><Send className="size-3" /> {busy ? "…" : "Connect"}</Btn>
+      <p className="text-micro text-muted-foreground">Not connected. One tap to link.</p>
+      <Btn variant="outline" onClick={generate} disabled={busy} className="!px-2 !py-1 text-micro"><Send className="size-3.5" /> {busy ? "…" : "Connect"}</Btn>
     </div>
   );
 }
@@ -436,9 +436,14 @@ function SelfLeaveModal({ open, onClose, onSaved }: { open: boolean; onClose: ()
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (open) { setErr(null); setF({ leaveType: "CASUAL", startDate: "", endDate: "" }); }
+  }, [open]);
+
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!f.startDate || !f.endDate) { setErr("Pick both dates"); return; }
+    if (f.endDate < f.startDate) { setErr("End date must be on or after the start date"); return; }
     setBusy(true);
     setErr(null);
     try {
@@ -454,7 +459,7 @@ function SelfLeaveModal({ open, onClose, onSaved }: { open: boolean; onClose: ()
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Request leave">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Request leave">
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Field label="Leave type">
           <Select value={f.leaveType} onChange={(e) => setF({ ...f, leaveType: e.target.value })}>
@@ -465,7 +470,7 @@ function SelfLeaveModal({ open, onClose, onSaved }: { open: boolean; onClose: ()
           <Field label="Start date *"><Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} /></Field>
           <Field label="End date *"><Input type="date" value={f.endDate} onChange={(e) => setF({ ...f, endDate: e.target.value })} /></Field>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-500">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-500">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Submit request" />
       </form>
     </Modal>

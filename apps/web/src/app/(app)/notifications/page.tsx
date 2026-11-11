@@ -65,10 +65,10 @@ function bucket(iso: string): "Today" | "Yesterday" | "Earlier" {
 function Stat({ label, value, tone, icon }: { label: string; value: number | string; tone?: string; icon: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-border/60 bg-card px-3.5 py-3">
-      <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">
         {icon} {label}
       </p>
-      <p className={cn("mt-1 text-[20px] font-heading font-bold tabular-nums", tone)}>{value}</p>
+      <p className={cn("mt-1 text-stat font-heading font-bold tabular-nums", tone)}>{value}</p>
     </div>
   );
 }
@@ -243,7 +243,7 @@ export default function NotificationsPage() {
                   key={t}
                   onClick={() => setTab(t)}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11.5px] font-semibold capitalize transition-colors",
+                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-meta font-semibold capitalize transition-colors",
                     tab === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -259,15 +259,15 @@ export default function NotificationsPage() {
       {tab === "inbox" ? (
         <FadeIn>
           <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Unread" value={summary?.unread ?? 0} tone={summary?.unread ? "text-primary" : undefined} icon={<Bell className="size-3" />} />
-            <Stat label="Today" value={summary?.today ?? 0} icon={<Clock className="size-3" />} />
-            <Stat label="This week" value={summary?.thisWeek ?? 0} icon={<CheckCheck className="size-3" />} />
-            <Stat label="Total" value={summary?.total ?? 0} icon={<Inbox className="size-3" />} />
+            <Stat label="Unread" value={summary?.unread ?? 0} tone={summary?.unread ? "text-primary" : undefined} icon={<Bell className="size-4" />} />
+            <Stat label="Today" value={summary?.today ?? 0} icon={<Clock className="size-4" />} />
+            <Stat label="This week" value={summary?.thisWeek ?? 0} icon={<CheckCheck className="size-4" />} />
+            <Stat label="Total" value={summary?.total ?? 0} icon={<Inbox className="size-4" />} />
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[230px_minmax(0,1fr)]">
             <CardShell className="h-fit !p-2">
-              <p className="px-2 pb-1.5 pt-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Filters</p>
+              <p className="px-2 pb-1.5 pt-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Filters</p>
               {CATEGORIES.map((c) => {
                 const count = summary?.categories?.[c.id]?.unread ?? 0;
                 return (
@@ -275,13 +275,13 @@ export default function NotificationsPage() {
                     key={c.id}
                     onClick={() => setCategory(c.id)}
                     className={cn(
-                      "flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-[12px] font-medium transition-colors",
+                      "flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-body font-medium transition-colors",
                       category === c.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
                     )}
                   >
                     <span>{c.label}</span>
                     {count > 0 && (
-                      <span className={cn("rounded-full px-1.5 py-0.5 text-[9.5px] font-bold", category === c.id ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground")}>
+                      <span className={cn("rounded-full px-1.5 py-0.5 text-micro font-bold", category === c.id ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground")}>
                         {count}
                       </span>
                     )}
@@ -292,7 +292,7 @@ export default function NotificationsPage() {
               <button
                 onClick={() => setUnreadOnly((v) => !v)}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-[12px] font-medium transition-colors",
+                  "flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-body font-medium transition-colors",
                   unreadOnly ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
@@ -311,19 +311,19 @@ export default function NotificationsPage() {
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Search notifications…"
-                    className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-3 text-[12px] outline-none focus:border-primary/40"
+                    className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-3 text-body outline-none focus:border-primary/40"
                   />
                 </div>
                 <button
                   onClick={markAllRead}
                   disabled={!summary?.unread}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-[11.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-meta font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
                 >
                   <CheckCheck className="size-3.5" /> Mark all read
                 </button>
                 <button
                   onClick={clearAll}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-[11.5px] font-semibold text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-meta font-semibold text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"
                 >
                   <Trash2 className="size-3.5" /> Clear
                 </button>
@@ -345,7 +345,7 @@ export default function NotificationsPage() {
                   <div className="scroll-slim max-h-[62vh] overflow-y-auto">
                     {grouped.map(([group, rows]) => (
                       <div key={group}>
-                        <p className="sticky top-0 z-10 border-b border-border/40 bg-card/95 px-4 py-1.5 text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground backdrop-blur">
+                        <p className="sticky top-0 z-10 border-b border-border/40 bg-card/95 px-4 py-1.5 text-micro font-bold uppercase tracking-widest text-muted-foreground backdrop-blur">
                           {group}
                         </p>
                         {rows.map((n) => {
@@ -364,14 +364,14 @@ export default function NotificationsPage() {
                                 <Icon className="size-4" />
                               </span>
                               <button onClick={() => openItem(n)} className="min-w-0 flex-1 text-left">
-                                <p className="flex items-center gap-2 text-[13px] leading-snug">
+                                <p className="flex items-center gap-2 text-body-lg leading-snug">
                                   <span className={cn("truncate", n.isRead ? "font-medium" : "font-semibold")}>{n.title}</span>
-                                  <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase text-muted-foreground">
+                                  <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-micro font-bold uppercase text-muted-foreground">
                                     {m.label}
                                   </span>
                                 </p>
-                                <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-muted-foreground">{n.message}</p>
-                                <p className="mt-1 text-[10.5px] text-muted-foreground/70">
+                                <p className="mt-0.5 line-clamp-2 text-body leading-snug text-muted-foreground">{n.message}</p>
+                                <p className="mt-1 text-micro text-muted-foreground/70">
                                   {timeAgo(n.createdAt)} · {formatDate(n.createdAt)}
                                   {n.link && <span className="ml-2 font-semibold text-primary">Open →</span>}
                                 </p>
@@ -409,7 +409,7 @@ export default function NotificationsPage() {
                       <button
                         onClick={loadMore}
                         disabled={loadingMore}
-                        className="rounded-xl border border-border px-4 py-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                        className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                       >
                         {loadingMore ? "Loading…" : "Load more"}
                       </button>
@@ -425,15 +425,15 @@ export default function NotificationsPage() {
           <CardShell>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <h3 className="font-heading text-[15px] font-semibold">Delivery preferences</h3>
-                <p className="mt-0.5 text-[12px] text-muted-foreground">
+                <h3 className="font-heading text-section font-semibold">Delivery preferences</h3>
+                <p className="mt-0.5 text-body text-muted-foreground">
                   Choose how each notification reaches you. In-app notifications still appear in this inbox when other channels are off.
                 </p>
               </div>
-              <span className="flex items-center gap-3 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                <span className="flex items-center gap-1"><Bell className="size-3" /> In-app</span>
-                <span className="flex items-center gap-1"><Mail className="size-3" /> Email</span>
-                <span className="flex items-center gap-1"><Send className="size-3" /> Telegram</span>
+              <span className="flex items-center gap-3 text-micro font-bold uppercase tracking-wider text-muted-foreground">
+                <span className="flex items-center gap-1"><Bell className="size-3.5" /> In-app</span>
+                <span className="flex items-center gap-1"><Mail className="size-3.5" /> Email</span>
+                <span className="flex items-center gap-1"><Send className="size-3.5" /> Telegram</span>
               </span>
             </div>
             {prefsLoading && prefs.length === 0 ? (
@@ -442,7 +442,7 @@ export default function NotificationsPage() {
               <div className="flex flex-col gap-4">
                 {[...prefTypes.entries()].map(([cat, types]) => (
                   <div key={cat}>
-                    <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">{cat}</p>
+                    <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">{cat}</p>
                     <div className="overflow-hidden rounded-xl border border-border/60">
                       {types.map((type, i) => {
                         const m = typeMeta(type);
@@ -457,12 +457,12 @@ export default function NotificationsPage() {
                               i % 2 === 1 && "bg-muted/30"
                             )}
                           >
-                            <span className="flex min-w-0 items-center gap-2 text-[12.5px] font-medium">
+                            <span className="flex min-w-0 items-center gap-2 text-body font-medium">
                               <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-lg", m.tone)}>
                                 <Icon className="size-3.5" />
                               </span>
                               <span className="truncate">{m.label}</span>
-                              <span className="hidden truncate font-mono text-[10px] text-muted-foreground sm:inline">{type}</span>
+                              <span className="hidden truncate font-mono text-micro text-muted-foreground sm:inline">{type}</span>
                             </span>
                             <span className="flex items-center gap-4">
                               {[

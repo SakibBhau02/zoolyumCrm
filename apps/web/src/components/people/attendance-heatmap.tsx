@@ -67,7 +67,7 @@ export function AttendanceHeatmap({ days }: { days: AttendanceDay[] }) {
         {Object.entries(DAY_KIND)
           .filter(([k]) => (counts.get(k) ?? 0) > 0 || k === "present")
           .map(([k, meta]) => (
-            <span key={k} className="flex items-center gap-1.5 text-[10.5px] font-semibold text-muted-foreground">
+            <span key={k} className="flex items-center gap-1.5 text-micro font-semibold text-muted-foreground">
               <span className={cn("size-2 rounded-sm", meta.dot)} />
               {meta.label}
               <span className="tabular-nums text-foreground">{counts.get(k) ?? 0}</span>
@@ -77,7 +77,7 @@ export function AttendanceHeatmap({ days }: { days: AttendanceDay[] }) {
 
       <div className="grid w-fit grid-cols-7 gap-1.5">
         {WEEKDAYS.map((w, i) => (
-          <div key={`${w}${i}`} className="pb-0.5 text-center text-[9px] font-bold uppercase text-muted-foreground/70">{w}</div>
+          <div key={`${w}${i}`} className="pb-0.5 text-center text-micro font-bold uppercase text-muted-foreground/70">{w}</div>
         ))}
         {grid.map((d, i) =>
           !d ? (
@@ -90,7 +90,7 @@ export function AttendanceHeatmap({ days }: { days: AttendanceDay[] }) {
               onFocus={() => setHover(d)}
               title={`${d.date} · ${DAY_KIND[d.kind]?.label ?? d.kind}`}
               className={cn(
-                "flex size-7 items-center justify-center rounded-md text-[9px] font-bold transition-colors",
+                "flex size-7 items-center justify-center rounded-md text-micro font-bold transition-colors",
                 DAY_KIND[d.kind]?.cls ?? "bg-muted",
                 d.kind === "future" || d.kind === "off" || d.kind === "holiday" || d.kind === "before"
                   ? "text-muted-foreground"
@@ -104,11 +104,11 @@ export function AttendanceHeatmap({ days }: { days: AttendanceDay[] }) {
       </div>
 
       {/* Hover read-out keeps detail off the grid itself (no tooltip library). */}
-      <div className="mt-2 min-h-8 rounded-lg bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+      <div className="mt-2 min-h-8 rounded-lg bg-muted/40 px-3 py-1.5 text-meta text-muted-foreground">
         {hover ? (
           <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
             <span className="font-bold text-foreground">{hover.date}</span>
-            <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white", DAY_KIND[hover.kind]?.dot)}>
+            <span className={cn("rounded-full px-1.5 py-0.5 text-micro font-bold text-white", DAY_KIND[hover.kind]?.dot)}>
               {DAY_KIND[hover.kind]?.label ?? hover.kind}
             </span>
             {hover.checkIn && <span>in {new Date(hover.checkIn).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>}

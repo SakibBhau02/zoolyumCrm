@@ -34,7 +34,7 @@ function InstallmentWatch({ onView }: { onView: (id: string) => void }) {
   };
   return (
     <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-amber-500/25 bg-amber-500/5 p-4">
-      <p className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+      <p className="flex items-center gap-1.5 text-body font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
         <AlarmClock className="size-3.5" />
         {overdue.length > 0 ? `${overdue.length} overdue` : "Due soon"}
         {upcoming.length > 0 && overdue.length > 0 ? ` · ${upcoming.length} due within 7 days` : upcoming.length > 0 ? ` — ${upcoming.length} due within 7 days` : ""}
@@ -42,16 +42,16 @@ function InstallmentWatch({ onView }: { onView: (id: string) => void }) {
       {installmentsDue.slice(0, 5).map((s) => (
         <div key={s.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-2">
           <CircleAlert className={`size-3.5 shrink-0 ${s.overdue ? "text-rose-500" : "text-amber-500"}`} />
-          <button onClick={() => onView(s.invoiceId)} className="text-[12.5px] font-bold text-primary hover:underline">
+          <button onClick={() => onView(s.invoiceId)} className="text-body font-bold text-primary hover:underline">
             {s.invoiceNumber} #{s.sequence}
           </button>
-          <span className="text-[11.5px] text-muted-foreground">{s.clientName} · {s.overdue ? "overdue since" : "due"} {formatDate(s.dueDate)}</span>
-          <span className="ml-auto text-[12.5px] font-bold tabular-nums">{formatBDT(s.balance)}</span>
+          <span className="text-meta text-muted-foreground">{s.clientName} · {s.overdue ? "overdue since" : "due"} {formatDate(s.dueDate)}</span>
+          <span className="ml-auto text-body font-bold tabular-nums">{formatBDT(s.balance)}</span>
           <Btn variant="ghost" onClick={() => void remind(s)}>Remind</Btn>
         </div>
       ))}
       {installmentsDue.length > 5 && (
-        <p className="text-[11px] text-muted-foreground">+{installmentsDue.length - 5} more — open each invoice for details.</p>
+        <p className="text-meta text-muted-foreground">+{installmentsDue.length - 5} more — open each invoice for details.</p>
       )}
     </div>
   );
@@ -94,11 +94,12 @@ function InvoicesContent() {
       <InvoicesTab
         error={c.invoicesErr}
         refresh={c.reload}
+        refreshKey={c.refreshKey}
         clients={c.clients}
         onView={openInvoice}
         onNew={() => c.setInvOpen(true)}
         onDuplicate={(id) => void c.duplicateInvoice(id)}
-        onDelete={(inv) => c.setToDelete({ kind: "invoice", id: inv.id, name: inv.invoiceNumber })}
+        onDelete={(inv) => c.setToDelete({ kind: "invoice", id: inv.id, name: inv.invoiceNumber, status: inv.status })}
         initialClientId={clientId}
       />
       <InvoiceDetailModal selectedId={selectedId} onClose={closeInvoice} onEdit={(inv) => c.setEditInv(inv)} />

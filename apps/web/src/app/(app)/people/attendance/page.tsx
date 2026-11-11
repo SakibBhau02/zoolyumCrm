@@ -9,6 +9,7 @@ import { Btn, Td, Tr } from "@/components/table";
 import { Field, Input, Select } from "@/components/ui";
 import { downloadCsv, fmtTime, monthNow } from "../_components/constants";
 import { DataTable, Toast, useList, useToast } from "../_components/hooks";
+import { usePeopleAccess } from "../_components/permissions";
 import { Pager, TableToolbar, useTable } from "../_components/table-kit";
 import { PeopleHero, PeopleTabs } from "../_components/hero";
 import { AttendanceModal, ImportPunchModal } from "../_components/modals/attendance-modals";
@@ -23,7 +24,7 @@ export const fmtDur = (mins?: number | null) => {
 };
 
 function DevicesCard({ employees, notify, refreshKey }: { employees: any[]; notify: (m: string) => void; refreshKey: number }) {
-  const { data: devices } = useList<any[]>("/people/attendance/devices", refreshKey);
+  const { data: devices, error: devicesError } = useList<any[]>("/people/attendance/devices", refreshKey);
   const [drafts, setDrafts] = useState<Record<string, { name: string; location: string; isActive: boolean }>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
@@ -59,19 +60,21 @@ function DevicesCard({ employees, notify, refreshKey }: { employees: any[]; noti
         action={<Btn variant="ghost" onClick={() => setShowGuide((v) => !v)}>{showGuide ? "Hide setup" : "Setup guide"}</Btn>}
       />
       {showGuide && (
-        <div className="mb-3 rounded-xl border border-border/60 bg-muted/30 p-3 text-[12px] leading-relaxed text-muted-foreground">
+        <div className="mb-3 rounded-xl border border-border/60 bg-muted/30 p-3 text-body leading-relaxed text-muted-foreground">
           <p className="font-semibold text-foreground">On the device: Menu → COMM → Cloud Server / ADMS</p>
           <ol className="mt-1.5 list-decimal space-y-1 pl-5">
             <li>Server address: <span className="font-mono font-semibold text-foreground">{serverBase}</span> (device must reach this over LAN/VPN)</li>
-            <li>Enable ADMS / push mode. The terminal then polls <span className="font-mono text-[11px]">/iclock/getrequest</span> and pushes punches to <span className="font-mono text-[11px]">/iclock/cdata</span>.</li>
+            <li>Enable ADMS / push mode. The terminal then polls <span className="font-mono text-meta">/iclock/getrequest</span> and pushes punches to <span className="font-mono text-meta">/iclock/cdata</span>.</li>
             <li>Enroll staff on the device with numeric PINs, then enter the same PIN as <span className="font-semibold text-foreground">Device ID</span> on each employee (Directory → profile).</li>
             <li>Unknown PINs land below as unmatched punches — map them once, or set the Device ID first.</li>
           </ol>
         </div>
       )}
-      {(devices ?? []).length === 0 && (
-        <p className="text-[12px] text-muted-foreground">No device has checked in yet. Punches can still be imported manually below.</p>
-      )}
+      {devicesError ? (
+        <p className="text-body text-rose-500">Could not load devices: {devicesError.includes("role") ? "Owner / HR/Admin only" : devicesError}</p>
+      ) : (devices ?? []).length === 0 ? (
+        <p className="text-body text-muted-foreground">No device has checked in yet. Punches can still be imported manually below.</p>
+      ) : null}
       <div className="flex flex-col gap-2">
         {(devices ?? []).map((dev: any) => (
           <div key={dev.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 px-3 py-2.5">
@@ -83,9 +86,9 @@ function DevicesCard({ employees, notify, refreshKey }: { employees: any[]; noti
                 value={drafts[dev.id]?.name ?? ""}
                 onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), name: e.target.value } })}
                 placeholder="Device name — e.g. Main Entrance"
-                className="!py-1.5 text-[12.5px] font-semibold"
+                className="!py-1.5 text-body font-semibold"
               />
-              <p className="mt-0.5 font-mono text-[10.5px] text-muted-foreground">
+              <p className="mt-0.5 font-mono text-micro text-muted-foreground">
                 SN {dev.serialNumber} · {dev.punchCount ?? 0} punches{(dev.unmatchedCount ?? 0) > 0 && ` · ${dev.unmatchedCount} unmatched`} · seen {dev.lastSeenAt ? timeAgo(dev.lastSeenAt) : "never"}
               </p>
             </div>
@@ -93,9 +96,9 @@ function DevicesCard({ employees, notify, refreshKey }: { employees: any[]; noti
               value={drafts[dev.id]?.location ?? ""}
               onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), location: e.target.value } })}
               placeholder="Location"
-              className="!w-36 !py-1.5 text-[12px]"
+              className="!w-36 !py-1.5 text-body"
             />
-            <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] font-medium text-muted-foreground">
+            <label className="flex cursor-pointer items-center gap-1.5 text-meta font-medium text-muted-foreground">
               <input
                 type="checkbox"
                 checked={drafts[dev.id]?.isActive ?? true}
@@ -104,14 +107,14 @@ function DevicesCard({ employees, notify, refreshKey }: { employees: any[]; noti
               />
               Active
             </label>
-            <Btn variant="outline" onClick={() => void save(dev.id)} disabled={savingId === dev.id} className="!px-3 !py-1.5 text-[11.5px]">
+            <Btn variant="outline" onClick={() => void save(dev.id)} disabled={savingId === dev.id} className="!px-3 !py-1.5 text-meta">
               {savingId === dev.id ? "Saving…" : "Save"}
             </Btn>
           </div>
         ))}
       </div>
       {unmapped.length > 0 && (
-        <p className="mt-3 text-[11.5px] text-muted-foreground">
+        <p className="mt-3 text-meta text-muted-foreground">
           <span className="font-bold text-amber-500">{unmapped.length} employee{unmapped.length === 1 ? "" : "s"}</span> ({unmapped.slice(0, 4).map((e: any) => e.name).join(", ")}{unmapped.length > 4 ? "…" : ""}) {unmapped.length === 1 ? "has" : "have"} no fingerprint ID — set it in Directory so device punches auto-match.
         </p>
       )}
@@ -132,9 +135,9 @@ export default function AttendancePage() {
   const { data: lateList, loading: ll, error: le } = useList<any[]>(`/people/attendance/late-list?${qs}`, refresh);
   const { data: records, loading: rl, error: re } = useList<any[]>(`/people/attendance?${qs}`, refresh);
   const { data: live, loading: lvLoading } = useList<any>(`/people/attendance/live`, refresh);
-  const { data: trends } = useList<any>(`/people/attendance/trends?${qs}`, refresh);
-  const { data: punches, loading: pl, error: pe } = useList<any[]>("/people/punches?month=" + month, refresh);
-  const { data: employees } = useList<any[]>("/people/employees");
+  const { data: trends, error: te } = useList<any>(`/people/attendance/trends?${qs}`, refresh);
+  const { data: punches, loading: pl, error: pe } = useList<any[]>(`/people/punches?${qs}`, refresh);
+  const { data: employees, error: empErr } = useList<any[]>("/people/employees");
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -142,6 +145,7 @@ export default function AttendancePage() {
   const [recompBusy, setRecompBusy] = useState(false);
   const [view, setView] = useState<"live" | "report" | "late" | "trends" | "daily" | "punches" | "devices">("report");
   const { flash, notify } = useToast();
+  const { canEdit } = usePeopleAccess();
   const kiosk = async (action: "in" | "out") => {
     setKioskBusy(true);
     try { await apiFetch("/people/attendance/kiosk", { method: "POST", body: JSON.stringify({ action }) }); notify(action === "in" ? "Checked in - welcome!" : "Checked out - good work!"); reload(); } catch (e: any) { notify(e.message ?? "Kiosk failed"); } finally { setKioskBusy(false); }
@@ -195,26 +199,30 @@ export default function AttendancePage() {
           { label: "Absent", value: rpl ? "—" : overall.absent, sub: overall.unrecorded > 0 ? `${overall.unrecorded} no record` : rangeLabel, tone: overall.absent ? "rose" : "default" },
           { label: "Inside", value: lvLoading ? "—" : `${live?.inside ?? 0}/${live?.total ?? 0}`, sub: "now", tone: "sky" },
         ]}
-        actions={<Btn variant="primary" onClick={() => { setEdit(null); setOpen(true); }} className="!px-2.5 !py-1.5 text-[11px]"><Plus className="size-3.5" /> Record</Btn>}
+        actions={canEdit ? <Btn variant="primary" onClick={() => { setEdit(null); setOpen(true); }} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> Record</Btn> : undefined}
       >
         <div className="flex flex-wrap items-center gap-1.5">
-          <Input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setRangeDays(null); }} className="!w-40 !py-1 text-[11.5px]" />
+          <Input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setRangeDays(null); }} className="!w-40 !py-1 text-meta" />
           {([7, 15, 30] as const).map((n) => (
             <button
               key={n}
               onClick={() => setRangeDays((d) => (d === n ? null : n))}
               className={cn(
-                "rounded-lg px-2 py-1 text-[10.5px] font-bold transition-colors",
+                "rounded-lg px-2 py-1 text-micro font-bold transition-colors",
                 rangeDays === n ? "bg-brand-gradient text-white" : "border border-border text-muted-foreground hover:text-foreground"
               )}
             >
               {n}D
             </button>
           ))}
-          <Btn variant="outline" onClick={() => kiosk("in")} className={cn("!px-2 !py-1 text-[10.5px]", kioskBusy && "opacity-60")}><Fingerprint className="size-3" /> Kiosk in</Btn>
-          <Btn variant="outline" onClick={() => kiosk("out")} className={cn("!px-2 !py-1 text-[10.5px]", kioskBusy && "opacity-60")}><Fingerprint className="size-3" /> Out</Btn>
-          <Btn variant="outline" onClick={() => setImportOpen(true)} className="!px-2 !py-1 text-[10.5px]"><Upload className="size-3" /> Import</Btn>
-          <Btn variant="outline" onClick={recompute} className={cn("!px-2 !py-1 text-[10.5px]", recompBusy && "opacity-60")}><RotateCcw className="size-3" /> Recompute</Btn>
+          <Btn variant="outline" onClick={() => kiosk("in")} disabled={kioskBusy} className={cn("!px-2 !py-1 text-micro", kioskBusy && "opacity-60")}><Fingerprint className="size-3.5" /> Kiosk in</Btn>
+          <Btn variant="outline" onClick={() => kiosk("out")} disabled={kioskBusy} className={cn("!px-2 !py-1 text-micro", kioskBusy && "opacity-60")}><Fingerprint className="size-3.5" /> Out</Btn>
+          {canEdit && (
+            <>
+              <Btn variant="outline" onClick={() => setImportOpen(true)} className="!px-2 !py-1 text-micro"><Upload className="size-3.5" /> Import</Btn>
+              <Btn variant="outline" onClick={recompute} disabled={recompBusy} className={cn("!px-2 !py-1 text-micro", recompBusy && "opacity-60")}><RotateCcw className="size-3.5" /> Recompute</Btn>
+            </>
+          )}
         </div>
       </PeopleHero>
 
@@ -237,9 +245,9 @@ export default function AttendancePage() {
       <CardShell className={view === "live" ? "mt-2" : "hidden"}>
         <SectionTitle title="Live now" subtitle={`Who is in · ${live?.date ?? "today"}`} />
         {lvLoading ? (
-          <p className="text-[11.5px] text-muted-foreground">Loading live board…</p>
+          <p className="text-meta text-muted-foreground">Loading live board…</p>
         ) : (live?.rows ?? []).length === 0 ? (
-          <p className="text-[11.5px] text-muted-foreground">No active employees.</p>
+          <p className="text-meta text-muted-foreground">No active employees.</p>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {(live?.rows ?? []).map((r: any) => (
@@ -248,7 +256,7 @@ export default function AttendancePage() {
                 href={`/people/team?id=${r.employeeId}`}
                 title={`${r.name} · in ${r.checkIn ? fmtTime(r.checkIn) : "—"}${r.checkOut ? ` · out ${fmtTime(r.checkOut)}` : ""}${r.hoursSoFarMinutes != null ? ` · ${fmtDur(r.hoursSoFarMinutes)} so far` : ""}`}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors hover:border-primary/40",
+                  "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-meta font-semibold transition-colors hover:border-primary/40",
                   r.state === "inside" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
                     : r.state === "left" ? "border-border bg-card text-muted-foreground"
                       : "border-dashed border-border text-muted-foreground/60"
@@ -277,14 +285,14 @@ export default function AttendancePage() {
           skeleton={6}
           footer={
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-[11.5px] text-muted-foreground">{reportRows.total} employees · {fmtDur(overall.worked)} worked · {fmtDur(overall.overtime)} overtime · daily rate = salary ÷ {report?.[0]?.divisor ?? "divisor"}</span>
+              <span className="text-meta text-muted-foreground">{reportRows.total} employees · {fmtDur(overall.worked)} worked · {fmtDur(overall.overtime)} overtime · daily rate = salary ÷ {report?.[0]?.divisor ?? "divisor"}</span>
               <Pager page={reportRows.page} pages={reportRows.pages} onPage={reportRows.setPage} total={reportRows.total} pageSize={8} label="people" />
             </div>
           }
           cols={["Employee", "Working", "Present", "Late", "Half", "Absent", "No record", "Worked", "Avg/day", "Overtime", "Daily (BDT)", "Late (BDT)", "Half-day (BDT)", "Absent (BDT)", "Total (BDT)"]}
           rows={reportRows.paged.map((s: any, i: number) => (
             <Tr key={s.employeeId ?? s.name} index={i}>
-              <Td><div className="flex items-center gap-2.5"><Avatar name={s.name} /><div><p className="font-medium"><Link href={`/people/team?id=${s.employeeId}`} className="hover:text-primary hover:underline">{s.name}</Link></p><p className="text-[11px] text-muted-foreground">{s.roleTitle}</p></div></div></Td>
+              <Td><div className="flex items-center gap-2.5"><Avatar name={s.name} /><div><p className="font-medium"><Link href={`/people/team?id=${s.employeeId}`} className="hover:text-primary hover:underline">{s.name}</Link></p><p className="text-meta text-muted-foreground">{s.roleTitle}</p></div></div></Td>
               <Td className="font-semibold tabular-nums">{s.workingDays}</Td>
               <Td className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{s.present}</Td>
               <Td className="tabular-nums text-amber-500">{s.late}</Td>
@@ -317,7 +325,7 @@ export default function AttendancePage() {
           error={le}
           onRetry={reload}
           skeleton={4}
-          footer={<div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[11.5px] text-muted-foreground">{lateRows.total} late entries</span><Pager page={lateRows.page} pages={lateRows.pages} onPage={lateRows.setPage} total={lateRows.total} pageSize={7} label="entries" /></div>}
+          footer={<div className="flex flex-wrap items-center justify-between gap-2"><span className="text-meta text-muted-foreground">{lateRows.total} late entries</span><Pager page={lateRows.page} pages={lateRows.pages} onPage={lateRows.setPage} total={lateRows.total} pageSize={7} label="entries" /></div>}
           cols={["Employee", "Date", "Check-in", "Minutes late", "Shift start", "Grace"]}
           rows={lateRows.paged.map((r: any, i: number) => (
             <Tr key={r.id} index={i}>
@@ -333,10 +341,12 @@ export default function AttendancePage() {
       </div>
       <div className={view === "trends" ? "mt-2" : "hidden"}>
         <SectionTitle title="Trends & anomalies" subtitle={`Late / absence patterns · ${rangeLabel}`} />
-        {!(trends?.rows ?? []).length ? (
-          <p className="text-[11.5px] text-muted-foreground">No trend data for this range.</p>
+        {te ? (
+          <p className="text-meta text-rose-500">Could not load trends: {te}</p>
+        ) : !(trends?.rows ?? []).length ? (
+          <p className="text-meta text-muted-foreground">No trend data for this range.</p>
         ) : (trends.rows.every((r: any) => r.flags.length === 0) ? (
-          <p className="flex items-center gap-1.5 text-[12px] font-semibold text-emerald-600 dark:text-emerald-400">
+          <p className="flex items-center gap-1.5 text-body font-semibold text-emerald-600 dark:text-emerald-400">
             <TrendingUp className="size-3.5" /> Clean sheet — no habitual lates, streaks or frequent absents in this range.
           </p>
         ) : (
@@ -348,11 +358,11 @@ export default function AttendancePage() {
                 className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 transition-colors hover:border-amber-500/50"
               >
                 <Avatar name={r.name} size="size-7" />
-                <span className="min-w-0 flex-1 text-[12.5px] font-bold">{r.name}</span>
-                <span className="text-[11px] tabular-nums text-muted-foreground">{r.late} late · {r.absent} absent · avg {fmtDur(r.avgWorkedMinutes)}/day</span>
+                <span className="min-w-0 flex-1 text-body font-bold">{r.name}</span>
+                <span className="text-meta tabular-nums text-muted-foreground">{r.late} late · {r.absent} absent · avg {fmtDur(r.avgWorkedMinutes)}/day</span>
                 {r.flags.map((f: string) => (
-                  <span key={f} className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-300">
-                    <AlertTriangle className="size-2.5" />{f}
+                  <span key={f} className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-micro font-bold text-amber-600 dark:text-amber-300">
+                    <AlertTriangle className="size-3.5" />{f}
                   </span>
                 ))}
               </Link>
@@ -383,7 +393,7 @@ export default function AttendancePage() {
                 <Td className="text-muted-foreground">{formatDate(r.date)}</Td>
                 <Td><StatusBadge status={r.status} /></Td>
                 <Td className="tabular-nums text-muted-foreground">{fmtTime(r.checkInTime)}</Td>
-                <Td className="tabular-nums text-muted-foreground">{r.checkOutTime ? fmtTime(r.checkOutTime) : (r.checkInTime ? <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500">inside</span> : "—")}</Td>
+                <Td className="tabular-nums text-muted-foreground">{r.checkOutTime ? fmtTime(r.checkOutTime) : (r.checkInTime ? <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro font-bold text-emerald-500">inside</span> : "—")}</Td>
                 <Td className="font-semibold tabular-nums">{fmtDur(worked)}</Td>
               </Tr>
             );
@@ -392,6 +402,7 @@ export default function AttendancePage() {
       </div>
       <div className={view === "punches" ? "mt-2" : "hidden"}>
         <SectionTitle title="Raw device punches" subtitle="Fingerprint / CSV / kiosk log — map unmatched rows to employees" />
+        {empErr && <p className="mb-1.5 text-meta text-rose-500">Employee list unavailable — unmatched punches cannot be mapped right now ({empErr}).</p>}
         <TableToolbar
           q={punchRows.q}
           onQ={punchRows.setQ}
@@ -407,11 +418,11 @@ export default function AttendancePage() {
           cols={["Device", "Time", "Employee", "Source", "Status"]}
           rows={punchRows.paged.map((p: any, i: number) => (
             <Tr key={p.id} index={i}>
-              <Td><span className="font-mono text-[11.5px] font-semibold">{p.deviceId}</span></Td>
+              <Td><span className="font-mono text-meta font-semibold">{p.deviceId}</span></Td>
               <Td className="tabular-nums text-muted-foreground">{new Date(p.punchTime).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</Td>
-              <Td>{p.employee ? <div className="flex items-center gap-2"><Avatar name={p.employee.name} size="size-6" /><span className="text-[12.5px] font-medium">{p.employee.name}</span></div> : <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-300">Unmatched</span>}</Td>
-              <Td><span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", p.source === "DEVICE" ? "bg-sky-500/10 text-sky-600 dark:text-sky-300" : p.source === "KIOSK" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : p.source === "SELF" ? "bg-teal-500/10 text-teal-600 dark:text-teal-300" : "bg-primary/10 text-primary dark:text-primary")}>{p.source}</span></Td>
-              <Td>{p.unmatched ? <Select className="!w-40" value="" onChange={(e) => mapPunch(p, e.target.value)}><option value="">Map to…</option>{(employees ?? []).map((emp: any) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}</Select> : <span className="text-[11.5px] text-muted-foreground">Mapped</span>}</Td>
+              <Td>{p.employee ? <div className="flex items-center gap-2"><Avatar name={p.employee.name} size="size-6" /><span className="text-body font-medium">{p.employee.name}</span></div> : <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-micro font-semibold text-amber-600 dark:text-amber-300">Unmatched</span>}</Td>
+              <Td><span className={cn("rounded-full px-2 py-0.5 text-micro font-semibold", p.source === "DEVICE" ? "bg-sky-500/10 text-sky-600 dark:text-sky-300" : p.source === "KIOSK" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : p.source === "SELF" ? "bg-teal-500/10 text-teal-600 dark:text-teal-300" : "bg-primary/10 text-primary dark:text-primary")}>{p.source}</span></Td>
+              <Td>{p.unmatched ? <Select className="!w-40" value="" onChange={(e) => mapPunch(p, e.target.value)}><option value="">Map to…</option>{(employees ?? []).map((emp: any) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}</Select> : <span className="text-meta text-muted-foreground">Mapped</span>}</Td>
             </Tr>
           ))}
         />

@@ -72,7 +72,7 @@ export function EstimationPanel({ refreshKey, employees }: { refreshKey: number;
   }
 
   if (loading && !data) {
-    return <div className="flex items-center gap-2 py-6 text-[11.5px] text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Loading report…</div>;
+    return <div className="flex items-center gap-2 py-6 text-meta text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Loading report…</div>;
   }
 
   if (!data?.sampleCount) {
@@ -90,17 +90,17 @@ export function EstimationPanel({ refreshKey, employees }: { refreshKey: number;
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[10.5px] font-bold text-muted-foreground">
-          <Gauge className="size-3" /> {data.sampleCount} completed tasks sampled
+        <span className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-micro font-bold text-muted-foreground">
+          <Gauge className="size-3.5" /> {data.sampleCount} completed tasks sampled
         </span>
-        <span className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10.5px] font-bold", BIAS_TONE[overallBias])}>
-          <TrendingUp className="size-3" /> Overall {pct(overall)} vs estimate — {overallBias}
+        <span className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-micro font-bold", BIAS_TONE[overallBias])}>
+          <TrendingUp className="size-3.5" /> Overall {pct(overall)} vs estimate — {overallBias}
         </span>
         <select
           aria-label="Filter estimation report by employee"
           value={empFilter}
           onChange={(e) => setEmpFilter(e.target.value)}
-          className="ml-auto rounded-xl border border-border bg-card px-2.5 py-1.5 text-[11.5px] font-semibold outline-none focus:border-primary/40"
+          className="ml-auto rounded-xl border border-border bg-card px-2.5 py-1.5 text-meta font-semibold outline-none focus:border-primary/40"
         >
           <option value="">All employees</option>
           {employees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
@@ -108,7 +108,7 @@ export function EstimationPanel({ refreshKey, employees }: { refreshKey: number;
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{data.byEmployee.length} people with estimates</span>}>
+        <TableShell footer={<span className="text-meta text-muted-foreground">{data.byEmployee.length} people with estimates</span>}>
           <table className="w-full">
             <THead><Th>Employee</Th><Th>Tasks</Th><Th>Est / Actual</Th><Th>Variance</Th><Th>Bias</Th></THead>
             <tbody>
@@ -120,14 +120,14 @@ export function EstimationPanel({ refreshKey, employees }: { refreshKey: number;
                   <Td className={cn("font-bold tabular-nums", b.avgVarianceRatio > 0.1 ? "text-rose-400" : b.avgVarianceRatio < -0.1 ? "text-sky-400" : "text-emerald-400")}>
                     {pct(b.avgVarianceRatio)}
                   </Td>
-                  <Td><span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", BIAS_TONE[b.bias])}>{b.bias}</span></Td>
+                  <Td><span className={cn("rounded-full px-2 py-0.5 text-micro font-bold", BIAS_TONE[b.bias])}>{b.bias}</span></Td>
                 </Tr>
               ))}
             </tbody>
           </table>
         </TableShell>
 
-        <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{data.byTaskType.length} task types</span>}>
+        <TableShell footer={<span className="text-meta text-muted-foreground">{data.byTaskType.length} task types</span>}>
           <table className="w-full">
             <THead><Th>Task Type</Th><Th>Tasks</Th><Th>Avg Estimate</Th><Th>Variance</Th><Th>Bias</Th></THead>
             <tbody>
@@ -139,7 +139,7 @@ export function EstimationPanel({ refreshKey, employees }: { refreshKey: number;
                   <Td className={cn("font-bold tabular-nums", b.avgVarianceRatio > 0.1 ? "text-rose-400" : b.avgVarianceRatio < -0.1 ? "text-sky-400" : "text-emerald-400")}>
                     {pct(b.avgVarianceRatio)}
                   </Td>
-                  <Td><span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", BIAS_TONE[b.bias])}>{b.bias}</span></Td>
+                  <Td><span className={cn("rounded-full px-2 py-0.5 text-micro font-bold", BIAS_TONE[b.bias])}>{b.bias}</span></Td>
                 </Tr>
               ))}
             </tbody>
@@ -149,14 +149,14 @@ export function EstimationPanel({ refreshKey, employees }: { refreshKey: number;
 
       {data.worst.length > 0 && (
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3.5">
-          <p className="flex items-center gap-1.5 text-[12px] font-bold text-amber-500">
+          <p className="flex items-center gap-1.5 text-body font-bold text-amber-500">
             <AlertTriangle className="size-3.5" /> Biggest misses
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {data.worst.map((w) => (
-              <span key={w.taskId} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[10.5px] font-semibold">
+              <span key={w.taskId} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-micro font-semibold">
                 <span className="text-muted-foreground">{w.employeeName}</span>
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold capitalize">{w.taskType}</span>
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-bold capitalize">{w.taskType}</span>
                 <span className="tabular-nums text-muted-foreground">{w.estimatedHours}h → {w.actualHours}h</span>
                 <span className={cn("font-bold tabular-nums", w.varianceRatio > 0 ? "text-rose-400" : "text-sky-400")}>{pct(w.varianceRatio)}</span>
               </span>

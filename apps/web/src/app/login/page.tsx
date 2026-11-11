@@ -86,7 +86,7 @@ export default function LoginPage() {
         <div className="glass rounded-3xl border border-border/60 p-8 shadow-2xl shadow-primary/10">
           <div className="mb-8 flex flex-col items-center text-center">
             <BrandLogo height={36} />
-            <h1 className="mt-4 font-heading text-2xl font-bold">
+            <h1 className="mt-4 font-heading text-page font-bold">
               Welcome to{" "}
               <span
                 className="bg-clip-text text-transparent"
@@ -97,38 +97,42 @@ export default function LoginPage() {
                 {appName}
               </span>
             </h1>
-            <p className="mt-1 text-[12.5px] text-muted-foreground">
+            <p className="mt-1 text-body text-muted-foreground">
               Your agency operating system — every signal, one dashboard.
             </p>
           </div>
 
           <form onSubmit={submit} className="flex flex-col gap-4">
             <div>
-              <label className="mb-1.5 block text-[11.5px] font-semibold text-muted-foreground">Work email</label>
+              <label htmlFor="login-email" className="mb-1.5 block text-meta font-semibold text-muted-foreground">Work email</label>
               <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Mail className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <input
+                  id="login-email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@zoolyum.com"
                   required
-                  className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-[13px] outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+                  className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-body-lg outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
                 />
               </div>
             </div>
 
             <div>
-              <label className="mb-1.5 block text-[11.5px] font-semibold text-muted-foreground">Password</label>
+              <label htmlFor="login-password" className="mb-1.5 block text-meta font-semibold text-muted-foreground">Password</label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <input
+                  id="login-password"
                   type={showPw ? "text" : "password"}
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-10 text-[13px] outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+                  className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-10 text-body-lg outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
                 />
                 <button
                   type="button"
@@ -137,13 +141,13 @@ export default function LoginPage() {
                   aria-pressed={showPw}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
-                  {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  {showPw ? <EyeOff className="size-4" /> : <Eye className="size-3.5" />}
                 </button>
               </div>
             </div>
 
             {error && (
-              <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-600 dark:text-rose-300">
+              <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-body text-rose-600 dark:text-rose-300">
                 {error}
               </p>
             )}
@@ -151,16 +155,16 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={busy}
-              className="mt-2 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient py-3 text-[13px] font-bold text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-2 inline-flex items-center justify-center gap-2 rounded-xl bg-brand-gradient py-3 text-body-lg font-bold text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {busy ? "Signing in…" : "Sign in"}
-              <ArrowRight className="size-4" />
+              <ArrowRight className="size-3.5" />
             </button>
           </form>
 
           <div className="my-5 flex items-center gap-3">
             <span className="h-px flex-1 bg-border" />
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">or</span>
+            <span className="text-micro font-semibold uppercase tracking-widest text-muted-foreground">or</span>
             <span className="h-px flex-1 bg-border" />
           </div>
 
@@ -168,12 +172,12 @@ export default function LoginPage() {
             type="button"
             onClick={fingerprintLogin}
             disabled={fingerprintBusy || busy}
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-[12.5px] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card py-3 text-body font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Fingerprint className="size-4 text-primary" />
+            <Fingerprint className="size-3.5 text-primary" />
             {fingerprintBusy ? "Waiting for fingerprint…" : "Sign in with fingerprint"}
           </button>
-          <p className="mt-2 text-center text-[10.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-2 text-center text-micro leading-relaxed text-muted-foreground">
             Touch your device sensor (Windows Hello / Touch ID). Signs you in and records your attendance automatically.
           </p>
 
@@ -181,7 +185,7 @@ export default function LoginPage() {
               production build they would hand the Owner account to anyone who
               opens the login page, so they are compiled out. */}
           {process.env.NODE_ENV !== "production" && (
-            <p className="mt-6 text-center text-[11px] text-muted-foreground">
+            <p className="mt-6 text-center text-meta text-muted-foreground">
               Demo: <span className="font-mono font-medium text-foreground">sakib@zoolyum.com</span> /{" "}
               <span className="font-mono font-medium text-foreground">zoolyum123</span>
             </p>

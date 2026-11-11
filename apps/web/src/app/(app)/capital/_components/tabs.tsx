@@ -11,7 +11,7 @@ import { Avatar, CardShell, EmptyState, FadeIn, SectionTitle, SkeletonBlock, Sta
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { Modal, Select } from "@/components/ui";
 import { PaymentDonut, RevenueAreaChart } from "@/components/charts";
-import { invoiceTotals } from "@/lib/invoice-utils";
+import { daysLate, invoiceTotals } from "@/lib/invoice-utils";
 import { useBranding } from "@/lib/branding-context";
 import { ACCOUNT_CATEGORIES, CAT_TONES, ENTITY_TONES, EXPENSE_STATUSES, INVOICE_STATUSES, exportInvoicesCsv, fmtJSON, label } from "./constants";
 import { AddIncomeModal, BudgetModal, CategoriesModal, EditExpenseModal, PayExpenseModal, ReconcileModal } from "./modals";
@@ -34,7 +34,7 @@ function DetailSection({ title, action, children }: { title: string; action?: Re
   return (
     <section className="overflow-hidden rounded-2xl border border-border/60 bg-card">
       <header className="flex items-center gap-2 border-b border-border/50 bg-muted/20 px-3.5 py-2">
-        <h4 className="flex-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{title}</h4>
+        <h4 className="flex-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">{title}</h4>
         {action}
       </header>
       <div className="px-3.5 py-2.5">{children}</div>
@@ -46,8 +46,8 @@ function DetailSection({ title, action, children }: { title: string; action?: Re
 function DetailRow({ label: k, children, mono, strong }: { label: string; children: React.ReactNode; mono?: boolean; strong?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-4 py-1">
-      <span className="shrink-0 text-[11px] text-muted-foreground">{k}</span>
-      <span className={cn("min-w-0 text-right text-[11.5px]", strong ? "font-bold" : "font-medium", mono && "font-mono tabular-nums")}>{children}</span>
+      <span className="shrink-0 text-meta text-muted-foreground">{k}</span>
+      <span className={cn("min-w-0 text-right text-meta", strong ? "font-bold" : "font-medium", mono && "font-mono tabular-nums")}>{children}</span>
     </div>
   );
 }
@@ -74,10 +74,10 @@ function DetailHero({
   };
   return (
     <div className={cn("rounded-2xl border border-border/60 bg-gradient-to-br to-transparent p-4", tones[tone])}>
-      <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
-      <p className="mt-0.5 text-[26px] font-bold leading-tight tabular-nums">{amount}</p>
+      <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">{eyebrow}</p>
+      <p className="mt-0.5 text-page font-bold leading-tight tabular-nums">{amount}</p>
       {chips ? <div className="mt-2 flex flex-wrap items-center gap-1.5">{chips}</div> : null}
-      {caption ? <div className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">{caption}</div> : null}
+      {caption ? <div className="mt-2 text-meta leading-relaxed text-muted-foreground">{caption}</div> : null}
     </div>
   );
 }
@@ -86,20 +86,18 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
   const router = useRouter();
   const inv = invoices ?? [];
   const exp = expenses ?? [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
   // ── Decision inputs, derived once ─────────────────────────────────────
   const receivable = inv.filter((i) => !["DRAFT", "CANCELLED", "VOID"].includes(i.status));
   const overdueList = receivable.filter((i) => {
     const t = invoiceTotals(i);
-    return t.balance > 0 && i.dueDate && new Date(i.dueDate) < today;
+    return t.balance > 0 && daysLate(i.dueDate) > 0;
   });
-  const overdueValue = overdueList.reduce((s, i) => s + invoiceTotals(i).balance, 0);
+  const overdueValue = overdueList.reduce((s, i) => s + invoiceTotals(i).balanceBdt, 0);
   const drafts = inv.filter((i) => i.status === "DRAFT");
-  const draftValue = drafts.reduce((s, i) => s + invoiceTotals(i).grand, 0);
+  const draftValue = drafts.reduce((s, i) => s + invoiceTotals(i).grandBdt, 0);
   const pendingExp = exp.filter((e) => e.approvalStatus === "PENDING");
-  const pendingValue = pendingExp.reduce((s, e) => s + Number(e.amount ?? 0), 0);
+  const pendingValue = pendingExp.reduce((s, e) => s + Number(e.amount ?? 0) * (Number(e.exchangeRate ?? 1) || 1), 0);
   const dueInstallments = (installmentsDue ?? []).filter((s) => s.overdue);
   const installmentValue = dueInstallments.reduce((s, s2) => s + Number(s2.balance ?? 0), 0);
 
@@ -195,16 +193,16 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
       {/* ── What needs a decision today ─────────────────────────────────── */}
       {attention.length > 0 && (
         <div>
-          <p className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Needs attention</p>
+          <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Needs attention</p>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-2">
             {attention.map((a) => (
               <Link key={a.key} href={a.href} className={cn("group flex items-start gap-2.5 rounded-2xl border p-3 transition-colors hover:border-primary/40", toneCls[a.tone])}>
                 <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", iconCls[a.tone])}>{a.icon}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[12.5px] font-semibold leading-snug">{a.title}</span>
-                  <span className="mt-0.5 line-clamp-2 block text-[10.5px] leading-snug text-muted-foreground">{a.detail}</span>
-                  <span className="mt-1 inline-flex items-center gap-1 text-[10.5px] font-bold text-primary">
-                    {a.cta} <ArrowUpRight className="size-3 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+                  <span className="block text-body font-semibold leading-snug">{a.title}</span>
+                  <span className="mt-0.5 line-clamp-2 block text-micro leading-snug text-muted-foreground">{a.detail}</span>
+                  <span className="mt-1 inline-flex items-center gap-1 text-micro font-bold text-primary">
+                    {a.cta} <ArrowUpRight className="size-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                   </span>
                 </span>
               </Link>
@@ -215,10 +213,10 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
 
       {/* ── Headline numbers ────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Invoiced" value={formatBDT(invoiced)} sub={`${receivable.length} live invoices`} tone="primary" icon={<Wallet className="size-5" />} index={0} />
-        <StatCard label="Collected" value={formatBDT(collected)} sub={`${collectionRate}% collection rate`} tone="emerald" icon={<HandCoins className="size-5" />} index={1} />
-        <StatCard label="Outstanding" value={formatBDT(outstanding)} sub={overdueValue > 0 ? `${formatBDT(overdueValue)} overdue (${overduePct}%)` : "nothing overdue"} tone="amber" icon={<Banknote className="size-5" />} index={2} />
-        <StatCard label="Cash position" value={formatBDT(overview?.cashPosition)} sub={Number(overview?.expensesMonth ?? 0) > 0 ? `${formatBDT(overview.expensesMonth)} spent this month` : "no spend this month"} tone="sky" icon={<Landmark className="size-5" />} index={3} />
+        <StatCard label="Total Invoiced" value={formatBDT(invoiced)} sub={`${receivable.length} live invoices`} tone="primary" icon={<Wallet className="size-4" />} index={0} />
+        <StatCard label="Collected" value={formatBDT(collected)} sub={`${collectionRate}% collection rate`} tone="emerald" icon={<HandCoins className="size-4" />} index={1} />
+        <StatCard label="Outstanding" value={formatBDT(outstanding)} sub={overdueValue > 0 ? `${formatBDT(overdueValue)} overdue (${overduePct}%)` : "nothing overdue"} tone="amber" icon={<Banknote className="size-4" />} index={2} />
+        <StatCard label="Cash position" value={formatBDT(overview?.cashPosition)} sub={Number(overview?.expensesMonth ?? 0) > 0 ? `${formatBDT(overview.expensesMonth)} spent this month` : "across all bank accounts"} tone="sky" icon={<Landmark className="size-4" />} index={3} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -226,7 +224,7 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
           <SectionTitle
             title="Revenue trend"
             subtitle="Invoiced vs collected vs expenses"
-            action={<Link href="/capital/reports" className="text-[11.5px] font-semibold text-primary hover:underline">Full report →</Link>}
+            action={<Link href="/capital/reports" className="text-meta font-semibold text-primary hover:underline">Full report →</Link>}
           />
           <RevenueAreaChart data={(overview?.trend ?? []).map((t: any) => ({ ...t, month: String(t.month).slice(0, 3) }))} />
         </CardShell>
@@ -242,7 +240,7 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
           <SectionTitle
             title="Receivables ageing"
             subtitle={bucketTotal > 0 ? `${formatBDT(bucketTotal)} outstanding across ${receivable.length} invoices` : "Nothing outstanding"}
-            action={<Link href="/capital/reports" className="text-[11.5px] font-semibold text-primary hover:underline">Aging report →</Link>}
+            action={<Link href="/capital/reports" className="text-meta font-semibold text-primary hover:underline">Aging report →</Link>}
           />
           {bucketRows.length === 0 ? (
             <SkeletonBlock className="h-32" />
@@ -250,27 +248,27 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
             <div className="flex flex-col gap-2.5">
               {bucketRows.map((b) => (
                 <div key={b.key} className="flex items-center gap-2.5">
-                  <span className="w-24 shrink-0 text-[11.5px] text-muted-foreground">{b.label}</span>
+                  <span className="w-24 shrink-0 text-meta text-muted-foreground">{b.label}</span>
                   <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
                     <div
                       className={cn("h-full rounded-full", b.key === "CURRENT" ? "bg-emerald-500" : b.key === "1-30" ? "bg-sky-500" : b.key === "31-60" ? "bg-amber-400" : "bg-rose-500")}
                       style={{ width: `${(b.value / bucketMax) * 100}%` }}
                     />
                   </div>
-                  <span className="w-24 shrink-0 text-right text-[11.5px] font-bold tabular-nums">{formatBDT(b.value)}</span>
+                  <span className="w-24 shrink-0 text-right text-meta font-bold tabular-nums">{formatBDT(b.value)}</span>
                 </div>
               ))}
             </div>
           )}
           {(aging?.byClient ?? []).length > 0 && (
             <div className="mt-4 border-t border-border/50 pt-3">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Top exposures</p>
+              <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Top exposures</p>
               <div className="flex flex-col gap-1.5">
                 {(aging?.byClient ?? []).slice(0, 6).map((c: any) => (
-                  <div key={c.clientId} className="flex items-center justify-between gap-2 text-[11.5px]">
+                  <div key={c.clientId} className="flex items-center justify-between gap-2 text-meta">
                     <span className="min-w-0 truncate font-medium">{c.clientName}</span>
                     <span className="flex shrink-0 items-center gap-2">
-                      {c.d90p > 0 && <span className="rounded-full bg-rose-500/10 px-1.5 py-0.5 text-[9px] font-bold text-rose-500">{formatBDT(c.d90p)} 90+</span>}
+                      {c.d90p > 0 && <span className="rounded-full bg-rose-500/10 px-1.5 py-0.5 text-micro font-bold text-rose-500">{formatBDT(c.d90p)} 90+</span>}
                       <span className="font-bold tabular-nums">{formatBDT(c.total)}</span>
                     </span>
                   </div>
@@ -284,20 +282,20 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
           <SectionTitle
             title="Recent expenses"
             subtitle={Number(overview?.expensesMonth ?? 0) > 0 ? `${formatBDT(overview.expensesMonth)} this month · ${billableShare}% client-billable` : `latest entries · ${billableShare}% client-billable`}
-            action={<Link href="/capital/expenses" className="text-[11.5px] font-semibold text-primary hover:underline">All expenses →</Link>}
+            action={<Link href="/capital/expenses" className="text-meta font-semibold text-primary hover:underline">All expenses →</Link>}
           />
           <div className="flex flex-col gap-2.5">
             {recentExpenses.map((e) => (
               <div key={e.id} className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-[12px] font-medium">{e.description}</p>
-                  <p className="truncate text-[10.5px] text-muted-foreground">
+                  <p className="truncate text-body font-medium">{e.description}</p>
+                  <p className="truncate text-micro text-muted-foreground">
                     {label(e.category)} · {e.isClientBillable ? "billable" : "absorbed"} · {formatDay(e.date)}
                     {e.vendor?.name ? ` · ${e.vendor.name}` : ""}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-[12.5px] font-bold tabular-nums">{formatBDT(e.amount)}</p>
+                  <p className="text-body font-bold tabular-nums">{formatBDT(e.amount)}</p>
                   <StatusBadge status={e.approvalStatus} />
                 </div>
               </div>
@@ -305,7 +303,7 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
             {expenses === null ? (
               <SkeletonBlock className="h-24" />
             ) : exp.length === 0 ? (
-              <p className="text-[12px] text-muted-foreground">No expenses recorded.</p>
+              <p className="text-body text-muted-foreground">No expenses recorded.</p>
             ) : null}
           </div>
         </CardShell>
@@ -320,10 +318,10 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
             <TableShell
               footer={
                 <>
-                  <span className="text-[11.5px] text-muted-foreground">
+                  <span className="text-meta text-muted-foreground">
                     {inv.length} invoices · cash position {formatBDT(overview?.cashPosition)}
                   </span>
-                  <Link href="/capital/invoices" className="text-[11.5px] font-bold text-primary hover:underline">All invoices →</Link>
+                  <Link href="/capital/invoices" className="text-meta font-bold text-primary hover:underline">All invoices →</Link>
                 </>
               }
             >
@@ -332,13 +330,13 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
                 <tbody>
                   {inv.slice(0, 8).map((it, i) => {
                     const t = invoiceTotals(it);
-                    const days = it.dueDate ? Math.floor((today.getTime() - new Date(it.dueDate).getTime()) / 86400000) : 0;
+                    const days = daysLate(it.dueDate);
                     const late = t.balance > 0 && days > 0 && !["DRAFT", "CANCELLED", "VOID"].includes(it.status);
                     return (
                       <Tr key={it.id} index={i} onClick={() => router.push(`/capital/invoices?inv=${it.id}`)} className="cursor-pointer">
                         <Td>
                           <Link href={`/capital/invoices?inv=${it.id}`} onClick={(ev) => ev.stopPropagation()} className="font-medium tabular-nums hover:text-primary hover:underline">{it.invoiceNumber}</Link>
-                          <p className="text-[11px] text-muted-foreground">{label(it.invoiceType)}</p>
+                          <p className="text-meta text-muted-foreground">{label(it.invoiceType)}</p>
                         </Td>
                         <Td className="text-muted-foreground">{it.client.companyName}</Td>
                         <Td className="font-semibold tabular-nums">{formatBDT(t.grand)}</Td>
@@ -348,11 +346,11 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
                         <Td><StatusBadge status={it.status} /></Td>
                         <Td>
                           {late ? (
-                            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", days > 60 ? "bg-rose-500/15 text-rose-500" : days > 30 ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-sky-500/15 text-sky-600 dark:text-sky-400")}>
+                            <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold", days > 60 ? "bg-rose-500/15 text-rose-500" : days > 30 ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-sky-500/15 text-sky-600 dark:text-sky-400")}>
                               {days}d late
                             </span>
                           ) : (
-                            <span className="text-[11px] text-muted-foreground">—</span>
+                            <span className="text-meta text-muted-foreground">—</span>
                           )}
                         </Td>
                         <Td className="text-muted-foreground">{formatDay(it.dueDate)}</Td>
@@ -369,7 +367,7 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
   );
 }
 
-export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicate, onDelete, initialClientId }: { error: string | null; refresh: () => void; clients: any[]; onView: (id: string) => void; onNew: () => void; onDuplicate: (id: string) => void; onDelete: (inv: any) => void; initialClientId?: string }) {
+export function InvoicesTab({ error, refresh, refreshKey, clients, onView, onNew, onDuplicate, onDelete, initialClientId }: { error: string | null; refresh: () => void; refreshKey?: number; clients: any[]; onView: (id: string) => void; onNew: () => void; onDuplicate: (id: string) => void; onDelete: (inv: any) => void; initialClientId?: string }) {
   const { branding } = useBranding();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
@@ -389,6 +387,9 @@ export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicat
   const qs = new URLSearchParams({
     page: String(page + 1),
     pageSize: "12",
+    // Bump the key on every global refresh so create/delete/duplicate reload the
+    // table (the server ignores unknown params; it just changes the cache key).
+    ...(refreshKey !== undefined ? { rk: String(refreshKey) } : {}),
     ...(q.trim() ? { q: q.trim() } : {}),
     ...(status ? { status } : {}),
     ...(clientId ? { clientId } : {}),
@@ -515,10 +516,10 @@ export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicat
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Issued" value={formatBDT(sums.billed)} sub={`${total} invoice${total === 1 ? "" : "s"} in view`} tone="primary" icon={<Wallet className="size-5" />} index={0} />
-        <StatCard label="Collected" value={formatBDT(sums.paid)} sub={sums.billed > 0 ? `${Math.round((sums.paid / sums.billed) * 100)}% of issued` : "nothing collected yet"} tone="emerald" icon={<HandCoins className="size-5" />} index={1} />
-        <StatCard label="Outstanding" value={formatBDT(sums.due)} sub={`${due7Count} due within 7 days`} tone="amber" icon={<Banknote className="size-5" />} index={2} />
-        <StatCard label="Overdue" value={formatBDT(overdueValue)} sub={`${counts.overdue} invoice${counts.overdue === 1 ? "" : "s"} past due`} tone="rose" icon={<AlarmClock className="size-5" />} index={3} />
+        <StatCard label="Issued" value={formatBDT(sums.billed)} sub={`${counts.all - counts.draft} live invoice${counts.all - counts.draft === 1 ? "" : "s"}`} tone="primary" icon={<Wallet className="size-4" />} index={0} />
+        <StatCard label="Collected" value={formatBDT(sums.paid)} sub={sums.billed > 0 ? `${Math.round((sums.paid / sums.billed) * 100)}% of issued` : "nothing collected yet"} tone="emerald" icon={<HandCoins className="size-4" />} index={1} />
+        <StatCard label="Outstanding" value={formatBDT(sums.due)} sub={`${due7Count} due within 7 days`} tone="amber" icon={<Banknote className="size-4" />} index={2} />
+        <StatCard label="Overdue" value={formatBDT(overdueValue)} sub={`${counts.overdue} invoice${counts.overdue === 1 ? "" : "s"} past due`} tone="rose" icon={<AlarmClock className="size-4" />} index={3} />
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -527,16 +528,16 @@ export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicat
             key={c.key}
             onClick={() => setQuick(c.key)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition-colors",
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-meta font-semibold transition-colors",
               quick === c.key ? "bg-brand-gradient text-white" : "border border-border bg-card text-muted-foreground hover:text-foreground"
             )}
           >
             {c.label}
-            <span className={cn("rounded-full px-1.5 py-0.5 text-[9.5px] font-bold tabular-nums", quick === c.key ? "bg-white/20" : "bg-muted")}>{c.count}</span>
+            <span className={cn("rounded-full px-1.5 py-0.5 text-micro font-bold tabular-nums", quick === c.key ? "bg-white/20" : "bg-muted")}>{c.count}</span>
           </button>
         ))}
         {draftValue > 0 && (
-          <span className="ml-auto self-center text-[11px] text-amber-600 dark:text-amber-400">
+          <span className="ml-auto self-center text-meta text-amber-600 dark:text-amber-400">
             {drafts} draft{drafts === 1 ? "" : "s"} ({formatBDT(draftValue)}) not issued
           </span>
         )}
@@ -545,14 +546,14 @@ export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicat
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search invoices…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by invoice # or client…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
         <Select value={status} onChange={(e) => setStatus(e.target.value)} className="!w-40"><option value="">All statuses</option>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select>
         <Select value={clientId} onChange={(e) => setClientId(e.target.value)} className="!w-44"><option value="">All clients</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select>
-        <input value={minAmt} onChange={(e) => setMinAmt(e.target.value)} type="number" min={0} placeholder="Min ৳" className="w-24 rounded-xl border border-border bg-card px-3 py-2 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
-        <input value={maxAmt} onChange={(e) => setMaxAmt(e.target.value)} type="number" min={0} placeholder="Max ৳" className="w-24 rounded-xl border border-border bg-card px-3 py-2 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+        <input value={minAmt} onChange={(e) => setMinAmt(e.target.value)} type="number" min={0} placeholder="Min ৳" className="w-24 rounded-xl border border-border bg-card px-3 py-2 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+        <input value={maxAmt} onChange={(e) => setMaxAmt(e.target.value)} type="number" min={0} placeholder="Max ৳" className="w-24 rounded-xl border border-border bg-card px-3 py-2 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         {hasFilters && (
-          <button onClick={() => { setQ(""); setStatus(""); setClientId(""); setMinAmt(""); setMaxAmt(""); setQuick("all"); }} className="text-[11.5px] font-bold text-primary hover:underline">
+          <button onClick={() => { setQ(""); setStatus(""); setClientId(""); setMinAmt(""); setMaxAmt(""); setQuick("all"); }} className="text-meta font-bold text-primary hover:underline">
             Reset
           </button>
         )}
@@ -561,12 +562,12 @@ export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicat
 
       {selected.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2">
-          <span className="text-[11.5px] font-bold">{selected.length} selected</span>
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-meta font-bold">{selected.length} selected</span>
+          <span className="text-meta text-muted-foreground">
             {selectedRows.filter((i) => i.status === "DRAFT").length} draft · {selectedRows.filter((i) => ["SENT", "VIEWED", "PARTIALLY_PAID", "OVERDUE"].includes(i.status)).length} collectable
           </span>
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            {bulkMsg && <span className="text-[11px] font-medium text-primary">{bulkMsg}</span>}
+            {bulkMsg && <span className="text-meta font-medium text-primary">{bulkMsg}</span>}
             <Btn variant="outline" className="!py-1.5" onClick={bulkMarkSent} disabled={bulkBusy || !selectedRows.some((i) => i.status === "DRAFT")}>
               Mark as sent
             </Btn>
@@ -590,11 +591,11 @@ export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicat
           <TableShell
             footer={
               <>
-                <span className="text-[11.5px] text-muted-foreground">
+                <span className="text-meta text-muted-foreground">
                   {total} invoice{total === 1 ? "" : "s"} · {formatBDT(sums.billed)} issued · {formatBDT(sums.due)} due
                 </span>
                 <div className="flex items-center gap-2">
-                  {pdfErr && <span className="text-[11px] font-medium text-rose-500">{pdfErr}</span>}
+                  {pdfErr && <span className="text-meta font-medium text-rose-500">{pdfErr}</span>}
                   <Pager page={page} pages={pages} onPage={setPage} total={total} pageSize={12} label="invoices" />
                   <Btn variant="ghost" onClick={() => exportInvoicesCsv(list)}><Download className="size-3.5" /> CSV</Btn>
                 </div>
@@ -636,15 +637,15 @@ export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicat
                       </Td>
                       <Td>
                         <p className="font-medium tabular-nums">{inv.invoiceNumber}</p>
-                        <p className="text-[11px] text-muted-foreground">{label(inv.invoiceType ?? "INVOICE")}</p>
+                        <p className="text-meta text-muted-foreground">{label(inv.invoiceType ?? "INVOICE")}</p>
                       </Td>
                       <Td className="text-muted-foreground">{inv.client.companyName}</Td>
                       <Td>
-                        <p className="text-[11.5px]">{formatDate(inv.issueDate)}</p>
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-meta">{formatDate(inv.issueDate)}</p>
+                        <p className="text-meta text-muted-foreground">
                           due {formatDate(inv.dueDate)}
                           {(() => {
-                            const d = inv.dueDate ? Math.floor((Date.now() - new Date(inv.dueDate).getTime()) / 86400000) : 0;
+                            const d = daysLate(inv.dueDate);
                             return inv.status !== "DRAFT" && amount - paidAmt > 0 && d > 0 ? <span className={cn("ml-1 font-bold", d > 60 ? "text-rose-500" : d > 30 ? "text-amber-500" : "text-sky-500")}>· {d}d late</span> : null;
                           })()}
                         </p>
@@ -664,11 +665,11 @@ export function InvoicesTab({ error, refresh, clients, onView, onNew, onDuplicat
                             className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-50"
                             title="Download PDF"
                           >
-                            <Download className={cn("size-4", pdfId === inv.id && "animate-pulse")} />
+                            <Download className={cn("size-3.5", pdfId === inv.id && "animate-pulse")} />
                           </button>
-                          <button onClick={() => onView(inv.id)} aria-label="View invoice" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50" title="View"><Eye className="size-4" /></button>
-                          <button onClick={() => onDuplicate(inv.id)} aria-label="Duplicate invoice" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50" title="Duplicate"><Copy className="size-4" /></button>
-                          <button onClick={() => onDelete(inv)} aria-label="Delete invoice" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-rose-500/10 hover:text-rose-500 focus-visible:ring-2 focus-visible:ring-rose-500/50" title="Delete"><Trash2 className="size-4" /></button>
+                          <button onClick={() => onView(inv.id)} aria-label="View invoice" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50" title="View"><Eye className="size-3.5" /></button>
+                          <button onClick={() => onDuplicate(inv.id)} aria-label="Duplicate invoice" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50" title="Duplicate"><Copy className="size-3.5" /></button>
+                          <button onClick={() => onDelete(inv)} aria-label="Delete invoice" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-rose-500/10 hover:text-rose-500 focus-visible:ring-2 focus-visible:ring-rose-500/50" title="Delete"><Trash2 className="size-3.5" /></button>
                         </div>
                       </Td>
                     </Tr>
@@ -800,10 +801,10 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Spend in view" value={formatBDT(totals.spend)} sub={`${list.length} expense${list.length === 1 ? "" : "s"}`} tone="primary" icon={<ReceiptText className="size-5" />} index={0} />
-        <StatCard label="Client-billable" value={formatBDT(totals.billable)} sub={totals.spend > 0 ? `${Math.round((totals.billable / totals.spend) * 100)}% recoverable` : "—"} tone="sky" icon={<CircleDollarSign className="size-5" />} index={1} />
-        <StatCard label="Awaiting approval" value={formatBDT(totals.pending)} sub={`${list.filter((e) => e.approvalStatus === "PENDING").length} pending`} tone="amber" icon={<Wallet className="size-5" />} index={2} />
-        <StatCard label="Still payable" value={formatBDT(totals.owed)} sub="unpaid, payable items" tone="rose" icon={<HandCoins className="size-5" />} index={3} />
+        <StatCard label="Spend in view" value={formatBDT(totals.spend)} sub={`${list.length} expense${list.length === 1 ? "" : "s"}`} tone="primary" icon={<ReceiptText className="size-4" />} index={0} />
+        <StatCard label="Client-billable" value={formatBDT(totals.billable)} sub={totals.spend > 0 ? `${Math.round((totals.billable / totals.spend) * 100)}% recoverable` : "—"} tone="sky" icon={<CircleDollarSign className="size-4" />} index={1} />
+        <StatCard label="Awaiting approval" value={formatBDT(totals.pending)} sub={`${list.filter((e) => e.approvalStatus === "PENDING").length} pending`} tone="amber" icon={<Wallet className="size-4" />} index={2} />
+        <StatCard label="Still payable" value={formatBDT(totals.owed)} sub="unpaid, payable items" tone="rose" icon={<HandCoins className="size-4" />} index={3} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -813,12 +814,12 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
               key={c.key}
               onClick={() => setQuick(c.key)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11.5px] font-semibold transition-colors",
+                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-meta font-semibold transition-colors",
                 quick === c.key ? "bg-brand-gradient text-white" : "border border-border bg-card text-muted-foreground hover:text-foreground"
               )}
             >
               {c.label}
-              <span className={cn("rounded-full px-1.5 py-0.5 text-[9.5px] font-bold tabular-nums", quick === c.key ? "bg-white/20" : "bg-muted")}>{c.count}</span>
+              <span className={cn("rounded-full px-1.5 py-0.5 text-micro font-bold tabular-nums", quick === c.key ? "bg-white/20" : "bg-muted")}>{c.count}</span>
             </button>
           ))}
         </div>
@@ -833,12 +834,12 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search expenses…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search expenses…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
         <Select value={cat} onChange={(e) => setCat(e.target.value)} className="!w-44"><option value="">All categories</option>{catOptions.map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select>
         <Select value={status} onChange={(e) => setStatus(e.target.value)} className="!w-36"><option value="">All statuses</option>{EXPENSE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select>
         {policy && (
-          <button onClick={() => setPolicyOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground" title="Open the approval matrix">
+          <button onClick={() => setPolicyOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-micro text-muted-foreground transition-colors hover:text-foreground" title="Open the approval matrix">
             <ShieldCheck className={cn("size-3.5", policy.enabled ? "text-emerald-500" : "text-amber-500")} />
             {policy.enabled ? `${policy.rules.length} approval limits on` : "Approval limits off"}
             <span className="font-bold text-primary">View</span>
@@ -856,7 +857,7 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
           <TableShell
             footer={
               <>
-                <span className="text-[11.5px] text-muted-foreground">
+                <span className="text-meta text-muted-foreground">
                   {list.length} expenses · {formatBDT(totals.spend)} total · {formatBDT(totals.owed)} still payable
                 </span>
                 <div className="flex items-center gap-2">
@@ -879,26 +880,26 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
                     <Tr key={e.id} index={i} onClick={() => setDetailId(e.id)} className={cn("cursor-pointer", detailId === e.id && "bg-primary/[0.04]")}>
                       <Td className="max-w-64">
                         <p className="truncate font-medium">{e.description}</p>
-                        <p className="truncate text-[11px] text-muted-foreground">{e.vendor?.name ?? "no vendor"}{e.vendorBillNumber ? ` · bill ${e.vendorBillNumber}` : ""} {e.subcategory ? `· ${e.subcategory}` : ""} {e.isClientBillable && "· billable"} {e.client && `· ${e.client.companyName}`} {e.project && `· ${e.project.name}`}</p>
+                        <p className="truncate text-meta text-muted-foreground">{e.vendor?.name ?? "no vendor"}{e.vendorBillNumber ? ` · bill ${e.vendorBillNumber}` : ""} {e.subcategory ? `· ${e.subcategory}` : ""} {e.isClientBillable && "· billable"} {e.client && `· ${e.client.companyName}`} {e.project && `· ${e.project.name}`}</p>
                       </Td>
-                      <Td><span className={cn("inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-semibold", CAT_TONES[e.category] ?? CAT_TONES.MISC)}>{catName}</span>{owing && <span className="ml-1.5 inline-flex whitespace-nowrap rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-500 ring-1 ring-amber-500/20">PAYABLE</span>}{e.payrollRecordId && <span className="ml-1.5 inline-flex whitespace-nowrap rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-500 ring-1 ring-sky-500/20">PAYROLL</span>}</Td>
+                      <Td><span className={cn("inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-micro font-semibold", CAT_TONES[e.category] ?? CAT_TONES.MISC)}>{catName}</span>{owing && <span className="ml-1.5 inline-flex whitespace-nowrap rounded-full bg-amber-500/10 px-2 py-0.5 text-micro font-bold text-amber-500 ring-1 ring-amber-500/20">PAYABLE</span>}{e.payrollRecordId && <span className="ml-1.5 inline-flex whitespace-nowrap rounded-full bg-sky-500/10 px-2 py-0.5 text-micro font-bold text-sky-500 ring-1 ring-sky-500/20">PAYROLL</span>}</Td>
                       <Td className="text-right font-semibold tabular-nums">
                         {formatBDT(e.amount)}
-                        {e.currency && e.currency !== "BDT" && <span className="ml-1 text-[10px] font-normal text-muted-foreground">{e.currency}</span>}
+                        {e.currency && e.currency !== "BDT" && <span className="ml-1 text-micro font-normal text-muted-foreground">{e.currency}</span>}
                         {e.isClientBillable && Number(e.markupPct ?? 0) > 0 && (
-                          <span className="ml-1 text-[9.5px] font-normal text-emerald-600 dark:text-emerald-400">+{e.markupPct}%</span>
+                          <span className="ml-1 text-micro font-normal text-emerald-600 dark:text-emerald-400">+{e.markupPct}%</span>
                         )}
                       </Td>
                       <Td className="whitespace-nowrap text-muted-foreground">{formatDate(e.date)}</Td>
                       <Td className="hidden capitalize text-muted-foreground lg:table-cell">{label(e.paymentMethod ?? "N/A")}</Td>
                       <Td><StatusBadge status={e.approvalStatus} /></Td>
                       <Td className="hidden 2xl:table-cell">
-                        <p className="whitespace-nowrap text-[11.5px]">{e.submittedBy?.name ?? "—"}</p>
-                        <p className="whitespace-nowrap text-[10.5px] text-muted-foreground">{e.approvalStatus === "APPROVED" ? (e.approvedBy?.name ? `by ${e.approvedBy.name}` : "approved") : e.approvalStatus === "REJECTED" ? "rejected" : "awaiting review"}</p>
+                        <p className="whitespace-nowrap text-meta">{e.submittedBy?.name ?? "—"}</p>
+                        <p className="whitespace-nowrap text-micro text-muted-foreground">{e.approvalStatus === "APPROVED" ? (e.approvedBy?.name ? `by ${e.approvedBy.name}` : "approved") : e.approvalStatus === "REJECTED" ? "rejected" : "awaiting review"}</p>
                       </Td>
                       <Td onClick={(ev) => ev.stopPropagation()}>
                         <div className="flex items-center gap-0.5">
-                          <button onClick={() => setDetailId(e.id)} aria-label="View expense details" title="View details" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/50"><Eye className="size-4" /></button>
+                          <button onClick={() => setDetailId(e.id)} aria-label="View expense details" title="View details" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/50"><Eye className="size-3.5" /></button>
                           {e.receiptUrl ? (
                             <a
                               href={`${API_URL.replace(/\/api$/, "")}${e.receiptUrl}`}
@@ -908,14 +909,14 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
                               title="View receipt"
                               className="rounded-lg p-2 text-sky-500 transition-colors outline-none hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-sky-500/50"
                             >
-                              <Paperclip className="size-4" />
+                              <Paperclip className="size-3.5" />
                             </a>
                           ) : (
                             <label
                               title="Attach receipt"
                               className="cursor-pointer rounded-lg p-2 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
                             >
-                              <Paperclip className="size-4" />
+                              <Paperclip className="size-3.5" />
                               <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden" onChange={(ev) => void uploadReceipt(e, ev)} />
                             </label>
                           )}
@@ -930,16 +931,16 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
                                   title={`Cannot approve — ${e.approval.reason}`}
                                   className="cursor-not-allowed rounded-lg p-2 text-muted-foreground/40"
                                 >
-                                  <Check className="size-4" />
+                                  <Check className="size-3.5" />
                                 </button>
                               ) : (
-                                <button onClick={() => setApproval(e, "APPROVED")} disabled={busyId === e.id} aria-label="Approve expense" className="rounded-lg p-2 text-emerald-500 transition-colors outline-none hover:bg-emerald-500/10 focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:opacity-50" title="Approve"><Check className="size-4" /></button>
+                                <button onClick={() => setApproval(e, "APPROVED")} disabled={busyId === e.id} aria-label="Approve expense" className="rounded-lg p-2 text-emerald-500 transition-colors outline-none hover:bg-emerald-500/10 focus-visible:ring-2 focus-visible:ring-emerald-500/50 disabled:opacity-50" title="Approve"><Check className="size-3.5" /></button>
                               )}
-                              <button onClick={() => setApproval(e, "REJECTED")} disabled={busyId === e.id} aria-label="Reject expense" className="rounded-lg p-2 text-rose-500 transition-colors outline-none hover:bg-rose-500/10 focus-visible:ring-2 focus-visible:ring-rose-500/50 disabled:opacity-50" title="Reject"><X className="size-4" /></button>
+                              <button onClick={() => setApproval(e, "REJECTED")} disabled={busyId === e.id} aria-label="Reject expense" className="rounded-lg p-2 text-rose-500 transition-colors outline-none hover:bg-rose-500/10 focus-visible:ring-2 focus-visible:ring-rose-500/50 disabled:opacity-50" title="Reject"><X className="size-3.5" /></button>
                             </>
                           )}
-                          <button onClick={() => setEditExpense(e)} aria-label="Edit expense" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/50" title="Edit"><Pencil className="size-4" /></button>
-                          <button onClick={() => onDelete(e)} aria-label="Delete expense" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-rose-500/10 hover:text-rose-500 focus-visible:ring-2 focus-visible:ring-rose-500/50" title="Delete"><Trash2 className="size-4" /></button>
+                          <button onClick={() => setEditExpense(e)} aria-label="Edit expense" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-primary/10 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/50" title="Edit"><Pencil className="size-3.5" /></button>
+                          <button onClick={() => onDelete(e)} aria-label="Delete expense" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-rose-500/10 hover:text-rose-500 focus-visible:ring-2 focus-visible:ring-rose-500/50" title="Delete"><Trash2 className="size-3.5" /></button>
                         </div>
                       </Td>
                     </Tr>
@@ -986,11 +987,11 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
               chips={
                 <>
                   <StatusBadge status={detail.approvalStatus} />
-                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", CAT_TONES[detail.category] ?? CAT_TONES.MISC)}>
+                  <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold", CAT_TONES[detail.category] ?? CAT_TONES.MISC)}>
                     {catOptions.find((c: any) => c.key === detail.category)?.name ?? label(detail.category ?? "MISC")}
                   </span>
-                  {detail.isClientBillable && <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-600 dark:text-sky-300">Client billable{Number(detail.markupPct ?? 0) > 0 ? ` +${detail.markupPct}%` : ""}</span>}
-                  {detail.payrollRecordId && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-300">From payroll</span>}
+                  {detail.isClientBillable && <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-micro font-bold text-sky-600 dark:text-sky-300">Client billable{Number(detail.markupPct ?? 0) > 0 ? ` +${detail.markupPct}%` : ""}</span>}
+                  {detail.payrollRecordId && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro font-bold text-emerald-600 dark:text-emerald-300">From payroll</span>}
                 </>
               }
             />
@@ -1020,7 +1021,7 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
 
             {detail.notes && (
               <DetailSection title="Notes">
-                <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{detail.notes}</p>
+                <p className="whitespace-pre-wrap text-body leading-relaxed text-muted-foreground">{detail.notes}</p>
               </DetailSection>
             )}
 
@@ -1030,13 +1031,13 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
                   href={`${API_URL.replace(/\/api$/, "")}${detail.receiptUrl}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2 text-[12px] font-semibold transition-colors hover:border-primary/40 hover:text-primary"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2 text-body font-semibold transition-colors hover:border-primary/40 hover:text-primary"
                 >
                   <span className="flex min-w-0 items-center gap-2"><Paperclip className="size-3.5 shrink-0" /> <span className="truncate">View attached receipt</span></span>
                   <ExternalLink className="size-3.5 shrink-0" />
                 </a>
               ) : (
-                <p className="text-[11.5px] text-muted-foreground">No receipt attached — upload one from the expense row.</p>
+                <p className="text-meta text-muted-foreground">No receipt attached — upload one from the expense row.</p>
               )}
             </DetailSection>
           </div>
@@ -1057,6 +1058,8 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
   const [q, setQ] = useState("");
   const [method, setMethod] = useState("");
   const [range, setRange] = useState<"all" | "month" | "last" | "year">("all");
+  const [delConfirm, setDelConfirm] = useState<string | null>(null);
+  const [delErr, setDelErr] = useState<string | null>(null);
   const byMethod = stats?.byMethod ?? [];
   const byMethodTotal = byMethod.reduce((s: number, m: any) => s + Number(m.amount ?? 0), 0);
   const bySource = stats?.bySource ?? [];
@@ -1084,6 +1087,23 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
 
   const rowsTotal = rows.reduce((s, it) => s + Number(it.amount ?? 0), 0);
   const incPg = usePaged(rows, 15);
+
+  /** Two-step delete for a manual income entry (reverses its bank + ledger). */
+  const removeManual = async (it: any) => {
+    if (delConfirm !== it.id) {
+      setDelConfirm(it.id);
+      return;
+    }
+    setDelConfirm(null);
+    try {
+      await apiFetch(`/capital/income/${it.id}`, { method: "DELETE" });
+      setDelErr(null);
+      setDetailId(null);
+      refresh();
+    } catch (e: any) {
+      setDelErr(e.message ?? "Could not delete the income entry");
+    }
+  };
   // Live row so the drawer reflects refreshes without a stale snapshot.
   const detail = useMemo(() => (income ?? []).find((it) => it.id === detailId) ?? null, [income, detailId]);
   const methodOptions = Array.from(new Set((income ?? []).map((it) => it.method ?? it.paymentMethod).filter(Boolean)));
@@ -1120,10 +1140,10 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard label="Total Income" value={formatBDT(stats?.total)} sub="all-time collections" tone="emerald" icon={<HandCoins className="size-5" />} />
-          <StatCard label="Payments" value={stats?.count ?? "—"} sub="transactions recorded" tone="sky" icon={<ReceiptText className="size-5" />} />
-          <StatCard label="Avg Payment" value={formatBDT(stats?.avgAmount)} sub="per transaction" tone="primary" icon={<Banknote className="size-5" />} />
-          <StatCard label="Top Method" value={byMethod.length ? label(byMethod[0].method) : "—"} sub={`${byMethod.length ? formatBDT(byMethod[0].amount) : "৳0"} · ${byMethodTotal ? Math.round((byMethod[0].amount / byMethodTotal) * 100) : 0}% of collections`} tone="amber" icon={<Landmark className="size-5" />} />
+          <StatCard label="Total Income" value={formatBDT(stats?.total)} sub="all-time collections" tone="emerald" icon={<HandCoins className="size-4" />} />
+          <StatCard label="Payments" value={stats?.count ?? "—"} sub="transactions recorded" tone="sky" icon={<ReceiptText className="size-4" />} />
+          <StatCard label="Avg Payment" value={formatBDT(stats?.avgAmount)} sub="per transaction" tone="primary" icon={<Banknote className="size-4" />} />
+          <StatCard label="Top Method" value={byMethod.length ? label(byMethod[0].method) : "—"} sub={`${byMethod.length ? formatBDT(byMethod[0].amount) : "৳0"} · ${byMethodTotal ? Math.round((byMethod[0].amount / byMethodTotal) * 100) : 0}% of collections`} tone="amber" icon={<Landmark className="size-4" />} />
         </div>
         <Btn variant="outline" onClick={() => setShowAnalytics((v) => !v)}>
           <Eye className="size-3.5" /> {showAnalytics ? "Hide" : "Show"} analytics
@@ -1145,11 +1165,11 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
               <div className="flex flex-col gap-3">
                 {bySource.map((s: any) => (
                   <div key={s.source} className="flex items-center gap-2.5">
-                    <span className="w-28 shrink-0 text-[12px] capitalize text-muted-foreground">{label(s.source)}</span>
+                    <span className="w-28 shrink-0 text-body capitalize text-muted-foreground">{label(s.source)}</span>
                     <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
                       <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${(Number(s.amount ?? 0) / Math.max(bySource.reduce((a: number, b: any) => a + Number(b.amount ?? 0), 0), 1)) * 100}%` }} />
                     </div>
-                    <span className="w-20 shrink-0 text-right text-[12px] font-bold tabular-nums">{formatBDT(s.amount)}</span>
+                    <span className="w-20 shrink-0 text-right text-body font-bold tabular-nums">{formatBDT(s.amount)}</span>
                   </div>
                 ))}
               </div>
@@ -1161,7 +1181,7 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search client, project or invoice…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search client, project or invoice…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
         <Select value={method} onChange={(e) => setMethod(e.target.value)} className="!w-40">
           <option value="">All methods</option>
@@ -1173,10 +1193,11 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
           <option value="last">Last month</option>
           <option value="year">This year</option>
         </Select>
-        <span className="ml-auto rounded-xl border border-border/60 bg-card px-3 py-2 text-[11.5px] text-muted-foreground">
+        <span className="ml-auto rounded-xl border border-border/60 bg-card px-3 py-2 text-meta text-muted-foreground">
           In view: <b className="tabular-nums text-foreground">{formatBDT(rowsTotal)}</b>
         </span>
       </div>
+      {delErr && <p className="text-meta font-medium text-rose-500">{delErr}</p>}
 
       {!income && !error ? (
         <div className="flex flex-col gap-2">{[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-14" />)}</div>
@@ -1187,7 +1208,7 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
           <TableShell
             footer={
               <>
-                <span className="text-[11.5px] text-muted-foreground">{rows.length} of {(income ?? []).length} entries · {formatBDT(rowsTotal)}</span>
+                <span className="text-meta text-muted-foreground">{rows.length} of {(income ?? []).length} entries · {formatBDT(rowsTotal)}</span>
                 <div className="flex items-center gap-2">
                   <Pager page={incPg.page} pages={incPg.pages} onPage={incPg.setPage} total={rows.length} pageSize={15} label="entries" />
                   <Btn variant="ghost" onClick={exportCsv}><Download className="size-3.5" /> CSV</Btn>
@@ -1196,10 +1217,10 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
             }
           >
             <table className="w-full">
-              <THead><Th>Date</Th><Th>Client</Th><Th className="hidden 2xl:table-cell">Project</Th><Th>Invoice</Th><Th className="hidden xl:table-cell">Method</Th><Th className="hidden 2xl:table-cell">Bank</Th><Th>Source</Th><Th className="text-right">Amount</Th><Th className="hidden 2xl:table-cell">Recorded by</Th></THead>
+              <THead><Th>Date</Th><Th>Client</Th><Th className="hidden 2xl:table-cell">Project</Th><Th>Invoice</Th><Th className="hidden xl:table-cell">Method</Th><Th className="hidden 2xl:table-cell">Bank</Th><Th>Source</Th><Th className="text-right">Amount</Th><Th className="hidden 2xl:table-cell">Recorded by</Th><Th className="w-10" /></THead>
               <tbody>
                 {rows.length === 0 && (
-                  <tr><td colSpan={9} className="px-5 py-10"><EmptyState title="No income in this view" hint="Collections appear here as invoices are paid." /></td></tr>
+                  <tr><td colSpan={10} className="px-5 py-10"><EmptyState title="No income in this view" hint="Collections appear here as invoices are paid." /></td></tr>
                 )}
                 {incPg.paged.map((it, i) => {
                   const isManual = it.source === "MANUAL" || it.source === "manual";
@@ -1225,20 +1246,20 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
                             review needs from this table. */}
                         {isDollar ? (
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-[11.5px] text-muted-foreground">Auto (FX ledger)</span>
-                            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-teal-500/10 px-1.5 py-0.5 text-[9px] font-bold text-teal-600 ring-1 ring-teal-500/20 dark:text-teal-300">
+                            <span className="text-meta text-muted-foreground">Auto (FX ledger)</span>
+                            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-teal-500/10 px-1.5 py-0.5 text-micro font-bold text-teal-600 ring-1 ring-teal-500/20 dark:text-teal-300">
                               FX gain
                             </span>
                           </div>
                         ) : (
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-[11.5px] text-muted-foreground">{it.bankAccount ?? "—"}</span>
+                            <span className="text-meta text-muted-foreground">{it.bankAccount ?? "—"}</span>
                             {it.reconciled ? (
-                              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-600 ring-1 ring-emerald-500/20 dark:text-emerald-300">
-                                <Check className="size-2.5" /> matched
+                              <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-micro font-bold text-emerald-600 ring-1 ring-emerald-500/20 dark:text-emerald-300">
+                                <Check className="size-3.5" /> matched
                               </span>
                             ) : (
-                              <Link href="/capital/reports" onClick={(ev) => ev.stopPropagation()} className="inline-flex w-fit items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 ring-1 ring-amber-500/20 hover:underline dark:text-amber-400">
+                              <Link href="/capital/reports" onClick={(ev) => ev.stopPropagation()} className="inline-flex w-fit items-center gap-1 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-micro font-bold text-amber-600 ring-1 ring-amber-500/20 hover:underline dark:text-amber-400">
                                 reconcile →
                               </Link>
                             )}
@@ -1247,7 +1268,7 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
                       </Td>
                       <Td>
                         <span className={cn(
-                          "inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold",
+                          "inline-flex rounded-full px-2 py-0.5 text-micro font-bold",
                           isDollar
                             ? "bg-teal-500/10 text-teal-600 ring-1 ring-teal-500/20 dark:text-teal-300"
                             : isManual
@@ -1259,17 +1280,32 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
                       </Td>
                       <Td className={cn("text-right font-semibold tabular-nums", Number(it.amount) < 0 ? "text-rose-500" : "text-emerald-500")}>
                         {formatBDT(it.amount)}
-                        {isDollar && it.fx && <span className="ml-1 text-[9.5px] font-normal text-muted-foreground">on {formatBDT(it.fx.bdt)}</span>}
+                        {isDollar && it.fx && <span className="ml-1 text-micro font-normal text-muted-foreground">on {formatBDT(it.fx.bdt)}</span>}
                         {isManual && Number(it.taxWithheld ?? 0) > 0 && (
-                          <span className="ml-1 text-[9.5px] font-normal text-muted-foreground">net {formatBDT(it.netAmount)}</span>
+                          <span className="ml-1 text-micro font-normal text-muted-foreground">net {formatBDT(it.netAmount)}</span>
                         )}
-                        {it.currency && it.currency !== "BDT" && <span className="ml-1 text-[10px] font-normal text-muted-foreground">{it.currency}</span>}
+                        {it.currency && it.currency !== "BDT" && <span className="ml-1 text-micro font-normal text-muted-foreground">{it.currency}</span>}
                       </Td>
                       <Td className="hidden text-muted-foreground 2xl:table-cell">
                         <span className="flex items-center justify-between gap-2">
                           <span className="truncate">{it.recordedBy?.name ?? it.recordedBy ?? "system"}</span>
                           <button onClick={(ev) => { ev.stopPropagation(); setDetailId(it.id); }} aria-label="View income details" title="View details" className="shrink-0 rounded-lg p-1 text-muted-foreground/70 transition-colors hover:bg-primary/10 hover:text-primary"><Eye className="size-3.5" /></button>
                         </span>
+                      </Td>
+                      <Td>
+                        {isManual && (
+                          <button
+                            onClick={(ev) => { ev.stopPropagation(); void removeManual(it); }}
+                            aria-label={delConfirm === it.id ? "Confirm delete income" : "Delete income"}
+                            title={delConfirm === it.id ? "Click again to confirm" : "Delete this manual income"}
+                            className={cn(
+                              "rounded-lg p-1.5 transition-colors",
+                              delConfirm === it.id ? "bg-rose-500/15 text-rose-500" : "text-muted-foreground/70 hover:bg-rose-500/10 hover:text-rose-500"
+                            )}
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        )}
                       </Td>
                     </Tr>
                   );
@@ -1300,7 +1336,7 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
                 chips={
                   <>
                     <span className={cn(
-                      "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                      "rounded-full px-2 py-0.5 text-micro font-bold",
                       isDollar
                         ? "bg-teal-500/10 text-teal-600 dark:text-teal-300"
                         : isManual
@@ -1309,8 +1345,8 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
                     )}>
                       {isDollar ? "DOLLAR DESK" : isManual ? "MANUAL" : "INVOICE PAYMENT"}
                     </span>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{label(detail.method ?? detail.paymentMethod ?? "—")}</span>
-                    {detail.currency && detail.currency !== "BDT" && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{detail.currency}</span>}
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground">{label(detail.method ?? detail.paymentMethod ?? "—")}</span>
+                    {detail.currency && detail.currency !== "BDT" && <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground">{detail.currency}</span>}
                   </>
                 }
                 caption={detail.notes}
@@ -1334,9 +1370,9 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
                 <DetailRow label="Recorded by">{detail.recordedBy?.name ?? detail.recordedBy ?? "system"}</DetailRow>
                 <DetailRow label="Reconciliation">
                   {detail.reconciled ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-300"><Check className="size-3" /> matched</span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-micro font-bold text-emerald-600 dark:text-emerald-300"><Check className="size-3.5" /> matched</span>
                   ) : (
-                    <span className="inline-flex items-center rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-300">unreconciled</span>
+                    <span className="inline-flex items-center rounded-full bg-amber-500/10 px-1.5 py-0.5 text-micro font-bold text-amber-600 dark:text-amber-300">unreconciled</span>
                   )}
                 </DetailRow>
               </DetailSection>
@@ -1351,7 +1387,7 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
 
               {detail.notes && (
                 <DetailSection title="Notes">
-                  <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{detail.notes}</p>
+                  <p className="whitespace-pre-wrap text-body leading-relaxed text-muted-foreground">{detail.notes}</p>
                 </DetailSection>
               )}
             </div>
@@ -1391,6 +1427,13 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
   const [reconAccount, setReconAccount] = useState(bankAccounts[0]?.id ?? "");
   const [reconData, setReconData] = useState<any | null>(null);
   const [reconErr, setReconErr] = useState<string | null>(null);
+
+  // bankAccounts arrive asynchronously from context; the initial state above is
+  // empty on first render, so adopt the first account once it exists (this is
+  // why the Reconciliation panel used to show "No transactions" forever).
+  useEffect(() => {
+    if (!reconAccount && bankAccounts.length > 0) setReconAccount(bankAccounts[0].id);
+  }, [bankAccounts, reconAccount]);
   const [reconOpen, setReconOpen] = useState(false);
   const [reconBusy, setReconBusy] = useState(false);
 
@@ -1585,7 +1628,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
           <button
             key={s.id}
             onClick={() => document.getElementById(s.id)?.scrollIntoView({ behavior: "auto", block: "start" })}
-            className="shrink-0 rounded-lg px-2.5 py-1.5 text-[10.5px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="shrink-0 rounded-lg px-2.5 py-1.5 text-micro font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             {s.label}
           </button>
@@ -1600,13 +1643,13 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
             />
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+            <label className="flex items-center gap-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">
               Month
               <input
                 type="month"
                 value={monthValue}
                 onChange={(e) => setMonthValue(e.target.value)}
-                className="rounded-lg border border-border bg-background px-2 py-1.5 text-[12px] font-medium normal-case tracking-normal text-foreground outline-none focus:border-primary/50"
+                className="rounded-lg border border-border bg-background px-2 py-1.5 text-body font-medium normal-case tracking-normal text-foreground outline-none focus:border-primary/50"
               />
             </label>
             <Btn variant="primary" onClick={() => void downloadPeriodReport("monthly")} disabled={!!reportBusy}>
@@ -1621,7 +1664,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3">
-          <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+          <span className="text-micro font-bold uppercase tracking-wider text-muted-foreground">
             Download statement
           </span>
           {STATEMENT_DOWNLOADS.map((s) => (
@@ -1633,10 +1676,10 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
       </CardShell>
 
       <div id="rep-kpis" className="grid scroll-mt-24 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Avg Invoice Value" value={formatBDT(km.avgInvoiceValue)} sub="per invoice" tone="primary" icon={<ReceiptText className="size-5" />} />
-        <StatCard label="Profit Margin" value={km.profitMargin != null ? `${Math.round(km.profitMargin)}%` : "—"} sub="recognized revenue basis" tone="sky" icon={<CircleDollarSign className="size-5" />} />
-        <StatCard label="Collection Rate" value={km.collectionRate != null ? `${Math.round(km.collectionRate)}%` : "—"} sub="collected vs invoiced" tone="emerald" icon={<HandCoins className="size-5" />} />
-        <StatCard label="Tax Year" value={tax.fiscalYear ?? "—"} sub={`rate ${tax.taxRate ?? 22}%`} tone="amber" icon={<Landmark className="size-5" />} />
+        <StatCard label="Avg Invoice Value" value={formatBDT(km.avgInvoiceValue)} sub="per invoice" tone="primary" icon={<ReceiptText className="size-4" />} />
+        <StatCard label="Profit Margin" value={km.profitMargin != null ? `${Math.round(km.profitMargin)}%` : "—"} sub="recognized revenue basis" tone="sky" icon={<CircleDollarSign className="size-4" />} />
+        <StatCard label="Collection Rate" value={km.collectionRate != null ? `${Math.round(km.collectionRate)}%` : "—"} sub="collected vs invoiced" tone="emerald" icon={<HandCoins className="size-4" />} />
+        <StatCard label="Tax Year" value={tax.fiscalYear ?? "—"} sub={`rate ${tax.taxRate ?? 22}%`} tone="amber" icon={<Landmark className="size-4" />} />
       </div>
 
       <div id="rep-trend" className="grid scroll-mt-24 grid-cols-1 gap-4 xl:grid-cols-3">
@@ -1654,14 +1697,14 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         <CardShell>
           <SectionTitle title="Invoiced by Type" subtitle="one-time vs recurring vs advance" />
           <div className="flex flex-col gap-3">
-            {byCategory.length === 0 && <p className="text-[12px] text-muted-foreground">No expense data</p>}
+            {byCategory.length === 0 && <p className="text-body text-muted-foreground">No expense data</p>}
             {byCategory.map((c: any) => (
               <div key={c.name} className="flex items-center gap-2.5">
-                <span className="w-28 shrink-0 truncate text-[12px] capitalize text-muted-foreground">{label(c.name)}</span>
+                <span className="w-28 shrink-0 truncate text-body capitalize text-muted-foreground">{label(c.name)}</span>
                 <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-muted">
                   <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${(Number(c.amount ?? 0) / maxCat) * 100}%` }} />
                 </div>
-                <span className="w-20 shrink-0 text-right text-[12px] font-bold tabular-nums">{formatBDT(c.amount)}</span>
+                <span className="w-20 shrink-0 text-right text-body font-bold tabular-nums">{formatBDT(c.amount)}</span>
               </div>
             ))}
           </div>
@@ -1670,19 +1713,19 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         <CardShell>
           <SectionTitle title="Weekly Cash Flow" subtitle="income vs outflow" />
           <div className="flex flex-col gap-2.5">
-            {cashFlow.length === 0 && <p className="text-[12px] text-muted-foreground">No cash flow data</p>}
+            {cashFlow.length === 0 && <p className="text-body text-muted-foreground">No cash flow data</p>}
             {cashFlow.map((w: any) => {
               const empty = !Number(w.income ?? 0) && !Number(w.outflow ?? 0);
               return (
-                <div key={w.week} className={cn("grid grid-cols-[64px_1fr_1fr] items-center gap-2 text-[11px]", empty && "opacity-40")}>
+                <div key={w.week} className={cn("grid grid-cols-[64px_1fr_1fr] items-center gap-2 text-meta", empty && "opacity-40")}>
                   <span className="truncate text-muted-foreground">{w.week}</span>
                   <div className="flex items-center gap-1.5">
                     <div className="h-2 rounded-full bg-emerald-500/80" style={{ width: `${(Number(w.income ?? 0) / maxFlow) * 100}%` }} />
-                    <span className="text-[10.5px] tabular-nums text-emerald-500">{formatBDT(w.income)}</span>
+                    <span className="text-micro tabular-nums text-emerald-500">{formatBDT(w.income)}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="h-2 rounded-full bg-rose-500/80" style={{ width: `${(Number(w.outflow ?? 0) / maxFlow) * 100}%` }} />
-                    <span className="text-[10.5px] tabular-nums text-rose-500">{formatBDT(w.outflow)}</span>
+                    <span className="text-micro tabular-nums text-rose-500">{formatBDT(w.outflow)}</span>
                   </div>
                 </div>
               );
@@ -1703,10 +1746,10 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
                   const diff = Number(b.actual ?? 0) - Number(b.planned ?? 0);
                   return (
                     <Tr key={b.name} index={i}>
-                      <Td className="text-[12px] font-medium">{label(b.name)}</Td>
-                      <Td className="text-right text-[12px] tabular-nums text-muted-foreground">{formatBDT(b.planned)}</Td>
-                      <Td className="text-right text-[12px] tabular-nums">{formatBDT(b.actual)}</Td>
-                      <Td className={cn("text-right text-[12px] font-semibold tabular-nums", diff > 0 ? "text-rose-500" : "text-emerald-500")}>{diff > 0 ? "+" : ""}{formatBDT(diff)}</Td>
+                      <Td className="text-body font-medium">{label(b.name)}</Td>
+                      <Td className="text-right text-body tabular-nums text-muted-foreground">{formatBDT(b.planned)}</Td>
+                      <Td className="text-right text-body tabular-nums">{formatBDT(b.actual)}</Td>
+                      <Td className={cn("text-right text-body font-semibold tabular-nums", diff > 0 ? "text-rose-500" : "text-emerald-500")}>{diff > 0 ? "+" : ""}{formatBDT(diff)}</Td>
                     </Tr>
                   );
                 })}
@@ -1755,8 +1798,8 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {AGING_KEYS.map((b) => (
             <div key={b.key} className="rounded-xl border border-border/60 px-3 py-2.5">
-              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">{b.label}</p>
-              <p className={cn("mt-0.5 text-[15px] font-heading font-bold tabular-nums", b.key === "90+" && Number(agingBuckets[b.key] ?? 0) > 0 ? "text-rose-500" : b.key === "CURRENT" ? "" : "text-amber-500")}>{formatBDT(agingBuckets[b.key] ?? 0)}</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">{b.label}</p>
+              <p className={cn("mt-0.5 text-section font-heading font-bold tabular-nums", b.key === "90+" && Number(agingBuckets[b.key] ?? 0) > 0 ? "text-rose-500" : b.key === "CURRENT" ? "" : "text-amber-500")}>{formatBDT(agingBuckets[b.key] ?? 0)}</p>
             </div>
           ))}
         </div>
@@ -1793,21 +1836,21 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
       <CardShell id="rep-forecast">
         <SectionTitle title="90-Day Cash Flow Forecast" subtitle={`cash position ${formatBDT(forecast?.cashPosition ?? 0)} · projected inflow ${formatBDT(forecast?.totalInflow ?? 0)} vs outflow ${formatBDT(forecast?.totalOutflow ?? 0)}`} />
         <div className="flex flex-col gap-3">
-          {forecastBuckets.length === 0 && <p className="text-[12px] text-muted-foreground">Nothing scheduled in the next 90 days.</p>}
+          {forecastBuckets.length === 0 && <p className="text-body text-muted-foreground">Nothing scheduled in the next 90 days.</p>}
           {forecastBuckets.map((b: any) => (
             <div key={b.label} className="flex items-center gap-3">
-              <span className="w-14 shrink-0 text-[11.5px] font-semibold">{b.label}</span>
+              <span className="w-14 shrink-0 text-meta font-semibold">{b.label}</span>
               <div className="flex flex-1 flex-col gap-1">
                 <div className="flex items-center gap-1.5">
                   <div className="h-2.5 rounded-full bg-emerald-500/80" style={{ width: `${(Number(b.inflow ?? 0) / maxForecast) * 100}%` }} />
-                  <span className="text-[10.5px] tabular-nums text-emerald-500">{formatBDT(b.inflow)} in</span>
+                  <span className="text-micro tabular-nums text-emerald-500">{formatBDT(b.inflow)} in</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <div className="h-2.5 rounded-full bg-rose-500/80" style={{ width: `${(Number(b.outflow ?? 0) / maxForecast) * 100}%` }} />
-                  <span className="text-[10.5px] tabular-nums text-rose-500">{formatBDT(b.outflow)} out</span>
+                  <span className="text-micro tabular-nums text-rose-500">{formatBDT(b.outflow)} out</span>
                 </div>
               </div>
-              <span className={cn("w-24 shrink-0 text-right text-[11.5px] font-bold tabular-nums", b.net >= 0 ? "text-emerald-500" : "text-rose-500")}>{b.net >= 0 ? "+" : ""}{formatBDT(b.net)}</span>
+              <span className={cn("w-24 shrink-0 text-right text-meta font-bold tabular-nums", b.net >= 0 ? "text-emerald-500" : "text-rose-500")}>{b.net >= 0 ? "+" : ""}{formatBDT(b.net)}</span>
             </div>
           ))}
         </div>
@@ -1815,7 +1858,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
 
       <div className="flex items-center justify-between gap-2">
         <SectionTitle title="GL Statements" subtitle="double-entry ledger · all figures in BDT" />
-        {statements?.trialBalance && <p className={cn("text-[11.5px] font-bold", Number(statements.trialBalance.totalDebit) === Number(statements.trialBalance.totalCredit) ? "text-emerald-500" : "text-rose-500")}>Balanced: {formatBDT(statements.trialBalance.totalDebit)} = {formatBDT(statements.trialBalance.totalCredit)}</p>}
+        {statements?.trialBalance && <p className={cn("text-meta font-bold", Number(statements.trialBalance.totalDebit) === Number(statements.trialBalance.totalCredit) ? "text-emerald-500" : "text-rose-500")}>Balanced: {formatBDT(statements.trialBalance.totalDebit)} = {formatBDT(statements.trialBalance.totalCredit)}</p>}
       </div>
       <div id="rep-statements" className="grid scroll-mt-24 grid-cols-1 gap-4 xl:grid-cols-2">
         <CardShell>
@@ -1843,24 +1886,37 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
           <SectionTitle title="Balance Sheet" subtitle={`assets ${formatBDT(statements?.balanceSheet?.totalAssets ?? 0)} · equity & liabilities ${formatBDT(statements?.balanceSheet?.totalEquityAndLiabilities ?? 0)}`} />
           <div className="flex flex-col gap-4">
             <div>
-              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Assets</p>
+              <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">Assets</p>
               {(statements?.balanceSheet?.assets ?? []).map((a: any) => (
-                <div key={a.code} className="flex items-center justify-between border-b border-border/40 py-1.5 text-[12px]"><span>{a.name} <span className="text-[10px] text-muted-foreground">({a.code})</span></span><span className="font-semibold tabular-nums">{formatBDT(a.amount)}</span></div>
+                <div key={a.code} className="flex items-center justify-between border-b border-border/40 py-1.5 text-body"><span>{a.name} <span className="text-micro text-muted-foreground">({a.code})</span></span><span className="font-semibold tabular-nums">{formatBDT(a.amount)}</span></div>
               ))}
             </div>
             <div>
-              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Liabilities</p>
-              {(statements?.balanceSheet?.liabilities ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">None</p>}
+              <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">Liabilities</p>
+              {(statements?.balanceSheet?.liabilities ?? []).length === 0 && <p className="text-meta text-muted-foreground">None</p>}
               {(statements?.balanceSheet?.liabilities ?? []).map((a: any) => (
-                <div key={a.code} className="flex items-center justify-between border-b border-border/40 py-1.5 text-[12px]"><span>{a.name} <span className="text-[10px] text-muted-foreground">({a.code})</span></span><span className="font-semibold tabular-nums">{formatBDT(a.amount)}</span></div>
+                <div key={a.code} className="flex items-center justify-between border-b border-border/40 py-1.5 text-body"><span>{a.name} <span className="text-micro text-muted-foreground">({a.code})</span></span><span className="font-semibold tabular-nums">{formatBDT(a.amount)}</span></div>
               ))}
             </div>
             <div>
-              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Equity (balancing figure)</p>
-              <div className="flex items-center justify-between border-b border-border/40 py-1.5 text-[12px]">
-                <span>Retained earnings + current profit</span>
+              <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">Equity</p>
+              <div className="flex items-center justify-between border-b border-border/40 py-1.5 text-body">
+                <span>Retained earnings</span>
+                <span className="font-semibold tabular-nums">{formatBDT(statements?.balanceSheet?.retainedEarnings ?? 0)}</span>
+              </div>
+              <div className="flex items-center justify-between border-b border-border/40 py-1.5 text-body">
+                <span>Current period profit</span>
+                <span className="font-semibold tabular-nums">{formatBDT(statements?.balanceSheet?.currentProfit ?? 0)}</span>
+              </div>
+              <div className="flex items-center justify-between border-b border-border/40 py-1.5 text-body">
+                <span className="font-bold">Total equity</span>
                 <span className="font-semibold tabular-nums">{formatBDT(statements?.balanceSheet?.equity ?? 0)}</span>
               </div>
+              <p className={cn("mt-2 text-meta font-semibold", statements?.balanceSheet?.balanced ? "text-emerald-500" : "text-rose-500")}>
+                {statements?.balanceSheet?.balanced
+                  ? "Assets = liabilities + equity ✓"
+                  : `Out of balance by ${formatBDT(Number(statements?.balanceSheet?.totalAssets ?? 0) - Number(statements?.balanceSheet?.totalEquityAndLiabilities ?? 0))}`}
+              </p>
             </div>
           </div>
         </CardShell>
@@ -1869,27 +1925,32 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
           <SectionTitle title="Profit & Loss" subtitle="accrual basis · period to date" />
           <div className="flex flex-col gap-4">
             <div>
-              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Revenue</p>
+              <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">Revenue</p>
               {(statements?.profitLoss?.revenue ?? []).map((r: any) => (
-                <div key={r.code} className="flex items-center justify-between border-b border-border/40 py-1.5 text-[12px]"><span>{r.name} <span className="text-[10px] text-muted-foreground">({r.code})</span></span><span className="font-semibold tabular-nums text-emerald-500">{formatBDT(r.amount)}</span></div>
+                <div key={r.code} className="flex items-center justify-between border-b border-border/40 py-1.5 text-body"><span>{r.name} <span className="text-micro text-muted-foreground">({r.code})</span></span><span className="font-semibold tabular-nums text-emerald-500">{formatBDT(r.amount)}</span></div>
               ))}
             </div>
             <div>
-              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Expenses</p>
-              {(statements?.profitLoss?.expenses ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">None</p>}
+              <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">Expenses</p>
+              {(statements?.profitLoss?.expenses ?? []).length === 0 && <p className="text-meta text-muted-foreground">None</p>}
               {(statements?.profitLoss?.expenses ?? []).map((r: any) => (
-                <div key={r.code} className="flex items-center justify-between border-b border-border/40 py-1.5 text-[12px]"><span>{r.name} <span className="text-[10px] text-muted-foreground">({r.code})</span></span><span className="font-semibold tabular-nums text-rose-500">{formatBDT(r.amount)}</span></div>
+                <div key={r.code} className="flex items-center justify-between border-b border-border/40 py-1.5 text-body"><span>{r.name} <span className="text-micro text-muted-foreground">({r.code})</span></span><span className="font-semibold tabular-nums text-rose-500">{formatBDT(r.amount)}</span></div>
               ))}
             </div>
             <div className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2">
-              <span className="text-[11.5px] font-bold">Net Profit</span>
-              <span className={cn("text-[13px] font-bold tabular-nums", Number(statements?.profitLoss?.netIncome ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500")}>{formatBDT(statements?.profitLoss?.netIncome ?? 0)}</span>
+              <span className="text-meta font-bold">Net Profit</span>
+              <span className={cn("text-body-lg font-bold tabular-nums", Number(statements?.profitLoss?.netIncome ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500")}>{formatBDT(statements?.profitLoss?.netIncome ?? 0)}</span>
             </div>
           </div>
         </CardShell>
 
         <CardShell>
           <SectionTitle title="Cash Flow" subtitle={`net ${formatBDT(statements?.cashFlow?.netOperating ?? 0)} operating · closing ${formatBDT(statements?.cashFlow?.closingBalance ?? 0)}`} />
+          {statements?.cashFlow && statements.cashFlow.reconciled === false && (
+            <p className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-meta text-amber-600 dark:text-amber-400">
+              The GL cash account ({formatBDT(statements.cashFlow.netOperating)}) does not match the bank balances ({formatBDT(statements.cashFlow.closingBalance)}). Post the missing opening balance to reconcile the statements.
+            </p>
+          )}
           <TableShell>
             <table className="w-full">
               <THead><Th>Detail</Th><Th className="text-right">In</Th><Th className="text-right">Out</Th><Th className="text-right">Net</Th></THead>
@@ -1914,8 +1975,8 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {AGING_KEYS.map((b) => (
             <div key={b.key} className="rounded-xl border border-border/60 px-3 py-2.5">
-              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">{b.label}</p>
-              <p className={cn("mt-0.5 text-[15px] font-heading font-bold tabular-nums", b.key === "90+" && Number(apAging?.buckets?.[b.key] ?? 0) > 0 ? "text-rose-500" : b.key === "CURRENT" ? "" : "text-amber-500")}>{formatBDT(apAging?.buckets?.[b.key] ?? 0)}</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">{b.label}</p>
+              <p className={cn("mt-0.5 text-section font-heading font-bold tabular-nums", b.key === "90+" && Number(apAging?.buckets?.[b.key] ?? 0) > 0 ? "text-rose-500" : b.key === "CURRENT" ? "" : "text-amber-500")}>{formatBDT(apAging?.buckets?.[b.key] ?? 0)}</p>
             </div>
           ))}
         </div>
@@ -1957,12 +2018,12 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
                 const remaining = Number(b.budgetAmount) - spent;
                 return (
                   <Tr key={b.id} index={i}>
-                    <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold", b.scopeType === "PROJECT" ? "bg-primary/10 text-primary ring-1 ring-primary/20" : "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20")}>{label(b.scopeType)}</span></Td>
+                    <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-micro font-bold", b.scopeType === "PROJECT" ? "bg-primary/10 text-primary ring-1 ring-primary/20" : "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20")}>{label(b.scopeType)}</span></Td>
                     <Td className="font-medium">{b.project?.name ?? label(b.category ?? "—")}</Td>
                     <Td className="text-right font-semibold tabular-nums">{formatBDT(b.budgetAmount)}</Td>
                     <Td className="text-right tabular-nums text-rose-500">{formatBDT(spent)}</Td>
                     <Td className={cn("text-right font-semibold tabular-nums", remaining < 0 ? "text-rose-500" : "text-emerald-500")}>{formatBDT(remaining)}</Td>
-                    <Td className="text-[11px] text-muted-foreground">{b.periodStart ? `${formatDate(b.periodStart)} → ${b.periodEnd ? formatDate(b.periodEnd) : "open"}` : "All time"}</Td>
+                    <Td className="text-meta text-muted-foreground">{b.periodStart ? `${formatDate(b.periodStart)} → ${b.periodEnd ? formatDate(b.periodEnd) : "open"}` : "All time"}</Td>
                     <Td>
                       <div className="flex items-center gap-0.5">
                         <button onClick={() => { setBudgetEdit(b); setBudgetOpen(true); }} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="Edit"><Pencil className="size-3.5" /></button>
@@ -1985,10 +2046,10 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         </div>
       </div>
       <CardShell id="rep-recon">
-        {reconErr && <p className="mb-2 text-[12px] font-medium text-rose-400">{reconErr}</p>}
+        {reconErr && <p className="mb-2 text-body font-medium text-rose-400">{reconErr}</p>}
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           <div>
-            <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Ledger transactions</p>
+            <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">Ledger transactions</p>
             <TableShell>
               <table className="w-full">
                 <THead><Th>Date</Th><Th>Ref</Th><Th>Kind</Th><Th className="text-right">Amount</Th></THead>
@@ -1996,10 +2057,10 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
                   {(reconData?.transactions ?? []).length === 0 && <tr><td colSpan={4} className="px-5 py-6"><EmptyState title="No transactions" /></td></tr>}
                   {(reconData?.transactions ?? []).map((t: any, i: number) => (
                     <Tr key={t.id} index={i}>
-                      <Td className="text-[11px] text-muted-foreground">{formatDate(t.date)}</Td>
-                      <Td className="text-[11.5px]">{t.ref}</Td>
-                      <Td className="text-[10.5px] text-muted-foreground">{label(t.kind)}</Td>
-                      <Td className={cn("text-right text-[11.5px] font-semibold tabular-nums", t.amount >= 0 ? "text-emerald-500" : "text-rose-500")}>{formatBDT(t.amount)}</Td>
+                      <Td className="text-meta text-muted-foreground">{formatDate(t.date)}</Td>
+                      <Td className="text-meta">{t.ref}</Td>
+                      <Td className="text-micro text-muted-foreground">{label(t.kind)}</Td>
+                      <Td className={cn("text-right text-meta font-semibold tabular-nums", t.amount >= 0 ? "text-emerald-500" : "text-rose-500")}>{formatBDT(t.amount)}</Td>
                     </Tr>
                   ))}
                 </tbody>
@@ -2007,7 +2068,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
             </TableShell>
           </div>
           <div>
-            <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Statement records</p>
+            <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">Statement records</p>
             <TableShell>
               <table className="w-full">
                 <THead><Th>Date</Th><Th>Reference</Th><Th className="text-right">Amount</Th><Th>Status</Th></THead>
@@ -2015,9 +2076,9 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
                   {(reconData?.records ?? []).length === 0 && <tr><td colSpan={4} className="px-5 py-6"><EmptyState title="No statement entries" /></td></tr>}
                   {(reconData?.records ?? []).map((r: any, i: number) => (
                     <Tr key={r.id} index={i}>
-                      <Td className="text-[11px] text-muted-foreground">{formatDate(r.statementDate)}</Td>
-                      <Td className="text-[11.5px]">{r.statementReference ?? "—"}</Td>
-                      <Td className="text-right text-[11.5px] font-semibold tabular-nums">{formatBDT(r.statementAmount)}</Td>
+                      <Td className="text-meta text-muted-foreground">{formatDate(r.statementDate)}</Td>
+                      <Td className="text-meta">{r.statementReference ?? "—"}</Td>
+                      <Td className="text-right text-meta font-semibold tabular-nums">{formatBDT(r.statementAmount)}</Td>
                       <Td><StatusBadge status={r.matchStatus} /></Td>
                     </Tr>
                   ))}
@@ -2041,10 +2102,10 @@ export function ProfitabilityTab({ data }: { data: any }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total Revenue" value={formatBDT(summary.totalRevenue)} sub="recognized" tone="sky" icon={<CircleDollarSign className="size-5" />} />
-        <StatCard label="Total Expenses" value={formatBDT(summary.totalExpenses)} sub="incl. pass-through" tone="rose" icon={<Banknote className="size-5" />} />
-        <StatCard label="Net Profit" value={formatBDT(summary.netProfit)} sub={summary.margin != null ? `${Math.round(summary.margin)}% margin` : "—"} tone="emerald" icon={<HandCoins className="size-5" />} />
-        <StatCard label="Avg Monthly Profit" value={formatBDT(monthly.length ? Number(summary.totalProfit ?? 0) / monthly.length : 0)} sub={`${monthly.length} months tracked`} tone="primary" icon={<Wallet className="size-5" />} />
+        <StatCard label="Total Revenue" value={formatBDT(summary.totalRevenue)} sub="recognized" tone="sky" icon={<CircleDollarSign className="size-4" />} />
+        <StatCard label="Total Expenses" value={formatBDT(summary.totalExpenses)} sub="incl. pass-through" tone="rose" icon={<Banknote className="size-4" />} />
+        <StatCard label="Net Profit" value={formatBDT(summary.netProfit)} sub={summary.margin != null ? `${Math.round(summary.margin)}% margin` : "—"} tone="emerald" icon={<HandCoins className="size-4" />} />
+        <StatCard label="Avg Monthly Profit" value={formatBDT(monthly.length ? Number(summary.totalProfit ?? 0) / monthly.length : 0)} sub={`${monthly.length} months tracked`} tone="primary" icon={<Wallet className="size-4" />} />
       </div>
 
       {!data ? (
@@ -2127,7 +2188,7 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search accounts…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search accounts…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
         <Select value={cat} onChange={(e) => setCat(e.target.value)} className="!w-40"><option value="">All categories</option>{ACCOUNT_CATEGORIES.map((c) => <option key={c} value={c}>{label(c)}</option>)}</Select>
         <div className="ml-auto flex items-center gap-2">
@@ -2136,7 +2197,7 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
       </div>
 
       <FadeIn>
-        <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{list.length} accounts · {list.filter((a) => a.isActive).length} active</span>}>
+        <TableShell footer={<span className="text-meta text-muted-foreground">{list.length} accounts · {list.filter((a) => a.isActive).length} active</span>}>
           <table className="w-full">
             <THead><Th>Code</Th><Th>Name</Th><Th>Category</Th><Th className="text-right">Ledger balance</Th><Th>Status</Th><Th /></THead>
             <tbody>
@@ -2145,9 +2206,9 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
               )}
               {list.map((a, i) => (
                 <Tr key={a.id} index={i} onClick={() => setDetailId(a.id)} className={cn("cursor-pointer", detailId === a.id && "bg-primary/[0.04]")}>
-                  <Td className="font-mono text-[12px] tabular-nums text-muted-foreground">{a.code ?? "—"}</Td>
+                  <Td className="font-mono text-body tabular-nums text-muted-foreground">{a.code ?? "—"}</Td>
                   <Td className="font-medium">{a.name}</Td>
-                  <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold", a.category === "ASSET" ? "bg-emerald-500/10 text-emerald-500 ring-1 ring-emerald-500/20" : a.category === "LIABILITY" ? "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20" : a.category === "REVENUE" ? "bg-primary/10 text-primary ring-1 ring-primary/20" : "bg-sky-500/10 text-sky-500 ring-1 ring-sky-500/20")}>{label(a.category)}</span></Td>
+                  <Td><span className={cn("inline-flex rounded-full px-2 py-0.5 text-micro font-bold", a.category === "ASSET" ? "bg-emerald-500/10 text-emerald-500 ring-1 ring-emerald-500/20" : a.category === "LIABILITY" ? "bg-amber-500/10 text-amber-500 ring-1 ring-amber-500/20" : a.category === "REVENUE" ? "bg-primary/10 text-primary ring-1 ring-primary/20" : "bg-sky-500/10 text-sky-500 ring-1 ring-sky-500/20")}>{label(a.category)}</span></Td>
                   <Td className={cn("text-right font-semibold tabular-nums", balanceOf(a.id) < 0 ? "text-rose-500" : "")}>{formatBDT(balanceOf(a.id))}</Td>
                   <Td><StatusBadge status={a.isActive ? "Active" : "Inactive"} /></Td>
                   <Td onClick={(ev) => ev.stopPropagation()}>
@@ -2189,7 +2250,7 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
               amount={formatBDT(balanceOf(detail.id))}
               chips={
                 <>
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{label(detail.category ?? "")}</span>
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground">{label(detail.category ?? "")}</span>
                   <StatusBadge status={detail.isActive ? "Active" : "Inactive"} />
                 </>
               }
@@ -2204,7 +2265,7 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
             </DetailSection>
             {detail.description && (
               <DetailSection title="Description">
-                <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{detail.description}</p>
+                <p className="whitespace-pre-wrap text-body leading-relaxed text-muted-foreground">{detail.description}</p>
               </DetailSection>
             )}
           </div>
@@ -2245,7 +2306,7 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search vendors…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search vendors…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
         <div className="ml-auto flex items-center gap-2">
           <Btn variant="primary" onClick={onAdd} data-testid="add-vendor-btn"><UserPlus className="size-3.5" /> Add Vendor</Btn>
@@ -2253,7 +2314,7 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
       </div>
 
       <FadeIn>
-        <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{list.length} vendors · {list.filter((v) => v.isActive).length} active</span>}>
+        <TableShell footer={<span className="text-meta text-muted-foreground">{list.length} vendors · {list.filter((v) => v.isActive).length} active</span>}>
           <table className="w-full">
             <THead><Th>Name</Th><Th>Contact</Th><Th>Payment terms</Th><Th className="text-right">Expenses</Th><Th className="text-right">Payable</Th><Th>Status</Th><Th /></THead>
             <tbody>
@@ -2265,8 +2326,8 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
                 return (
                   <Tr key={v.id} index={i} onClick={() => setDetailId(v.id)} className={cn("cursor-pointer", detailId === v.id && "bg-primary/[0.04]")}>
                     <Td className="font-medium">{v.name}</Td>
-                    <Td className="text-[11.5px] text-muted-foreground">{v.email ? <p>{v.email}</p> : null}{v.phone ? <p>{v.phone}</p> : null}{!v.email && !v.phone ? "—" : null}</Td>
-                    <Td className="text-[11.5px] text-muted-foreground">{v.paymentTerms ?? "—"}</Td>
+                    <Td className="text-meta text-muted-foreground">{v.email ? <p>{v.email}</p> : null}{v.phone ? <p>{v.phone}</p> : null}{!v.email && !v.phone ? "—" : null}</Td>
+                    <Td className="text-meta text-muted-foreground">{v.paymentTerms ?? "—"}</Td>
                     <Td className="text-right tabular-nums">{stat?.count ?? 0}</Td>
                     <Td className={cn("text-right font-semibold tabular-nums", (stat?.payable ?? 0) > 0 ? "text-amber-500" : "text-muted-foreground")}>{formatBDT(stat?.payable ?? 0)}</Td>
                     <Td><StatusBadge status={v.isActive ? "Active" : "Inactive"} /></Td>
@@ -2311,7 +2372,7 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
               chips={
                 <>
                   <StatusBadge status={detail.isActive ? "Active" : "Inactive"} />
-                  {detail.paymentTerms && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{detail.paymentTerms}</span>}
+                  {detail.paymentTerms && <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground">{detail.paymentTerms}</span>}
                 </>
               }
               caption={`${detailStat?.count ?? 0} expense${(detailStat?.count ?? 0) === 1 ? "" : "s"} recorded with this vendor`}
@@ -2339,10 +2400,10 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
                   {detailExpenses.map((e: any) => (
                     <div key={e.id} className="flex items-center justify-between gap-3 py-1.5">
                       <div className="min-w-0">
-                        <p className="truncate text-[11.5px] font-medium">{e.description}</p>
-                        <p className="text-[10px] text-muted-foreground">{formatDate(e.date)} · {label(e.approvalStatus ?? "")}</p>
+                        <p className="truncate text-meta font-medium">{e.description}</p>
+                        <p className="text-micro text-muted-foreground">{formatDate(e.date)} · {label(e.approvalStatus ?? "")}</p>
                       </div>
-                      <span className="shrink-0 text-[11.5px] font-bold tabular-nums">{formatBDT(e.amount)}</span>
+                      <span className="shrink-0 text-meta font-bold tabular-nums">{formatBDT(e.amount)}</span>
                     </div>
                   ))}
                 </div>
@@ -2351,7 +2412,7 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
 
             {detail.notes && (
               <DetailSection title="Notes">
-                <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">{detail.notes}</p>
+                <p className="whitespace-pre-wrap text-body leading-relaxed text-muted-foreground">{detail.notes}</p>
               </DetailSection>
             )}
           </div>
@@ -2381,12 +2442,12 @@ export function ActivityTab({ activity, refresh }: { activity: any[] | null; ref
                     <span className={cn("mt-1 size-2 shrink-0 rounded-full", a.entityType === "PAYMENT" ? "bg-emerald-500" : a.entityType === "EXPENSE" ? "bg-amber-400" : a.entityType === "INVOICE" ? "bg-primary" : "bg-sky-400")} />
                     <div className="min-w-0 flex-1 rounded-xl border border-border/60 px-3 py-2">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase", ENTITY_TONES[a.entityType] ?? "bg-muted text-muted-foreground")}>{label(a.entityType)}</span>
-                        <p className="text-[12.5px] font-medium">{a.action}</p>
-                        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70">{timeAgo(a.timestamp)} · {a.performedBy?.name ?? "system"}</span>
+                        <span className={cn("rounded-full px-1.5 py-0.5 text-micro font-bold uppercase", ENTITY_TONES[a.entityType] ?? "bg-muted text-muted-foreground")}>{label(a.entityType)}</span>
+                        <p className="text-body font-medium">{a.action}</p>
+                        <span className="ml-auto shrink-0 text-micro text-muted-foreground/70">{timeAgo(a.timestamp)} · {a.performedBy?.name ?? "system"}</span>
                       </div>
                       {(a.beforeValue != null || a.afterValue != null) && (
-                        <p className="mt-1 truncate font-mono text-[10.5px] text-muted-foreground/80">{fmtJSON(a.beforeValue)} → {fmtJSON(a.afterValue)}</p>
+                        <p className="mt-1 truncate font-mono text-micro text-muted-foreground/80">{fmtJSON(a.beforeValue)} → {fmtJSON(a.afterValue)}</p>
                       )}
                     </div>
                   </div>
@@ -2416,10 +2477,10 @@ export function ActivityTab({ activity, refresh }: { activity: any[] | null; ref
               {detail.entityId && <DetailRow label="Record id" mono>{detail.entityId}</DetailRow>}
             </DetailSection>
             <DetailSection title="Before">
-              <pre className="max-h-56 overflow-auto rounded-xl bg-muted/40 p-3 font-mono text-[10.5px] leading-relaxed">{detail.beforeValue == null ? "—" : JSON.stringify(detail.beforeValue, null, 2)}</pre>
+              <pre className="max-h-56 overflow-auto rounded-xl bg-muted/40 p-3 font-mono text-micro leading-relaxed">{detail.beforeValue == null ? "—" : JSON.stringify(detail.beforeValue, null, 2)}</pre>
             </DetailSection>
             <DetailSection title="After">
-              <pre className="max-h-56 overflow-auto rounded-xl bg-muted/40 p-3 font-mono text-[10.5px] leading-relaxed">{detail.afterValue == null ? "—" : JSON.stringify(detail.afterValue, null, 2)}</pre>
+              <pre className="max-h-56 overflow-auto rounded-xl bg-muted/40 p-3 font-mono text-micro leading-relaxed">{detail.afterValue == null ? "—" : JSON.stringify(detail.afterValue, null, 2)}</pre>
             </DetailSection>
           </div>
         )}

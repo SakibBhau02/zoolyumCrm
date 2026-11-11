@@ -49,9 +49,9 @@ export function BrandLogo({
             background: "var(--primary, oklch(0.56 0.23 290))",
           }}
         >
-          <Sparkles className={isLarge ? "size-7 text-white" : "size-4.5 text-white"} />
+          <Sparkles className={isLarge ? "size-4 text-white" : "size-4.5 text-white"} />
         </span>
-        <span className={`font-heading font-bold tracking-tight ${isLarge ? "text-lg" : "text-[15px]"}`}>{appName}</span>
+        <span className={`font-heading font-bold tracking-tight ${isLarge ? "text-title" : "text-section"}`}>{appName}</span>
       </span>
     );
   }

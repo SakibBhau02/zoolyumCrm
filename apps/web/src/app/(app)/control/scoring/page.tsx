@@ -131,7 +131,7 @@ export default function ScoringPage() {
       {flash && (
         <div
           className={cn(
-            "fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-xl px-4 py-2.5 text-[12.5px] font-medium text-white shadow-xl",
+            "fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-xl px-4 py-2.5 text-body font-medium text-white shadow-xl",
             flash.error ? "bg-rose-600" : "bg-sidebar"
           )}
         >
@@ -146,7 +146,7 @@ export default function ScoringPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/control"
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-[12px] font-semibold transition-colors hover:text-foreground"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-body font-semibold transition-colors hover:text-foreground"
             >
               <ArrowLeft className="size-3.5" /> Control
             </Link>
@@ -182,7 +182,7 @@ export default function ScoringPage() {
                   ? "text-amber-500"
                   : "text-rose-500"
           }
-          icon={<Gauge className="size-3.5" />}
+          icon={<Gauge className="size-4" />}
         />
         <Kpi
           label="Avg project risk"
@@ -197,19 +197,19 @@ export default function ScoringPage() {
                   ? "text-amber-500"
                   : "text-emerald-500"
           }
-          icon={<BarChart3 className="size-3.5" />}
+          icon={<BarChart3 className="size-4" />}
         />
         <Kpi
           label="Never scored"
           value={(overview?.clients?.neverScored ?? 0) + (overview?.projects?.neverScored ?? 0)}
           hint="Run a recompute to seed these"
-          icon={<Sparkles className="size-3.5" />}
+          icon={<Sparkles className="size-4" />}
         />
         <Kpi
           label="Stale (>24h)"
           value={(overview?.clients?.stale ?? 0) + (overview?.projects?.stale ?? 0)}
           hint={overview?.lastRun ? `Last full run ${formatDate(overview.lastRun.at)}` : "Nightly run at 02:00"}
-          icon={<Clock className="size-3.5" />}
+          icon={<Clock className="size-4" />}
         />
       </div>
 
@@ -293,12 +293,12 @@ function Kpi({
 }) {
   return (
     <div className="rounded-2xl border border-border/60 bg-card px-4 py-3.5">
-      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-meta font-medium uppercase tracking-wide text-muted-foreground">
         {icon}
         {label}
       </div>
-      <p className={cn("mt-1 text-xl font-heading font-semibold tabular-nums", tone)}>{value}</p>
-      {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
+      <p className={cn("mt-1 text-stat font-heading font-semibold tabular-nums", tone)}>{value}</p>
+      {hint && <p className="mt-0.5 text-meta text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -370,7 +370,7 @@ function ProfileEditor({
             <div className="flex items-center gap-2">
               <span
                 className={cn(
-                  "rounded-full border px-2.5 py-1 text-[11px] font-bold",
+                  "rounded-full border px-2.5 py-1 text-meta font-bold",
                   Math.abs(totalWeight - 100) < 0.01
                     ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
                     : "border-amber-500/30 bg-amber-500/10 text-amber-600"
@@ -475,11 +475,11 @@ function FactorCard({
         <Input
           value={factor.label}
           onChange={(e) => onPatch({ label: e.target.value })}
-          className="min-w-[150px] flex-1 !h-9 !text-[12.5px] !font-semibold"
+          className="min-w-[150px] flex-1 !h-9 !text-body !font-semibold"
           placeholder="Factor label"
         />
         <div className="flex items-center gap-1.5">
-          <span className="text-[10.5px] font-medium uppercase text-muted-foreground">Weight</span>
+          <span className="text-micro font-medium uppercase text-muted-foreground">Weight</span>
           <Input
             type="number"
             min={0}
@@ -492,7 +492,7 @@ function FactorCard({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+          className="rounded-lg border border-border px-2.5 py-1.5 text-meta font-semibold text-muted-foreground transition-colors hover:text-foreground"
         >
           {open ? "Hide rules" : "Rules"}
         </button>
@@ -506,7 +506,7 @@ function FactorCard({
         </button>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
         <span className="rounded-md bg-muted/60 px-1.5 py-0.5 font-mono">{factor.metric || "no metric"}</span>
         {registry?.description && <span className="max-w-[520px] truncate">{registry.description}</span>}
       </div>
@@ -559,19 +559,19 @@ function FactorCard({
           ) : (
             <div>
               <div className="mb-1.5 flex items-center justify-between">
-                <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                <p className="text-meta font-bold uppercase tracking-wide text-muted-foreground">
                   Score bands (first match wins)
                 </p>
                 <Btn variant="ghost" onClick={addBand}>
-                  <Plus className="size-3" /> Band
+                  <Plus className="size-3.5" /> Band
                 </Btn>
               </div>
               <div className="space-y-1.5">
                 {(factor.bands ?? []).map((band: any, index: number) => (
                   <div key={index} className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/30 px-2.5 py-1.5">
-                    <span className="text-[11.5px] font-medium">if value ≤</span>
+                    <span className="text-meta font-medium">if value ≤</span>
                     {band.lte === null ? (
-                      <span className="rounded-md border border-border bg-background px-2 py-1 text-[11.5px] font-semibold">
+                      <span className="rounded-md border border-border bg-background px-2 py-1 text-meta font-semibold">
                         anything else
                       </span>
                     ) : (
@@ -585,11 +585,11 @@ function FactorCard({
                     <button
                       type="button"
                       onClick={() => patchBand(index, { lte: band.lte === null ? 0 : null })}
-                      className="rounded-md border border-border px-1.5 py-1 text-[10.5px] font-semibold text-muted-foreground hover:text-foreground"
+                      className="rounded-md border border-border px-1.5 py-1 text-micro font-semibold text-muted-foreground hover:text-foreground"
                     >
                       {band.lte === null ? "set value" : "∞ catch-all"}
                     </button>
-                    <span className="text-[11.5px] font-medium">→</span>
+                    <span className="text-meta font-medium">→</span>
                     <Input
                       type="number"
                       min={0}
@@ -598,7 +598,7 @@ function FactorCard({
                       onChange={(e) => patchBand(index, { score: Number(e.target.value) })}
                       className="!h-8 !w-20 text-right tabular-nums"
                     />
-                    <span className="text-[11px] text-muted-foreground">pts</span>
+                    <span className="text-meta text-muted-foreground">pts</span>
                     <button
                       type="button"
                       onClick={() => removeBand(index)}
@@ -609,7 +609,7 @@ function FactorCard({
                   </div>
                 ))}
               </div>
-              <p className="mt-1.5 text-[10.5px] text-muted-foreground">
+              <p className="mt-1.5 text-micro text-muted-foreground">
                 Bands are matched from the smallest value upward; always keep one catch-all band.
               </p>
             </div>
@@ -623,7 +623,7 @@ function FactorCard({
 function Labeled({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="mb-1 block text-micro font-bold uppercase tracking-wide text-muted-foreground">{label}</span>
       {children}
     </label>
   );
@@ -734,12 +734,12 @@ function ProfilesEditor({
               <Input
                 value={profile.label}
                 onChange={(e) => patch(index, { label: e.target.value })}
-                className="!h-9 min-w-[150px] flex-1 !text-[12.5px] !font-semibold"
+                className="!h-9 min-w-[150px] flex-1 !text-body !font-semibold"
                 placeholder="Profile name"
               />
               <div className="flex flex-wrap items-center gap-1.5">
                 {cycles.map((c) => (
-                  <label key={c.value} className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-[11px] font-medium">
+                  <label key={c.value} className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-meta font-medium">
                     <input
                       type="checkbox"
                       checked={(profile.match?.billingCycleType ?? []).includes(c.value)}
@@ -809,12 +809,12 @@ function OverallEditor({
       <div className="rounded-xl border border-border/60 bg-background p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p className="text-[12px] font-semibold">{title}</p>
-            <p className="text-[11px] text-muted-foreground">{hint}</p>
+            <p className="text-body font-semibold">{title}</p>
+            <p className="text-meta text-muted-foreground">{hint}</p>
           </div>
           <div className="flex items-center gap-1.5">
             {["YELLOW", "RED"].map((level) => (
-              <label key={level} className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-[11px] font-medium">
+              <label key={level} className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border px-2 py-1 text-meta font-medium">
                 <input
                   type="checkbox"
                   checked={(policy.levels ?? []).includes(level)}
@@ -858,7 +858,7 @@ function OverallEditor({
           action={
             <span
               className={cn(
-                "rounded-full border px-2.5 py-1 text-[11px] font-bold",
+                "rounded-full border px-2.5 py-1 text-meta font-bold",
                 Math.abs(total - 100) < 0.01
                   ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
                   : "border-amber-500/30 bg-amber-500/10 text-amber-600"
@@ -877,10 +877,10 @@ function OverallEditor({
                 onChange={(e) => patchComponent(index, { enabled: e.target.checked })}
                 className="size-4 accent-violet-600"
               />
-              <span className="flex-1 text-[12.5px] font-semibold">{component.label}</span>
-              <span className="font-mono text-[10.5px] text-muted-foreground">{component.key}</span>
+              <span className="flex-1 text-body font-semibold">{component.label}</span>
+              <span className="font-mono text-micro text-muted-foreground">{component.key}</span>
               <div className="flex items-center gap-1.5">
-                <span className="text-[10.5px] font-medium uppercase text-muted-foreground">Weight</span>
+                <span className="text-micro font-medium uppercase text-muted-foreground">Weight</span>
                 <Input
                   type="number"
                   min={0}
@@ -907,7 +907,7 @@ function OverallEditor({
           subtitle="Notify the chosen roles when a score worsens into a band. Only a downgrade fires — the nightly recompute will not re-alert a client that is already red."
           action={
             <div className="flex items-center gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-[11.5px] font-medium">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-meta font-medium">
                 <input
                   type="checkbox"
                   checked={alerts?.notifyImprovements !== false}
@@ -916,7 +916,7 @@ function OverallEditor({
                 />
                 Also on recovery
               </label>
-              <label className="inline-flex cursor-pointer items-center gap-2 text-[11.5px] font-medium">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-meta font-medium">
                 <input
                   type="checkbox"
                   checked={alerts?.enabled !== false}
@@ -1123,7 +1123,7 @@ function PreviewTab({ draft, dirty, notify }: { draft: any; dirty: boolean; noti
           }
         />
         {dirty && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] font-medium text-amber-700">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-meta font-medium text-amber-700">
             Previewing unsaved changes — save when the numbers look right.
           </div>
         )}
@@ -1148,26 +1148,26 @@ function ScoreCard({ result, scope }: { result: any; scope: Scope }) {
     <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
       <CardShell>
         <div className="flex items-center justify-between">
-          <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+          <p className="text-meta font-bold uppercase tracking-wide text-muted-foreground">
             {scope === "client" ? "Health score" : "Project health"}
           </p>
-          <span className={cn("rounded-full border px-2 py-0.5 text-[10.5px] font-bold", levelTone)}>
+          <span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold", levelTone)}>
             {result.level}
           </span>
         </div>
-        <p className="mt-3 text-5xl font-heading font-semibold tabular-nums">{score}</p>
-        <p className="mt-1 text-[12px] font-medium text-muted-foreground">
+        <p className="mt-3 text-display font-heading font-semibold tabular-nums">{score}</p>
+        <p className="mt-1 text-body font-medium text-muted-foreground">
           {result.band?.label}
           {scope === "project" && ` · risk ${result.riskScore ?? 100 - result.score}`}
         </p>
-        <div className="mt-4 space-y-2 text-[11.5px]">
+        <div className="mt-4 space-y-2 text-meta">
           <Row label="Data coverage" value={`${result.coverage}%`} />
           <Row label="Weight used" value={`${result.breakdown.filter((b: any) => b.subScore !== null).reduce((s: number, b: any) => s + b.weight, 0)}%`} />
           <Row label="Override rules" value={result.overridden ? "fired" : "none"} tone={result.overridden ? "text-rose-500" : undefined} />
           <Row label="Computed" value={formatDate(result.computedAt)} />
         </div>
         {result.band?.action && (
-          <div className="mt-4 rounded-xl bg-muted/40 p-3 text-[11.5px]">
+          <div className="mt-4 rounded-xl bg-muted/40 p-3 text-meta">
             <p className="font-bold uppercase tracking-wide text-muted-foreground">Required action</p>
             <p className="mt-1">{result.band.action}</p>
           </div>
@@ -1179,10 +1179,10 @@ function ScoreCard({ result, scope }: { result: any; scope: Scope }) {
         <div className="space-y-2.5">
           {result.breakdown.map((factor: any) => (
             <div key={factor.code}>
-              <div className="mb-1 flex items-center justify-between gap-2 text-[11.5px]">
+              <div className="mb-1 flex items-center justify-between gap-2 text-meta">
                 <span className="flex items-center gap-1.5 font-semibold">
                   {factor.label}
-                  <span className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">
+                  <span className="rounded bg-muted/60 px-1.5 py-0.5 text-micro font-bold text-muted-foreground">
                     {factor.weight}%
                   </span>
                 </span>
@@ -1224,7 +1224,7 @@ function ScoreCard({ result, scope }: { result: any; scope: Scope }) {
                   style={{ width: `${factor.subScore ?? 0}%` }}
                 />
               </div>
-              <div className="mt-0.5 flex justify-between text-[10px] text-muted-foreground">
+              <div className="mt-0.5 flex justify-between text-micro text-muted-foreground">
                 <span>contributes {factor.contribution} pts</span>
                 <span>{factor.metric}</span>
               </div>
@@ -1232,7 +1232,7 @@ function ScoreCard({ result, scope }: { result: any; scope: Scope }) {
           ))}
         </div>
         {result.overrideNotes?.length > 0 && (
-          <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-[11.5px] text-rose-700">
+          <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-meta text-rose-700">
             <p className="font-bold uppercase tracking-wide">Override rules fired</p>
             <ul className="mt-1 list-disc pl-4">
               {result.overrideNotes.map((note: string, i: number) => (
@@ -1359,7 +1359,7 @@ function HistoryTab({
               })}
             </div>
             {forecast && !forecast.insufficient && (
-              <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-[11.5px]">
+              <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-meta">
                 <span className="font-semibold">
                   Trend{" "}
                   <span
@@ -1387,13 +1387,13 @@ function HistoryTab({
               </div>
             )}
             {forecast?.insufficient && (
-              <p className="mb-4 text-[11px] text-muted-foreground">
+              <p className="mb-4 text-meta text-muted-foreground">
                 Need at least two snapshots to forecast a trend.
               </p>
             )}
             <div className="divide-y divide-border/60">
               {rows.map((r) => (
-                <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-[12px]">
+                <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-body">
                   <span className="tabular-nums text-muted-foreground">
                     {formatDate(scope === "client" ? r.recordedAt : r.calculatedAt)}
                   </span>
@@ -1450,11 +1450,11 @@ function BacktestCard({
 
   const metric = (label: string, value: number | null, hint: string, tone?: string, suffix = "%") => (
     <div className="rounded-xl border border-border/60 bg-background px-3 py-2.5">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={cn("mt-0.5 text-lg font-heading font-semibold tabular-nums", tone)}>
+      <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("mt-0.5 text-title font-heading font-semibold tabular-nums", tone)}>
         {value == null ? "—" : `${value}${suffix}`}
       </p>
-      <p className="text-[10.5px] text-muted-foreground">{hint}</p>
+      <p className="text-micro text-muted-foreground">{hint}</p>
     </div>
   );
 
@@ -1487,12 +1487,12 @@ function BacktestCard({
             {metric("Precision", data.precision, "Of everyone flagged, how many actually churned")}
             {metric("Sample", data.sample == null ? null : data.sample, `clients with a snapshot ${days} days ago`, undefined, "")}
           </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">
+          <p className="mt-2 text-meta text-muted-foreground">
             A useful score catches 80%+ of churners at the cost of a tolerable false-alarm rate. If both numbers
             are low, the weights are not reading your data; adjust them and re-run.
           </p>
           {data.surprises?.length > 0 && (
-            <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-[11.5px] text-rose-700">
+            <div className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-meta text-rose-700">
               <p className="font-bold uppercase tracking-wide">Churned while green — investigate these</p>
               <ul className="mt-1 list-disc pl-4">
                 {data.surprises.map((s: any) => (
@@ -1505,7 +1505,7 @@ function BacktestCard({
           )}
           <div className="mt-3 divide-y divide-border/60">
             {data.rows.slice(0, 40).map((r: any) => (
-              <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-[11.5px]">
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-meta">
                 <span className="min-w-[140px] font-medium">{r.companyName}</span>
                 <span className="tabular-nums text-muted-foreground">
                   {r.thenScore}/100 · {formatDate(r.thenDate)}
@@ -1514,7 +1514,7 @@ function BacktestCard({
                   {r.thenLevel && <StatusBadge status={r.thenLevel} />}
                   <span
                     className={cn(
-                      "rounded-full border px-2 py-0.5 text-[10px] font-bold capitalize",
+                      "rounded-full border px-2 py-0.5 text-micro font-bold capitalize",
                       r.churned
                         ? "border-rose-500/30 bg-rose-500/10 text-rose-500"
                         : "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
@@ -1530,10 +1530,10 @@ function BacktestCard({
           <div className="mt-4 rounded-xl border border-border/60 bg-muted/10 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+                <p className="text-meta font-bold uppercase tracking-wide text-muted-foreground">
                   Weight calibration
                 </p>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-meta text-muted-foreground">
                   Which factors actually separated churned from retained clients at the cutoff.
                 </p>
               </div>
@@ -1544,12 +1544,12 @@ function BacktestCard({
             </div>
 
             {calibration?.caveat && (
-              <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-700">
+              <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-meta text-amber-700">
                 {calibration.caveat}
               </p>
             )}
             {calibration && !calibration.reliable && (
-              <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-[11px] text-amber-700">
+              <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-meta text-amber-700">
                 Only {calibration.churned} churned / {calibration.retained} retained with breakdown snapshots.
                 Treat this as a hint, not a verdict.
               </p>
@@ -1557,9 +1557,9 @@ function BacktestCard({
 
             {calibration && (
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-[11px]">
+                <table className="w-full text-meta">
                   <thead>
-                    <tr className="text-left text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <tr className="text-left text-micro uppercase tracking-wide text-muted-foreground">
                       <th className="pb-1.5 font-bold">Factor</th>
                       <th className="pb-1.5 text-right font-bold">Churned</th>
                       <th className="pb-1.5 text-right font-bold">Retained</th>
@@ -1582,7 +1582,7 @@ function BacktestCard({
                   </tbody>
                 </table>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[10.5px] text-muted-foreground">
+                  <p className="text-micro text-muted-foreground">
                     Suggested weights are proportional to the gap. Applying only edits the draft — save when it looks right.
                   </p>
                   <Btn

@@ -20,16 +20,16 @@ export default function AppError({
   return (
     <div className="flex min-h-[50vh] items-center justify-center">
       <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-        <p className="font-heading text-[15px] font-semibold">This page hit an error</p>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="font-heading text-section font-semibold">This page hit an error</p>
+        <p className="mt-1.5 text-body leading-relaxed text-muted-foreground">
           Nothing was lost. Retry the page — the rest of the workspace keeps working.
         </p>
         {error.digest && (
-          <p className="mt-2 font-mono text-[10.5px] text-muted-foreground/70">ref: {error.digest}</p>
+          <p className="mt-2 font-mono text-micro text-muted-foreground/70">ref: {error.digest}</p>
         )}
         <button
           onClick={reset}
-          className="mt-5 rounded-xl bg-brand-gradient px-4 py-2 text-[12.5px] font-semibold text-white"
+          className="mt-5 rounded-xl bg-brand-gradient px-4 py-2 text-body font-semibold text-white"
         >
           Try again
         </button>

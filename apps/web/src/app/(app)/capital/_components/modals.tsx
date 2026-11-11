@@ -74,13 +74,13 @@ function InvoiceTotalsPreview({ lines, taxApplicable, taxRate, discountRate, shi
     payments: [],
   });
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl bg-muted/40 px-3 py-2.5 text-[12px]">
+    <div className="flex flex-col gap-1.5 rounded-xl bg-muted/40 px-3 py-2.5 text-body">
       <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="font-medium tabular-nums">{formatBDT(t.subtotal)}</span></div>
       {t.tax > 0 && <div className="flex justify-between"><span className="text-muted-foreground">VAT / Tax ({Number(taxRate) || 0}%)</span><span className="font-medium tabular-nums">+ {formatBDT(t.tax)}</span></div>}
       {t.discount > 0 && <div className="flex justify-between"><span className="text-emerald-600 dark:text-emerald-400">Discount ({Number(discountRate) || 0}%)</span><span className="font-medium tabular-nums">− {formatBDT(t.discount)}</span></div>}
       {t.shipping > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Shipping / Delivery</span><span className="font-medium tabular-nums">+ {formatBDT(t.shipping)}</span></div>}
       <div className="flex justify-between border-t border-border/60 pt-1.5"><span className="font-bold">Grand Total</span><span className="font-bold tabular-nums">{formatBDT(t.grand)}</span></div>
-      <p className="text-[10.5px] italic leading-relaxed text-muted-foreground">In words: {numberToWords(t.grand, currency)}</p>
+      <p className="text-micro italic leading-relaxed text-muted-foreground">In words: {numberToWords(t.grand, currency)}</p>
     </div>
   );
 }
@@ -103,7 +103,7 @@ function TemplatePicker({ value, onChange, compact }: { value: string; onChange:
           className={`flex flex-col gap-1.5 rounded-xl border p-2 text-left transition-all ${value === t.value ? "border-primary ring-2 ring-primary/20" : "border-border/60 hover:border-primary/40"}`}
         >
           <span className={`h-6 w-full rounded-md ${TEMPLATE_SWATCH[t.value] ?? "bg-muted"}`} />
-          <span className="text-[11px] font-semibold">{t.label}</span>
+          <span className="text-meta font-semibold">{t.label}</span>
         </button>
       ))}
     </div>
@@ -309,54 +309,54 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = f
           {visibleProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
         {f.clientId && visibleProjects.length === 0 && (
-          <p className="mt-1 text-[11px] text-muted-foreground">No projects under this client yet.</p>
+          <p className="mt-1 text-meta text-muted-foreground">No projects under this client yet.</p>
         )}
         {showAdvanceInput && (
           <div className="mt-2 flex items-center gap-2">
             <div className="relative w-28">
               <Input type="number" min={0} max={100} step="any" value={f.advancePct} onChange={(e) => applyAdvancePct(e.target.value)} placeholder="50" className="pr-7" />
-              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] font-bold text-muted-foreground">%</span>
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-body font-bold text-muted-foreground">%</span>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               {advancePreview ? <span>Advance <span className="font-bold tabular-nums text-foreground">{advancePreview}</span> of {formatBDT(projectValue(selectedProject, projFin))}</span> : "Milestone % of project value"}
             </p>
           </div>
         )}
         {showAdvanceInput && Number(f.advancePct) > 0 && Number(f.advancePct) <= 100 && !systemLines(f.lines) && (
-          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">Line edited by hand — clear it to apply the % again.</p>
+          <p className="mt-1 text-meta text-amber-600 dark:text-amber-400">Line edited by hand — clear it to apply the % again.</p>
         )}
         {showAdvanceInput && projFin && Number(f.advancePct) > 0 && Number(f.advancePct) <= 100 &&
           Math.round((projectValue(selectedProject, projFin) * Number(f.advancePct)) / 100 * 100) / 100 > projectRemaining(selectedProject, projFin) && (
-          <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+          <p className="mt-1 text-meta text-amber-600 dark:text-amber-400">
             {String(Number(f.advancePct))}% of full value ({formatBDT(projectValue(selectedProject, projFin))}) exceeds the remaining {formatBDT(projectRemaining(selectedProject, projFin))} — {formatBDT(projFin.totalInvoiced ?? 0)} already billed.
           </p>
         )}
         {projFinLoading && f.projectId && (
-          <p className="mt-1 text-[11px] text-muted-foreground">Loading billing status…</p>
+          <p className="mt-1 text-meta text-muted-foreground">Loading billing status…</p>
         )}
         {!projFinLoading && projFin && f.projectId && selectedProject && (
           <div className="mt-2 rounded-xl bg-muted/40 px-3 py-2.5">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Project billing</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Project billing</p>
               {projFin.project?.paymentStatus && <StatusBadge status={projFin.project.paymentStatus} />}
             </div>
             <div className="mt-1.5 grid grid-cols-4 gap-2">
-              <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Value</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT(projectValue(selectedProject, projFin))}</p></div>
-              <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Billed</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT(projFin.totalInvoiced ?? 0)}</p></div>
-              <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Paid</p><p className="text-[12.5px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(projFin.collected ?? 0)}</p></div>
-              <div><p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">{(selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? "Remaining" : "Outstanding"}</p><p className="text-[12.5px] font-bold tabular-nums">{formatBDT((selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? projectRemaining(selectedProject, projFin) : (projFin.outstanding ?? 0))}</p></div>
+              <div><p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Value</p><p className="text-body font-bold tabular-nums">{formatBDT(projectValue(selectedProject, projFin))}</p></div>
+              <div><p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Billed</p><p className="text-body font-bold tabular-nums">{formatBDT(projFin.totalInvoiced ?? 0)}</p></div>
+              <div><p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Paid</p><p className="text-body font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatBDT(projFin.collected ?? 0)}</p></div>
+              <div><p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">{(selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? "Remaining" : "Outstanding"}</p><p className="text-body font-bold tabular-nums">{formatBDT((selectedProject?.billingType ?? "ONE_TIME") === "ONE_TIME" ? projectRemaining(selectedProject, projFin) : (projFin.outstanding ?? 0))}</p></div>
             </div>
             {(projFin.invoices ?? []).length > 0 && (
               <div className="mt-2 flex flex-col gap-1 border-t border-border/60 pt-2">
                 {(projFin.invoices ?? []).slice(0, 5).map((inv: any) => (
-                  <div key={inv.id} className="flex items-center justify-between gap-2 text-[11.5px]">
+                  <div key={inv.id} className="flex items-center justify-between gap-2 text-meta">
                     <span className="min-w-0">
                       <span className="font-medium tabular-nums">{inv.invoiceNumber}</span>
-                      {inv.title && <span className="block truncate text-[10.5px] text-muted-foreground">{inv.title}</span>}
+                      {inv.title && <span className="block truncate text-micro text-muted-foreground">{inv.title}</span>}
                     </span>
                     <span className="flex shrink-0 items-center gap-1.5">
                       {inv.invoiceType === "ADVANCE" && (
-                        <span className="rounded-full bg-amber-500/15 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Adv</span>
+                        <span className="rounded-full bg-amber-500/15 px-1.5 py-px text-micro font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Adv</span>
                       )}
                       <StatusBadge status={inv.status} />
                       <span className="tabular-nums text-muted-foreground">bal {formatBDT(inv.balance ?? 0)}</span>
@@ -380,7 +380,7 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = f
       <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>
       <Field label="Tax (VAT %)">
         <div className="flex items-center gap-2">
-          <label className="flex cursor-pointer items-center gap-1.5 text-[12px]">
+          <label className="flex cursor-pointer items-center gap-1.5 text-body">
             <input type="checkbox" checked={f.taxApplicable} onChange={(e) => setF({ ...f, taxApplicable: e.target.checked })} className="size-3.5 accent-primary" />
             Apply
           </label>
@@ -395,7 +395,7 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = f
 
   const lineItemsBlock = (
     <div className="overflow-hidden rounded-xl border border-border/60">
-      <div className="grid grid-cols-[minmax(0,1fr)_92px_72px_96px_34px] items-center gap-2 border-b border-border/50 bg-muted/25 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <div className="grid grid-cols-[minmax(0,1fr)_92px_72px_96px_34px] items-center gap-2 border-b border-border/50 bg-muted/25 px-3 py-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">
         <span>Description</span><span className="text-right">Rate</span><span className="text-right">Qty</span><span className="text-right">Amount</span><span />
       </div>
       <div className="divide-y divide-border/40">
@@ -404,14 +404,14 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = f
             <Input value={l.description} onChange={(e) => updateLine(i, "description", e.target.value)} placeholder="Design retainer…" />
             <Input type="number" min={0} step="0.01" value={l.unitPrice} onChange={(e) => updateLine(i, "unitPrice", e.target.value)} placeholder="Rate" />
             <Input type="number" min={0} step="0.01" value={l.quantity} onChange={(e) => updateLine(i, "quantity", e.target.value)} placeholder="Qty" />
-            <span className="text-right text-[12px] font-semibold tabular-nums">{formatBDT((Number(l.unitPrice) || 0) * (Number(l.quantity) || 0))}</span>
+            <span className="text-right text-body font-semibold tabular-nums">{formatBDT((Number(l.unitPrice) || 0) * (Number(l.quantity) || 0))}</span>
             <button type="button" onClick={() => setF({ ...f, lines: f.lines.filter((_, idx) => idx !== i) })} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="size-3.5" /></button>
           </div>
         ))}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/50 bg-muted/15 px-3 py-2">
-        <button type="button" onClick={() => setF({ ...f, lines: [...f.lines, { description: "", unitPrice: "", quantity: "1" }] })} className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3" /> Add line item</button>
-        <span className="text-[10.5px] text-muted-foreground">{filledLines} of {f.lines.length} filled</span>
+        <button type="button" onClick={() => setF({ ...f, lines: [...f.lines, { description: "", unitPrice: "", quantity: "1" }] })} className="flex items-center gap-1 text-meta font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3.5" /> Add line item</button>
+        <span className="text-micro text-muted-foreground">{filledLines} of {f.lines.length} filled</span>
       </div>
     </div>
   );
@@ -475,9 +475,9 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = f
         <aside className="flex flex-col gap-4 xl:sticky xl:top-1">
           <section className="overflow-hidden rounded-2xl border border-primary/25 bg-gradient-to-b from-primary/[0.08] to-transparent">
             <div className="px-4 pt-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary/80">Invoice total</p>
-              <p className="mt-1 font-heading text-[28px] font-bold leading-none tabular-nums">{formatBDT(totals.grand)}</p>
-              <p className="mt-1.5 text-[11px] text-muted-foreground">{filledLines} line item{filledLines === 1 ? "" : "s"} · {f.currency} · {label(f.status)}</p>
+              <p className="text-micro font-bold uppercase tracking-[0.14em] text-primary/80">Invoice total</p>
+              <p className="mt-1 font-heading text-stat-lg font-bold leading-none tabular-nums">{formatBDT(totals.grand)}</p>
+              <p className="mt-1.5 text-meta text-muted-foreground">{filledLines} line item{filledLines === 1 ? "" : "s"} · {f.currency} · {label(f.status)}</p>
             </div>
             <div className="px-4 pb-4 pt-3">
               <InvoiceTotalsPreview lines={f.lines} taxApplicable={f.taxApplicable} taxRate={f.taxRate} discountRate={f.discountRate} shippingFee={f.shippingFee} currency={f.currency} />
@@ -486,9 +486,9 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = f
 
           <section className="rounded-2xl border border-border/60 bg-card">
             <header className="border-b border-border/50 bg-muted/20 px-4 py-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Snapshot</p>
+              <p className="text-micro font-bold uppercase tracking-[0.14em] text-muted-foreground">Snapshot</p>
             </header>
-            <div className="flex flex-col gap-2 px-4 py-3 text-[11.5px]">
+            <div className="flex flex-col gap-2 px-4 py-3 text-meta">
               <div className="flex items-baseline justify-between gap-3"><span className="shrink-0 text-muted-foreground">Client</span><span className={cn("min-w-0 truncate text-right font-medium", !clientName && "text-muted-foreground/70")}>{clientName ?? "Not selected"}</span></div>
               <div className="flex items-baseline justify-between gap-3"><span className="shrink-0 text-muted-foreground">Project</span><span className={cn("min-w-0 truncate text-right font-medium", !selectedProject && "text-muted-foreground/70")}>{selectedProject?.name ?? "No project"}</span></div>
               <div className="flex items-baseline justify-between gap-3"><span className="shrink-0 text-muted-foreground">Issue</span><span className="text-right font-medium tabular-nums">{f.issueDate ? formatDate(f.issueDate) : "—"}</span></div>
@@ -498,7 +498,7 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = f
           </section>
 
           <section className="rounded-2xl border border-border/60 bg-card p-4">
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">PDF template</p>
+            <p className="mb-2 text-micro font-bold uppercase tracking-[0.14em] text-muted-foreground">PDF template</p>
             <TemplatePicker value={f.templateStyle} onChange={(v) => setF({ ...f, templateStyle: v })} compact />
           </section>
         </aside>
@@ -594,7 +594,7 @@ export function InvoiceFormModal({ open, onClose, clients, projects, onSaved, in
       <form id="new-invoice-form" onSubmit={save} className="flex flex-col gap-4">
         <InvoiceFormBody f={f} setF={setF} clients={clients} projects={projects} showNumber sectioned />
         {err && (
-          <p className="flex items-center gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-[12px] font-medium text-rose-600 dark:text-rose-300">
+          <p className="flex items-center gap-2 rounded-xl bg-rose-500/10 px-3 py-2 text-body font-medium text-rose-600 dark:text-rose-300">
             <AlertCircle className="size-3.5 shrink-0" /> {err}
           </p>
         )}
@@ -655,7 +655,7 @@ export function EditInvoiceModal({ invoice, onClose, clients, projects, onSaved 
     <Modal open={!!invoice} onClose={onClose} title={`Edit invoice — ${invoice?.invoiceNumber ?? ""}`} size="xl">
       <form onSubmit={save} className="flex flex-col gap-4">
         <InvoiceFormBody f={f} setF={setF} clients={clients} projects={projects} showNumber={false} />
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Save changes" />
       </form>
     </Modal>
@@ -665,20 +665,41 @@ export function EditInvoiceModal({ invoice, onClose, clients, projects, onSaved 
 
 
 export function CreditNoteModal({ invoice, open, onClose, onSaved }: { invoice: any; open: boolean; onClose: () => void; onSaved: () => void }) {
-  const total = (invoice?.lineItems ?? []).reduce((s: number, l: any) => s + Number(l.amount ?? 0), 0);
-  const paid = (invoice?.payments ?? []).reduce((s: number, p: any) => s + Number(p.amount ?? 0), 0);
-  const [f, setF] = useState({ type: "CREDIT_NOTE", amount: String(Math.min(total, paid)), reason: "" });
+  const t = invoiceTotals({
+    lineItems: invoice?.lineItems,
+    taxApplicable: invoice?.taxApplicable,
+    taxRate: invoice?.taxRate,
+    discountRate: invoice?.discountRate,
+    shippingFee: invoice?.shippingFee,
+    payments: invoice?.payments,
+    creditNotes: invoice?.creditNotes,
+  });
+  const collected = t.paid;
+  const outstanding = t.balance;
+  // The ceiling depends on the document: you cannot refund more than was
+  // collected, and a credit note/write-off cannot exceed what is still owed.
+  const maxFor = (type: string) => (type === "REFUND" ? collected : outstanding);
+  const defaultAmount = (type: string) => String(Math.max(0, maxFor(type)));
+  const [f, setF] = useState({ type: "CREDIT_NOTE", amount: defaultAmount("CREDIT_NOTE"), reason: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) setF({ type: "CREDIT_NOTE", amount: String(Math.min(total, paid)), reason: "" });
-  }, [open, invoice]);
+    if (open) setF({ type: "CREDIT_NOTE", amount: defaultAmount("CREDIT_NOTE"), reason: "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, invoice?.id]);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!f.amount || Number(f.amount) <= 0) return setErr("Amount is required");
-    if (f.type === "REFUND" && Number(f.amount) > paid) return setErr(`Cannot refund more than collected ${formatBDT(paid)}`);
+    const max = maxFor(f.type);
+    if (Number(f.amount) > max + 0.001) {
+      return setErr(
+        f.type === "REFUND"
+          ? `Cannot refund more than collected ${formatBDT(collected)}`
+          : `Cannot exceed the outstanding ${formatBDT(outstanding)}`
+      );
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -698,16 +719,18 @@ export function CreditNoteModal({ invoice, open, onClose, onSaved }: { invoice: 
   return (
     <Modal open={open} onClose={onClose} title={`${label(f.type)} — ${invoice?.invoiceNumber ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-[11.5px]">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-meta">
           <span className="text-muted-foreground">Total</span>
-          <span className="text-right font-bold tabular-nums">{formatBDT(total)}</span>
+          <span className="text-right font-bold tabular-nums">{formatBDT(t.grand)}</span>
           <span className="text-muted-foreground">Collected</span>
-          <span className="text-right font-bold tabular-nums">{formatBDT(paid)}</span>
+          <span className="text-right font-bold tabular-nums">{formatBDT(collected)}</span>
+          <span className="text-muted-foreground">Outstanding</span>
+          <span className="text-right font-bold tabular-nums">{formatBDT(outstanding)}</span>
         </div>
-        <Field label="Type"><Select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}><option value="CREDIT_NOTE">Credit note (client balance)</option><option value="REFUND">Refund (money back)</option><option value="WRITE_OFF">Write-off (bad debt)</option></Select></Field>
-        <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
+        <Field label="Type"><Select value={f.type} onChange={(e) => setF({ ...f, type: e.target.value, amount: defaultAmount(e.target.value) })}><option value="CREDIT_NOTE">Credit note (client balance)</option><option value="REFUND">Refund (money back)</option><option value="WRITE_OFF">Write-off (bad debt)</option></Select></Field>
+        <Field label="Amount *" hint={f.type === "REFUND" ? `max ${formatBDT(collected)} collected` : `max ${formatBDT(outstanding)} outstanding`}><Input type="number" min={0} max={maxFor(f.type)} step="0.01" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
         <Field label="Reason"><Textarea value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="Discount, service dispute, client credit…" /></Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={`Create ${label(f.type)}`} />
       </form>
     </Modal>
@@ -783,16 +806,16 @@ export function InstallmentModal({ invoice, open, onClose, onSaved }: { invoice:
   return (
     <Modal open={open} onClose={onClose} title={`Installment plan — ${invoice?.invoiceNumber ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-[11.5px]">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-meta">
           <span className="text-muted-foreground">Invoice total</span>
           <span className="text-right font-bold tabular-nums">{formatBDT(grand)}</span>
         </div>
         {hasPayments ? (
-          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-600 dark:text-amber-400">Payments already exist against this plan — amounts and dates are locked. Use credit notes for adjustments.</p>
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-meta text-amber-600 dark:text-amber-400">Payments already exist against this plan — amounts and dates are locked. Use credit notes for adjustments.</p>
         ) : (
           <>
             <div className="flex flex-col gap-1.5">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Quick plans (amounts auto-split, monthly dues)</p>
+              <p className="text-meta font-bold uppercase tracking-wider text-muted-foreground">Quick plans (amounts auto-split, monthly dues)</p>
               <div className="flex flex-wrap gap-1.5">
                 {[
                   { name: "50 / 50", parts: [50, 50] },
@@ -818,14 +841,14 @@ export function InstallmentModal({ invoice, open, onClose, onSaved }: { invoice:
                       setRows(built);
                       setCustom(true);
                     }}
-                    className="rounded-full border border-border/60 px-2.5 py-1 text-[11px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                    className="rounded-full border border-border/60 px-2.5 py-1 text-meta font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                   >
                     {p.name}
                   </button>
                 ))}
               </div>
             </div>
-            <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+            <label className="flex cursor-pointer items-center gap-2 text-body font-medium">
               <input type="checkbox" checked={custom} onChange={(e) => setCustom(e.target.checked)} className="size-4 rounded accent-primary" />
               Custom amounts & dates
             </label>
@@ -833,11 +856,11 @@ export function InstallmentModal({ invoice, open, onClose, onSaved }: { invoice:
               <>
                 <Field label="Number of installments *"><Select value={count} onChange={(e) => setCount(e.target.value)}>{[2, 3, 4, 6, 12].map((n) => <option key={n} value={String(n)}>{n} payments × {formatBDT(Math.round((grand / n) * 100) / 100)}</option>)}</Select></Field>
                 <Field label="First installment due"><Input type="date" value={firstDue} onChange={(e) => setFirstDue(e.target.value)} /></Field>
-                <p className="text-[11.5px] leading-relaxed text-muted-foreground">Subsequent installments fall on the same day each following month.</p>
+                <p className="text-meta leading-relaxed text-muted-foreground">Subsequent installments fall on the same day each following month.</p>
               </>
             ) : (
               <div className="flex flex-col gap-2">
-                <div className="grid grid-cols-[1fr_1fr_32px] items-center gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <div className="grid grid-cols-[1fr_1fr_32px] items-center gap-2 text-micro font-semibold uppercase tracking-wider text-muted-foreground">
                   <span>Amount</span><span>Due date</span><span />
                 </div>
                 {rows.map((r, i) => (
@@ -847,12 +870,12 @@ export function InstallmentModal({ invoice, open, onClose, onSaved }: { invoice:
                     <button type="button" onClick={() => setRows(rows.filter((_, idx) => idx !== i))} className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="size-3.5" /></button>
                   </div>
                 ))}
-                <button type="button" onClick={() => setRows([...rows, { amount: "", dueDate: "" }])} className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3" /> Add installment</button>
+                <button type="button" onClick={() => setRows([...rows, { amount: "", dueDate: "" }])} className="flex items-center gap-1 text-meta font-bold text-primary transition-colors hover:text-primary"><Plus className="size-3.5" /> Add installment</button>
               </div>
             )}
           </>
         )}
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={hasPayments ? "Close" : "Save plan"} />
       </form>
     </Modal>
@@ -889,7 +912,7 @@ export function PaymentModal({ invoice, open, bankAccounts, onClose, onSaved }: 
   return (
     <Modal open={open} onClose={onClose} title={`Record payment — ${invoice?.invoiceNumber ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-[11.5px]">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-meta">
           <span className="text-muted-foreground">Outstanding</span>
           <span className="text-right font-bold tabular-nums">{formatBDT(balance)}</span>
         </div>
@@ -901,7 +924,7 @@ export function PaymentModal({ invoice, open, bankAccounts, onClose, onSaved }: 
           <Field label="Installment"><Select value={f.installmentId} onChange={(e) => setF({ ...f, installmentId: e.target.value })}><option value="">Auto (next due)</option>{(invoice.installments ?? []).map((s: any) => <option key={s.id} value={s.id}>#{s.sequence} — {formatBDT(s.amount)} ({s.status.toLowerCase()})</option>)}</Select></Field>
         )}
         <Field label="Reference (optional)"><Input value={f.referenceId} onChange={(e) => setF({ ...f, referenceId: e.target.value })} placeholder="Client ref / bank slip no" /></Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Record payment" />
       </form>
     </Modal>
@@ -911,8 +934,8 @@ export function PaymentModal({ invoice, open, bankAccounts, onClose, onSaved }: 
 function FormBlock({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border/60 bg-muted/[0.15] p-3.5">
-      <p className="text-[11.5px] font-semibold">{title}</p>
-      {hint && <p className="mt-0.5 text-[10.5px] leading-relaxed text-muted-foreground">{hint}</p>}
+      <p className="text-meta font-semibold">{title}</p>
+      {hint && <p className="mt-0.5 text-micro leading-relaxed text-muted-foreground">{hint}</p>}
       <div className="mt-3 flex flex-col gap-3">{children}</div>
     </div>
   );
@@ -1051,7 +1074,7 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
               <Field label="Project *"><Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)}><option value="">Select project…</option>{projectsFor(f.clientId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
             </div>
           ) : (
-            <p className="rounded-xl bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+            <p className="rounded-xl bg-muted/40 px-3 py-2 text-meta text-muted-foreground">
               Salary, rent, software, utilities — not charged to a client. Use the department field to attribute it.
             </p>
           )}
@@ -1078,7 +1101,7 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
         <FormBlock title="Recharge, approval & schedule" hint="Agency rules that change how the cost is recovered and approved.">
           {f.scope === "PROJECT" && (
             <div className="rounded-xl border border-border/60 bg-card p-3">
-              <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+              <label className="flex cursor-pointer items-center gap-2 text-body font-medium">
                 <input type="checkbox" checked={f.billable} onChange={(e) => setF({ ...f, billable: e.target.checked })} className="size-4 rounded accent-primary" />
                 Client billable (recharge the client)
               </label>
@@ -1087,7 +1110,7 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
                   <Field label="Markup %" hint="Pass-through cost + markup = client recharge">
                     <Input type="number" min={0} max={100} step="0.5" value={f.markupPct} onChange={(e) => setF({ ...f, markupPct: e.target.value })} placeholder="15" />
                   </Field>
-                  <p className="rounded-lg bg-emerald-500/10 px-2.5 py-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <p className="rounded-lg bg-emerald-500/10 px-2.5 py-2 text-meta font-semibold text-emerald-600 dark:text-emerald-400">
                     Recharge {formatBDT(recharge)}{markUp > 0 ? ` · margin ${formatBDT(recharge - amount)}` : ""}
                   </p>
                 </div>
@@ -1097,11 +1120,11 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
 
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <div className="flex flex-col justify-end gap-2">
-              <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+              <label className="flex cursor-pointer items-center gap-2 text-body font-medium">
                 <input type="checkbox" checked={f.isPayable} onChange={(e) => setF({ ...f, isPayable: e.target.checked })} className="size-4 rounded accent-amber-500" />
                 Unpaid (accounts payable)
               </label>
-              <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+              <label className="flex cursor-pointer items-center gap-2 text-body font-medium">
                 <input type="checkbox" checked={f.isRecurring} onChange={(e) => setF({ ...f, isRecurring: e.target.checked })} className="size-4 rounded accent-sky-500" />
                 Recurring expense
               </label>
@@ -1109,7 +1132,7 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
             {f.isPayable ? (
               <Field label="Payable due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
             ) : (
-              <div className="flex items-end text-[10.5px] text-muted-foreground">Paid now — bank balance is reduced immediately.</div>
+              <div className="flex items-end text-micro text-muted-foreground">Paid now — bank balance is reduced immediately.</div>
             )}
             {f.isRecurring ? (
               <Field label="Repeats"><Select value={f.recurrenceSchedule} onChange={(e) => setF({ ...f, recurrenceSchedule: e.target.value })}>{RECURRENCE.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</Select></Field>
@@ -1124,15 +1147,15 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
         <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="What was bought, who approved it, any context for the audit trail…" /></Field>
 
         {canDirect ? (
-          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11.5px] text-emerald-600 dark:text-emerald-400">
+          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-meta text-emerald-600 dark:text-emerald-400">
             Posts to {f.bankAccountId ? "the selected account" : "the default account"} &amp; ledger immediately{f.isPayable ? " as an unpaid bill" : ""}.
           </p>
         ) : (
-          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-600 dark:text-amber-400">
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-meta text-amber-600 dark:text-amber-400">
             Goes to admin for approval first — accounts update on approval.
           </p>
         )}
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Record expense" />
       </form>
     </Modal>
@@ -1195,7 +1218,7 @@ export function EditExpenseModal({ expense, onClose, onSaved, categories }: { ex
     <Modal open={!!expense} onClose={onClose} title={`Edit expense`} size="lg">
       <form onSubmit={save} className="flex flex-col gap-4">
         {expense?.payrollRecordId && (
-          <p className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11.5px] text-sky-600 dark:text-sky-300">
+          <p className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-meta text-sky-600 dark:text-sky-300">
             Posted from payroll — saving here syncs the linked payroll record, ledger and bank automatically.
           </p>
         )}
@@ -1211,7 +1234,7 @@ export function EditExpenseModal({ expense, onClose, onSaved, categories }: { ex
           <Field label="Markup % (billable)"><Input type="number" min={0} max={100} step="0.5" value={f.markupPct} onChange={(e) => setF({ ...f, markupPct: e.target.value })} placeholder="15" /></Field>
         </div>
         <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Internal context for this expense…" /></Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Save changes" />
       </form>
     </Modal>
@@ -1255,7 +1278,7 @@ export function VendorModal({ open, onClose, onSaved, editing }: { open: boolean
         </div>
         <Field label="Payment terms"><Input value={f.paymentTerms} onChange={(e) => setF({ ...f, paymentTerms: e.target.value })} placeholder="Net 30" /></Field>
         <Field label="Contact info"><Input value={f.contactInfo} onChange={(e) => setF({ ...f, contactInfo: e.target.value })} placeholder="Address, bank details, notes…" /></Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Add vendor"} />
       </form>
     </Modal>
@@ -1266,7 +1289,7 @@ export function ConfirmModal({ open, onClose, title, message, busy, onConfirm }:
   return (
     <Modal open={open} onClose={onClose} title={title}>
       <form onSubmit={(e) => { e.preventDefault(); onConfirm(); }} className="flex flex-col gap-4">
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">{message}</p>
+        <p className="text-body leading-relaxed text-muted-foreground">{message}</p>
         <FormActions busy={busy} cancel={onClose} submitLabel="Delete" danger />
       </form>
     </Modal>
@@ -1306,21 +1329,21 @@ export function PayExpenseModal({ expense, open, bankAccounts, onClose, onSaved 
   return (
     <Modal open={open} onClose={onClose} title={`Pay expense — ${expense?.description ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-[11.5px]">
+        <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/40 px-3 py-2.5 text-meta">
           <span className="text-muted-foreground">Outstanding</span>
           <span className="text-right font-bold tabular-nums">{formatBDT(due)}</span>
         </div>
         <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
         <div className="grid grid-cols-2 items-end gap-4">
           <Field label="TDS / VDS withheld" hint="Vendor receives amount − tax"><Input type="number" min={0} step="0.01" value={f.taxWithheld} onChange={(e) => setF({ ...f, taxWithheld: e.target.value })} placeholder="0" /></Field>
-          <p className="rounded-lg bg-muted/40 px-2.5 py-2 text-[11px] font-semibold">Net cash out {formatBDT(net)}</p>
+          <p className="rounded-lg bg-muted/40 px-2.5 py-2 text-meta font-semibold">Net cash out {formatBDT(net)}</p>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
           <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
         </div>
         <Field label="Payment date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Record payment" />
       </form>
     </Modal>
@@ -1369,7 +1392,7 @@ export function CategoriesModal({ open, categories, accounts, onClose, onSaved }
     <Modal open={open} onClose={onClose} title="Expense categories" size="lg">
       <div className="flex flex-col gap-4">
         <form onSubmit={save} className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/30 p-3">
-          <p className="text-[11.5px] font-bold uppercase tracking-wider text-muted-foreground">{editing ? `Edit ${editing.name}` : "New category"}</p>
+          <p className="text-meta font-bold uppercase tracking-wider text-muted-foreground">{editing ? `Edit ${editing.name}` : "New category"}</p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Insurance" /></Field>
             <Field label="Key (slug, e.g. INSURANCE)"><Input value={f.key} onChange={(e) => setF({ ...f, key: e.target.value })} disabled={!!editing} placeholder="INSURANCE" /></Field>
@@ -1378,13 +1401,13 @@ export function CategoriesModal({ open, categories, accounts, onClose, onSaved }
           <div className="flex items-center gap-3">
             <Field label="GL account"><Select value={f.accountId} onChange={(e) => setF({ ...f, accountId: e.target.value })}><option value="">No account</option>{(accounts ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.code ? `${a.code} — ` : ""}{a.name}</option>)}</Select></Field>
             {editing && (
-              <label className="flex cursor-pointer items-center gap-2 pt-4 text-[12.5px] font-medium">
+              <label className="flex cursor-pointer items-center gap-2 pt-4 text-body font-medium">
                 <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-4 rounded accent-primary" />
                 Active
               </label>
             )}
           </div>
-          {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+          {err && <p className="text-body font-medium text-rose-400">{err}</p>}
           <div className="flex items-center gap-2">
             <Btn variant="primary" type="submit" className={busy ? "opacity-60" : ""}>{busy ? "Saving…" : editing ? "Save changes" : "Add category"}</Btn>
             {editing && <Btn variant="ghost" onClick={() => { setEditing(null); setF({ key: "", name: "", subcategories: "", accountId: "", isActive: true }); }}>Cancel edit</Btn>}
@@ -1399,9 +1422,9 @@ export function CategoriesModal({ open, categories, accounts, onClose, onSaved }
               {categories.map((c, i) => (
                 <Tr key={c.id} index={i}>
                   <Td className="font-medium">{c.name}</Td>
-                  <Td className="font-mono text-[11px] text-muted-foreground">{c.key}</Td>
-                  <Td className="text-[11.5px] text-muted-foreground">{(c.subcategories ?? []).slice(0, 3).join(", ")}{(c.subcategories ?? []).length > 3 ? ` +${c.subcategories.length - 3}` : ""}</Td>
-                  <Td className="text-[11.5px]">{c.account ? `${c.account.code} — ${c.account.name}` : "—"}</Td>
+                  <Td className="font-mono text-meta text-muted-foreground">{c.key}</Td>
+                  <Td className="text-meta text-muted-foreground">{(c.subcategories ?? []).slice(0, 3).join(", ")}{(c.subcategories ?? []).length > 3 ? ` +${c.subcategories.length - 3}` : ""}</Td>
+                  <Td className="text-meta">{c.account ? `${c.account.code} — ${c.account.name}` : "—"}</Td>
                   <Td><StatusBadge status={c.isActive ? "Active" : "Inactive"} /></Td>
                   <Td><button onClick={() => startEdit(c)} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary" title="Edit"><Pencil className="size-3.5" /></button></Td>
                 </Tr>
@@ -1507,7 +1530,7 @@ export function AddIncomeModal({ open, bankAccounts, clients, projects, onClose,
             <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{INCOME_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</Select></Field>
             <Field label="Tax withheld (TDS)" hint="Client deducted this before paying"><Input type="number" min={0} step="0.01" value={f.taxWithheld} onChange={(e) => setF({ ...f, taxWithheld: e.target.value })} placeholder="0" /></Field>
             <div className="flex flex-col justify-end">
-              <p className="rounded-lg bg-emerald-500/10 px-2.5 py-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+              <p className="rounded-lg bg-emerald-500/10 px-2.5 py-2 text-meta font-semibold text-emerald-600 dark:text-emerald-400">
                 Net received {formatBDT(net)}
               </p>
             </div>
@@ -1537,7 +1560,7 @@ export function AddIncomeModal({ open, bankAccounts, clients, projects, onClose,
           <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Any context for the audit trail…" /></Field>
         </FormBlock>
 
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Record income" />
       </form>
     </Modal>
@@ -1596,7 +1619,7 @@ export function BudgetModal({ open, onClose, onSaved, editing, projects, categor
           <Field label="Period start"><Input type="date" value={f.periodStart} onChange={(e) => setF({ ...f, periodStart: e.target.value })} /></Field>
           <Field label="Period end"><Input type="date" value={f.periodEnd} onChange={(e) => setF({ ...f, periodEnd: e.target.value })} /></Field>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Create budget"} />
       </form>
     </Modal>
@@ -1641,7 +1664,7 @@ export function ReconcileModal({ open, bankAccounts, txns, onClose, onSaved }: {
         </div>
         <Field label="Match with ledger transaction"><Select value={f.matchedPaymentId} onChange={(e) => setF({ ...f, matchedPaymentId: e.target.value })}><option value="">No match</option>{(txns ?? []).map((t: any) => <option key={t.id} value={t.id}>{formatDate(t.date)} · {t.ref} · {formatBDT(t.amount)}</option>)}</Select></Field>
         <Field label="Statement reference"><Input value={f.statementReference} onChange={(e) => setF({ ...f, statementReference: e.target.value })} placeholder="Bank statement line ref" /></Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Save entry" />
       </form>
     </Modal>
@@ -1684,12 +1707,12 @@ export function AccountModal({ open, onClose, onSaved, editing }: { open: boolea
         </div>
         <Field label="Account name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Insurance" autoFocus /></Field>
         {editing && (
-          <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+          <label className="flex cursor-pointer items-center gap-2 text-body font-medium">
             <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-4 rounded accent-primary" />
             Active (usable for new entries)
           </label>
         )}
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Add account"} />
       </form>
     </Modal>

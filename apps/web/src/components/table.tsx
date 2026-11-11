@@ -32,7 +32,7 @@ export function Th({ children, className }: { children?: React.ReactNode; classN
   return (
     <th
       className={cn(
-        "whitespace-nowrap px-5 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground first:pl-5",
+        "whitespace-nowrap px-5 py-2.5 text-left text-micro font-semibold uppercase tracking-wider text-muted-foreground first:pl-5",
         className
       )}
     >
@@ -84,7 +84,7 @@ export function Tr({
 
 export function Td({ children, className, onClick }: { children?: React.ReactNode; className?: string; onClick?: (e: React.MouseEvent) => void }) {
   return (
-    <td onClick={onClick} className={cn("whitespace-nowrap px-5 py-3 text-[12.5px] first:pl-5", className)}>
+    <td onClick={onClick} className={cn("whitespace-nowrap px-5 py-3 text-body first:pl-5", className)}>
       {children}
     </td>
   );
@@ -114,7 +114,7 @@ export function Btn({
       onClick={onClick}
       {...rest}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-[12.5px] font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-body font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-50",
         variant === "primary" &&
           "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80",
         variant === "ghost" &&

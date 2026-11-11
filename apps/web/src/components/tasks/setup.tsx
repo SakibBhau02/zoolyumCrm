@@ -163,7 +163,7 @@ export function TemplateModal({
           </div>
         </div>
         <div className="flex flex-col gap-2">
-          <span className="text-[11.5px] font-semibold text-muted-foreground">Default tasks</span>
+          <span className="text-meta font-semibold text-muted-foreground">Default tasks</span>
           {rows.map((r, i) => (
             <div key={i} className="flex items-center gap-2">
               <Input value={r.title} onChange={(e) => patchRow(i, { title: e.target.value })} placeholder="Task title" />
@@ -202,12 +202,12 @@ export function TemplateModal({
           <button
             type="button"
             onClick={() => setRows([...rows, { title: "", priority: "MEDIUM", estimatedHours: "", taskType: "general" }])}
-            className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2 text-body font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
           >
             <Plus className="size-3.5" /> Add task
           </button>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Create template" />
       </form>
     </Modal>
@@ -427,7 +427,7 @@ export function AutomationModal({
             </Field>
           </div>
         )}
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add rule" />
       </form>
     </Modal>
@@ -475,8 +475,8 @@ export function TemplatesPanel({ onNotify }: { onNotify?: (m: string) => void })
             <div key={t.id} className="rounded-xl border border-border/60 px-3 py-2.5 transition-colors hover:border-primary/30">
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-[12.5px] font-bold">{t.name}</p>
-                  {t.description && <p className="truncate text-[11px] text-muted-foreground">{t.description}</p>}
+                  <p className="truncate text-body font-bold">{t.name}</p>
+                  {t.description && <p className="truncate text-meta text-muted-foreground">{t.description}</p>}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <button onClick={() => useTemplate(t)} title="Use template" className="flex size-7 items-center justify-center rounded-lg text-emerald-400 transition-colors hover:bg-emerald-500/10">
@@ -490,10 +490,10 @@ export function TemplatesPanel({ onNotify }: { onNotify?: (m: string) => void })
                 </div>
               </div>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {t.category && <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-primary">{t.category}</span>}
-                {t.benchmarkHours != null && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">~{t.benchmarkHours}h</span>}
-                {t.benchmarkDurationDays != null && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">{t.benchmarkDurationDays} days</span>}
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">{(t.defaultTasks ?? []).length} tasks</span>
+                {t.category && <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-micro font-bold text-primary">{t.category}</span>}
+                {t.benchmarkHours != null && <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-semibold text-muted-foreground">~{t.benchmarkHours}h</span>}
+                {t.benchmarkDurationDays != null && <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-semibold text-muted-foreground">{t.benchmarkDurationDays} days</span>}
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-semibold text-muted-foreground">{(t.defaultTasks ?? []).length} tasks</span>
               </div>
             </div>
           ))}
@@ -562,11 +562,11 @@ export function AutomationPanel({ users, onNotify }: { users: UserLite[]; onNoti
           {rules.map((r) => (
             <div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2.5">
               <div className="min-w-0">
-                <p className="truncate text-[12.5px] font-bold">{r.name}</p>
-                <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold text-primary">{label(r.trigger ?? "")}</span>
+                <p className="truncate text-body font-bold">{r.name}</p>
+                <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-meta text-muted-foreground">
+                  <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-micro font-bold text-primary">{label(r.trigger ?? "")}</span>
                   <span className="text-muted-foreground/50">→</span>
-                  <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400">{label(r.action ?? "")}</span>
+                  <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-micro font-bold text-emerald-400">{label(r.action ?? "")}</span>
                   <span>{ruleSummary(r)}</span>
                 </p>
               </div>
@@ -581,7 +581,7 @@ export function AutomationPanel({ users, onNotify }: { users: UserLite[]; onNoti
                     </button>
                   </>
                 ) : (
-                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", r.enabled ? "bg-emerald-500/10 text-emerald-400" : "bg-muted text-muted-foreground")}>{r.enabled ? "on" : "off"}</span>
+                  <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold", r.enabled ? "bg-emerald-500/10 text-emerald-400" : "bg-muted text-muted-foreground")}>{r.enabled ? "on" : "off"}</span>
                 )}
               </div>
             </div>
@@ -626,13 +626,13 @@ export function WorkloadPanel({ onNotify }: { onNotify?: (m: string) => void }) 
       ) : (
         <>
           <div className="mb-3 flex flex-wrap gap-2">
-            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10.5px] font-bold text-primary">Team utilization {workload?.teamUtilization ?? 0}%</span>
-            <span className={cn("rounded-full px-2.5 py-1 text-[10.5px] font-bold", (workload?.overbookedCount ?? 0) > 0 ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400")}>
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-micro font-bold text-primary">Team utilization {workload?.teamUtilization ?? 0}%</span>
+            <span className={cn("rounded-full px-2.5 py-1 text-micro font-bold", (workload?.overbookedCount ?? 0) > 0 ? "bg-rose-500/10 text-rose-400" : "bg-emerald-500/10 text-emerald-400")}>
               {workload?.overbookedCount ?? 0} overbooked
             </span>
-            <span className="rounded-full bg-muted px-2.5 py-1 text-[10.5px] font-bold text-muted-foreground">{workload?.totalAllocated ?? 0}h allocated</span>
+            <span className="rounded-full bg-muted px-2.5 py-1 text-micro font-bold text-muted-foreground">{workload?.totalAllocated ?? 0}h allocated</span>
           </div>
-          <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{(workload?.rows ?? []).length} people · click a row to expand</span>}>
+          <TableShell footer={<span className="text-meta text-muted-foreground">{(workload?.rows ?? []).length} people · click a row to expand</span>}>
             <table className="w-full">
               <THead>
                 <Th>Employee</Th><Th>Open Tasks</Th><Th>Hours / Capacity</Th><Th>Utilization</Th><Th>Status</Th><Th>Urgent</Th><Th>Overdue</Th>
@@ -661,7 +661,7 @@ export function WorkloadPanel({ onNotify }: { onNotify?: (m: string) => void }) 
                             <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
                               <div className={cn("h-full rounded-full transition-all", w.overbooked ? "bg-rose-500" : pct >= 90 ? "bg-amber-400" : "bg-emerald-500")} style={{ width: `${bar}%` }} />
                             </div>
-                            <span className="text-[11px] tabular-nums text-muted-foreground">
+                            <span className="text-meta tabular-nums text-muted-foreground">
                               {w.allocated ?? 0}h / {cap}h
                               {(w.leaveDaysInWindow || w.weeklyOffDaysInWindow) ? (
                                 <span className="ml-1 text-amber-400" title={[w.leaveDaysInWindow ? `${w.leaveDaysInWindow} leave day(s)` : null, w.weeklyOffDaysInWindow ? `${w.weeklyOffDaysInWindow} weekly off day(s)` : null].filter(Boolean).join(" + ") + " reduced capacity"}>
@@ -674,11 +674,11 @@ export function WorkloadPanel({ onNotify }: { onNotify?: (m: string) => void }) 
                         <Td className="font-bold tabular-nums">{pct}%</Td>
                         <Td>
                           {w.overbooked ? (
-                            <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[10px] font-bold text-rose-400" title={w.overbookedReason ?? undefined}>Overbooked</span>
+                            <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-micro font-bold text-rose-400" title={w.overbookedReason ?? undefined}>Overbooked</span>
                           ) : pct >= 90 ? (
-                            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-400">Near capacity</span>
+                            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-micro font-bold text-amber-400">Near capacity</span>
                           ) : (
-                            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-400">OK</span>
+                            <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-micro font-bold text-emerald-400">OK</span>
                           )}
                         </Td>
                         <Td className="tabular-nums text-muted-foreground">{w.urgent ?? 0}</Td>
@@ -688,10 +688,10 @@ export function WorkloadPanel({ onNotify }: { onNotify?: (m: string) => void }) 
                         <Tr index={i + 0.5}>
                           <Td className="!whitespace-normal">
                             <div className="py-2 pl-12">
-                              {(w.tasks ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No open tasks.</p>}
+                              {(w.tasks ?? []).length === 0 && <p className="text-meta text-muted-foreground">No open tasks.</p>}
                               <div className="flex flex-wrap gap-1.5">
                                 {(w.tasks ?? []).map((task, ti) => (
-                                  <span key={ti} className={cn("flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold", "border-border bg-muted/60 text-muted-foreground")}>
+                                  <span key={ti} className={cn("flex items-center gap-1.5 rounded-full border px-2 py-1 text-micro font-semibold", "border-border bg-muted/60 text-muted-foreground")}>
                                     <span className="max-w-40 truncate">{task.title}</span>
                                     <span className="tabular-nums text-muted-foreground">{task.hours}h</span>
                                     {task.due && new Date(task.due).getTime() < Date.now() && <span className="text-rose-400">overdue</span>}
@@ -800,9 +800,9 @@ export function TaskTypeRulesPanel({ onNotify }: { onNotify?: (m: string) => voi
             return (
               <div key={d} className="rounded-xl border border-border/60 px-3 py-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="min-w-24 text-[12px] font-bold">{d}</span>
+                  <span className="min-w-24 text-body font-bold">{d}</span>
                   {active.length === 0 && (
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold uppercase tracking-wide text-muted-foreground">
                       unrestricted
                     </span>
                   )}
@@ -814,7 +814,7 @@ export function TaskTypeRulesPanel({ onNotify }: { onNotify?: (m: string) => voi
                           key={t}
                           onClick={() => toggleType(d, t)}
                           className={cn(
-                            "rounded-full border px-2 py-0.5 text-[10px] font-bold capitalize transition-colors",
+                            "rounded-full border px-2 py-0.5 text-micro font-bold capitalize transition-colors",
                             on ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground"
                           )}
                         >

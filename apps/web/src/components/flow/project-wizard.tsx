@@ -315,15 +315,15 @@ function FieldShell({
   const Root = as as any;
   return (
     <Root className={cn("flex flex-col gap-1.5", className)}>
-      <span className="flex items-center gap-1 text-[11.5px] font-semibold text-muted-foreground">
+      <span className="flex items-center gap-1 text-meta font-semibold text-muted-foreground">
         {text}
         {required && <span className="text-rose-500">*</span>}
       </span>
       {children}
       {error ? (
-        <span className="text-[10.5px] font-semibold text-rose-500">{error}</span>
+        <span className="text-micro font-semibold text-rose-500">{error}</span>
       ) : hint ? (
-        <span className="text-[10.5px] text-muted-foreground/70">{hint}</span>
+        <span className="text-micro text-muted-foreground/70">{hint}</span>
       ) : null}
     </Root>
   );
@@ -349,8 +349,8 @@ function Card({
       {(title || action) && (
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            {title && <p className="font-heading text-[12.5px] font-bold leading-tight">{title}</p>}
-            {hint && <p className="mt-0.5 text-[10.5px] leading-snug text-muted-foreground">{hint}</p>}
+            {title && <p className="font-heading text-body font-bold leading-tight">{title}</p>}
+            {hint && <p className="mt-0.5 text-micro leading-snug text-muted-foreground">{hint}</p>}
           </div>
           {action && <div className="shrink-0">{action}</div>}
         </div>
@@ -385,7 +385,7 @@ function Pill({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-meta font-semibold transition-colors",
         active ? tones[tone] : "border-border bg-muted/30 text-muted-foreground hover:border-primary/25 hover:text-foreground",
         className
       )}
@@ -425,7 +425,7 @@ function StepRail({
             >
               <span
                 className={cn(
-                  "flex size-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold transition-colors",
+                  "flex size-6 shrink-0 items-center justify-center rounded-full border text-meta font-bold transition-colors",
                   active
                     ? "border-primary bg-primary text-primary-foreground"
                     : done
@@ -438,13 +438,13 @@ function StepRail({
               <span className="hidden min-w-0 sm:block">
                 <span
                   className={cn(
-                    "block truncate text-[11.5px] font-bold leading-tight",
+                    "block truncate text-meta font-bold leading-tight",
                     active ? "text-foreground" : "text-muted-foreground"
                   )}
                 >
                   {s.title}
                 </span>
-                <span className="block truncate text-[10px] leading-tight text-muted-foreground/70">{s.hint}</span>
+                <span className="block truncate text-micro leading-tight text-muted-foreground/70">{s.hint}</span>
               </span>
             </button>
             {i < steps.length - 1 && (
@@ -545,7 +545,7 @@ function ClientPicker({
         type="button"
         onClick={() => (open ? close() : setOpen(true))}
         className={cn(
-          "flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2 text-left text-[13px] outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/20",
+          "flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2 text-left text-body-lg outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/20",
           error && errRing
         )}
       >
@@ -559,7 +559,7 @@ function ClientPicker({
             <span className="text-muted-foreground/70">Choose a client…</span>
           )}
         </span>
-        <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
@@ -575,7 +575,7 @@ function ClientPicker({
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search clients…"
-                    className="w-full bg-transparent text-[12.5px] outline-none placeholder:text-muted-foreground/60"
+                    className="w-full bg-transparent text-body outline-none placeholder:text-muted-foreground/60"
                   />
                 </div>
                 <div className="max-h-56 overflow-y-auto p-1">
@@ -588,7 +588,7 @@ function ClientPicker({
                         close();
                       }}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12.5px] transition-colors hover:bg-muted/60",
+                        "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-body transition-colors hover:bg-muted/60",
                         c.id === value && "bg-primary/8 font-semibold text-primary"
                       )}
                     >
@@ -598,7 +598,7 @@ function ClientPicker({
                     </button>
                   ))}
                   {filtered.length === 0 && (
-                    <p className="px-3 py-4 text-center text-[11.5px] text-muted-foreground">
+                    <p className="px-3 py-4 text-center text-meta text-muted-foreground">
                       No client matches “{query}”
                     </p>
                   )}
@@ -606,7 +606,7 @@ function ClientPicker({
                 <button
                   type="button"
                   onClick={() => setMode("new")}
-                  className="flex w-full items-center gap-1.5 border-t border-border/60 px-3 py-2.5 text-[12px] font-bold text-primary transition-colors hover:bg-primary/5"
+                  className="flex w-full items-center gap-1.5 border-t border-border/60 px-3 py-2.5 text-body font-bold text-primary transition-colors hover:bg-primary/5"
                 >
                   <Plus className="size-3.5" /> Add a new client
                 </button>
@@ -614,11 +614,11 @@ function ClientPicker({
             ) : (
               <div className="space-y-2.5 p-3">
                 <div className="flex items-center justify-between">
-                  <p className="font-heading text-[12px] font-bold">Quick add client</p>
+                  <p className="font-heading text-body font-bold">Quick add client</p>
                   <button
                     type="button"
                     onClick={() => setMode("list")}
-                    className="text-[11px] font-semibold text-muted-foreground hover:text-foreground"
+                    className="text-meta font-semibold text-muted-foreground hover:text-foreground"
                   >
                     Back
                   </button>
@@ -628,13 +628,13 @@ function ClientPicker({
                   value={form.companyName}
                   onChange={(e) => setForm({ ...form, companyName: e.target.value })}
                   placeholder="Company name *"
-                  className="text-[12.5px]"
+                  className="text-body"
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <Select
                     value={form.industryVertical}
                     onChange={(e) => setForm({ ...form, industryVertical: e.target.value })}
-                    className="text-[12.5px]"
+                    className="text-body"
                   >
                     {VERTICALS.map((v) => (
                       <option key={v} value={v}>
@@ -646,7 +646,7 @@ function ClientPicker({
                     value={form.contactName}
                     onChange={(e) => setForm({ ...form, contactName: e.target.value })}
                     placeholder="Contact person"
-                    className="text-[12.5px]"
+                    className="text-body"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -655,16 +655,16 @@ function ClientPicker({
                     value={form.contactEmail}
                     onChange={(e) => setForm({ ...form, contactEmail: e.target.value })}
                     placeholder="Email"
-                    className="text-[12.5px]"
+                    className="text-body"
                   />
                   <Input
                     value={form.contactPhone}
                     onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}
                     placeholder="Phone"
-                    className="text-[12.5px]"
+                    className="text-body"
                   />
                 </div>
-                {err && <p className="text-[11px] font-semibold text-rose-500">{err}</p>}
+                {err && <p className="text-meta font-semibold text-rose-500">{err}</p>}
                 <div className="flex justify-end gap-2">
                   <Btn variant="outline" onClick={close}>
                     Cancel
@@ -719,61 +719,61 @@ function SummaryRail({
   return (
     <aside className="hidden w-[268px] shrink-0 flex-col gap-3 lg:flex">
       <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-        <p className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Live summary</p>
+        <p className="text-micro font-bold uppercase tracking-[0.14em] text-muted-foreground">Live summary</p>
         <div className="mt-2.5 flex items-center gap-2">
           <Avatar name={client?.companyName ?? "?"} size="size-7" />
           <div className="min-w-0">
-            <p className="truncate text-[12px] font-semibold">{client?.companyName ?? "No client yet"}</p>
-            <p className="text-[10px] text-muted-foreground">{f.category || label(f.type)}</p>
+            <p className="truncate text-body font-semibold">{client?.companyName ?? "No client yet"}</p>
+            <p className="text-micro text-muted-foreground">{f.category || label(f.type)}</p>
           </div>
         </div>
-        <p className="mt-2.5 truncate font-heading text-[14px] font-bold leading-snug">
+        <p className="mt-2.5 truncate font-heading text-body-lg font-bold leading-snug">
           {f.name.trim() || (editing ? "Untitled project" : "New project")}
         </p>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <div className="rounded-xl border border-border/60 bg-card px-2.5 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Value</p>
-            <p className="mt-0.5 truncate text-[12.5px] font-bold tabular-nums">{money(amountNum, f.currency)}</p>
+            <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Value</p>
+            <p className="mt-0.5 truncate text-body font-bold tabular-nums">{money(amountNum, f.currency)}</p>
           </div>
           <div className="rounded-xl border border-border/60 bg-card px-2.5 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Timeline</p>
-            <p className="mt-0.5 truncate text-[12.5px] font-bold tabular-nums">
+            <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Timeline</p>
+            <p className="mt-0.5 truncate text-body font-bold tabular-nums">
               {days != null && days >= 0 ? `${days} days` : "—"}
             </p>
           </div>
           <div className="rounded-xl border border-border/60 bg-card px-2.5 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Billing</p>
-            <p className="mt-0.5 truncate text-[12.5px] font-bold">
+            <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Billing</p>
+            <p className="mt-0.5 truncate text-body font-bold">
               {f.billingType === "RECURRING" ? f.recurringInterval : "one-time"}
             </p>
           </div>
           <div className="rounded-xl border border-border/60 bg-card px-2.5 py-2">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+            <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">
               {editing ? "Manager" : "Milestones"}
             </p>
-            <p className="mt-0.5 truncate text-[12.5px] font-bold">
+            <p className="mt-0.5 truncate text-body font-bold">
               {editing ? pm?.name?.split(" ")[0] ?? "—" : milestoneCount}
             </p>
           </div>
         </div>
 
         <div className="mt-3 flex flex-wrap gap-1">
-          <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          <span className="rounded-full border border-border bg-card px-2 py-0.5 text-micro font-semibold text-muted-foreground">
             {label(f.status)}
           </span>
-          <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+          <span className="rounded-full border border-border bg-card px-2 py-0.5 text-micro font-semibold text-muted-foreground">
             {label(f.priority)} priority
           </span>
           {f.team.length > 0 && (
-            <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+            <span className="rounded-full border border-border bg-card px-2 py-0.5 text-micro font-semibold text-muted-foreground">
               {f.team.length} member{f.team.length > 1 ? "s" : ""}
             </span>
           )}
         </div>
 
         <div className="mt-3">
-          <div className="flex items-center justify-between text-[10px] font-semibold text-muted-foreground">
+          <div className="flex items-center justify-between text-micro font-semibold text-muted-foreground">
             <span>
               Step {step + 1} of {steps}
             </span>
@@ -790,27 +790,27 @@ function SummaryRail({
 
       <div className="rounded-2xl border border-border/70 p-4">
         <div className="flex items-center justify-between">
-          <p className="text-[9.5px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Checklist</p>
-          <span className="text-[10px] font-bold tabular-nums text-muted-foreground">
+          <p className="text-micro font-bold uppercase tracking-[0.14em] text-muted-foreground">Checklist</p>
+          <span className="text-micro font-bold tabular-nums text-muted-foreground">
             {doneCount}/{checklist.length}
           </span>
         </div>
         <ul className="mt-2 space-y-1.5">
           {checklist.map((c) => (
-            <li key={c.label} className="flex items-center gap-2 text-[11px]">
+            <li key={c.label} className="flex items-center gap-2 text-meta">
               <span
                 className={cn(
                   "flex size-4 shrink-0 items-center justify-center rounded-full border",
                   c.done ? "border-emerald-500/40 bg-emerald-500/12 text-emerald-500" : "border-border text-transparent"
                 )}
               >
-                <Check className="size-2.5" />
+                <Check className="size-3.5" />
               </span>
               <span className={c.done ? "text-foreground" : "text-muted-foreground"}>{c.label}</span>
             </li>
           ))}
         </ul>
-        <p className="mt-2.5 rounded-lg bg-muted/60 px-2 py-1.5 text-[10px] leading-snug text-muted-foreground">
+        <p className="mt-2.5 rounded-lg bg-muted/60 px-2 py-1.5 text-micro leading-snug text-muted-foreground">
           {editing ? "Changes are saved when you press Save." : "Nothing is saved until the last step."}
         </p>
       </div>
@@ -1126,8 +1126,8 @@ export function ProjectModal({
             <Building2 className="size-4" />
           </span>
           <div className="min-w-0">
-            <p className="truncate font-heading text-[15px] font-bold leading-tight">{title}</p>
-            <p className="truncate text-[11px] text-muted-foreground">{subtitle}</p>
+            <p className="truncate font-heading text-section font-bold leading-tight">{title}</p>
+            <p className="truncate text-meta text-muted-foreground">{subtitle}</p>
           </div>
         </div>
       }
@@ -1140,26 +1140,26 @@ export function ProjectModal({
             animate={{ scale: 1, opacity: 1 }}
             className="flex size-14 items-center justify-center rounded-2xl bg-emerald-500/12 text-emerald-500"
           >
-            <CheckCircle2 className="size-7" />
+            <CheckCircle2 className="size-3.5" />
           </motion.span>
           <div>
-            <p className="font-heading text-[17px] font-bold">{created.name}</p>
-            <p className="mt-1 text-[12px] text-muted-foreground">
+            <p className="font-heading text-title font-bold">{created.name}</p>
+            <p className="mt-1 text-body text-muted-foreground">
               Saved to Flow for {clientOptions.find((c) => c.id === f.clientId)?.companyName ?? "the client"}.
             </p>
           </div>
           <div className="flex w-full max-w-sm flex-col gap-1.5 rounded-xl border border-border/60 bg-muted/20 p-3 text-left">
-            <div className="flex items-center justify-between text-[11.5px]">
+            <div className="flex items-center justify-between text-meta">
               <span className="text-muted-foreground">Project ID</span>
               <span className="font-semibold">auto-generated</span>
             </div>
-            <div className="flex items-center justify-between text-[11.5px]">
+            <div className="flex items-center justify-between text-meta">
               <span className="text-muted-foreground">Billing</span>
               <span className="font-semibold">
                 {f.billingType === "RECURRING" ? `recurring · ${f.recurringInterval}` : "one-time"}
               </span>
             </div>
-            <div className="flex items-center justify-between text-[11.5px]">
+            <div className="flex items-center justify-between text-meta">
               <span className="text-muted-foreground">Milestones</span>
               <span className="font-semibold">
                 {created.requested > 0
@@ -1168,7 +1168,7 @@ export function ProjectModal({
               </span>
             </div>
             {f.startDate && (
-              <div className="flex items-center justify-between text-[11.5px]">
+              <div className="flex items-center justify-between text-meta">
                 <span className="text-muted-foreground">Timeline</span>
                 <span className="font-semibold">
                   {formatDate(f.startDate)} → {formatDate(f.targetEndDate)}
@@ -1212,7 +1212,7 @@ export function ProjectModal({
                 setApiError(null);
               }}
             />
-            <p className="mt-1.5 text-[10.5px] font-semibold text-muted-foreground sm:hidden">
+            <p className="mt-1.5 text-micro font-semibold text-muted-foreground sm:hidden">
               Step {step + 1} of {stepDefs.length} · {stepDefs[step]?.title}
             </p>
           </div>
@@ -1232,7 +1232,7 @@ export function ProjectModal({
                           <Select
                             value={f.templateId}
                             onChange={(e) => applyTemplate(e.target.value)}
-                            className="!w-full !py-1.5 text-[11.5px] sm:!w-44"
+                            className="!w-full !py-1.5 text-meta sm:!w-44"
                             aria-label="Start from template"
                           >
                             <option value="">Start from template…</option>
@@ -1320,8 +1320,8 @@ export function ProjectModal({
                                 <Icon className="size-3.5" />
                               </span>
                               <span className="min-w-0">
-                                <span className="block text-[11.5px] font-bold leading-tight">{t.label}</span>
-                                <span className="block text-[10px] leading-snug text-muted-foreground">{t.hint}</span>
+                                <span className="block text-meta font-bold leading-tight">{t.label}</span>
+                                <span className="block text-micro leading-snug text-muted-foreground">{t.hint}</span>
                               </span>
                             </button>
                           );
@@ -1375,7 +1375,7 @@ export function ProjectModal({
                         </FieldShell>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <span className="text-[10.5px] font-semibold text-muted-foreground">Quick duration:</span>
+                        <span className="text-micro font-semibold text-muted-foreground">Quick duration:</span>
                         {[1, 2, 3, 6].map((m) => {
                           const target = addMonths(f.startDate, m);
                           const active = !!target && target === f.targetEndDate;
@@ -1435,7 +1435,7 @@ export function ProjectModal({
                             value={f.amount}
                             onChange={(e) => set("amount", e.target.value)}
                             placeholder="500000"
-                            className={cn("text-[15px] font-bold tabular-nums", errors.amount && errRing)}
+                            className={cn("text-section font-bold tabular-nums", errors.amount && errRing)}
                           />
                         </FieldShell>
                         <FieldShell label="Spent so far">
@@ -1449,7 +1449,7 @@ export function ProjectModal({
                           />
                         </FieldShell>
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] text-muted-foreground">
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-micro text-muted-foreground">
                         <CircleDollarSign className="size-3.5" />
                         <span>
                           {f.amount ? money(Number(f.amount), f.currency) : "No value set"}
@@ -1489,8 +1489,8 @@ export function ProjectModal({
                                 {b.value === "RECURRING" ? <Repeat className="size-3.5" /> : <Wallet className="size-3.5" />}
                               </span>
                               <span>
-                                <span className="block text-[11.5px] font-bold leading-tight">{b.title}</span>
-                                <span className="block text-[10px] text-muted-foreground">{b.hint}</span>
+                                <span className="block text-meta font-bold leading-tight">{b.title}</span>
+                                <span className="block text-micro text-muted-foreground">{b.hint}</span>
                               </span>
                             </button>
                           );
@@ -1562,7 +1562,7 @@ export function ProjectModal({
                         </FieldShell>
                         {isEditing && (editing?.tasksTotal ?? 0) > 0 ? (
                           <FieldShell label="Progress" hint="Derived from tasks — update task status instead." as="div">
-                            <p className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-[12px] font-semibold tabular-nums text-muted-foreground">
+                            <p className="rounded-xl border border-border/60 bg-muted/30 px-3 py-2 text-body font-semibold tabular-nums text-muted-foreground">
                               {f.progress}% · {editing?.tasksTotal} tasks
                             </p>
                           </FieldShell>
@@ -1590,8 +1590,8 @@ export function ProjectModal({
                         )}
                       </div>
 
-                      <p className="mt-3 flex items-start gap-1.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[10.5px] font-medium leading-relaxed text-amber-700 dark:text-amber-300">
-                        <Sparkles className="mt-0.5 size-3 shrink-0" />
+                      <p className="mt-3 flex items-start gap-1.5 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-micro font-medium leading-relaxed text-amber-700 dark:text-amber-300">
+                        <Sparkles className="mt-0.5 size-3.5 shrink-0" />
                         <span>
                           Starting a project (status → active) and completing it automatically raise DRAFT invoices —
                           review them in Capital before sending.
@@ -1611,14 +1611,14 @@ export function ProjectModal({
                             type="button"
                             onClick={() => set("assignedPmId", "")}
                             className={cn(
-                              "flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left text-[11.5px] transition-colors",
+                              "flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left text-meta transition-colors",
                               !f.assignedPmId
                                 ? "border-primary/50 bg-primary/8 font-semibold text-primary"
                                 : "border-border bg-card text-muted-foreground hover:bg-muted/40"
                             )}
                           >
                             <span className="flex size-5 items-center justify-center rounded-full border border-dashed border-current">
-                              <Users className="size-2.5" />
+                              <Users className="size-3.5" />
                             </span>
                             Unassigned
                           </button>
@@ -1628,7 +1628,7 @@ export function ProjectModal({
                               type="button"
                               onClick={() => set("assignedPmId", m.id)}
                               className={cn(
-                                "flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left text-[11.5px] transition-colors",
+                                "flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left text-meta transition-colors",
                                 f.assignedPmId === m.id
                                   ? "border-primary/50 bg-primary/8 font-semibold text-primary"
                                   : "border-border bg-card hover:bg-muted/40"
@@ -1648,7 +1648,7 @@ export function ProjectModal({
                               {f.team.map((name) => (
                                 <span
                                   key={name}
-                                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 py-0.5 pl-1 pr-1.5 text-[11px] font-semibold text-primary"
+                                  className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 py-0.5 pl-1 pr-1.5 text-meta font-semibold text-primary"
                                 >
                                   <Avatar name={name} size="size-4" />
                                   {name}
@@ -1658,7 +1658,7 @@ export function ProjectModal({
                                     className="rounded-full p-0.5 hover:bg-primary/20"
                                     aria-label={`Remove ${name}`}
                                   >
-                                    <Trash2 className="size-2.5" />
+                                    <Trash2 className="size-3.5" />
                                   </button>
                                 </span>
                               ))}
@@ -1670,7 +1670,7 @@ export function ProjectModal({
                               value={empQuery}
                               onChange={(e) => setEmpQuery(e.target.value)}
                               placeholder="Search people…"
-                              className="w-full bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/60"
+                              className="w-full bg-transparent text-body outline-none placeholder:text-muted-foreground/60"
                             />
                           </div>
                           <div className="mt-1.5 flex max-h-[132px] flex-wrap gap-1.5 overflow-y-auto">
@@ -1678,13 +1678,13 @@ export function ProjectModal({
                               const on = f.team.includes(emp.name);
                               return (
                                 <Pill key={emp.id} active={on} onClick={() => toggleTeam(emp.name)}>
-                                  {on && <Check className="size-3" />}
+                                  {on && <Check className="size-3.5" />}
                                   {emp.name}
                                 </Pill>
                               );
                             })}
                             {filteredEmployees.length === 0 && (
-                              <span className="py-2 text-[11px] text-muted-foreground">No people match that search.</span>
+                              <span className="py-2 text-meta text-muted-foreground">No people match that search.</span>
                             )}
                           </div>
                         </FieldShell>
@@ -1719,10 +1719,10 @@ export function ProjectModal({
 
                       <div className="mt-4 border-t border-border/50 pt-3">
                         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-1">
-                          <p className="text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
+                          <p className="text-micro font-bold tracking-wide text-muted-foreground uppercase">
                             Social media &amp; brand links
                           </p>
-                          <span className="text-[10px] text-muted-foreground/70">
+                          <span className="text-micro text-muted-foreground/70">
                             Client handles — shown on the project card and portal
                           </span>
                         </div>
@@ -1744,7 +1744,7 @@ export function ProjectModal({
                                   value={f.socialLinks[key]}
                                   onChange={(e) => setSocial(key, e.target.value)}
                                   placeholder="https://…"
-                                  className="pl-9 text-[12px]"
+                                  className="pl-9 text-body"
                                 />
                               </div>
                             </FieldShell>
@@ -1756,7 +1756,7 @@ export function ProjectModal({
                               value={f.briefLink}
                               onChange={(e) => set("briefLink", e.target.value)}
                               placeholder="Brief doc URL"
-                              className={cn("text-[12px]", errors.briefLink && errRing)}
+                              className={cn("text-body", errors.briefLink && errRing)}
                             />
                           </FieldShell>
                           <FieldShell label="Drive" error={errors.driveLink}>
@@ -1764,7 +1764,7 @@ export function ProjectModal({
                               value={f.driveLink}
                               onChange={(e) => set("driveLink", e.target.value)}
                               placeholder="Drive folder URL"
-                              className={cn("text-[12px]", errors.driveLink && errRing)}
+                              className={cn("text-body", errors.driveLink && errRing)}
                             />
                           </FieldShell>
                           <FieldShell label="Research" error={errors.researchLink}>
@@ -1772,7 +1772,7 @@ export function ProjectModal({
                               value={f.researchLink}
                               onChange={(e) => set("researchLink", e.target.value)}
                               placeholder="Research URL"
-                              className={cn("text-[12px]", errors.researchLink && errRing)}
+                              className={cn("text-body", errors.researchLink && errRing)}
                             />
                           </FieldShell>
                         </div>
@@ -1793,15 +1793,15 @@ export function ProjectModal({
                     }
                   >
                     {milestoneHint && (
-                      <p className="mb-2 rounded-lg border border-amber-500/25 bg-amber-500/8 px-2.5 py-1.5 text-[10.5px] font-medium text-amber-700 dark:text-amber-300">
+                      <p className="mb-2 rounded-lg border border-amber-500/25 bg-amber-500/8 px-2.5 py-1.5 text-micro font-medium text-amber-700 dark:text-amber-300">
                         {milestoneHint}
                       </p>
                     )}
                     {milestones.length === 0 ? (
                       <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border py-8 text-center">
                         <Flag className="size-5 text-muted-foreground/60" />
-                        <p className="text-[12px] font-semibold text-muted-foreground">No milestones yet</p>
-                        <p className="max-w-xs text-[10.5px] text-muted-foreground/80">
+                        <p className="text-body font-semibold text-muted-foreground">No milestones yet</p>
+                        <p className="max-w-xs text-micro text-muted-foreground/80">
                           Add checkpoints now, or let us spread four standard ones across your dates.
                         </p>
                         <div className="mt-1 flex gap-2">
@@ -1820,7 +1820,7 @@ export function ProjectModal({
                             key={m.key}
                             className="flex flex-col gap-2 rounded-xl border border-border/60 bg-muted/20 p-2.5 sm:flex-row sm:items-end"
                           >
-                            <span className="mb-0.5 flex size-5 shrink-0 items-center justify-center self-start rounded-full bg-primary/12 text-[10px] font-bold text-primary sm:self-center">
+                            <span className="mb-0.5 flex size-5 shrink-0 items-center justify-center self-start rounded-full bg-primary/12 text-micro font-bold text-primary sm:self-center">
                               {i + 1}
                             </span>
                             <FieldShell label="Milestone" className="flex-1">
@@ -1859,7 +1859,7 @@ export function ProjectModal({
                           <Btn variant="outline" onClick={addMilestoneRow}>
                             <Plus className="size-3.5" /> Add another
                           </Btn>
-                          <span className="text-[10.5px] text-muted-foreground">
+                          <span className="text-micro text-muted-foreground">
                             {activeMilestones} milestone{activeMilestones === 1 ? "" : "s"} will be created
                           </span>
                         </div>
@@ -1884,12 +1884,12 @@ export function ProjectModal({
           {/* footer */}
           <div className="shrink-0 border-t border-border/60 bg-card px-5 py-3">
             {apiError && (
-              <p className="mb-2 flex items-center gap-1.5 text-[11.5px] font-semibold text-rose-500">
+              <p className="mb-2 flex items-center gap-1.5 text-meta font-semibold text-rose-500">
                 <AlertTriangle className="size-3.5" /> {apiError}
               </p>
             )}
             <div className="flex items-center justify-between gap-3">
-              <div className="hidden min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
+              <div className="hidden min-w-0 items-center gap-1.5 text-meta text-muted-foreground sm:flex">
                 <CalendarDays className="size-3.5 shrink-0" />
                 <span className="truncate">
                   {step === 0

@@ -8,6 +8,7 @@ import {
   ArrowRight,
   Building2,
   CalendarClock,
+  CalendarDays,
   Check,
   CheckCircle2,
   Copy,
@@ -471,7 +472,7 @@ function LeadFormModal({
           busy={busy}
           cancel={onClose}
           submitLabel={editing ? "Save changes" : "Add lead"}
-          submitIcon={<Check className="size-3.5" />}
+          submitIcon={<Check className="size-4" />}
           hint={
             !editing && rules?.enabled && rules?.routing?.mode !== "MANUAL" && !f.assignedToId
               ? `Auto-assigned by rules${rules?.routing?.autoFollowUpHours ? ` · first follow-up in ${rules.routing.autoFollowUpHours}h` : ""}${rules?.scoring?.autoTemperature ? " · temperature from score" : ""}`
@@ -484,7 +485,7 @@ function LeadFormModal({
         <FormError>{err}</FormError>
         {/* ── 1. Who is this? The only block you must fill in. ── */}
         <FormSection
-          icon={<UserRound className="size-3.5" />}
+          icon={<UserRound className="size-4" />}
           title="The person"
           hint="Who you are talking to, and the fastest way to reach them."
         >
@@ -498,7 +499,7 @@ function LeadFormModal({
                 }}
                 placeholder="Rahim Ahmed"
                 autoFocus
-                className="!py-2.5 !text-[13.5px] font-medium"
+                className="!py-2.5 !text-body-lg font-medium"
               />
             </Field>
             <Field label="Company">
@@ -506,7 +507,7 @@ function LeadFormModal({
                 value={f.company}
                 onChange={(e) => setF({ ...f, company: e.target.value })}
                 placeholder="Acme Ltd."
-                className="!py-2.5 !text-[13.5px]"
+                className="!py-2.5 !text-body-lg"
               />
             </Field>
             <Field
@@ -546,7 +547,7 @@ function LeadFormModal({
                   dup.hard.length ? "text-rose-500" : "text-amber-600 dark:text-amber-400"
                 )}
               />
-              <div className="min-w-0 flex-1 text-[11.5px]">
+              <div className="min-w-0 flex-1 text-meta">
                 <p className={cn("font-semibold", dup.hard.length ? "text-rose-500" : "text-amber-700 dark:text-amber-300")}>
                   {dup.hard.length ? "This contact already exists — saving is blocked" : "Similar contact already on file"}
                 </p>
@@ -568,7 +569,7 @@ function LeadFormModal({
 
         {/* ── 1b. What they need — the context a rep reads before calling. ── */}
         <FormSection
-          icon={<FileText className="size-3.5" />}
+          icon={<FileText className="size-4" />}
           title="What they need"
           hint="Sector, requirement, budget, timeline — a short brief so anyone can pick this lead up."
         >
@@ -584,7 +585,7 @@ function LeadFormModal({
 
         {/* ── 2. Signals that drive scoring and routing. ── */}
         <FormSection
-          icon={<Gauge className="size-3.5" />}
+          icon={<Gauge className="size-4" />}
           title="Signals"
           hint="These set the lead score, the owner it routes to and where it lands in Today."
         >
@@ -595,8 +596,8 @@ function LeadFormModal({
                 value={f.temperature}
                 onChange={(v) => setF({ ...f, temperature: v })}
                 options={[
-                  { value: "HOT", label: "Hot", tone: "border-rose-500/30 bg-rose-500/10 text-rose-500", icon: <Flame className="size-3" /> },
-                  { value: "WARM", label: "Warm", tone: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400", icon: <Zap className="size-3" /> },
+                  { value: "HOT", label: "Hot", tone: "border-rose-500/30 bg-rose-500/10 text-rose-500", icon: <Flame className="size-4" /> },
+                  { value: "WARM", label: "Warm", tone: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400", icon: <Zap className="size-4" /> },
                   { value: "COLD", label: "Cold", tone: "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-400", icon: <span className="size-1.5 rounded-full bg-current" /> },
                 ]}
               />
@@ -639,7 +640,7 @@ function LeadFormModal({
                 <button
                   type="button"
                   onClick={() => setNewCatOpen((v) => !v)}
-                  className="flex shrink-0 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[11.5px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                  className="flex shrink-0 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-meta font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                   title="Add new category"
                 >
                   <Plus className="size-3.5" /> New
@@ -665,7 +666,7 @@ function LeadFormModal({
 
         {/* ── 3. Money and the next action. ── */}
         <FormSection
-          icon={<CalendarClock className="size-3.5" />}
+          icon={<CalendarClock className="size-4" />}
           title="Deal & follow-up"
           hint="Optional, but a follow-up date is what puts this lead on someone's plate."
         >
@@ -730,7 +731,7 @@ function LeadFormModal({
 
         {/* ── 4. Everything else, out of the way until asked for. ── */}
         <Collapsible
-          icon={<SlidersHorizontal className="size-3.5" />}
+          icon={<SlidersHorizontal className="size-4" />}
           title="More details"
           hint="Vertical, links, tags and notes"
           badge={extraFilled > 0 ? <CountBadge>{extraFilled}</CountBadge> : undefined}
@@ -868,7 +869,7 @@ function ConversationComposer({
               type="button"
               onClick={() => setChannel(c.value)}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-bold transition-colors",
+                "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-body font-bold transition-colors",
                 on
                   ? "border-primary/40 bg-primary/15 text-primary"
                   : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -879,7 +880,7 @@ function ConversationComposer({
             </button>
           );
         })}
-        <span className="ml-auto text-[11px] font-semibold text-muted-foreground">
+        <span className="ml-auto text-meta font-semibold text-muted-foreground">
           Logged as {new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
         </span>
       </div>
@@ -892,7 +893,7 @@ function ConversationComposer({
               type="button"
               onClick={() => setOutcome((v) => (v === o.value ? "" : o.value))}
               className={cn(
-                "rounded-full border px-2 py-0.5 text-[11.5px] font-semibold transition-colors",
+                "rounded-full border px-2 py-0.5 text-meta font-semibold transition-colors",
                 outcome === o.value ? tone(o.tone) : "border-border bg-card text-muted-foreground hover:text-foreground"
               )}
             >
@@ -919,7 +920,7 @@ function ConversationComposer({
       />
 
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-[11px] font-bold tracking-wide text-muted-foreground uppercase">Next step</span>
+        <span className="text-meta font-bold tracking-wide text-muted-foreground uppercase">Next step</span>
         {([
           { key: "tomorrow", label: "Tomorrow" },
           { key: "3d", label: "In 3 days" },
@@ -931,7 +932,7 @@ function ConversationComposer({
             type="button"
             onClick={() => setStep(o.key)}
             className={cn(
-              "rounded-full border px-2 py-0.5 text-[11.5px] font-bold transition-colors",
+              "rounded-full border px-2 py-0.5 text-meta font-bold transition-colors",
               step === o.key
                 ? "border-primary/40 bg-primary/10 text-primary"
                 : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -940,11 +941,11 @@ function ConversationComposer({
             {o.label}
           </button>
         ))}
-        <Btn variant="primary" className="ml-auto !py-1.5 text-[12.5px]" disabled={busy} onClick={save}>
+        <Btn variant="primary" className="ml-auto !py-1.5 text-body" disabled={busy} onClick={save}>
           {busy ? "Saving…" : "Save to timeline"}
         </Btn>
       </div>
-      {err && <p className="mt-2 text-[12px] font-medium text-rose-400">{err}</p>}
+      {err && <p className="mt-2 text-body font-medium text-rose-400">{err}</p>}
     </div>
   );
 }
@@ -1099,7 +1100,7 @@ function MeetingModal({
 
         {!editing && (
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
-            <p className="mb-2 text-[11px] font-bold tracking-[0.08em] text-primary uppercase">Action → task</p>
+            <p className="mb-2 text-meta font-bold tracking-[0.08em] text-primary uppercase">Action → task</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Assign action to" hint="Task auto-created for this member">
                 <Select value={f.assignToId} onChange={(e) => setF({ ...f, assignToId: e.target.value })}>
@@ -1127,7 +1128,7 @@ function MeetingModal({
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search teammates…"
-                className="w-full bg-transparent py-2 pl-8 pr-3 text-[13px] outline-none placeholder:text-muted-foreground"
+                className="w-full bg-transparent py-2 pl-8 pr-3 text-body-lg outline-none placeholder:text-muted-foreground"
               />
             </div>
             <div className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto p-2">
@@ -1144,23 +1145,23 @@ function MeetingModal({
                       }))
                     }
                     className={cn(
-                      "flex items-center gap-1.5 rounded-full border px-2 py-1 text-[12px] font-semibold transition-colors",
+                      "flex items-center gap-1.5 rounded-full border px-2 py-1 text-body font-semibold transition-colors",
                       on ? "border-primary/40 bg-primary/15 text-primary" : "border-border bg-card text-muted-foreground hover:text-foreground"
                     )}
                   >
                     <Avatar name={e.name} size="xs" />
                     {e.name}
-                    {e.department && <span className="text-[10px] font-medium text-muted-foreground">· {e.department}</span>}
-                    {on && <Check className="size-3" />}
+                    {e.department && <span className="text-micro font-medium text-muted-foreground">· {e.department}</span>}
+                    {on && <Check className="size-3.5" />}
                   </button>
                 );
               })}
-              {visible.length === 0 && <p className="p-1 text-[13px] text-muted-foreground">No teammates match.</p>}
+              {visible.length === 0 && <p className="p-1 text-body-lg text-muted-foreground">No teammates match.</p>}
             </div>
           </div>
         </Field>
 
-        {err && <p className="text-[13px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body-lg font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Schedule"} />
       </form>
     </Modal>
@@ -1234,7 +1235,7 @@ function ConvertModal({
   return (
     <Modal open={open} onClose={onClose} title="Convert to client">
       <form onSubmit={save} className="flex flex-col gap-4">
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-[13px] font-medium text-emerald-400">
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-body-lg font-medium text-emerald-400">
           On convert: client record তৈরি হবে + PLANNING project auto-create হবে এবং proposal ও activity history project-এ ক্যারি হবে (Flow মডিউলে দেখা যাবে)।
         </div>
         <Field label="Company name *">
@@ -1262,7 +1263,7 @@ function ConvertModal({
             </Select>
           </Field>
         </div>
-        {err && <p className="text-[14px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body-lg font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Convert & onboard" />
       </form>
     </Modal>
@@ -1326,7 +1327,7 @@ function LostModal({
         <Field label="Notes">
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What happened, competitor, timing…" />
         </Field>
-        {err && <p className="text-[14px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body-lg font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Mark lost" />
       </form>
     </Modal>
@@ -1401,13 +1402,13 @@ function CategoryModal({
             <Plus className="size-3.5" /> Add
           </Btn>
         </form>
-        {err && <p className="text-[14px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body-lg font-medium text-rose-400">{err}</p>}
         <div className="flex max-h-72 flex-col gap-1.5 overflow-y-auto">
-          {categories.length === 0 && <p className="text-[13px] text-muted-foreground">No categories yet.</p>}
+          {categories.length === 0 && <p className="text-body-lg text-muted-foreground">No categories yet.</p>}
           {categories.map((c, i) => (
             <div key={c.id} className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-2">
               {c.color && <span className="size-2 shrink-0 rounded-full" style={{ background: c.color }} />}
-              <span className="flex-1 truncate text-[14px] font-semibold">{c.name}</span>
+              <span className="flex-1 truncate text-body-lg font-semibold">{c.name}</span>
               <button onClick={() => remove(c)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400" title="Delete category">
                 <Trash2 className="size-3.5" />
               </button>
@@ -2183,7 +2184,7 @@ export default function PulsePage() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[14px] font-medium text-white shadow-xl"
+          className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-body-lg font-medium text-white shadow-xl"
         >
           {flash}
         </motion.div>
@@ -2256,30 +2257,30 @@ export default function PulsePage() {
       {pulseTab === "insights" && (
         <motion.div key="insights" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-          <StatCard index={0} label="Pipeline Value" value={formatBDT(summary?.pipelineValue)} sub={`weighted ${formatBDT(summary?.weightedForecast)}`} icon={<Zap className="size-5" />} />
-          <StatCard index={1} label="Hot Leads" value={summary?.hotLeads ?? "—"} sub={`${summary?.temperatureCounts?.WARM ?? 0} warm · ${summary?.temperatureCounts?.COLD ?? 0} cold`} icon={<Flame className="size-5" />} />
-          <StatCard index={2} label="Win Rate" value={summary?.winRate != null ? `${summary.winRate}%` : "—"} sub={`${summary?.won ?? 0} won · ${summary?.lost ?? 0} lost`} icon={<Trophy className="size-5" />} />
-          <StatCard index={3} label="Follow-ups Overdue" value={summary?.followUpsDue ?? "—"} sub={`${summary?.followUpsToday ?? 0} due today`} icon={<CalendarClock className="size-5" />} />
-          <StatCard index={4} label="Stale / Rotten" value={summary?.staleLeads ?? "-"} sub={`${summary?.slaBreached ?? 0} past first-response SLA`} icon={<AlertTriangle className="size-5" />} />
+          <StatCard index={0} label="Pipeline Value" value={formatBDT(summary?.pipelineValue)} sub={`weighted ${formatBDT(summary?.weightedForecast)}`} icon={<Zap className="size-4" />} />
+          <StatCard index={1} label="Hot Leads" value={summary?.hotLeads ?? "—"} sub={`${summary?.temperatureCounts?.WARM ?? 0} warm · ${summary?.temperatureCounts?.COLD ?? 0} cold`} icon={<Flame className="size-4" />} />
+          <StatCard index={2} label="Win Rate" value={summary?.winRate != null ? `${summary.winRate}%` : "—"} sub={`${summary?.won ?? 0} won · ${summary?.lost ?? 0} lost`} icon={<Trophy className="size-4" />} />
+          <StatCard index={3} label="Follow-ups Overdue" value={summary?.followUpsDue ?? "—"} sub={`${summary?.followUpsToday ?? 0} due today`} icon={<CalendarClock className="size-4" />} />
+          <StatCard index={4} label="Stale / Rotten" value={summary?.staleLeads ?? "-"} sub={`${summary?.slaBreached ?? 0} past first-response SLA`} icon={<AlertTriangle className="size-4" />} />
           <StatCard
             index={5}
             label="Closed Value"
             value={formatBDT(summary?.byStage?.find((s) => s.name.replace(/\s+/g, "_").toUpperCase() === "WON")?.value)}
             sub={summary?.avgResponseHours != null ? `avg response ${summary.avgResponseHours}h` : "—"}
-            icon={<Gauge className="size-5" />}
+            icon={<Gauge className="size-4" />}
           />
         </div>
 
         {((summary?.followUpsDue ?? 0) > 0 || (summary?.noNextAction ?? 0) > 0) && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3">
             <div className="flex items-start gap-2.5">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-500" />
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
               <div>
-                <p className="text-[13px] font-semibold">
+                <p className="text-body-lg font-semibold">
                   {summary?.followUpsDue ?? 0} follow-up{(summary?.followUpsDue ?? 0) === 1 ? "" : "s"} overdue
                   {(summary?.noNextAction ?? 0) > 0 ? ` · ${summary?.noNextAction} active leads with no next step` : ""}
                 </p>
-                <p className="text-[12px] text-muted-foreground">
+                <p className="text-body text-muted-foreground">
                   Clearing these today is the cheapest win in the pipeline — the leads are already warm.
                 </p>
               </div>
@@ -2325,20 +2326,20 @@ export default function PulsePage() {
                 const tone = t === "HOT" ? "bg-rose-500" : t === "WARM" ? "bg-amber-400" : "bg-sky-400";
                 return (
                   <motion.div key={t} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.32 + ["HOT","WARM","COLD"].indexOf(t)*0.07, duration: 0.4, ease: [0.22,1,0.36,1] }} className="flex items-center gap-3">
-                    <span className="w-16 shrink-0 text-[13px] font-bold text-muted-foreground">{label(t)}</span>
+                    <span className="w-16 shrink-0 text-body-lg font-bold text-muted-foreground">{label(t)}</span>
                     <div className="relative h-6 flex-1 overflow-hidden rounded-lg bg-muted/50">
                       <motion.div className={`absolute inset-y-0 left-0 rounded-lg ${tone}`} initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ delay: 0.4 + ["HOT","WARM","COLD"].indexOf(t)*0.07, duration: 0.65, ease: [0.22,1,0.36,1] }} />
                     </div>
-                    <span className="w-8 shrink-0 text-right text-[14px] font-bold tabular-nums">{n}</span>
-                    <span className="w-10 shrink-0 text-right text-[13px] font-semibold tabular-nums text-muted-foreground">{pct}%</span>
+                    <span className="w-8 shrink-0 text-right text-body-lg font-bold tabular-nums">{n}</span>
+                    <span className="w-10 shrink-0 text-right text-body-lg font-semibold tabular-nums text-muted-foreground">{pct}%</span>
                   </motion.div>
                 );
               })}
             </div>
             <div className="mt-4 flex flex-wrap gap-1.5">
               {Object.entries(summary?.categoryCounts ?? {}).map(([name, count]) => (
-                <span key={name} className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[13px] font-semibold text-muted-foreground">
-                  {name} <span className="rounded-full bg-muted px-1.5 text-[12px] font-bold tabular-nums text-foreground">{count}</span>
+                <span key={name} className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-body-lg font-semibold text-muted-foreground">
+                  {name} <span className="rounded-full bg-muted px-1.5 text-body font-bold tabular-nums text-foreground">{count}</span>
                 </span>
               ))}
             </div>
@@ -2353,19 +2354,19 @@ export default function PulsePage() {
           {/* command bar — search, filters, view */}
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="relative min-w-56 max-w-md flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search name, company, phone, email or LD number…"
-                className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[14px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+                className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body-lg outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
               />
             </div>
             <div className="relative">
               <button
                 onClick={() => setFiltersOpen((v) => !v)}
                 className={cn(
-                  "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-bold transition-colors",
+                  "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-body-lg font-bold transition-colors",
                   filtersOpen || activeFilters.length
                     ? "border-primary/40 bg-primary/10 text-primary"
                     : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -2374,7 +2375,7 @@ export default function PulsePage() {
                 <SlidersHorizontal className="size-3.5" />
                 Filters
                 {activeFilters.length > 0 && (
-                  <span className="rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
+                  <span className="rounded-full bg-primary px-1.5 text-meta font-bold text-primary-foreground">
                     {activeFilters.length}
                   </span>
                 )}
@@ -2385,12 +2386,12 @@ export default function PulsePage() {
                   <div className="fixed inset-0 z-20" onClick={() => setFiltersOpen(false)} />
                   <div className="absolute left-0 top-full z-30 mt-2 w-[min(92vw,640px)] overflow-hidden rounded-2xl border border-border/70 bg-card shadow-2xl shadow-black/25">
                     <div className="flex items-center justify-between border-b border-border/60 px-4 py-2.5">
-                      <p className="flex items-center gap-1.5 text-[12px] font-bold tracking-[0.08em] text-foreground uppercase">
+                      <p className="flex items-center gap-1.5 text-body font-bold tracking-[0.08em] text-foreground uppercase">
                         <SlidersHorizontal className="size-3.5" /> Filters
                       </p>
                       <div className="flex items-center gap-2">
                         {activeFilters.length > 0 && (
-                          <button onClick={clearFilters} className="text-[12px] font-bold text-rose-500 transition-colors hover:text-rose-400">
+                          <button onClick={clearFilters} className="text-body font-bold text-rose-500 transition-colors hover:text-rose-400">
                             Clear all
                           </button>
                         )}
@@ -2406,8 +2407,8 @@ export default function PulsePage() {
 
                     <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 p-4 sm:grid-cols-3">
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Source</span>
-                        <Select value={source} onChange={(e) => setSource(e.target.value)} className="!w-full !py-1.5 text-[12.5px]">
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Source</span>
+                        <Select value={source} onChange={(e) => setSource(e.target.value)} className="!w-full !py-1.5 text-body">
                           <option value="">All sources</option>
                           {SOURCES.map((s) => (
                             <option key={s} value={s}>{label(s)}</option>
@@ -2415,8 +2416,8 @@ export default function PulsePage() {
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Vertical</span>
-                        <Select value={vertical} onChange={(e) => setVertical(e.target.value)} className="!w-full !py-1.5 text-[12.5px]">
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Vertical</span>
+                        <Select value={vertical} onChange={(e) => setVertical(e.target.value)} className="!w-full !py-1.5 text-body">
                           <option value="">All verticals</option>
                           {VERTICALS.map((v) => (
                             <option key={v} value={v}>{label(v)}</option>
@@ -2424,8 +2425,8 @@ export default function PulsePage() {
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Temperature</span>
-                        <Select value={temperature} onChange={(e) => setTemperature(e.target.value)} className="!w-full !py-1.5 text-[12.5px]">
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Temperature</span>
+                        <Select value={temperature} onChange={(e) => setTemperature(e.target.value)} className="!w-full !py-1.5 text-body">
                           <option value="">All temperatures</option>
                           {TEMPERATURES.map((t) => (
                             <option key={t} value={t}>{label(t)}</option>
@@ -2433,8 +2434,8 @@ export default function PulsePage() {
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Category</span>
-                        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="!w-full !py-1.5 text-[12.5px]">
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Category</span>
+                        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="!w-full !py-1.5 text-body">
                           <option value="">All categories</option>
                           {categories.map((c) => (
                             <option key={c.id} value={c.id}>{c.name}</option>
@@ -2442,8 +2443,8 @@ export default function PulsePage() {
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Priority</span>
-                        <Select value={priority} onChange={(e) => setPriority(e.target.value)} className="!w-full !py-1.5 text-[12.5px]">
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Priority</span>
+                        <Select value={priority} onChange={(e) => setPriority(e.target.value)} className="!w-full !py-1.5 text-body">
                           <option value="">All priorities</option>
                           {PRIORITIES.map((p) => (
                             <option key={p} value={p}>{label(p)}</option>
@@ -2451,8 +2452,8 @@ export default function PulsePage() {
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Owner</span>
-                        <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="!w-full !py-1.5 text-[12.5px]">
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Owner</span>
+                        <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="!w-full !py-1.5 text-body">
                           <option value="">All owners</option>
                           {(users ?? []).map((u: UserLite) => (
                             <option key={u.id} value={u.id}>{u.name}</option>
@@ -2460,8 +2461,8 @@ export default function PulsePage() {
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Stage</span>
-                        <Select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="!w-full !py-1.5 text-[12.5px]">
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Stage</span>
+                        <Select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)} className="!w-full !py-1.5 text-body">
                           <option value="">All stages</option>
                           {STAGES.map((s) => (
                             <option key={s} value={s}>{label(s)}</option>
@@ -2469,36 +2470,36 @@ export default function PulsePage() {
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Score</span>
-                        <Select value={minScore} onChange={(e) => setMinScore(e.target.value)} className="!w-full !py-1.5 text-[12.5px]">
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Score</span>
+                        <Select value={minScore} onChange={(e) => setMinScore(e.target.value)} className="!w-full !py-1.5 text-body">
                           <option value="">Any score</option>
                           <option value="70">Hot ≥ 70</option>
                           <option value="50">Warm ≥ 50</option>
                         </Select>
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Follow-up due by</span>
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Follow-up due by</span>
                         <input
                           type="date"
                           value={followUpDue}
                           onChange={(e) => setFollowUpDue(e.target.value)}
-                          className="h-8 rounded-xl border border-border bg-card px-2 text-[12.5px] font-medium text-foreground outline-none focus:border-primary/40"
+                          className="h-8 rounded-xl border border-border bg-card px-2 text-body font-medium text-foreground outline-none focus:border-primary/40"
                         />
                       </label>
                       <label className="flex flex-col gap-1">
-                        <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Created after</span>
+                        <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Created after</span>
                         <input
                           type="date"
                           value={createdAfter}
                           onChange={(e) => setCreatedAfter(e.target.value)}
-                          className="h-8 rounded-xl border border-border bg-card px-2 text-[12.5px] font-medium text-foreground outline-none focus:border-primary/40"
+                          className="h-8 rounded-xl border border-border bg-card px-2 text-body font-medium text-foreground outline-none focus:border-primary/40"
                         />
                       </label>
                       <div className="flex items-end">
                         <button
                           onClick={() => setStarredOnly((s) => !s)}
                           className={cn(
-                            "flex h-8 w-full items-center justify-center gap-1.5 rounded-xl border px-2 text-[12.5px] font-bold transition-colors",
+                            "flex h-8 w-full items-center justify-center gap-1.5 rounded-xl border px-2 text-body font-bold transition-colors",
                             starredOnly
                               ? "border-amber-500/40 bg-amber-500/10 text-amber-500"
                               : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -2511,7 +2512,7 @@ export default function PulsePage() {
                       <div className="flex items-end">
                         <button
                           onClick={() => { setFiltersOpen(false); setCatOpen(true); }}
-                          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-2 text-[12.5px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-2 text-body font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                           title="Manage categories"
                         >
                           <Tag className="size-3.5" /> Categories
@@ -2520,12 +2521,12 @@ export default function PulsePage() {
                     </div>
 
                     <div className="flex items-center justify-between border-t border-border/60 bg-muted/20 px-4 py-2">
-                      <span className="text-[11px] font-medium text-muted-foreground">
+                      <span className="text-meta font-medium text-muted-foreground">
                         {activeFilters.length ? `${activeFilters.length} filter${activeFilters.length === 1 ? "" : "s"} active` : "No filters applied"}
                       </span>
                       <button
                         onClick={() => setFiltersOpen(false)}
-                        className="rounded-lg bg-primary px-3 py-1.5 text-[12px] font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+                        className="rounded-lg bg-primary px-3 py-1.5 text-body font-bold text-primary-foreground transition-colors hover:bg-primary/90"
                       >
                         Done
                       </button>
@@ -2549,15 +2550,15 @@ export default function PulsePage() {
 
           {activeFilters.length > 0 && (
             <div className="mb-3 flex flex-wrap items-center gap-1.5">
-              <span className="text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">Active</span>
+              <span className="text-meta font-bold tracking-wide text-muted-foreground uppercase">Active</span>
               {activeFilters.map((f) => (
                 <button
                   key={f.key}
                   onClick={f.clear}
-                  className="group flex items-center gap-1 rounded-full border border-primary/25 bg-primary/[0.07] px-2 py-1 text-[12px] font-semibold text-primary transition-colors hover:bg-primary/15"
+                  className="group flex items-center gap-1 rounded-full border border-primary/25 bg-primary/[0.07] px-2 py-1 text-body font-semibold text-primary transition-colors hover:bg-primary/15"
                 >
                   {f.label}
-                  <X className="size-3 opacity-60 group-hover:opacity-100" />
+                  <X className="size-3.5 opacity-60 group-hover:opacity-100" />
                 </button>
               ))}
             </div>
@@ -2618,7 +2619,7 @@ export default function PulsePage() {
                       )}
                     >
                       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-2xl border-b border-border/50 bg-card/95 px-3 py-2 backdrop-blur">
-                        <span className="flex items-center gap-1.5 text-[12.5px] font-bold">
+                        <span className="flex items-center gap-1.5 text-body font-bold">
                           <span
                             className={cn(
                               "size-1.5 rounded-full",
@@ -2627,14 +2628,14 @@ export default function PulsePage() {
                           />
                           {label(stage)}
                         </span>
-                        <span className="text-[11.5px] font-semibold tabular-nums text-muted-foreground">
+                        <span className="text-meta font-semibold tabular-nums text-muted-foreground">
                           {items.length}
                           {value > 0 && <> · {formatBDT(value)}</>}
                         </span>
                       </div>
                       <div className="flex flex-1 flex-col gap-2 p-2">
                         {items.length === 0 && (
-                          <p className="rounded-xl border border-dashed border-border/60 px-2 py-5 text-center text-[12px] text-muted-foreground/70">
+                          <p className="rounded-xl border border-dashed border-border/60 px-2 py-5 text-center text-body text-muted-foreground/70">
                             {active ? "Drop a lead here" : "No leads"}
                           </p>
                         )}
@@ -2661,8 +2662,8 @@ export default function PulsePage() {
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
-                                  <p className="truncate text-[13.5px] font-bold">{l.name}</p>
-                                  <p className="truncate text-[11.5px] text-muted-foreground">
+                                  <p className="truncate text-body-lg font-bold">{l.name}</p>
+                                  <p className="truncate text-meta text-muted-foreground">
                                     {l.company ?? l.contactEmail ?? "—"}
                                   </p>
                                 </div>
@@ -2687,15 +2688,15 @@ export default function PulsePage() {
                                 <div className="min-w-0 flex-1">
                                   <ScoreBar score={l.leadScore} />
                                 </div>
-                                <span className="shrink-0 text-[12.5px] font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</span>
+                                <span className="shrink-0 text-body font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</span>
                               </div>
 
                               <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                                <span className={cn("rounded-full border px-1.5 py-0.5 text-[10.5px] font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
+                                <span className={cn("rounded-full border px-1.5 py-0.5 text-micro font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
                                   {l.temperature}
                                 </span>
                                 {l.leadCategory && (
-                                  <span className={cn("flex max-w-28 items-center gap-1 truncate rounded-full border px-1.5 py-0.5 text-[10.5px] font-bold", categoryToneOf(l.leadCategory, li))}>
+                                  <span className={cn("flex max-w-28 items-center gap-1 truncate rounded-full border px-1.5 py-0.5 text-micro font-bold", categoryToneOf(l.leadCategory, li))}>
                                     {l.leadCategory.color && <span className="size-1.5 shrink-0 rounded-full" style={{ background: l.leadCategory.color }} />}
                                     <span className="truncate">{l.leadCategory.name}</span>
                                   </span>
@@ -2703,15 +2704,15 @@ export default function PulsePage() {
                                 {(l.qualityFlags?.length ?? 0) > 0 && (
                                   <span
                                     title={`Rule flags: ${(l.qualityFlags ?? []).join(", ").replace(/_/g, " ").toLowerCase()}`}
-                                    className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10.5px] font-bold text-amber-600 dark:text-amber-400"
+                                    className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-micro font-bold text-amber-600 dark:text-amber-400"
                                   >
-                                    ⚠ {l.qualityFlags!.length}
+                                    <AlertTriangle className="mr-0.5 inline size-3" /> {l.qualityFlags!.length}
                                   </span>
                                 )}
                                 {l.nextFollowUpAt && !["WON", "LOST"].includes(l.stage) && (
                                   <span
                                     className={cn(
-                                      "rounded-full px-1.5 py-0.5 text-[10.5px] font-bold",
+                                      "rounded-full px-1.5 py-0.5 text-micro font-bold",
                                       new Date(l.nextFollowUpAt).getTime() < Date.now()
                                         ? "bg-rose-500/15 text-rose-500"
                                         : "bg-primary/15 text-primary"
@@ -2721,14 +2722,14 @@ export default function PulsePage() {
                                   </span>
                                 )}
                                 {!l.nextFollowUpAt && l.nextMeeting && (
-                                  <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-bold text-primary">
+                                  <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-micro font-bold text-primary">
                                     meeting {formatDate(l.nextMeeting.scheduledAt)}
                                   </span>
                                 )}
                               </div>
 
                               <div className="mt-2 flex items-center justify-between border-t border-border/50 pt-1.5">
-                                <span className="truncate text-[11px] text-muted-foreground/80">
+                                <span className="truncate text-meta text-muted-foreground/80">
                                   {l.assignedTo?.name ?? "unassigned"}
                                 </span>
                                 <div className="flex items-center gap-1 opacity-100 transition-opacity lg:opacity-0 lg:group-hover:opacity-100">
@@ -2739,7 +2740,7 @@ export default function PulsePage() {
                                       className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                                       title="Call"
                                     >
-                                      <Phone className="size-3" />
+                                      <Phone className="size-3.5" />
                                     </a>
                                   )}
                                   {l.contactPhone && (
@@ -2751,7 +2752,7 @@ export default function PulsePage() {
                                       className="rounded-md p-1 text-emerald-600 transition-colors hover:bg-emerald-500/10 dark:text-emerald-400"
                                       title="WhatsApp"
                                     >
-                                      <MessageCircle className="size-3" />
+                                      <MessageCircle className="size-3.5" />
                                     </a>
                                   )}
                                   <button
@@ -2759,7 +2760,7 @@ export default function PulsePage() {
                                       e.stopPropagation();
                                       setQuickLogLead(asWorkItem(l));
                                     }}
-                                    className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10.5px] font-bold text-primary transition-colors hover:bg-primary/20"
+                                    className="rounded-md bg-primary/10 px-1.5 py-0.5 text-micro font-bold text-primary transition-colors hover:bg-primary/20"
                                     title="Log a touch"
                                   >
                                     Log
@@ -2773,7 +2774,7 @@ export default function PulsePage() {
                                       className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                                       title="Move forward"
                                     >
-                                      <ArrowRight className="size-3" />
+                                      <ArrowRight className="size-3.5" />
                                     </button>
                                   )}
                                 </div>
@@ -2805,8 +2806,8 @@ export default function PulsePage() {
                         <div className="flex min-w-0 items-center gap-2.5">
                           <Avatar name={l.name} />
                           <div className="min-w-0">
-                            <p className="truncate text-[14px] font-bold">{l.name}</p>
-                            <p className="truncate text-[12px] text-muted-foreground">
+                            <p className="truncate text-body-lg font-bold">{l.name}</p>
+                            <p className="truncate text-body text-muted-foreground">
                               {l.company ?? l.contactEmail ?? "—"}
                             </p>
                           </div>
@@ -2825,15 +2826,15 @@ export default function PulsePage() {
                       </div>
                       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                         {l.uid && (
-                          <span className="flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted-foreground">
-                            <Hash className="size-2.5" /> {l.uid}
+                          <span className="flex items-center gap-0.5 rounded-full bg-muted px-1.5 py-0.5 font-mono text-meta font-semibold text-muted-foreground">
+                            <Hash className="size-3.5" /> {l.uid}
                           </span>
                         )}
-                        <span className={cn("rounded-full border px-1.5 py-0.5 text-[11px] font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
+                        <span className={cn("rounded-full border px-1.5 py-0.5 text-meta font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
                           {l.temperature}
                         </span>
                         {l.leadCategory && (
-                          <span className={cn("flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[11px] font-bold", categoryToneOf(l.leadCategory, gi))}>
+                          <span className={cn("flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-meta font-bold", categoryToneOf(l.leadCategory, gi))}>
                             {l.leadCategory.color && <span className="size-1.5 rounded-full" style={{ background: l.leadCategory.color }} />}
                             {l.leadCategory.name}
                           </span>
@@ -2842,10 +2843,10 @@ export default function PulsePage() {
                       </div>
                       <div className="mt-2.5 flex items-center justify-between gap-2">
                         <ScoreBar score={l.leadScore} />
-                        <span className="text-[13px] font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</span>
+                        <span className="text-body-lg font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</span>
                       </div>
                       <div className="mt-2">
-                        <div className="flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
+                        <div className="flex items-center justify-between text-meta font-semibold text-muted-foreground">
                           <span>Win probability</span>
                           <span className="tabular-nums">{l.probability ?? 0}%</span>
                         </div>
@@ -2862,23 +2863,23 @@ export default function PulsePage() {
                       {l.tags && l.tags.length > 0 && (
                         <div className="mt-1.5 flex flex-wrap gap-1">
                           {l.tags.slice(0, 4).map((t) => (
-                            <span key={t} className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
+                            <span key={t} className="rounded-md bg-primary/10 px-1.5 py-0.5 text-meta font-semibold text-primary">
                               #{t}
                             </span>
                           ))}
                         </div>
                       )}
-                      <div className="mt-2.5 flex items-center justify-between border-t border-border/50 pt-2 text-[12px] text-muted-foreground">
+                      <div className="mt-2.5 flex items-center justify-between border-t border-border/50 pt-2 text-body text-muted-foreground">
                         <span className="flex items-center gap-1">
                           {fu && (
                             <span className={cn(
-                              "rounded-full px-1.5 py-0.5 text-[11px] font-bold",
+                              "rounded-full px-1.5 py-0.5 text-meta font-bold",
                               fu === "overdue" ? "bg-rose-500/15 text-rose-400" : "bg-amber-500/15 text-amber-400"
                             )}>
                               {fu === "overdue" ? "overdue" : "today"}
                             </span>
                           )}
-                          {l.nextMeeting && <span>📅 {formatDate(l.nextMeeting.scheduledAt)}</span>}
+                          {l.nextMeeting && <span><CalendarDays className="mr-0.5 inline size-3" /> {formatDate(l.nextMeeting.scheduledAt)}</span>}
                         </span>
                         <span>{l.assignedTo?.name ?? "unassigned"}</span>
                       </div>
@@ -2890,7 +2891,7 @@ export default function PulsePage() {
           </FadeIn>
         ) : (
           <FadeIn>
-            <TableShell noScroll footer={<span className="text-[13px] text-muted-foreground">{tableLeads.length} leads</span>}>
+            <TableShell noScroll footer={<span className="text-body-lg text-muted-foreground">{tableLeads.length} leads</span>}>
               <table className="w-full">
                 <THead>
                   <Th className="w-8">
@@ -2934,13 +2935,13 @@ export default function PulsePage() {
                           <Avatar name={l.name} />
                           <div>
                             <p className="font-medium">{l.name}</p>
-                            <p className="text-[13px] text-muted-foreground">{l.company ?? l.contactEmail ?? "—"}</p>
+                            <p className="text-body-lg text-muted-foreground">{l.company ?? l.contactEmail ?? "—"}</p>
                           </div>
-                          {l.starred && <Star className="size-3 shrink-0 fill-amber-400 text-amber-400" />}
+                          {l.starred && <Star className="size-3.5 shrink-0 fill-amber-400 text-amber-400" />}
                           {(l.qualityFlags?.length ?? 0) > 0 && (
                             <span
                               title={`Rule flags: ${(l.qualityFlags ?? []).join(", ").replace(/_/g, " ").toLowerCase()}`}
-                              className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9.5px] font-bold text-amber-600 dark:text-amber-400"
+                              className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-micro font-bold text-amber-600 dark:text-amber-400"
                             >
                               {l.qualityFlags!.length} flag{l.qualityFlags!.length === 1 ? "" : "s"}
                             </span>
@@ -2950,7 +2951,7 @@ export default function PulsePage() {
                       <Td className="hidden lg:table-cell text-muted-foreground">{label(l.source)}</Td>
                       <Td className="hidden xl:table-cell">
                         {l.leadCategory ? (
-                          <span className={cn("flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px] font-bold", categoryToneOf(l.leadCategory, ti))}>
+                          <span className={cn("flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 text-body font-bold", categoryToneOf(l.leadCategory, ti))}>
                             {l.leadCategory.color && <span className="size-1.5 rounded-full" style={{ background: l.leadCategory.color }} />}
                             {l.leadCategory.name}
                           </span>
@@ -2959,12 +2960,12 @@ export default function PulsePage() {
                         )}
                       </Td>
                       <Td className="hidden md:table-cell">
-                        <span className={cn("rounded-full border px-2 py-0.5 text-[12px] font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
+                        <span className={cn("rounded-full border px-2 py-0.5 text-body font-bold", temperatureTone[l.temperature] ?? temperatureTone.WARM)}>
                           {l.temperature}
                         </span>
                       </Td>
                       <Td className="hidden md:table-cell">
-                        <span className={cn("rounded-full border px-2 py-0.5 text-[12px] font-bold", priorityTone[l.priority] ?? priorityTone.MEDIUM)}>
+                        <span className={cn("rounded-full border px-2 py-0.5 text-body font-bold", priorityTone[l.priority] ?? priorityTone.MEDIUM)}>
                           {l.priority}
                         </span>
                       </Td>
@@ -2973,7 +2974,7 @@ export default function PulsePage() {
                       <Td>
                         <span
                           className={cn(
-                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-semibold",
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-meta font-semibold",
                             overdue
                               ? "bg-rose-500/10 text-rose-600 dark:text-rose-300"
                               : l.nextFollowUpAt
@@ -2986,7 +2987,7 @@ export default function PulsePage() {
                       </Td>
                       <Td className="text-muted-foreground">{l.assignedTo?.name ?? "—"}</Td>
                       <Td onClick={(e) => e.stopPropagation()}>
-                        <Select value={l.stage} onChange={(e) => leadPatch.mutate({ id: l.id, patch: { stage: e.target.value } }, { onSuccess: () => notify(`Moved to ${label(e.target.value)}`) })} className="!w-28 !py-1 text-[13px]">
+                        <Select value={l.stage} onChange={(e) => leadPatch.mutate({ id: l.id, patch: { stage: e.target.value } }, { onSuccess: () => notify(`Moved to ${label(e.target.value)}`) })} className="!w-28 !py-1 text-body-lg">
                           {STAGES.map((s) => (
                             <option key={s} value={s}>{label(s)}</option>
                           ))}
@@ -3003,13 +3004,13 @@ export default function PulsePage() {
 
         {leads && leadsTotal > leads.length && (
           <div className="mt-3 flex items-center justify-center gap-3">
-            <span className="text-[13px] text-muted-foreground">
+            <span className="text-body-lg text-muted-foreground">
               Showing {leads.length} of {leadsTotal} leads
             </span>
             <button
               onClick={() => fetchNextPage()}
               disabled={isFetchingNextPage}
-              className="rounded-xl border border-border bg-card px-3.5 py-1.5 text-[14px] font-semibold text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
+              className="rounded-xl border border-border bg-card px-3.5 py-1.5 text-body-lg font-semibold text-foreground transition-colors hover:bg-muted/50 disabled:opacity-50"
             >
               {isFetchingNextPage ? "Loading…" : "Load more"}
             </button>
@@ -3027,8 +3028,8 @@ export default function PulsePage() {
             <div className="flex flex-wrap items-center gap-2.5">
               <Avatar name={detail.name} />
               <div>
-                <p className="font-heading text-[15px] font-semibold">{detail.name}</p>
-                <p className="text-[12.5px] text-muted-foreground">
+                <p className="font-heading text-section font-semibold">{detail.name}</p>
+                <p className="text-body text-muted-foreground">
                   {detail.company ?? detail.contactEmail ?? "—"}
                   {detail.lastContactedAt ? ` · last touch ${timeAgo(detail.lastContactedAt)}` : " · never contacted"}
                 </p>
@@ -3041,19 +3042,19 @@ export default function PulsePage() {
                 )}
                 title={detail.starred ? "Unstar" : "Star"}
               >
-                <Star className={cn("size-4", detail.starred && "fill-amber-400")} />
+                <Star className={cn("size-3.5", detail.starred && "fill-amber-400")} />
               </button>
               {detail.uid && (
-                <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-mono text-[12px] font-semibold text-muted-foreground">
-                  <Hash className="size-3" /> {detail.uid}
+                <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-mono text-body font-semibold text-muted-foreground">
+                  <Hash className="size-3.5" /> {detail.uid}
                 </span>
               )}
               <StatusBadge status={detail.stage} />
-              <span className={cn("rounded-full border px-2 py-0.5 text-[12px] font-bold", temperatureTone[detail.temperature] ?? temperatureTone.WARM)}>
+              <span className={cn("rounded-full border px-2 py-0.5 text-body font-bold", temperatureTone[detail.temperature] ?? temperatureTone.WARM)}>
                 {detail.temperature}
               </span>
               {detail.leadCategory && (
-                <span className={cn("flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[12px] font-bold", categoryToneOf(detail.leadCategory, detail.leadCategory.name.length))}>
+                <span className={cn("flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-body font-bold", categoryToneOf(detail.leadCategory, detail.leadCategory.name.length))}>
                   {detail.leadCategory.color && <span className="size-1.5 rounded-full" style={{ background: detail.leadCategory.color }} />}
                   {detail.leadCategory.name}
                 </span>
@@ -3116,29 +3117,29 @@ export default function PulsePage() {
             {/* converted banner */}
             {detail.client && (
               <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
-                <p className="flex items-center gap-2 text-[14px] font-semibold text-emerald-400">
-                  <CheckCircle2 className="size-4" /> Converted — client: {detail.client.companyName}
+                <p className="flex items-center gap-2 text-body-lg font-semibold text-emerald-400">
+                  <CheckCircle2 className="size-3.5" /> Converted — client: {detail.client.companyName}
                 </p>
                 {detail.projects && detail.projects.length > 0 && (
-                  <p className="text-[13px] text-emerald-400/80">
+                  <p className="text-body-lg text-emerald-400/80">
                     project: {detail.projects.map((p) => p.name).join(", ")} ({detail.projects[0].status})
                   </p>
                 )}
               </div>
             )}
             {detail.duplicateWarnings && detail.duplicateWarnings.length > 0 && (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-[13px] font-medium text-amber-400">
-                ⚠ Duplicate alert — same contact already exists: {detail.duplicateWarnings.map((w) => w.name).join(", ")}
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-body-lg font-medium text-amber-400">
+                <AlertTriangle className="mr-1 inline size-3.5" /> Duplicate alert — same contact already exists: {detail.duplicateWarnings.map((w) => w.name).join(", ")}
               </div>
             )}
 
             {/* ── what they need + how to reach them (always visible) ── */}
             <section className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/[0.06] to-transparent p-3.5">
               <div className="flex items-center justify-between gap-2">
-                <p className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-primary uppercase">
+                <p className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-primary uppercase">
                   <FileText className="size-3.5" /> What they need
                 </p>
-                <span className="text-[10.5px] font-semibold text-muted-foreground">Saved automatically</span>
+                <span className="text-micro font-semibold text-muted-foreground">Saved automatically</span>
               </div>
               <Textarea
                 key={detail.id}
@@ -3148,14 +3149,14 @@ export default function PulsePage() {
                   if (v !== (detail.description ?? "")) patchLead({ description: v || null }, "Description saved");
                 }}
                 placeholder="Sector, requirement, budget, timeline — a short brief so anyone can pick this lead up…"
-                className="mt-2 min-h-16 bg-card text-[13.5px]"
+                className="mt-2 min-h-16 bg-card text-body-lg"
               />
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {detail.contactPhone ? (
                   <>
                     <a
                       href={`tel:${detail.contactPhone.replace(/[^+\d]/g, "")}`}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-[12.5px] font-bold text-foreground transition-colors hover:border-primary/40 hover:text-primary"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-body font-bold text-foreground transition-colors hover:border-primary/40 hover:text-primary"
                     >
                       <Phone className="size-3.5" /> Call
                     </a>
@@ -3163,19 +3164,19 @@ export default function PulsePage() {
                       href={`https://wa.me/${detail.contactPhone.replace(/[^\d]/g, "")}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[12.5px] font-bold text-emerald-600 transition-colors hover:bg-emerald-500/15 dark:text-emerald-400"
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-body font-bold text-emerald-600 transition-colors hover:bg-emerald-500/15 dark:text-emerald-400"
                     >
                       <MessageCircle className="size-3.5" /> WhatsApp
                     </a>
-                    <span className="font-mono text-[12.5px] font-semibold text-muted-foreground">{detail.contactPhone}</span>
+                    <span className="font-mono text-body font-semibold text-muted-foreground">{detail.contactPhone}</span>
                   </>
                 ) : (
-                  <span className="text-[12px] font-medium text-amber-600 dark:text-amber-400">No phone on file</span>
+                  <span className="text-body font-medium text-amber-600 dark:text-amber-400">No phone on file</span>
                 )}
                 {detail.contactEmail && (
                   <a
                     href={`mailto:${detail.contactEmail}`}
-                    className="inline-flex min-w-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                    className="inline-flex min-w-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-body font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                   >
                     <Mail className="size-3.5 shrink-0" /> <span className="truncate">{detail.contactEmail}</span>
                   </a>
@@ -3186,9 +3187,9 @@ export default function PulsePage() {
             {/* ── pipeline — click a stage to move ── */}
             <section className="rounded-2xl border border-border/60 bg-muted/10 p-3.5">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Pipeline — click to move</p>
+                <p className="text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">Pipeline — click to move</p>
                 {detail.stage !== "LOST" && detail.stageEnteredAt && (
-                  <span className="text-[14px] font-semibold text-muted-foreground">
+                  <span className="text-body-lg font-semibold text-muted-foreground">
                     in {label(detail.stage)} · {timeAgo(detail.stageEnteredAt)}
                   </span>
                 )}
@@ -3207,7 +3208,7 @@ export default function PulsePage() {
                       <button
                         onClick={() => stageChanged(detail, s)}
                         className={cn(
-                          "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[14px] font-bold transition-colors",
+                          "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-body-lg font-bold transition-colors",
                           isCurrent && s === "WON" && "border-emerald-500/40 bg-emerald-500 text-white shadow-sm",
                           isCurrent && s !== "WON" && "border-primary bg-primary text-primary-foreground shadow-sm",
                           !isCurrent && (isDone || isWon) && "border-primary/30 bg-primary/10 text-primary",
@@ -3215,7 +3216,7 @@ export default function PulsePage() {
                           detail.stage === "LOST" && "border-border/60 bg-card text-muted-foreground/40"
                         )}
                       >
-                        {(isDone || isWon) && !isCurrent && <Check className="size-3" />}
+                        {(isDone || isWon) && !isCurrent && <Check className="size-3.5" />}
                         {label(s)}
                       </button>
                     </div>
@@ -3224,25 +3225,25 @@ export default function PulsePage() {
               </div>
               {detail.stage === "WON" || detail.stage === "LOST" ? (
                 <div className="mt-2.5 flex items-center justify-between rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
-                  <p className={cn("truncate text-[14px] font-semibold", detail.stage === "WON" ? "text-emerald-400" : "text-rose-400")}>
+                  <p className={cn("truncate text-body-lg font-semibold", detail.stage === "WON" ? "text-emerald-400" : "text-rose-400")}>
                     {detail.stage === "WON"
                       ? "Won — deal closed"
                       : `Lost${detail.lostReason ? ` — ${label(detail.lostReason.reasonCategory)}` : ""}`}
                   </p>
                   <button
                     onClick={() => apiFetch(`/pulse/leads/${detail.id}/reopen`, { method: "POST" }).then(() => { notify("Lead reopened"); reload(); })}
-                    className="flex shrink-0 items-center gap-1 text-[14px] font-bold text-primary transition-colors hover:underline"
+                    className="flex shrink-0 items-center gap-1 text-body-lg font-bold text-primary transition-colors hover:underline"
                   >
-                    <RefreshCw className="size-3" /> Reopen
+                    <RefreshCw className="size-3.5" /> Reopen
                   </button>
                 </div>
               ) : (
                 <div className="mt-2 flex items-center justify-end">
                   <button
                     onClick={() => setLostLead(detail)}
-                    className="flex items-center gap-1 text-[14px] font-bold text-rose-400/70 transition-colors hover:text-rose-400"
+                    className="flex items-center gap-1 text-body-lg font-bold text-rose-400/70 transition-colors hover:text-rose-400"
                   >
-                    <X className="size-3" /> mark lost
+                    <X className="size-3.5" /> mark lost
                   </button>
                 </div>
               )}
@@ -3251,30 +3252,30 @@ export default function PulsePage() {
             {/* ── KPI strip ── */}
             <section className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/40 lg:grid-cols-6">
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Deal size</p>
-                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">
+                <p className="truncate text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">Deal size</p>
+                <p className="mt-0.5 truncate font-heading text-body-lg font-bold tabular-nums">
                   {detail.estimatedDealSize ? `${detail.currency ?? "৳"}${Number(detail.estimatedDealSize).toLocaleString()}` : "—"}
                 </p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Win probability</p>
+                <p className="truncate text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">Win probability</p>
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <div className="h-1 w-10 overflow-hidden rounded-full bg-muted">
                     <div className="h-full rounded-full bg-primary" style={{ width: `${detail.probability ?? 0}%` }} />
                   </div>
-                  <span className="text-[14px] font-bold tabular-nums">{detail.probability ?? 0}%</span>
+                  <span className="text-body-lg font-bold tabular-nums">{detail.probability ?? 0}%</span>
                 </div>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Lead score</p>
+                <p className="truncate text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">Lead score</p>
                 <div className="mt-1"><ScoreBar score={detail.leadScore} /></div>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Priority</p>
+                <p className="truncate text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">Priority</p>
                 <Select
                   value={detail.priority}
                   onChange={(e) => patchLead({ priority: e.target.value }, `Priority → ${e.target.value}`)}
-                  className="!w-full !border-0 !bg-transparent !px-0 !py-0.5 text-[14px] font-bold"
+                  className="!w-full !border-0 !bg-transparent !px-0 !py-0.5 text-body-lg font-bold"
                 >
                   {PRIORITIES.map((p) => (
                     <option key={p} value={p}>{label(p)}</option>
@@ -3282,11 +3283,11 @@ export default function PulsePage() {
                 </Select>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Owner</p>
+                <p className="truncate text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">Owner</p>
                 <Select
                   value={detail.assignedTo?.id ?? ""}
                   onChange={(e) => patchLead({ assignedToId: e.target.value || null }, e.target.value ? `Assigned to ${users?.find((u) => u.id === e.target.value)?.name ?? ""}` : "Unassigned")}
-                  className="!w-full !border-0 !bg-transparent !px-0 !py-0.5 text-[14px] font-bold"
+                  className="!w-full !border-0 !bg-transparent !px-0 !py-0.5 text-body-lg font-bold"
                 >
                   <option value="">Unassigned</option>
                   {(users ?? []).map((u: UserLite) => (
@@ -3295,9 +3296,9 @@ export default function PulsePage() {
                 </Select>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Next action</p>
+                <p className="truncate text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">Next action</p>
                 {(() => {
-                  if (detail.stage === "WON" || detail.stage === "LOST") return <p className="mt-0.5 text-[14px] font-semibold text-muted-foreground/60">—</p>;
+                  if (detail.stage === "WON" || detail.stage === "LOST") return <p className="mt-0.5 text-body-lg font-semibold text-muted-foreground/60">—</p>;
                   const nf = nextScheduled(detail.followUps, "date", "status");
                   const nm = nextScheduled(detail.meetings, "scheduledAt", "status");
                   const items = [
@@ -3306,10 +3307,10 @@ export default function PulsePage() {
                   ]
                     .filter((x): x is { at: string; kind: string } => !!x)
                     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
-                  if (!items.length) return <p className="mt-0.5 text-[14px] font-semibold text-muted-foreground/60">nothing scheduled</p>;
+                  if (!items.length) return <p className="mt-0.5 text-body-lg font-semibold text-muted-foreground/60">nothing scheduled</p>;
                   const overdue = new Date(items[0].at).getTime() < Date.now();
                   return (
-                    <p className={cn("mt-0.5 truncate text-[14px] font-bold", overdue ? "text-rose-400" : "text-foreground")}>
+                    <p className={cn("mt-0.5 truncate text-body-lg font-bold", overdue ? "text-rose-400" : "text-foreground")}>
                       {overdue ? "overdue · " : ""}{items[0].kind} · {formatDate(items[0].at)}
                     </p>
                   );
@@ -3331,7 +3332,7 @@ export default function PulsePage() {
               <Btn variant="outline" onClick={() => { setEditingMeeting(null); setMeetingOpen(true); }}>
                 <Video className="size-3.5" /> Schedule meeting
               </Btn>
-              <span className="ml-auto flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+              <span className="ml-auto flex items-center gap-1.5 text-meta text-muted-foreground">
                 <UserRound className="size-3.5" />
                 {detail.assignedTo?.name ?? "Unassigned"}
               </span>
@@ -3355,14 +3356,14 @@ export default function PulsePage() {
                   key={t.id}
                   onClick={() => setDetailTab(t.id)}
                   className={cn(
-                    "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 text-[13px] font-semibold transition-colors",
+                    "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-2 text-body-lg font-semibold transition-colors",
                     detailTab === t.id ? "text-primary" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <t.icon className="size-3.5" />
                   {t.name}
                   {!!t.count && (
-                    <span className="rounded-full bg-muted px-1.5 py-px text-[10.5px] font-bold tabular-nums text-muted-foreground">{t.count}</span>
+                    <span className="rounded-full bg-muted px-1.5 py-px text-micro font-bold tabular-nums text-muted-foreground">{t.count}</span>
                   )}
                   {detailTab === t.id && (
                     <motion.span layoutId="lead-detail-tab" className="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-primary" />
@@ -3387,36 +3388,36 @@ export default function PulsePage() {
                     {/* next follow-up */}
                     <div className="rounded-2xl border border-border/60 bg-muted/20 p-3.5">
                       <div className="flex items-center justify-between">
-                        <p className="flex items-center gap-1.5 text-[12px] font-bold tracking-wide text-muted-foreground uppercase">
+                        <p className="flex items-center gap-1.5 text-body font-bold tracking-wide text-muted-foreground uppercase">
                           <CalendarClock className="size-3.5" /> Next follow-up
                         </p>
                         {nf && (
-                          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", nfOverdue ? "bg-amber-500/15 text-amber-400" : "bg-primary/15 text-primary")}>
+                          <span className={cn("rounded-full px-2 py-0.5 text-meta font-bold", nfOverdue ? "bg-amber-500/15 text-amber-400" : "bg-primary/15 text-primary")}>
                             {nfOverdue ? "OVERDUE" : "SCHEDULED"}
                           </span>
                         )}
                       </div>
                       {nf ? (
                         <>
-                          <p className="mt-1.5 text-[14px] font-bold">{formatDate(nf.date)}</p>
-                          {nf.notes && <p className="mt-0.5 text-[13px] text-muted-foreground">{nf.notes}</p>}
+                          <p className="mt-1.5 text-body-lg font-bold">{formatDate(nf.date)}</p>
+                          {nf.notes && <p className="mt-0.5 text-body-lg text-muted-foreground">{nf.notes}</p>}
                           <div className="mt-2.5 flex items-center gap-1.5">
-                            <Btn variant="primary" className="!px-3 !py-1.5 text-[13px]" onClick={() => followUpStatusChange(nf, "COMPLETED")}>
+                            <Btn variant="primary" className="!px-3 !py-1.5 text-body-lg" onClick={() => followUpStatusChange(nf, "COMPLETED")}>
                               <CheckCircle2 className="size-3.5" /> Complete
                             </Btn>
-                            <Btn variant="outline" className="!px-3 !py-1.5 text-[13px]" onClick={() => followUpStatusChange(nf, "MISSED")}>
+                            <Btn variant="outline" className="!px-3 !py-1.5 text-body-lg" onClick={() => followUpStatusChange(nf, "MISSED")}>
                               <X className="size-3.5" /> Missed
                             </Btn>
                           </div>
                         </>
                       ) : (
                         <div className="mt-1.5 flex items-center justify-between gap-2">
-                          <p className="text-[14px] text-muted-foreground">No follow-up scheduled</p>
+                          <p className="text-body-lg text-muted-foreground">No follow-up scheduled</p>
                           <button
                             onClick={() => setDetailTab("followups")}
-                            className="flex items-center gap-1 text-[13px] font-bold text-primary transition-colors hover:text-primary"
+                            className="flex items-center gap-1 text-body-lg font-bold text-primary transition-colors hover:text-primary"
                           >
-                            <Plus className="size-3" /> Schedule
+                            <Plus className="size-3.5" /> Schedule
                           </button>
                         </div>
                       )}
@@ -3424,40 +3425,40 @@ export default function PulsePage() {
                     {/* next meeting */}
                     <div className="rounded-2xl border border-border/60 bg-muted/20 p-3.5">
                       <div className="flex items-center justify-between">
-                        <p className="flex items-center gap-1.5 text-[12px] font-bold tracking-wide text-muted-foreground uppercase">
+                        <p className="flex items-center gap-1.5 text-body font-bold tracking-wide text-muted-foreground uppercase">
                           <Video className="size-3.5" /> Next meeting
                         </p>
                         {nm && (
-                          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", nmOverdue ? "bg-amber-500/15 text-amber-400" : "bg-primary/15 text-primary")}>
+                          <span className={cn("rounded-full px-2 py-0.5 text-meta font-bold", nmOverdue ? "bg-amber-500/15 text-amber-400" : "bg-primary/15 text-primary")}>
                             {nmOverdue ? "OVERDUE" : "SCHEDULED"}
                           </span>
                         )}
                       </div>
                       {nm ? (
                         <>
-                          <p className="mt-1.5 text-[14px] font-bold">
+                          <p className="mt-1.5 text-body-lg font-bold">
                             {formatDate(nm.scheduledAt)} · {nm.title}
                           </p>
                           <div className="mt-2.5 flex items-center gap-1.5">
-                            <Btn variant="primary" className="!px-3 !py-1.5 text-[13px]" onClick={() => meetingStatus(nm, "COMPLETED")}>
+                            <Btn variant="primary" className="!px-3 !py-1.5 text-body-lg" onClick={() => meetingStatus(nm, "COMPLETED")}>
                               <CheckCircle2 className="size-3.5" /> Complete
                             </Btn>
-                            <Btn variant="outline" className="!px-3 !py-1.5 text-[13px]" onClick={() => meetingStatus(nm, "CANCELLED")}>
+                            <Btn variant="outline" className="!px-3 !py-1.5 text-body-lg" onClick={() => meetingStatus(nm, "CANCELLED")}>
                               <X className="size-3.5" /> Cancel
                             </Btn>
-                            <Btn variant="outline" className="!px-3 !py-1.5 text-[13px]" onClick={() => { setEditingMeeting(nm); setMeetingOpen(true); }}>
+                            <Btn variant="outline" className="!px-3 !py-1.5 text-body-lg" onClick={() => { setEditingMeeting(nm); setMeetingOpen(true); }}>
                               <RefreshCw className="size-3.5" /> Reschedule
                             </Btn>
                           </div>
                         </>
                       ) : (
                         <div className="mt-1.5 flex items-center justify-between gap-2">
-                          <p className="text-[14px] text-muted-foreground">No meeting scheduled</p>
+                          <p className="text-body-lg text-muted-foreground">No meeting scheduled</p>
                           <button
                             onClick={() => { setEditingMeeting(null); setMeetingOpen(true); }}
-                            className="flex items-center gap-1 text-[13px] font-bold text-primary transition-colors hover:text-primary"
+                            className="flex items-center gap-1 text-body-lg font-bold text-primary transition-colors hover:text-primary"
                           >
-                            <Plus className="size-3" /> Schedule
+                            <Plus className="size-3.5" /> Schedule
                           </button>
                         </div>
                       )}
@@ -3470,35 +3471,35 @@ export default function PulsePage() {
                 <div className="grid gap-3 lg:grid-cols-2">
                   {/* lead health */}
                   <section className="rounded-2xl border border-border/60 p-4">
-                    <h4 className="mb-3 flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                    <h4 className="mb-3 flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                       <Gauge className="size-3.5" /> Lead health
                     </h4>
                     <ScoreBar score={detail.leadScore} />
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-[14px]">
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-body-lg">
                       <div className="rounded-xl bg-muted/50 px-2.5 py-2">
-                        <p className="text-[10.5px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Last contact</p>
+                        <p className="text-micro font-bold tracking-[0.08em] text-muted-foreground uppercase">Last contact</p>
                         <p className="mt-0.5 font-semibold">{detail.lastContactedAt ? timeAgo(detail.lastContactedAt) : "never"}</p>
                       </div>
                       <div className="rounded-xl bg-muted/50 px-2.5 py-2">
-                        <p className="text-[10.5px] font-bold tracking-[0.08em] text-muted-foreground uppercase">First response</p>
+                        <p className="text-micro font-bold tracking-[0.08em] text-muted-foreground uppercase">First response</p>
                         <p className="mt-0.5 font-semibold">{detail.firstResponseAt ? timeAgo(detail.firstResponseAt) : "—"}</p>
                       </div>
                       <div className="rounded-xl bg-muted/50 px-2.5 py-2">
-                        <p className="text-[10.5px] font-bold tracking-[0.08em] text-muted-foreground uppercase">In stage since</p>
+                        <p className="text-micro font-bold tracking-[0.08em] text-muted-foreground uppercase">In stage since</p>
                         <p className="mt-0.5 font-semibold">{detail.stageEnteredAt ? timeAgo(detail.stageEnteredAt) : "—"}</p>
                       </div>
                       <div className="rounded-xl bg-muted/50 px-2.5 py-2">
-                        <p className="text-[10.5px] font-bold tracking-[0.08em] text-muted-foreground uppercase">Created</p>
+                        <p className="text-micro font-bold tracking-[0.08em] text-muted-foreground uppercase">Created</p>
                         <p className="mt-0.5 font-semibold">{formatDate(detail.createdAt)}</p>
                       </div>
                     </div>
                     {isStale(detail) && (
-                      <p className="mt-3 flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[14px] font-semibold text-amber-400">
+                      <p className="mt-3 flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-body-lg font-semibold text-amber-400">
                         <AlertTriangle className="size-3.5" /> Rotten — no touch in 7+ days
                       </p>
                     )}
                     {detail.nextFollowUpAt && detail.stage !== "WON" && detail.stage !== "LOST" && (
-                      <p className="mt-2 flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-2 text-[14px] font-semibold text-sky-400">
+                      <p className="mt-2 flex items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-2 text-body-lg font-semibold text-sky-400">
                         <CalendarClock className="size-3.5" />
                         Next follow-up {new Date(detail.nextFollowUpAt).getTime() < Date.now() ? "overdue — " : ""}{formatDate(detail.nextFollowUpAt)}
                       </p>
@@ -3508,10 +3509,10 @@ export default function PulsePage() {
                   {/* recent activity preview */}
                   <section className="rounded-2xl border border-border/60 p-4">
                     <div className="mb-2.5 flex items-center justify-between">
-                      <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                      <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                         <History className="size-3.5" /> Recent activity
                       </h4>
-                      <button onClick={() => setDetailTab("conversation")} className="text-[14px] font-bold text-primary transition-colors hover:underline">
+                      <button onClick={() => setDetailTab("conversation")} className="text-body-lg font-bold text-primary transition-colors hover:underline">
                         View all →
                       </button>
                     </div>
@@ -3523,13 +3524,13 @@ export default function PulsePage() {
                             <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-full", cls)}>
                               <Icon className="size-3" />
                             </span>
-                            <p className="min-w-0 flex-1 truncate text-[12.5px]" title={a.content}>{a.content}</p>
-                            <span className="shrink-0 text-[11px] text-muted-foreground/60">{timeAgo(a.loggedAt)}</span>
+                            <p className="min-w-0 flex-1 truncate text-body" title={a.content}>{a.content}</p>
+                            <span className="shrink-0 text-meta text-muted-foreground/60">{timeAgo(a.loggedAt)}</span>
                           </div>
                         );
                       })}
                       {!detail.activities?.length && (
-                        <p className="text-[13px] text-muted-foreground">No activity yet — log the first touch.</p>
+                        <p className="text-body-lg text-muted-foreground">No activity yet — log the first touch.</p>
                       )}
                     </div>
                   </section>
@@ -3537,10 +3538,10 @@ export default function PulsePage() {
 
                 {detail.lostReason && (
                   <section className="rounded-2xl border border-rose-500/30 bg-rose-500/5 p-4">
-                    <h4 className="mb-1 flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-rose-400 uppercase">
+                    <h4 className="mb-1 flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-rose-400 uppercase">
                       <AlertTriangle className="size-3.5" /> Lost — {label(detail.lostReason.reasonCategory)}
                     </h4>
-                    {detail.lostReason.notes && <p className="text-[14px] text-muted-foreground">{detail.lostReason.notes}</p>}
+                    {detail.lostReason.notes && <p className="text-body-lg text-muted-foreground">{detail.lostReason.notes}</p>}
                   </section>
                 )}
               </div>
@@ -3551,7 +3552,7 @@ export default function PulsePage() {
               <div className="flex flex-col">
                 {/* notes — v0-crm note history */}
                 <section>
-                  <h4 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                  <h4 className="mb-2 flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                     <StickyNote className="size-3.5" /> Notes ({detail.notesList?.length ?? 0})
                   </h4>
                   <div className="mb-2 flex gap-2">
@@ -3569,7 +3570,7 @@ export default function PulsePage() {
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {detail.notesList?.length === 0 && (
-                      <p className="text-[13px] text-muted-foreground">No notes yet — capture the first one above.</p>
+                      <p className="text-body-lg text-muted-foreground">No notes yet — capture the first one above.</p>
                     )}
                     {detail.notesList?.map((n, ni) => (
                       <div key={n.id} className="group rounded-xl border border-border/60 px-3 py-2">
@@ -3581,10 +3582,10 @@ export default function PulsePage() {
                               autoFocus
                             />
                             <div className="flex justify-end gap-1.5">
-                              <button onClick={() => setEditingNoteId(null)} className="rounded-lg px-2 py-1 text-[13px] font-bold text-muted-foreground transition-colors hover:bg-muted">
+                              <button onClick={() => setEditingNoteId(null)} className="rounded-lg px-2 py-1 text-body-lg font-bold text-muted-foreground transition-colors hover:bg-muted">
                                 Cancel
                               </button>
-                              <button onClick={() => saveNoteEdit(n.id)} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-[13px] font-bold text-white">
+                              <button onClick={() => saveNoteEdit(n.id)} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-body-lg font-bold text-white">
                                 Save
                               </button>
                             </div>
@@ -3598,9 +3599,9 @@ export default function PulsePage() {
                             }}
                             title="Click to edit"
                           >
-                            <p className="text-[14px] leading-relaxed whitespace-pre-wrap">{n.content}</p>
+                            <p className="text-body-lg leading-relaxed whitespace-pre-wrap">{n.content}</p>
                             <div className="mt-1 flex items-center justify-between">
-                              <span className="text-[11px] text-muted-foreground/60">
+                              <span className="text-meta text-muted-foreground/60">
                                 {timeAgo(n.createdAt)} · {n.createdBy?.name ?? "system"}
                               </span>
                               <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -3613,7 +3614,7 @@ export default function PulsePage() {
                                   className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                                   title="Edit note"
                                 >
-                                  <Pencil className="size-3" />
+                                  <Pencil className="size-3.5" />
                                 </button>
                                 <button
                                   onClick={(e) => {
@@ -3623,7 +3624,7 @@ export default function PulsePage() {
                                   className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"
                                   title="Delete note"
                                 >
-                                  <Trash2 className="size-3" />
+                                  <Trash2 className="size-3.5" />
                                 </button>
                               </div>
                             </div>
@@ -3649,26 +3650,26 @@ export default function PulsePage() {
                     }}
                   />
                 ) : (
-                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3.5 py-3 text-[13px] text-muted-foreground">
+                  <div className="rounded-2xl border border-border/60 bg-muted/20 px-3.5 py-3 text-body-lg text-muted-foreground">
                     This lead is {detail.stage === "WON" ? "won" : "closed"}. Reopen it to log more conversations.
                   </div>
                 )}
 
                 <section>
                   <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                       <History className="size-3.5" /> Conversation history
-                      <span className="rounded-full bg-muted px-1.5 py-px text-[10.5px] font-bold tabular-nums text-muted-foreground">
+                      <span className="rounded-full bg-muted px-1.5 py-px text-micro font-bold tabular-nums text-muted-foreground">
                         {detail.activities?.length ?? 0}
                       </span>
                     </h4>
-                    <span className="text-[11px] text-muted-foreground">calls · messages · notes · status changes</span>
+                    <span className="text-meta text-muted-foreground">calls · messages · notes · status changes</span>
                   </div>
 
                   {detail.activities?.length === 0 && (
                     <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
-                      <p className="text-[13px] font-semibold">No conversations yet</p>
-                      <p className="mt-0.5 text-[12px] text-muted-foreground">
+                      <p className="text-body-lg font-semibold">No conversations yet</p>
+                      <p className="mt-0.5 text-body text-muted-foreground">
                         Log the first call above — it becomes the lead's memory.
                       </p>
                     </div>
@@ -3683,7 +3684,7 @@ export default function PulsePage() {
                       return (
                         <div key={a.id}>
                           {day !== prevDay && (
-                            <p className="mb-1.5 mt-2 text-[10.5px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                            <p className="mb-1.5 mt-2 text-micro font-bold tracking-[0.08em] text-muted-foreground uppercase">
                               {day}
                             </p>
                           )}
@@ -3696,18 +3697,18 @@ export default function PulsePage() {
                             </div>
                             <div className="mb-2 min-w-0 flex-1 rounded-xl border border-border/60 bg-card px-3 py-2">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                                <span className="text-micro font-bold tracking-wide text-muted-foreground uppercase">
                                   {a.type.replace(/_/g, " ")}
                                 </span>
-                                <span className="shrink-0 text-[11px] text-muted-foreground/70">
+                                <span className="shrink-0 text-meta text-muted-foreground/70">
                                   {timeAgo(a.loggedAt)} · {a.loggedBy?.name ?? "system"}
                                 </span>
                               </div>
-                              <p className="mt-0.5 text-[13px] leading-relaxed whitespace-pre-wrap">{a.content}</p>
+                              <p className="mt-0.5 text-body-lg leading-relaxed whitespace-pre-wrap">{a.content}</p>
                               {a.changes && Object.keys(a.changes).length > 0 && (
                                 <div className="mt-1.5 flex flex-wrap gap-1">
                                   {Object.entries(a.changes).map(([field, ch]) => (
-                                    <span key={field} className="rounded-md bg-muted/60 px-1.5 py-0.5 text-[10.5px] text-muted-foreground">
+                                    <span key={field} className="rounded-md bg-muted/60 px-1.5 py-0.5 text-micro text-muted-foreground">
                                       <span className="font-bold uppercase">{label(field)}</span>{" "}
                                       <span className="text-rose-400 line-through">{ch.old == null ? "—" : String(ch.old)}</span>
                                       {" → "}
@@ -3731,7 +3732,7 @@ export default function PulsePage() {
               <div className="flex flex-col gap-5">
                 {/* attachments — reference files */}
                 <section>
-                  <h4 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                  <h4 className="mb-2 flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                     <Paperclip className="size-3.5" /> Attachments ({detail.attachments?.length ?? 0})
                   </h4>
                   <input
@@ -3756,11 +3757,11 @@ export default function PulsePage() {
                       if (e.dataTransfer.files?.length) uploadAttachment(e.dataTransfer.files);
                     }}
                     className={cn(
-                      "flex w-full flex-col items-center gap-1.5 rounded-2xl border-2 border-dashed px-4 py-5 text-[14px] font-semibold transition-colors disabled:opacity-60",
+                      "flex w-full flex-col items-center gap-1.5 rounded-2xl border-2 border-dashed px-4 py-5 text-body-lg font-semibold transition-colors disabled:opacity-60",
                       attDrag ? "border-primary bg-primary/5 text-primary" : "border-border bg-muted/30 text-muted-foreground hover:border-primary/40 hover:text-foreground"
                     )}
                   >
-                    <Upload className="size-4" />
+                    <Upload className="size-3.5" />
                     {attBusy ? "Uploading…" : "Drop reference files or click to browse — PDF, images, docs (max 15MB)"}
                   </button>
                   {!!detail.attachments?.length && (
@@ -3775,8 +3776,8 @@ export default function PulsePage() {
                             </span>
                           )}
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[14px] font-semibold" title={a.filename}>{a.title || a.filename}</p>
-                            <p className="truncate text-[12px] text-muted-foreground">
+                            <p className="truncate text-body-lg font-semibold" title={a.filename}>{a.title || a.filename}</p>
+                            <p className="truncate text-body text-muted-foreground">
                               {fmtSize(a.sizeBytes)} · {timeAgo(a.createdAt)} · {a.uploadedBy?.name ?? "system"}
                             </p>
                           </div>
@@ -3808,11 +3809,11 @@ export default function PulsePage() {
                 {/* proposals */}
                 <section>
                   <div className="mb-2 flex items-center justify-between">
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                       <FileText className="size-3.5" /> Proposals ({detail.proposals?.length ?? 0})
                     </h4>
-                    <button onClick={() => setProposalModal(true)} className="flex items-center gap-1 text-[14px] font-bold text-primary transition-colors hover:text-primary">
-                      <Plus className="size-3" /> New version
+                    <button onClick={() => setProposalModal(true)} className="flex items-center gap-1 text-body-lg font-bold text-primary transition-colors hover:text-primary">
+                      <Plus className="size-3.5" /> New version
                     </button>
                   </div>
                   {(() => {
@@ -3823,21 +3824,21 @@ export default function PulsePage() {
                       <>
                         {current && target && (
                           <div className="mb-2 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-3">
-                            <p className="flex items-center gap-1 text-[11px] font-bold tracking-wide text-primary uppercase">
-                              <Link2 className="size-3" /> Current proposal · v{current.versionNumber}
+                            <p className="flex items-center gap-1 text-meta font-bold tracking-wide text-primary uppercase">
+                              <Link2 className="size-3.5" /> Current proposal · v{current.versionNumber}
                               {current.sentDate && <span className="ml-1 font-medium normal-case">sent {formatDate(current.sentDate)}</span>}
-                              {current.viewed && <span className="ml-auto flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-400 normal-case"><Check className="size-3" /> Seen</span>}
+                              {current.viewed && <span className="ml-auto flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-meta font-bold text-emerald-400 normal-case"><Check className="size-3.5" /> Seen</span>}
                             </p>
-                            <p className="mt-1 truncate text-[13px] text-muted-foreground">{target}</p>
+                            <p className="mt-1 truncate text-body-lg text-muted-foreground">{target}</p>
                             <div className="mt-2 flex items-center gap-1.5">
-                              <button onClick={() => openProposal(current)} className="flex items-center gap-1 rounded-lg bg-brand-gradient px-3 py-1.5 text-[13px] font-bold text-white transition-transform hover:scale-[1.02]">
+                              <button onClick={() => openProposal(current)} className="flex items-center gap-1 rounded-lg bg-brand-gradient px-3 py-1.5 text-body-lg font-bold text-white transition-transform hover:scale-[1.02]">
                                 <ExternalLink className="size-3.5" /> View proposal
                               </button>
-                              <button onClick={() => copyProposalLink(current)} className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[13px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                              <button onClick={() => copyProposalLink(current)} className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-body-lg font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                                 {copiedField === `proposal-${current.id}` ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
                                 {copiedField === `proposal-${current.id}` ? "Copied" : "Copy link"}
                               </button>
-                              <button onClick={() => openEditProposal(current)} className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[13px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                              <button onClick={() => openEditProposal(current)} className="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-body-lg font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                                 <Pencil className="size-3.5" /> Edit
                               </button>
                             </div>
@@ -3845,28 +3846,28 @@ export default function PulsePage() {
                         )}
                         <div className="flex flex-col gap-1.5">
                           {list.length === 0 && (
-                            <p className="text-[13px] text-muted-foreground">No proposals yet — add the first version above.</p>
+                            <p className="text-body-lg text-muted-foreground">No proposals yet — add the first version above.</p>
                           )}
                           {list.map((p) => {
                             const t = proposalTarget(p);
                             return (
                               <div key={p.id} className="rounded-xl border border-border/60 px-3 py-2">
                                 <div className="flex items-center gap-2.5">
-                                  <FileText className="size-4 shrink-0 text-muted-foreground" />
+                                  <FileText className="size-3.5 shrink-0 text-muted-foreground" />
                                   <div className="min-w-0 flex-1">
-                                    <p className="flex items-center gap-1.5 text-[14px] font-semibold">
+                                    <p className="flex items-center gap-1.5 text-body-lg font-semibold">
                                       v{p.versionNumber}
-                                      {p.sentDate && <span className="text-[12px] font-medium text-muted-foreground">sent {formatDate(p.sentDate)}</span>}
-                                      {p.viewed && <span className="flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-px text-[11px] font-bold text-emerald-400"><Check className="size-2.5" /> Seen</span>}
+                                      {p.sentDate && <span className="text-body font-medium text-muted-foreground">sent {formatDate(p.sentDate)}</span>}
+                                      {p.viewed && <span className="flex items-center gap-0.5 rounded-full bg-emerald-500/15 px-1.5 py-px text-meta font-bold text-emerald-400"><Check className="size-3.5" /> Seen</span>}
                                     </p>
-                                    <p className="truncate text-[12px] text-muted-foreground">
+                                    <p className="truncate text-body text-muted-foreground">
                                       {t ?? "no link or file yet"}
                                     </p>
                                   </div>
                                   <Select
                                     value={p.status}
                                     onChange={(e) => proposalStatus(p, e.target.value)}
-                                    className={cn("!w-28 shrink-0 !py-1.5 text-[13px]", p.status === "ACCEPTED" && "!border-emerald-500/40 !text-emerald-400", p.status === "REJECTED" && "!border-rose-500/40 !text-rose-400")}
+                                    className={cn("!w-28 shrink-0 !py-1.5 text-body-lg", p.status === "ACCEPTED" && "!border-emerald-500/40 !text-emerald-400", p.status === "REJECTED" && "!border-rose-500/40 !text-rose-400")}
                                   >
                                     {["DRAFT", "SENT", "ACCEPTED", "REJECTED"].map((s) => (
                                       <option key={s} value={s}>{label(s)}</option>
@@ -3874,15 +3875,15 @@ export default function PulsePage() {
                                   </Select>
                                 </div>
                                 <div className="mt-1.5 flex items-center gap-1.5 pl-[26px]">
-                                  <button onClick={() => openProposal(p)} disabled={!t} className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40">
-                                    <ExternalLink className="size-3" /> View
+                                  <button onClick={() => openProposal(p)} disabled={!t} className="flex items-center gap-1 rounded-lg px-2 py-1 text-body font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40">
+                                    <ExternalLink className="size-3.5" /> View
                                   </button>
-                                  <button onClick={() => copyProposalLink(p)} disabled={!t} className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40">
-                                    {copiedField === `proposal-${p.id}` ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+                                  <button onClick={() => copyProposalLink(p)} disabled={!t} className="flex items-center gap-1 rounded-lg px-2 py-1 text-body font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40">
+                                    {copiedField === `proposal-${p.id}` ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
                                     {copiedField === `proposal-${p.id}` ? "Copied" : "Copy"}
                                   </button>
-                                  <button onClick={() => openEditProposal(p)} className="flex items-center gap-1 rounded-lg px-2 py-1 text-[12px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                                    <Pencil className="size-3" /> Edit link
+                                  <button onClick={() => openEditProposal(p)} className="flex items-center gap-1 rounded-lg px-2 py-1 text-body font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                                    <Pencil className="size-3.5" /> Edit link
                                   </button>
                                 </div>
                               </div>
@@ -3902,16 +3903,16 @@ export default function PulsePage() {
                 {/* meetings */}
                 <section>
                   <div className="mb-2 flex items-center justify-between">
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                       <Video className="size-3.5" /> Meetings ({detail.meetings?.length ?? 0})
                     </h4>
-                    <button onClick={() => { setEditingMeeting(null); setMeetingOpen(true); }} className="flex items-center gap-1 text-[13px] font-bold text-primary transition-colors hover:text-primary">
-                      <Plus className="size-3" /> Schedule
+                    <button onClick={() => { setEditingMeeting(null); setMeetingOpen(true); }} className="flex items-center gap-1 text-body-lg font-bold text-primary transition-colors hover:text-primary">
+                      <Plus className="size-3.5" /> Schedule
                     </button>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {detail.meetings?.length === 0 && (
-                      <p className="text-[13px] text-muted-foreground">No meetings scheduled.</p>
+                      <p className="text-body-lg text-muted-foreground">No meetings scheduled.</p>
                     )}
                     {detail.meetings?.map((m) => {
                       const past = new Date(m.scheduledAt).getTime() < Date.now();
@@ -3932,10 +3933,10 @@ export default function PulsePage() {
                                           : past ? "bg-amber-400" : "bg-primary"
                                   )}
                                 />
-                                <p className="text-[13.5px] font-semibold">{m.title}</p>
+                                <p className="text-body-lg font-semibold">{m.title}</p>
                                 <span
                                   className={cn(
-                                    "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                                    "rounded-full px-1.5 py-0.5 text-micro font-bold",
                                     m.status === "COMPLETED" ? "bg-emerald-500/15 text-emerald-500"
                                       : m.status === "CANCELLED" ? "bg-muted text-muted-foreground"
                                         : m.status === "NO_SHOW" ? "bg-rose-500/15 text-rose-500"
@@ -3945,17 +3946,17 @@ export default function PulsePage() {
                                   {m.status.replace(/_/g, " ").toLowerCase()}
                                 </span>
                               </div>
-                              <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                              <p className="mt-0.5 text-meta text-muted-foreground">
                                 {formatDate(m.scheduledAt)} · {time} · {m.durationMins} min ·{" "}
                                 {m.type === "VIDEO_CALL" || m.type === "CALL" ? "Online" : "In person"}
                                 {m.location ? ` · ${m.location}` : ""}
                               </p>
                               {m.meetingLink && (
-                                <a href={m.meetingLink} target="_blank" rel="noreferrer" className="mt-0.5 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary hover:underline">
-                                  <ExternalLink className="size-3" /> Join link
+                                <a href={m.meetingLink} target="_blank" rel="noreferrer" className="mt-0.5 inline-flex items-center gap-1 text-meta font-semibold text-primary hover:underline">
+                                  <ExternalLink className="size-3.5" /> Join link
                                 </a>
                               )}
-                              {m.notes && <p className="mt-1 text-[11.5px] text-muted-foreground">{m.notes}</p>}
+                              {m.notes && <p className="mt-1 text-meta text-muted-foreground">{m.notes}</p>}
                             </div>
                             <div className="flex shrink-0 items-center gap-0.5">
                               {m.status === "SCHEDULED" && (
@@ -3982,8 +3983,8 @@ export default function PulsePage() {
 
                           {links.length > 0 ? (
                             <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border/50 pt-2">
-                              <span className="mr-0.5 flex items-center gap-1 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
-                                <Users className="size-3" /> Attendees
+                              <span className="mr-0.5 flex items-center gap-1 text-micro font-bold tracking-wide text-muted-foreground uppercase">
+                                <Users className="size-3.5" /> Attendees
                               </span>
                               {links.map((a) => (
                                 <button
@@ -3991,7 +3992,7 @@ export default function PulsePage() {
                                   onClick={() => cycleAttendeeStatus(m.id, a.employeeId, a.status)}
                                   title="Click to cycle: invited → attended → no-show"
                                   className={cn(
-                                    "flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10.5px] font-semibold transition-colors",
+                                    "flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-micro font-semibold transition-colors",
                                     a.status === "ATTENDED"
                                       ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
                                       : a.status === "NO_SHOW"
@@ -4007,11 +4008,11 @@ export default function PulsePage() {
                             </div>
                           ) : m.attendees && m.attendees.length > 0 ? (
                             <div className="mt-2 flex flex-wrap items-center gap-1 border-t border-border/50 pt-2">
-                              <span className="mr-0.5 flex items-center gap-1 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">
-                                <Users className="size-3" /> Attendees
+                              <span className="mr-0.5 flex items-center gap-1 text-micro font-bold tracking-wide text-muted-foreground uppercase">
+                                <Users className="size-3.5" /> Attendees
                               </span>
                               {m.attendees.map((at) => (
-                                <span key={at.id} className="flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-[10.5px] font-semibold">
+                                <span key={at.id} className="flex items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5 text-micro font-semibold">
                                   <Avatar name={at.name} size="size-4" /> {at.name}
                                 </span>
                               ))}
@@ -4031,7 +4032,7 @@ export default function PulsePage() {
               <div className="flex flex-col">
                 {/* follow-ups (v0-crm subsystem) */}
                 <section>
-                  <h4 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                  <h4 className="mb-2 flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                     <CalendarClock className="size-3.5" /> Follow-ups ({detail.followUps?.length ?? 0})
                   </h4>
                   <div className="mb-2 flex flex-wrap gap-1.5">
@@ -4051,7 +4052,7 @@ export default function PulsePage() {
                           type="button"
                           onClick={() => setFollowUpDate(value)}
                           className={cn(
-                            "rounded-full border px-2.5 py-1 text-[12px] font-bold transition-colors",
+                            "rounded-full border px-2.5 py-1 text-body font-bold transition-colors",
                             followUpDate === value
                               ? "border-primary/40 bg-primary/10 text-primary"
                               : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -4061,7 +4062,7 @@ export default function PulsePage() {
                         </button>
                       );
                     })}
-                    <span className="self-center text-[11.5px] text-muted-foreground">or pick a date →</span>
+                    <span className="self-center text-meta text-muted-foreground">or pick a date →</span>
                   </div>
                   <div className="mb-2 flex flex-wrap gap-2">
                     <Input
@@ -4083,7 +4084,7 @@ export default function PulsePage() {
                   </div>
                   <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/20 bg-primary/5 px-2 py-1.5">
                     <Zap className="size-3.5 text-primary" />
-                    <span className="text-[12px] font-bold tracking-wide text-primary uppercase">Action → task</span>
+                    <span className="text-body font-bold tracking-wide text-primary uppercase">Action → task</span>
                     <Select value={followUpAssignee} onChange={(e) => setFollowUpAssignee(e.target.value)} className="!w-40">
                       <option value="">No task</option>
                       {(employees ?? []).map((e) => (
@@ -4099,7 +4100,7 @@ export default function PulsePage() {
                   </div>
                   <div className="flex flex-col gap-1.5">
                     {detail.followUps?.length === 0 && (
-                      <p className="text-[13px] text-muted-foreground">No follow-ups scheduled.</p>
+                      <p className="text-body-lg text-muted-foreground">No follow-ups scheduled.</p>
                     )}
                     {detail.followUps?.map((fu) => {
                       const overdue = followUpStatusFn(fu);
@@ -4112,15 +4113,15 @@ export default function PulsePage() {
                                 : overdue ? "bg-amber-400" : "bg-primary"
                           )} />
                           <div className="min-w-0 flex-1">
-                            <p className="text-[14px] font-semibold">
+                            <p className="text-body-lg font-semibold">
                               {formatDate(fu.date)}
-                              {overdue && <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[11px] font-bold text-amber-400">overdue</span>}
+                              {overdue && <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-meta font-bold text-amber-400">overdue</span>}
                             </p>
-                            {fu.notes && <p className="text-[13px] text-muted-foreground">{fu.notes}</p>}
+                            {fu.notes && <p className="text-body-lg text-muted-foreground">{fu.notes}</p>}
                           </div>
                           <div className="flex shrink-0 items-center gap-1">
                             <span className={cn(
-                              "rounded-full px-1.5 py-0.5 text-[11px] font-bold",
+                              "rounded-full px-1.5 py-0.5 text-meta font-bold",
                               fu.status === "COMPLETED" ? "bg-emerald-500/15 text-emerald-400"
                                 : fu.status === "MISSED" ? "bg-rose-500/15 text-rose-400"
                                   : "bg-primary/15 text-primary"
@@ -4160,18 +4161,18 @@ export default function PulsePage() {
               <div className="flex flex-col gap-4">
                 <section className="rounded-2xl border border-border/60 p-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                       <UserRound className="size-3.5" /> Lead owner
                     </h4>
-                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10.5px] font-bold text-primary">
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-micro font-bold text-primary">
                       owns the follow-up
                     </span>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <Avatar name={detail.assignedTo?.name ?? "Unassigned"} size="size-10" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[14px] font-semibold">{detail.assignedTo?.name ?? "No owner yet"}</p>
-                      <p className="text-[12px] text-muted-foreground">
+                      <p className="text-body-lg font-semibold">{detail.assignedTo?.name ?? "No owner yet"}</p>
+                      <p className="text-body text-muted-foreground">
                         Gets the follow-up digest and every meeting notification for this lead.
                       </p>
                     </div>
@@ -4190,19 +4191,19 @@ export default function PulsePage() {
 
                 <section className="rounded-2xl border border-border/60 p-4">
                   <div className="flex items-center justify-between gap-2">
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                       <Users className="size-3.5" /> People on this lead ({teamPeople.length})
                     </h4>
-                    <Btn variant="outline" className="!py-1.5 text-[12px]" onClick={() => { setEditingMeeting(null); setMeetingOpen(true); }}>
+                    <Btn variant="outline" className="!py-1.5 text-body" onClick={() => { setEditingMeeting(null); setMeetingOpen(true); }}>
                       <Plus className="size-3.5" /> Add people
                     </Btn>
                   </div>
-                  <p className="mt-1 text-[12px] text-muted-foreground">
+                  <p className="mt-1 text-body text-muted-foreground">
                     The owner can invite anyone on the roster to a meeting — no login required.
                   </p>
                   <div className="mt-3 flex flex-col gap-1.5">
                     {teamPeople.length === 0 && (
-                      <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-[12px] text-muted-foreground">
+                      <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-body text-muted-foreground">
                         Nobody else is on this lead yet. Schedule a meeting to bring in a colleague.
                       </p>
                     )}
@@ -4210,12 +4211,12 @@ export default function PulsePage() {
                       <div key={p.id} className="flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
                         <Avatar name={p.name} />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-semibold">{p.name}</p>
-                          <p className="text-[11px] text-muted-foreground">
+                          <p className="truncate text-body-lg font-semibold">{p.name}</p>
+                          <p className="text-meta text-muted-foreground">
                             {p.meetings} meeting{p.meetings === 1 ? "" : "s"} · {p.attended} attended
                           </p>
                         </div>
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-bold text-muted-foreground">
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground">
                           teammate
                         </span>
                       </div>
@@ -4225,28 +4226,28 @@ export default function PulsePage() {
 
                 {detail.projects && detail.projects.length > 0 && (
                   <section className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.04] p-4">
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-emerald-600 uppercase dark:text-emerald-400">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-emerald-600 uppercase dark:text-emerald-400">
                       <Building2 className="size-3.5" /> Project delivery team
                     </h4>
                     {detail.projects.map((p) => (
                       <div key={p.id} className="mt-2 rounded-xl border border-border/60 bg-card px-3 py-2.5">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="truncate text-[13px] font-semibold">{p.name}</p>
+                          <p className="truncate text-body-lg font-semibold">{p.name}</p>
                           <StatusBadge status={p.status} />
                         </div>
-                        <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                        <p className="mt-0.5 text-meta text-muted-foreground">
                           PM: {p.assignedPm?.name ?? "not assigned"}
                         </p>
                         {p.team && p.team.length > 0 ? (
                           <div className="mt-1.5 flex flex-wrap gap-1">
                             {p.team.map((n) => (
-                              <span key={n} className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10.5px] font-semibold">
+                              <span key={n} className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-1.5 py-0.5 text-micro font-semibold">
                                 <Avatar name={n} size="size-4" /> {n}
                               </span>
                             ))}
                           </div>
                         ) : (
-                          <p className="mt-1 text-[11px] text-muted-foreground">No project members assigned in Flow.</p>
+                          <p className="mt-1 text-meta text-muted-foreground">No project members assigned in Flow.</p>
                         )}
                       </div>
                     ))}
@@ -4254,7 +4255,7 @@ export default function PulsePage() {
                 )}
 
                 <section>
-                  <h4 className="mb-2 flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                  <h4 className="mb-2 flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                     <Zap className="size-3.5" /> Who can do what
                   </h4>
                   <div className="grid gap-2 sm:grid-cols-3">
@@ -4276,11 +4277,11 @@ export default function PulsePage() {
                       },
                     ].map((c) => (
                       <div key={c.title} className={cn("rounded-2xl border p-3", c.tone)}>
-                        <p className="text-[12.5px] font-bold">{c.title}</p>
+                        <p className="text-body font-bold">{c.title}</p>
                         <ul className="mt-1.5 flex flex-col gap-1">
                           {c.items.map((i) => (
-                            <li key={i} className="flex items-start gap-1.5 text-[11.5px] text-muted-foreground">
-                              <Check className="mt-0.5 size-3 shrink-0 text-primary" />
+                            <li key={i} className="flex items-start gap-1.5 text-meta text-muted-foreground">
+                              <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />
                               {i}
                             </li>
                           ))}
@@ -4296,10 +4297,10 @@ export default function PulsePage() {
             {detailTab === "details" && (
               <div className="flex flex-col">
                 <section>
-                  <h4 className="mb-1 flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                  <h4 className="mb-1 flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                     <Settings2 className="size-3.5" /> Edit lead
                   </h4>
-                  <p className="mb-3 text-[11.5px] text-muted-foreground">
+                  <p className="mb-3 text-meta text-muted-foreground">
                     Changes save automatically when you leave a field. Stage and priority are also editable from the strip above.
                   </p>
                   <div className="grid gap-x-5 gap-y-3.5 sm:grid-cols-2">
@@ -4374,7 +4375,7 @@ export default function PulsePage() {
                         </Select>
                         <button
                           onClick={() => setCatOpen(true)}
-                          className="flex shrink-0 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-[13px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                          className="flex shrink-0 items-center gap-1 rounded-xl border border-border bg-card px-2.5 text-body-lg font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                           title="Manage categories"
                         >
                           <Tag className="size-3.5" /> New
@@ -4447,12 +4448,12 @@ export default function PulsePage() {
                 {/* team */}
                 <div className="rounded-2xl border border-border/60 bg-card p-3.5">
                   <div className="flex items-center justify-between">
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                       <UserRound className="size-3.5" /> Team
                     </h4>
                     <button
                       onClick={() => { setEditingMeeting(null); setMeetingOpen(true); }}
-                      className="text-[11px] font-bold text-primary hover:underline"
+                      className="text-meta font-bold text-primary hover:underline"
                     >
                       + Invite
                     </button>
@@ -4460,14 +4461,14 @@ export default function PulsePage() {
                   <div className="mt-2.5 flex items-center gap-2">
                     <Avatar name={detail.assignedTo?.name ?? "Unassigned"} size="size-9" />
                     <div className="min-w-0">
-                      <p className="truncate text-[13px] font-semibold">{detail.assignedTo?.name ?? "Unassigned"}</p>
-                      <p className="text-[11px] text-muted-foreground">Owner · owns the follow-up</p>
+                      <p className="truncate text-body-lg font-semibold">{detail.assignedTo?.name ?? "Unassigned"}</p>
+                      <p className="text-meta text-muted-foreground">Owner · owns the follow-up</p>
                     </div>
                   </div>
                   <Select
                     value={detail.assignedTo?.id ?? ""}
                     onChange={(e) => patchLead({ assignedToId: e.target.value || null }, e.target.value ? `Assigned to ${users?.find((u) => u.id === e.target.value)?.name ?? ""}` : "Unassigned")}
-                    className="mt-2 !w-full !py-1.5 text-[12px]"
+                    className="mt-2 !w-full !py-1.5 text-body"
                   >
                     <option value="">Assign an owner…</option>
                     {(users ?? []).map((u: UserLite) => (
@@ -4477,18 +4478,18 @@ export default function PulsePage() {
 
                   {teamPeople.length > 0 && (
                     <div className="mt-3">
-                      <p className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                      <p className="text-micro font-bold tracking-wide text-muted-foreground uppercase">
                         In this lead's meetings ({teamPeople.length})
                       </p>
                       <div className="mt-1.5 flex flex-wrap gap-1">
                         {teamPeople.slice(0, 6).map((p) => (
-                          <span key={p.id} className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10.5px] font-semibold" title={`${p.meetings} meeting(s) · ${p.attended} attended`}>
+                          <span key={p.id} className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/30 px-1.5 py-0.5 text-micro font-semibold" title={`${p.meetings} meeting(s) · ${p.attended} attended`}>
                             <Avatar name={p.name} size="size-4" />
                             {p.name}
                           </span>
                         ))}
                         {teamPeople.length > 6 && (
-                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10.5px] font-bold text-muted-foreground">
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-bold text-muted-foreground">
                             +{teamPeople.length - 6}
                           </span>
                         )}
@@ -4498,16 +4499,16 @@ export default function PulsePage() {
 
                   {detail.projects && detail.projects.length > 0 && (
                     <div className="mt-3 rounded-xl bg-muted/40 px-2.5 py-2">
-                      <p className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Project</p>
-                      <p className="mt-0.5 truncate text-[12px] font-semibold">{detail.projects[0].name}</p>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Project</p>
+                      <p className="mt-0.5 truncate text-body font-semibold">{detail.projects[0].name}</p>
+                      <p className="text-meta text-muted-foreground">
                         {detail.projects[0].assignedPm?.name ? `PM: ${detail.projects[0].assignedPm.name}` : "No PM assigned"}
                         {detail.projects[0].team?.length ? ` · ${detail.projects[0].team.length} members` : ""}
                       </p>
                     </div>
                   )}
 
-                  <p className="mt-2.5 text-[10.5px] leading-relaxed text-muted-foreground">
+                  <p className="mt-2.5 text-micro leading-relaxed text-muted-foreground">
                     Owner can log conversations, move the stage, send proposals and invite anyone
                     on the roster to meetings.
                   </p>
@@ -4516,11 +4517,11 @@ export default function PulsePage() {
                 {/* proposal */}
                 <div className="rounded-2xl border border-border/60 bg-card p-3.5">
                   <div className="flex items-center justify-between">
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                       <FileText className="size-3.5" /> Proposal
                     </h4>
                     {detail.proposals?.length ? (
-                      <button onClick={() => setProposalModal(true)} className="text-[11px] font-bold text-primary hover:underline">
+                      <button onClick={() => setProposalModal(true)} className="text-meta font-bold text-primary hover:underline">
                         + New
                       </button>
                     ) : null}
@@ -4528,10 +4529,10 @@ export default function PulsePage() {
                   {currentProposal ? (
                     <>
                       <div className="mt-2 flex items-center gap-1.5">
-                        <span className="text-[13px] font-bold">v{currentProposal.versionNumber}</span>
+                        <span className="text-body-lg font-bold">v{currentProposal.versionNumber}</span>
                         <span
                           className={cn(
-                            "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                            "rounded-full px-1.5 py-0.5 text-micro font-bold",
                             currentProposal.status === "ACCEPTED"
                               ? "bg-emerald-500/15 text-emerald-500"
                               : currentProposal.status === "REJECTED"
@@ -4544,16 +4545,16 @@ export default function PulsePage() {
                           {currentProposal.status}
                         </span>
                         {currentProposal.viewed && (
-                          <span className="ml-auto text-[10px] font-bold text-emerald-500">Seen</span>
+                          <span className="ml-auto text-micro font-bold text-emerald-500">Seen</span>
                         )}
                       </div>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
+                      <p className="mt-1 text-meta text-muted-foreground">
                         {currentProposal.sentDate ? `Sent ${formatDate(currentProposal.sentDate)}` : "Not sent yet"}
                       </p>
                       <Select
                         value={currentProposal.status}
                         onChange={(e) => proposalStatus(currentProposal, e.target.value)}
-                        className="mt-2 !w-full !py-1.5 text-[11.5px]"
+                        className="mt-2 !w-full !py-1.5 text-meta"
                         title="Proposal status"
                       >
                         {["DRAFT", "SENT", "ACCEPTED", "REJECTED"].map((s) => (
@@ -4564,26 +4565,26 @@ export default function PulsePage() {
                         <button
                           onClick={() => openProposal(currentProposal)}
                           disabled={!proposalTarget(currentProposal)}
-                          className="flex items-center gap-1 rounded-lg bg-brand-gradient px-2.5 py-1 text-[11.5px] font-bold text-white disabled:opacity-40"
+                          className="flex items-center gap-1 rounded-lg bg-brand-gradient px-2.5 py-1 text-meta font-bold text-white disabled:opacity-40"
                         >
-                          <ExternalLink className="size-3" /> View
+                          <ExternalLink className="size-3.5" /> View
                         </button>
                         <button
                           onClick={() => copyProposalLink(currentProposal)}
                           disabled={!proposalTarget(currentProposal)}
-                          className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11.5px] font-bold text-muted-foreground hover:text-foreground disabled:opacity-40"
+                          className="flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-meta font-bold text-muted-foreground hover:text-foreground disabled:opacity-40"
                         >
-                          {copiedField === `proposal-${currentProposal.id}` ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+                          {copiedField === `proposal-${currentProposal.id}` ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
                           {copiedField === `proposal-${currentProposal.id}` ? "Copied" : "Copy"}
                         </button>
                       </div>
                     </>
                   ) : (
                     <>
-                      <p className="mt-2 text-[12px] text-muted-foreground">
+                      <p className="mt-2 text-body text-muted-foreground">
                         No proposal sent yet. Most leads get version 1 after qualification.
                       </p>
-                      <Btn variant="outline" className="mt-2 !w-full !py-1.5 text-[12px]" onClick={() => setProposalModal(true)}>
+                      <Btn variant="outline" className="mt-2 !w-full !py-1.5 text-body" onClick={() => setProposalModal(true)}>
                         <Plus className="size-3.5" /> Send version 1
                       </Btn>
                     </>
@@ -4592,25 +4593,25 @@ export default function PulsePage() {
 
                 {/* contact */}
                 <div className="rounded-2xl border border-border/60 bg-card p-3.5">
-                  <h4 className="flex items-center gap-1.5 text-[11px] font-bold tracking-[0.08em] text-muted-foreground uppercase">
+                  <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-[0.08em] text-muted-foreground uppercase">
                     <Phone className="size-3.5" /> Contact
                   </h4>
                   <div className="mt-2 flex flex-col gap-1.5">
                     {detail.contactEmail && (
                       <div className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2 py-1.5">
                         <Mail className="size-3.5 shrink-0 text-muted-foreground" />
-                        <a href={`mailto:${detail.contactEmail}`} className="min-w-0 flex-1 truncate text-[12px] font-medium hover:text-primary">
+                        <a href={`mailto:${detail.contactEmail}`} className="min-w-0 flex-1 truncate text-body font-medium hover:text-primary">
                           {detail.contactEmail}
                         </a>
                         <button onClick={() => copyContact(detail.contactEmail!, "email")} title="Copy email" className="text-muted-foreground hover:text-foreground">
-                          {copiedField === "email" ? <Check className="size-3" /> : <Copy className="size-3" />}
+                          {copiedField === "email" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
                         </button>
                       </div>
                     )}
                     {detail.contactPhone && (
                       <div className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2 py-1.5">
                         <Phone className="size-3.5 shrink-0 text-muted-foreground" />
-                        <a href={`tel:${detail.contactPhone.replace(/[^+\d]/g, "")}`} className="min-w-0 flex-1 truncate text-[12px] font-medium hover:text-primary">
+                        <a href={`tel:${detail.contactPhone.replace(/[^+\d]/g, "")}`} className="min-w-0 flex-1 truncate text-body font-medium hover:text-primary">
                           {detail.contactPhone}
                         </a>
                         <a
@@ -4620,10 +4621,10 @@ export default function PulsePage() {
                           className="text-emerald-500 hover:text-emerald-400"
                           title="WhatsApp"
                         >
-                          <MessageCircle className="size-3" />
+                          <MessageCircle className="size-3.5" />
                         </a>
                         <button onClick={() => copyContact(detail.contactPhone!, "phone")} title="Copy phone" className="text-muted-foreground hover:text-foreground">
-                          {copiedField === "phone" ? <Check className="size-3" /> : <Copy className="size-3" />}
+                          {copiedField === "phone" ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
                         </button>
                       </div>
                     )}
@@ -4632,14 +4633,14 @@ export default function PulsePage() {
                         href={detail.website || detail.pageLink!}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2 py-1.5 text-[12px] font-medium hover:text-primary"
+                        className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2 py-1.5 text-body font-medium hover:text-primary"
                       >
                         <Globe className="size-3.5 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1 truncate">{(detail.website || detail.pageLink || "").replace(/^https?:\/\//, "")}</span>
                       </a>
                     )}
                     {!detail.contactEmail && !detail.contactPhone && !detail.website && !detail.pageLink && (
-                      <p className="text-[12px] text-muted-foreground">No contact details yet — add them in Details.</p>
+                      <p className="text-body text-muted-foreground">No contact details yet — add them in Details.</p>
                     )}
                   </div>
                 </div>
@@ -4725,20 +4726,20 @@ export default function PulsePage() {
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="flex flex-col items-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-6 text-[14px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
+            className="flex flex-col items-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-6 text-body-lg font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
           >
-            <Upload className="size-5" />
+            <Upload className="size-3.5" />
             {uploading ? "Uploading…" : proposalUrl ? "Uploaded — file attached" : "Upload proposal file (PDF)"}
           </button>
           {proposalUrl && (
-            <p className="truncate rounded-xl bg-emerald-500/10 px-3 py-2 text-[13px] font-medium text-emerald-400">
-              ✓ {proposalUrl}
+            <p className="truncate rounded-xl bg-emerald-500/10 px-3 py-2 text-body-lg font-medium text-emerald-400">
+              <Check className="mr-1 inline size-3.5" /> {proposalUrl}
             </p>
           )}
           <Field label="Proposal link" hint="Notion / Google Drive / PDF লিংক paste করো — client এই link-এই proposal দেখবে">
             <Input value={proposalPortal} onChange={(e) => setProposalPortal(e.target.value)} placeholder="https://notion.so/… বা https://drive.google.com/…" />
           </Field>
-          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2.5 text-[14px] font-semibold text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground">
+          <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2.5 text-body-lg font-semibold text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground">
             <input
               type="checkbox"
               checked={proposalSendNow}
@@ -4782,9 +4783,9 @@ export default function PulsePage() {
             <Input value={editLink} onChange={(e) => setEditLink(e.target.value)} placeholder="https://notion.so/… বা https://drive.google.com/…" />
           </Field>
           <div>
-            <p className="mb-1 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">Attached file</p>
+            <p className="mb-1 text-meta font-bold tracking-wide text-muted-foreground uppercase">Attached file</p>
             {editFileUrl ? (
-              <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-[13px] font-medium text-emerald-400">
+              <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-body-lg font-medium text-emerald-400">
                 <FileText className="size-3.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{editFileUrl}</span>
                 <button type="button" onClick={() => setEditFileUrl("")} className="shrink-0 font-bold text-rose-400 hover:underline">Remove</button>
@@ -4794,9 +4795,9 @@ export default function PulsePage() {
                 type="button"
                 onClick={() => editFileRef.current?.click()}
                 disabled={uploading}
-                className="flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-4 text-[14px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
+                className="flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-4 text-body-lg font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
               >
-                <Upload className="size-4" />
+                <Upload className="size-3.5" />
                 {uploading ? "Uploading…" : "Replace / attach file (PDF)"}
               </button>
             )}
@@ -4818,18 +4819,18 @@ export default function PulsePage() {
 
       {/* dup warning */}
       <Modal open={!!dupWarn} onClose={() => setDupWarn(null)} title="Possible duplicate">
-        <p className="text-[14px] leading-relaxed text-muted-foreground">
+        <p className="text-body-lg leading-relaxed text-muted-foreground">
           নিম্নোক্ত সক্রিয় lead-এর সাথে contact মিলে গেছে:
         </p>
         <ul className="mt-3 flex flex-col gap-1.5">
           {dupWarn?.map((w) => (
-            <li key={w.name} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[14px] font-semibold text-amber-400">
-              ⚠ {w.name}
+            <li key={w.name} className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-body-lg font-semibold text-amber-400">
+              <AlertTriangle className="mr-1 inline size-3.5" /> {w.name}
             </li>
           ))}
         </ul>
         <div className="mt-5 flex justify-end">
-          <button onClick={() => setDupWarn(null)} className="rounded-xl bg-brand-gradient px-4 py-2 text-[14px] font-bold text-white">
+          <button onClick={() => setDupWarn(null)} className="rounded-xl bg-brand-gradient px-4 py-2 text-body-lg font-bold text-white">
             Understood
           </button>
         </div>
@@ -4837,14 +4838,14 @@ export default function PulsePage() {
 
       {/* delete confirm */}
       <Modal open={!!deleteLead} onClose={() => setDeleteLead(null)} title="Delete lead?">
-        <p className="text-[14px] leading-relaxed text-muted-foreground">
+        <p className="text-body-lg leading-relaxed text-muted-foreground">
           {deleteLead?.name} চিরতরে মুছে যাবে — activities, proposals, meetings সহ। এটা undo করা যাবে না।
         </p>
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={() => setDeleteLead(null)} className="rounded-xl border border-border px-4 py-2 text-[14px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+          <button onClick={() => setDeleteLead(null)} className="rounded-xl border border-border px-4 py-2 text-body-lg font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             Cancel
           </button>
-          <button onClick={deleteLeadFn} className="rounded-xl bg-rose-500 px-4 py-2 text-[14px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02]">
+          <button onClick={deleteLeadFn} className="rounded-xl bg-rose-500 px-4 py-2 text-body-lg font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02]">
             Delete
           </button>
         </div>
@@ -4854,18 +4855,18 @@ export default function PulsePage() {
       {pulseTab === "pipeline" && selectedIds.length > 0 && (
         <div className="pointer-events-none fixed inset-x-0 bottom-5 z-40 flex justify-center px-4">
           <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card/95 px-3 py-2 shadow-2xl shadow-black/20 backdrop-blur">
-            <span className="rounded-full bg-primary px-2 py-0.5 text-[12px] font-bold text-primary-foreground">
+            <span className="rounded-full bg-primary px-2 py-0.5 text-body font-bold text-primary-foreground">
               {selectedIds.length}
             </span>
-            <span className="text-[13px] font-semibold">selected</span>
+            <span className="text-body-lg font-semibold">selected</span>
             <span className="mx-1 h-5 w-px bg-border" />
-            <Select value={bulkStage} onChange={(e) => setBulkStage(e.target.value)} className="!w-36 !py-1.5 text-[13px]">
+            <Select value={bulkStage} onChange={(e) => setBulkStage(e.target.value)} className="!w-36 !py-1.5 text-body-lg">
               <option value="">Move to stage…</option>
               {STAGES.map((s) => (
                 <option key={s} value={s}>{label(s)}</option>
               ))}
             </Select>
-            <Select value={bulkOwner} onChange={(e) => setBulkOwner(e.target.value)} className="!w-40 !py-1.5 text-[13px]">
+            <Select value={bulkOwner} onChange={(e) => setBulkOwner(e.target.value)} className="!w-40 !py-1.5 text-body-lg">
               <option value="">Assign owner…</option>
               {(users ?? []).map((u: UserLite) => (
                 <option key={u.id} value={u.id}>{u.name}</option>
@@ -4873,13 +4874,13 @@ export default function PulsePage() {
             </Select>
             <Btn
               variant="primary"
-              className="!py-1.5 text-[12.5px]"
+              className="!py-1.5 text-body"
               disabled={bulkMutation.isPending || (!bulkStage && !bulkOwner)}
               onClick={applyBulk}
             >
               {bulkMutation.isPending ? "Applying…" : "Apply"}
             </Btn>
-            <Btn variant="ghost" className="!py-1.5 text-[12.5px]" onClick={() => setSelectedIds([])}>
+            <Btn variant="ghost" className="!py-1.5 text-body" onClick={() => setSelectedIds([])}>
               <X className="size-3.5" /> Clear
             </Btn>
           </div>
@@ -4892,7 +4893,7 @@ export default function PulsePage() {
 function EditField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-1 text-[12px] font-bold tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="mb-1 text-body font-bold tracking-wide text-muted-foreground uppercase">{label}</p>
       {children}
     </div>
   );

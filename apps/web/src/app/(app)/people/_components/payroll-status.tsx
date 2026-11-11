@@ -38,7 +38,7 @@ export function PayrollStatusBadge() {
     return (
       <Link
         href="/people/payroll"
-        className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11.5px] font-semibold text-amber-600 transition-colors hover:border-amber-500/50 dark:text-amber-300"
+        className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-meta font-semibold text-amber-600 transition-colors hover:border-amber-500/50 dark:text-amber-300"
       >
         Payroll · not run yet
       </Link>
@@ -50,7 +50,7 @@ export function PayrollStatusBadge() {
     <Link
       href="/people/payroll"
       title={`${data.count} record(s) · ${data.status ?? ""}`}
-      className={cn("rounded-full border px-3 py-1.5 text-[11.5px] font-semibold tabular-nums transition-colors", tone)}
+      className={cn("rounded-full border px-3 py-1.5 text-meta font-semibold tabular-nums transition-colors", tone)}
     >
       Payroll · {monthLabel(data.period)}
       {data.status === "PAID" ? " · paid" : data.status === "FINALIZED" ? " · finalized" : data.status === "DRAFT" ? " · draft" : " · in progress"}

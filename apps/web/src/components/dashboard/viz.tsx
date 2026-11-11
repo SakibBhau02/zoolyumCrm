@@ -116,7 +116,7 @@ export function MiniBars({
             <span
               key={`${d.label}-l-${i}`}
               title={`${d.label}: ${d.value}`}
-              className="min-w-0 flex-1 truncate text-center text-[8.5px] font-medium leading-tight text-muted-foreground"
+              className="min-w-0 flex-1 truncate text-center text-micro font-medium leading-tight text-muted-foreground"
             >
               {d.label}
             </span>
@@ -159,7 +159,7 @@ export function SegmentedBar({
       {showLegend && (
         <div className={cn("mt-2 flex flex-wrap items-center gap-x-3 gap-y-1", legendClassName)}>
           {segments.map((s) => (
-            <span key={s.label} className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <span key={s.label} className="inline-flex items-center gap-1.5 text-micro text-muted-foreground">
               <span className={cn("size-1.5 rounded-full", s.className)} />
               <span className="font-medium text-foreground/80 tabular-nums">{s.value}</span>
               {s.label}
@@ -209,8 +209,8 @@ export function Ring({
         />
       </svg>
       <span className="absolute inset-0 flex flex-col items-center justify-center leading-none">
-        <span className="text-[15px] font-bold tabular-nums">{label ?? `${Math.round(pct)}%`}</span>
-        {sublabel && <span className="mt-0.5 text-[8.5px] font-semibold uppercase tracking-wider opacity-70">{sublabel}</span>}
+        <span className="text-section font-bold tabular-nums">{label ?? `${Math.round(pct)}%`}</span>
+        {sublabel && <span className="mt-0.5 text-micro font-semibold uppercase tracking-wider opacity-70">{sublabel}</span>}
       </span>
     </div>
   );
@@ -236,13 +236,13 @@ export function MeterRow({
   return (
     <div className="w-full">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="truncate text-[11px] text-muted-foreground">{label}</span>
-        <span className="shrink-0 text-[11.5px] font-semibold tabular-nums">{display ?? value}</span>
+        <span className="truncate text-meta text-muted-foreground">{label}</span>
+        <span className="shrink-0 text-meta font-semibold tabular-nums">{display ?? value}</span>
       </div>
       <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div className={cn("h-full rounded-full transition-all", tone)} style={{ width: `${pct}%` }} />
       </div>
-      {hint && <p className="mt-1 truncate text-[9.5px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="mt-1 truncate text-micro text-muted-foreground">{hint}</p>}
     </div>
   );
 }

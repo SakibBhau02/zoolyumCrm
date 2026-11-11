@@ -18,7 +18,7 @@ export function CourseModal({ open, onClose, onSaved }: { open: boolean; onClose
     try { await apiFetch("/people/courses", { method: "POST", body: JSON.stringify({ title: f.title.trim(), description: f.description.trim() || undefined, type: f.type, category: f.category.trim() || undefined, duration: f.duration.trim() || undefined, provider: f.provider.trim() || undefined }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Add course">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Add course">
       <form onSubmit={save} className="flex flex-col gap-4">
         <Field label="Title *"><Input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="Advanced TypeScript" autoFocus /></Field>
         <Field label="Description"><Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="What does the course cover?" /></Field>
@@ -32,7 +32,7 @@ export function CourseModal({ open, onClose, onSaved }: { open: boolean; onClose
           <Field label="Duration"><Input value={f.duration} onChange={(e) => setF({ ...f, duration: e.target.value })} placeholder="8 hours" /></Field>
           <Field label="Provider"><Input value={f.provider} onChange={(e) => setF({ ...f, provider: e.target.value })} placeholder="Udemy" /></Field>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add course" />
       </form>
     </Modal>
@@ -53,7 +53,7 @@ export function EnrollModal({ open, onClose, courses, employees, onSaved }: { op
     try { await apiFetch("/people/enrollments", { method: "POST", body: JSON.stringify({ courseId: f.courseId, employeeId: f.employeeId }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Enroll employee">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Enroll employee">
       <form onSubmit={save} className="flex flex-col gap-4">
         <Field label="Course *">
           <Select value={f.courseId} onChange={(e) => setF({ ...f, courseId: e.target.value })}>
@@ -65,7 +65,7 @@ export function EnrollModal({ open, onClose, courses, employees, onSaved }: { op
             {employees.map((emp: any) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
           </Select>
         </Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Enroll" />
       </form>
     </Modal>

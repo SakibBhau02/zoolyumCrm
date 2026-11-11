@@ -29,7 +29,7 @@ export function useToast() {
 
 export function Toast({ flash }: { flash: string | null }) {
   if (!flash) return null;
-  return <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[12.5px] font-medium text-white shadow-xl">{flash}</motion.div>;
+  return <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-body font-medium text-white shadow-xl">{flash}</motion.div>;
 }
 
 export function LoadOrError({ loading, error, onRetry, skeleton = 6, h = "h-12" }: { loading: boolean; error: string | null; onRetry?: () => void; skeleton?: number; h?: string }) {

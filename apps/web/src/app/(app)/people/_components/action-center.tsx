@@ -105,7 +105,7 @@ export function ActionCenter() {
     return (
       <div className="flex items-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3 py-1.5">
         <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
-        <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+        <p className="text-meta font-medium text-emerald-700 dark:text-emerald-300">
           Nothing needs you right now — no pending leave, everyone accounted for, payroll up to date.
         </p>
       </div>
@@ -127,7 +127,7 @@ export function ActionCenter() {
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Needs you</span>
+      <span className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Needs you</span>
       {items.map((item) => {
         const Icon = item.icon;
         return (
@@ -140,9 +140,9 @@ export function ActionCenter() {
             <span className={cn("flex size-5 shrink-0 items-center justify-center rounded-md", iconCls[item.tone])}>
               <Icon className="size-3" />
             </span>
-            <span className="min-w-0 truncate text-[11px] font-semibold">{item.title}</span>
-            <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-bold text-primary">
-              {item.cta} <ArrowRight className="size-2.5 transition-transform group-hover:translate-x-0.5" />
+            <span className="min-w-0 truncate text-meta font-semibold">{item.title}</span>
+            <span className="inline-flex shrink-0 items-center gap-0.5 text-micro font-bold text-primary">
+              {item.cta} <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
             </span>
           </Link>
         );

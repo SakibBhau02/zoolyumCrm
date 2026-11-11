@@ -15,7 +15,7 @@ export function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <span className="flex items-center gap-1 text-[11.5px] font-semibold text-muted-foreground">
+    <span className="flex items-center gap-1 text-meta font-semibold text-muted-foreground">
       {children}
       {required && <span className="text-rose-500">*</span>}
     </span>
@@ -44,12 +44,12 @@ export function Field({
       <FieldLabel required={required}>{label}</FieldLabel>
       {children}
       {error ? (
-        <span className="flex items-center gap-1 text-[10.5px] font-medium text-rose-500">
-          <AlertCircle className="size-3 shrink-0" />
+        <span className="flex items-center gap-1 text-micro font-medium text-rose-500">
+          <AlertCircle className="size-3.5 shrink-0" />
           {error}
         </span>
       ) : (
-        hint && <span className="text-[10.5px] text-muted-foreground/70">{hint}</span>
+        hint && <span className="text-micro text-muted-foreground/70">{hint}</span>
       )}
     </label>
   );
@@ -80,17 +80,17 @@ export function FormSection({
     <section className={className}>
       <div className="mb-3 flex items-center gap-2.5">
         {step != null ? (
-          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold tabular-nums text-primary ring-1 ring-primary/15">
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-micro font-bold tabular-nums text-primary ring-1 ring-primary/15">
             {step}
           </span>
         ) : (
           icon && <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">{icon}</span>
         )}
-        <h4 className="shrink-0 text-[11px] font-bold uppercase tracking-[0.09em] text-muted-foreground">{title}</h4>
+        <h4 className="shrink-0 text-meta font-bold uppercase tracking-[0.09em] text-muted-foreground">{title}</h4>
         <span aria-hidden className="h-px flex-1 bg-border/70" />
         {action}
       </div>
-      {hint && <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground/80">{hint}</p>}
+      {hint && <p className="mb-3 text-meta leading-relaxed text-muted-foreground/80">{hint}</p>}
       {children}
     </section>
   );
@@ -144,14 +144,14 @@ export function Collapsible({
           </span>
         )}
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 text-[12.5px] font-semibold">
+          <span className="flex items-center gap-2 text-body font-semibold">
             {title}
             {badge}
           </span>
-          {hint && <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{hint}</span>}
+          {hint && <span className="mt-0.5 block truncate text-meta text-muted-foreground">{hint}</span>}
         </span>
         <ChevronDown
-          className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-180")}
+          className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform duration-200", open && "rotate-180")}
         />
       </button>
       <AnimatePresence initial={false}>
@@ -174,7 +174,7 @@ export function Collapsible({
 /** Small counter chip for collapsible headers. */
 export function CountBadge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-primary/10 px-1.5 text-[10px] font-bold tabular-nums text-primary">
+    <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-primary/10 px-1.5 text-micro font-bold tabular-nums text-primary">
       {children}
     </span>
   );
@@ -209,7 +209,7 @@ export function ChipGroup<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-lg border font-semibold transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-              size === "sm" ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-[11.5px]",
+              size === "sm" ? "px-2.5 py-1 text-meta" : "px-3 py-1.5 text-meta",
               active
                 ? o.tone ?? "border-primary/40 bg-primary/10 text-primary"
                 : "border-border bg-card text-muted-foreground hover:border-primary/25 hover:text-foreground"
@@ -217,7 +217,7 @@ export function ChipGroup<T extends string>({
           >
             {o.icon}
             {o.label}
-            {active && <Check className="size-3 opacity-70" />}
+            {active && <Check className="size-3.5 opacity-70" />}
           </button>
         );
       })}
@@ -251,7 +251,7 @@ export function PercentSlider({
         }}
         className="h-1.5 w-full cursor-pointer appearance-none rounded-full outline-none focus-visible:ring-2 focus-visible:ring-primary/30 [&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-card [&::-moz-range-thumb]:bg-primary [&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-card [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-md"
       />
-      <span className="w-11 shrink-0 rounded-lg bg-muted py-1 text-center text-[11.5px] font-bold tabular-nums text-foreground">
+      <span className="w-11 shrink-0 rounded-lg bg-muted py-1 text-center text-meta font-bold tabular-nums text-foreground">
         {v}%
       </span>
     </div>
@@ -264,7 +264,7 @@ export function FormError({ children }: { children?: React.ReactNode }) {
   return (
     <div
       role="alert"
-      className="flex items-start gap-2 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2.5 text-[12px] font-medium text-rose-500"
+      className="flex items-start gap-2 rounded-xl border border-rose-500/25 bg-rose-500/10 px-3 py-2.5 text-body font-medium text-rose-500"
     >
       <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
       <span className="min-w-0 flex-1">{children}</span>
@@ -294,8 +294,8 @@ export function Toggle({
       )}
     >
       <span className="min-w-0 flex-1">
-        <span className="block text-[12px] font-semibold leading-tight">{label}</span>
-        {hint && <span className="mt-0.5 block text-[10.5px] leading-snug text-muted-foreground">{hint}</span>}
+        <span className="block text-body font-semibold leading-tight">{label}</span>
+        {hint && <span className="mt-0.5 block text-micro leading-snug text-muted-foreground">{hint}</span>}
       </span>
       <span
         className={cn(
@@ -321,7 +321,7 @@ export function Toggle({
 }
 
 const inputCls =
-  "w-full rounded-xl border border-border bg-card px-3 py-2 text-[13px] outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-2 focus:ring-primary/20";
+  "w-full rounded-xl border border-border bg-card px-3 py-2 text-body-lg outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-2 focus:ring-primary/20";
 
 export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cn(inputCls, props.className)} />;
@@ -477,13 +477,13 @@ export function Modal({
           )}
           <div className="min-w-0 flex-1">
             {eyebrow && (
-              <p className="mb-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+              <p className="mb-0.5 text-micro font-bold uppercase tracking-[0.14em] text-muted-foreground">
                 {eyebrow}
               </p>
             )}
-            <h3 id={titleId} className="font-heading text-[17px] font-semibold leading-tight">{title}</h3>
+            <h3 id={titleId} className="font-heading text-title font-semibold leading-tight">{title}</h3>
             {subtitle && (
-              <p className="mt-1 text-[11.5px] leading-snug text-muted-foreground">{subtitle}</p>
+              <p className="mt-1 text-meta leading-snug text-muted-foreground">{subtitle}</p>
             )}
           </div>
         </div>
@@ -496,7 +496,7 @@ export function Modal({
             bare && "border border-border"
           )}
         >
-          {bare ? <ArrowLeft className="size-4" /> : <X className="size-4" />}
+          {bare ? <ArrowLeft className="size-3.5" /> : <X className="size-3.5" />}
         </button>
       </div>
       <div
@@ -611,7 +611,7 @@ export function Segmented<T extends string>({
           type="button"
           onClick={() => onChange(o.value)}
           className={cn(
-            "rounded-lg px-3 py-1.5 text-[11.5px] font-semibold transition-all",
+            "rounded-lg px-3 py-1.5 text-meta font-semibold transition-all",
             value === o.value
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:text-foreground"
@@ -632,7 +632,7 @@ export function ScoreBar({ score }: { score: number | null }) {
       <div className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
         <div className={cn("h-full rounded-full transition-all", tone)} style={{ width: `${s}%` }} />
       </div>
-      <span className="text-[11px] font-bold tabular-nums text-muted-foreground">{score ?? "—"}</span>
+      <span className="text-meta font-bold tabular-nums text-muted-foreground">{score ?? "—"}</span>
     </div>
   );
 }
@@ -659,13 +659,13 @@ export function FormActions({
   return (
     <div className={cn("flex items-center gap-3", formId ? "justify-end sm:justify-between" : "mt-6 justify-end")}>
       {formId && hint && (
-        <p className="hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground sm:block">{hint}</p>
+        <p className="hidden min-w-0 flex-1 truncate text-meta text-muted-foreground sm:block">{hint}</p>
       )}
       <div className="flex shrink-0 items-center gap-2">
         <button
           type="button"
           onClick={cancel}
-          className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           Cancel
         </button>
@@ -674,7 +674,7 @@ export function FormActions({
           form={formId}
           disabled={busy}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-[12.5px] font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60",
+            "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-body font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60",
             danger
               ? "bg-rose-500 text-white hover:bg-rose-500/90"
               : "bg-primary text-primary-foreground hover:bg-primary/90"

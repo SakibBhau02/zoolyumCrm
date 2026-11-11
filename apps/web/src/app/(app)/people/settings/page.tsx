@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { CardShell, EmptyState, SectionTitle, SkeletonBlock, cn } from "@/components/shared";
 import { Btn } from "@/components/table";
 import { Field, Input, Select } from "@/components/ui";
-import { DAYS, dayShort } from "../_components/constants";
+import { DAYS, dayShort, monthNow } from "../_components/constants";
 import { Toast, useList, useToast } from "../_components/hooks";
 import { PeopleHero, PeopleTabs } from "../_components/hero";
 
@@ -25,8 +25,20 @@ export default function SettingsPage() {
     if (!f) return;
     setBusy(true);
     try {
-      await apiFetch("/people/attendance-policy", { method: "PATCH", body: JSON.stringify({ ...f, lateLadder: f.lateLadder.filter((r: any) => Number(r.lates) > 0).map((r: any) => ({ lates: Number(r.lates), days: Number(r.days) })) }) });
-      setF(null);
+      const payload = {
+        ...f,
+        // Number inputs hand back strings; Prisma's Int column rejects "20".
+        graceMinutes: f.graceMinutes === "" || f.graceMinutes == null ? null : Number(f.graceMinutes),
+        overtimeThresholdMinutes: f.overtimeThresholdMinutes === "" || f.overtimeThresholdMinutes == null ? null : Number(f.overtimeThresholdMinutes),
+        dailyRateDivisor: Number(f.dailyRateDivisor),
+        lateLadder: f.lateLadder
+          .filter((r: any) => Number(r.lates) > 0)
+          .map((r: any) => ({ lates: Number(r.lates), days: Number(r.days) })),
+      };
+      const saved = await apiFetch<any>("/people/attendance-policy", { method: "PATCH", body: JSON.stringify(payload) });
+      // Re-seed the form from the server response instead of nulling it: the
+      // old `setF(null)` blanked the page and then re-read the stale object.
+      setF({ ...saved, lateLadder: (saved.lateLadder ?? []).map((x: any) => ({ lates: x.lates, days: x.days })) });
       reload();
       notify("Attendance policy saved");
     } catch (e2: any) { notify(e2.message ?? "Save failed"); } finally { setBusy(false); }
@@ -53,7 +65,7 @@ export default function SettingsPage() {
           { label: "Divisor", value: f.dailyRateDivisor === 0 ? "auto" : f.dailyRateDivisor, sub: "days" },
           { label: "Half-day", value: f.proRataEnabled ? "0.5" : "1", sub: "LOP" },
         ]}
-        actions={<Btn variant="primary" onClick={save} className={cn("!px-2.5 !py-1.5 text-[11px]", busy && "opacity-60")}><Save className="size-3.5" /> Save</Btn>}
+        actions={<Btn variant="primary" onClick={save} className={cn("!px-2.5 !py-1.5 text-meta", busy && "opacity-60")}><Save className="size-3.5" /> Save</Btn>}
       />
       <PeopleTabs
         className="mt-2"
@@ -75,35 +87,35 @@ export default function SettingsPage() {
           <form onSubmit={save} className="flex flex-col gap-2">
             {view === "policy" && (
             <div>
-              <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Weekly off days</p>
+              <p className="mb-1.5 text-micro font-semibold uppercase tracking-wider text-muted-foreground">Weekly off days</p>
               <div className="flex flex-wrap gap-1.5">
                 {DAYS.map((d) => (
-                  <button key={d} type="button" onClick={() => toggleDay(d)} className={cn("rounded-lg px-2 py-1 text-[10.5px] font-semibold transition-colors", f.weeklyOffDays.includes(d) ? "bg-brand-gradient text-white" : "bg-muted text-muted-foreground hover:bg-muted/70")}>{dayShort[d]}</button>
+                  <button key={d} type="button" onClick={() => toggleDay(d)} className={cn("rounded-lg px-2 py-1 text-micro font-semibold transition-colors", f.weeklyOffDays.includes(d) ? "bg-brand-gradient text-white" : "bg-muted text-muted-foreground hover:bg-muted/70")}>{dayShort[d]}</button>
                 ))}
               </div>
-              <p className="mt-1 text-[10.5px] text-muted-foreground">Days without punches are not treated as absent. Employees can override in Directory.</p>
+              <p className="mt-1 text-micro text-muted-foreground">Days without punches are not treated as absent. Employees can override in Directory.</p>
             </div>
             )}
             {view === "policy" && (
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-              <Field label="Shift start (HH:MM)"><Input value={f.shiftStart} onChange={(e) => setF({ ...f, shiftStart: e.target.value })} placeholder="10:00" className="!py-1.5 text-[12px]" /></Field>
-              <Field label="Shift end (HH:MM)"><Input value={f.shiftEnd} onChange={(e) => setF({ ...f, shiftEnd: e.target.value })} placeholder="18:00" className="!py-1.5 text-[12px]" /></Field>
-              <Field label="Late grace (minutes)"><Input type="number" min={0} value={f.graceMinutes} onChange={(e) => setF({ ...f, graceMinutes: e.target.value })} placeholder="15" className="!py-1.5 text-[12px]" /></Field>
-              <Field label="Half-day cutoff (HH:MM)"><Input value={f.halfDayCutoff} onChange={(e) => setF({ ...f, halfDayCutoff: e.target.value })} placeholder="12:00" className="!py-1.5 text-[12px]" /></Field>
-              <Field label="Overtime threshold (minutes)" hint="Extra time below this is ignored"><Input type="number" min={0} value={f.overtimeThresholdMinutes ?? 30} onChange={(e) => setF({ ...f, overtimeThresholdMinutes: Number(e.target.value) })} placeholder="30" className="!py-1.5 text-[12px]" /></Field>
+              <Field label="Shift start (HH:MM)"><Input value={f.shiftStart} onChange={(e) => setF({ ...f, shiftStart: e.target.value })} placeholder="10:00" className="!py-1.5 text-body" /></Field>
+              <Field label="Shift end (HH:MM)"><Input value={f.shiftEnd} onChange={(e) => setF({ ...f, shiftEnd: e.target.value })} placeholder="18:00" className="!py-1.5 text-body" /></Field>
+              <Field label="Late grace (minutes)"><Input type="number" min={0} value={f.graceMinutes ?? ""} onChange={(e) => setF({ ...f, graceMinutes: e.target.value === "" ? "" : Number(e.target.value) })} placeholder="15" className="!py-1.5 text-body" /></Field>
+              <Field label="Half-day cutoff (HH:MM)"><Input value={f.halfDayCutoff} onChange={(e) => setF({ ...f, halfDayCutoff: e.target.value })} placeholder="12:00" className="!py-1.5 text-body" /></Field>
+              <Field label="Overtime threshold (minutes)" hint="Extra time below this is ignored"><Input type="number" min={0} value={f.overtimeThresholdMinutes ?? 30} onChange={(e) => setF({ ...f, overtimeThresholdMinutes: Number(e.target.value) })} placeholder="30" className="!py-1.5 text-body" /></Field>
             </div>
             )}
             {view === "policy" && (
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
               <Field label="Daily rate divisor">
-                <Select value={String(f.dailyRateDivisor)} onChange={(e) => setF({ ...f, dailyRateDivisor: Number(e.target.value) })} className="!py-1.5 text-[12px]">
+                <Select value={String(f.dailyRateDivisor)} onChange={(e) => setF({ ...f, dailyRateDivisor: Number(e.target.value) })} className="!py-1.5 text-body">
                   <option value="26">26 working days / month</option>
                   <option value="30">30 calendar days / month</option>
                   <option value="0">Auto — actual working days</option>
                 </Select>
               </Field>
               <Field label="Half-day = half LOP">
-                <Select value={f.proRataEnabled ? "true" : "false"} onChange={(e) => setF({ ...f, proRataEnabled: e.target.value === "true" })} className="!py-1.5 text-[12px]">
+                <Select value={f.proRataEnabled ? "true" : "false"} onChange={(e) => setF({ ...f, proRataEnabled: e.target.value === "true" })} className="!py-1.5 text-body">
                   <option value="true">Half-day LOP (0.5 day)</option>
                   <option value="false">Full-day LOP (1 day)</option>
                 </Select>
@@ -112,20 +124,20 @@ export default function SettingsPage() {
             )}
             {view === "ladder" && (
             <div>
-              <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Late ladder — N lates in a month = 1 day deduction</p>
+              <p className="mb-1.5 text-micro font-semibold uppercase tracking-wider text-muted-foreground">Late ladder — N lates in a month = 1 day deduction</p>
               <div className="flex flex-col gap-1.5">
                 {f.lateLadder.map((r: any, i: number) => (
                   <div key={i} className="flex items-center gap-2">
-                    <Input type="number" min={1} value={r.lates} onChange={(e) => setLadder(i, "lates", e.target.value)} className="!w-20 !py-1 text-[11.5px]" placeholder="Lates" />
-                    <span className="text-[11px] text-muted-foreground">lates =</span>
-                    <Input type="number" min={1} value={r.days} onChange={(e) => setLadder(i, "days", e.target.value)} className="!w-20 !py-1 text-[11.5px]" placeholder="Days" />
-                    <span className="text-[11px] text-muted-foreground">day(s) off salary</span>
+                    <Input type="number" min={1} value={r.lates} onChange={(e) => setLadder(i, "lates", e.target.value)} className="!w-20 !py-1 text-meta" placeholder="Lates" />
+                    <span className="text-meta text-muted-foreground">lates =</span>
+                    <Input type="number" min={1} value={r.days} onChange={(e) => setLadder(i, "days", e.target.value)} className="!w-20 !py-1 text-meta" placeholder="Days" />
+                    <span className="text-meta text-muted-foreground">day(s) off salary</span>
                     <button type="button" onClick={() => setF({ ...f, lateLadder: f.lateLadder.filter((_: any, ri: number) => ri !== i) })} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"><Trash2 className="size-3.5" /></button>
                   </div>
                 ))}
-                <button type="button" onClick={() => setF({ ...f, lateLadder: [...f.lateLadder, { lates: "", days: "" }] })} className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-dashed border-border px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"><Plus className="size-3" /> Add ladder step</button>
+                <button type="button" onClick={() => setF({ ...f, lateLadder: [...f.lateLadder, { lates: "", days: "" }] })} className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-dashed border-border px-2 py-1 text-meta font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"><Plus className="size-3.5" /> Add ladder step</button>
               </div>
-              {ladderSummary && <p className="mt-1.5 rounded-lg bg-muted/40 px-2.5 py-1.5 text-[10.5px] text-muted-foreground">Current rule: every <span className="font-semibold text-foreground">{ladderSummary}</span> deducted from monthly pay.</p>}
+              {ladderSummary && <p className="mt-1.5 rounded-lg bg-muted/40 px-2.5 py-1.5 text-micro text-muted-foreground">Current rule: every <span className="font-semibold text-foreground">{ladderSummary}</span> deducted from monthly pay.</p>}
             </div>
             )}
           </form>
@@ -137,19 +149,19 @@ export default function SettingsPage() {
           <SectionTitle title="How payroll deductions work" subtitle="Calculated per working day in the pay period" />
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-xl bg-muted/40 p-4">
-              <p className="text-[12.5px] font-bold">Late arrival</p>
-              <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">Punch after shift start + grace counts as late. Lates accumulate against the ladder above and convert into full-day deductions.</p>
+              <p className="text-body font-bold">Late arrival</p>
+              <p className="mt-1 text-meta leading-relaxed text-muted-foreground">Punch after shift start + grace counts as late. Lates accumulate against the ladder above and convert into full-day deductions.</p>
             </div>
             <div className="rounded-xl bg-muted/40 p-4">
-              <p className="text-[12.5px] font-bold">Half day</p>
-              <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">First punch after the half-day cutoff counts as a half day — 0.5 day LOP per the setting above.</p>
+              <p className="text-body font-bold">Half day</p>
+              <p className="mt-1 text-meta leading-relaxed text-muted-foreground">First punch after the half-day cutoff counts as a half day — 0.5 day LOP per the setting above.</p>
             </div>
             <div className="rounded-xl bg-muted/40 p-4">
-              <p className="text-[12.5px] font-bold">Absent & unpaid leave</p>
-              <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">No punch on a working day = absent, 1 day LOP. Approved casual / sick / earned leave never deducts; only unpaid leave does.</p>
+              <p className="text-body font-bold">Absent & unpaid leave</p>
+              <p className="mt-1 text-meta leading-relaxed text-muted-foreground">No punch on a working day = absent, 1 day LOP. Approved casual / sick / earned leave never deducts; only unpaid leave does.</p>
             </div>
           </div>
-          <p className="text-[11.5px] text-muted-foreground">Daily rate = monthly salary ÷ {f.dailyRateDivisor === 0 ? "actual working days" : `${f.dailyRateDivisor} (divisor)`}. Working on a weekly off day counts as present — no extra pay.</p>
+          <p className="text-meta text-muted-foreground">Daily rate = monthly salary ÷ {f.dailyRateDivisor === 0 ? "actual working days" : `${f.dailyRateDivisor} (divisor)`}. Working on a weekly off day counts as present — no extra pay.</p>
         </div>
       </CardShell>
       </div>
@@ -172,7 +184,7 @@ const WD_NAMES = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDA
  * server-side because payroll already ran on them.
  */
 function WorkCalendarCard({ notify }: { notify: (m: string) => void }) {
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(() => monthNow());
   const [refresh, setRefresh] = useState(0);
   const reload = useCallback(() => setRefresh((r) => r + 1), []);
   const { data, loading } = useList<any>(`/people/work-calendar?month=${month}`, refresh);
@@ -250,7 +262,7 @@ function WorkCalendarCard({ notify }: { notify: (m: string) => void }) {
           <>
             <div className="grid grid-cols-7 gap-1.5">
               {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
-                <p key={d} className="pb-1 text-center text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{d}</p>
+                <p key={d} className="pb-1 text-center text-micro font-bold uppercase tracking-wide text-muted-foreground">{d}</p>
               ))}
               {cells.map((c, i) =>
                 !c ? <span key={`x${i}`} /> : (
@@ -260,7 +272,7 @@ function WorkCalendarCard({ notify }: { notify: (m: string) => void }) {
                     onClick={() => { setSel(c.date); setNote(overrides.get(c.date)?.note ?? ""); }}
                     title={`${c.date} — ${c.dow.charAt(0)}${c.dow.slice(1).toLowerCase()} · ${overrides.has(c.date) ? "click to edit/remove override" : !offSet.has(c.dow) && !holidays.has(c.date) ? "working by default — click to close" : "off by default — click to open"}`}
                     className={cn(
-                      "flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-[11px] font-semibold transition-all",
+                      "flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-meta font-semibold transition-all",
                       sel === c.date ? "border-primary ring-2 ring-primary/30" : "border-border/60 hover:border-primary/40",
                       stateOf(c) === "working" && "bg-card text-foreground",
                       stateOf(c) === "off" && "bg-muted/50 text-muted-foreground",
@@ -270,14 +282,14 @@ function WorkCalendarCard({ notify }: { notify: (m: string) => void }) {
                     )}
                   >
                     <span className="tabular-nums">{c.day}</span>
-                    <span className="text-[8.5px] font-bold uppercase leading-none">
+                    <span className="text-micro font-bold uppercase leading-none">
                       {stateOf(c) === "open-ex" ? "open" : stateOf(c) === "closed-ex" ? "closed" : stateOf(c) === "holiday" ? "holiday" : stateOf(c) === "off" ? "off" : ""}
                     </span>
                   </button>
                 )
               )}
             </div>
-            <div className="flex flex-wrap items-center gap-3 text-[10.5px] font-semibold text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-3 text-micro font-semibold text-muted-foreground">
               <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-foreground" /> working</span>
               <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-muted-foreground/50" /> weekly off</span>
               <span className="flex items-center gap-1"><span className="size-2 rounded-full bg-violet-500" /> holiday</span>
@@ -286,13 +298,13 @@ function WorkCalendarCard({ notify }: { notify: (m: string) => void }) {
             </div>
             {sel && selCell && (
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5">
-                <CalendarDays className="size-4 shrink-0 text-primary" />
-                <span className="text-[12px] font-bold">{sel} ({selCell.dow}, default {selDefaultOpen ? "open" : "closed"})</span>
+                <CalendarDays className="size-3.5 shrink-0 text-primary" />
+                <span className="text-body font-bold">{sel} ({selCell.dow}, default {selDefaultOpen ? "open" : "closed"})</span>
                 <Input
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   placeholder="Note — e.g. Release crunch Saturday"
-                  className="min-w-40 flex-1 !py-1.5 text-[12px]"
+                  className="min-w-40 flex-1 !py-1.5 text-body"
                 />
                 <Btn variant="primary" onClick={() => save(true)} disabled={busy} className="!py-1.5">Open</Btn>
                 <Btn variant="outline" onClick={() => save(false)} disabled={busy} className="!py-1.5">Close</Btn>
@@ -399,14 +411,14 @@ function LeaveQuotasCard({ notify }: { notify: (m: string) => void }) {
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
-          <span className="text-[12px] font-bold">Balances for year</span>
+          <span className="text-body font-bold">Balances for year</span>
           <Input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="2026" className="!w-24 !py-1.5" />
-          <label className="flex cursor-pointer items-center gap-1.5 text-[11.5px] font-semibold text-muted-foreground">
+          <label className="flex cursor-pointer items-center gap-1.5 text-meta font-semibold text-muted-foreground">
             <input type="checkbox" checked={reset} onChange={(e) => setReset(e.target.checked)} className="size-3.5 accent-rose-500" />
             Reset first (January reset — deletes existing rows)
           </label>
           <Btn variant="outline" onClick={seed} disabled={seedBusy} className="!py-1.5">{seedBusy ? "Working…" : "Seed balances"}</Btn>
-          <span className="text-[11px] text-muted-foreground">Missing rows are created; existing balances are never overwritten unless reset.</span>
+          <span className="text-meta text-muted-foreground">Missing rows are created; existing balances are never overwritten unless reset.</span>
         </div>
       </div>
     </CardShell>

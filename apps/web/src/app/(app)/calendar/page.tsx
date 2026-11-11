@@ -95,7 +95,7 @@ function ErrorBlock({ msg, onRetry }: { msg: string; onRetry: () => void }) {
     <div className="flex flex-col items-center gap-3">
       <EmptyState title={msg} hint="Could not load calendar data" />
       <Btn variant="outline" onClick={onRetry}>
-        <RefreshCw className="size-4" /> Retry
+        <RefreshCw className="size-3.5" /> Retry
       </Btn>
     </div>
   );
@@ -107,11 +107,11 @@ function MonthNav({ anchor, setAnchor, label: lbl }: { anchor: Date; setAnchor: 
     <div className="mb-3 flex items-center justify-between">
       <div className="flex items-center gap-1">
         <Btn variant="ghost" onClick={() => move(-1)}>
-          <ChevronLeft className="size-4" />
+          <ChevronLeft className="size-3.5" />
         </Btn>
-        <h3 className="w-44 text-center text-[14px] font-heading font-semibold">{lbl}</h3>
+        <h3 className="w-44 text-center text-body-lg font-heading font-semibold">{lbl}</h3>
         <Btn variant="ghost" onClick={() => move(1)}>
-          <ChevronRight className="size-4" />
+          <ChevronRight className="size-3.5" />
         </Btn>
       </div>
       <Btn variant="outline" onClick={() => setAnchor(new Date())}>Today</Btn>
@@ -123,7 +123,7 @@ function WeekRow() {
   return (
     <div className="grid grid-cols-7 gap-1.5">
       {WEEKDAYS.map((w) => (
-        <div key={w} className="pb-1 text-center text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        <div key={w} className="pb-1 text-center text-micro font-bold uppercase tracking-wider text-muted-foreground">
           {w}
         </div>
       ))}
@@ -187,7 +187,7 @@ function PostFormModal({
             {PLATFORMS.map((p) => {
               const on = f.platforms.includes(p);
               return (
-                <button key={p} type="button" onClick={() => togglePlatform(p)} className={cn("rounded-full border px-3 py-1.5 text-[11px] font-semibold capitalize transition-colors", on ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
+                <button key={p} type="button" onClick={() => togglePlatform(p)} className={cn("rounded-full border px-3 py-1.5 text-meta font-semibold capitalize transition-colors", on ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground")}>
                   {p}
                 </button>
               );
@@ -219,7 +219,7 @@ function PostFormModal({
             </Select>
           </Field>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Create post"} />
       </form>
     </Modal>
@@ -280,7 +280,7 @@ function EventModal({ open, onClose, clients, onSaved }: { open: boolean; onClos
             ))}
           </Select>
         </Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add event" />
       </form>
     </Modal>
@@ -346,7 +346,7 @@ function TargetModal({ open, onClose, period, onSaved }: { open: boolean; onClos
             <Input value={period} disabled />
           </Field>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add target" />
       </form>
     </Modal>
@@ -377,7 +377,7 @@ function CurrentCell({ t, onSaved }: { t: any; onSaved: () => void }) {
       onChange={(e) => setV(e.target.value)}
       onBlur={save}
       onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-      className="w-20 rounded-lg border border-border bg-card px-2 py-1 text-[12px] tabular-nums outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+      className="w-20 rounded-lg border border-border bg-card px-2 py-1 text-body tabular-nums outline-none transition-colors focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
     />
   );
 }
@@ -479,10 +479,10 @@ export default function CalendarPage() {
 
   const statRow = (
     <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-      <StatCard label="Scheduled" value={stats?.scheduled ?? 0} sub="posts queued" icon={<CalendarClock className="size-5" />} />
-      <StatCard label="Published" value={stats?.published ?? 0} sub={`${stats?.total ?? 0} total`} icon={<CheckCircle2 className="size-5" />} />
-      <StatCard label="Drafts" value={stats?.drafts ?? 0} sub="in progress" icon={<PenLine className="size-5" />} />
-      <StatCard label="Failed" value={stats?.failed ?? 0} sub="needs attention" icon={<AlertTriangle className="size-5" />} />
+      <StatCard label="Scheduled" value={stats?.scheduled ?? 0} sub="posts queued" icon={<CalendarClock className="size-4" />} />
+      <StatCard label="Published" value={stats?.published ?? 0} sub={`${stats?.total ?? 0} total`} icon={<CheckCircle2 className="size-4" />} />
+      <StatCard label="Drafts" value={stats?.drafts ?? 0} sub="in progress" icon={<PenLine className="size-4" />} />
+      <StatCard label="Failed" value={stats?.failed ?? 0} sub="needs attention" icon={<AlertTriangle className="size-4" />} />
     </div>
   );
 
@@ -492,7 +492,7 @@ export default function CalendarPage() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[12.5px] font-medium text-white shadow-xl"
+          className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-body font-medium text-white shadow-xl"
         >
           {flash}
         </motion.div>
@@ -502,7 +502,7 @@ export default function CalendarPage() {
         subtitle="Content calendar, monthly planner and daily targets."
         actions={
           <Btn variant="primary" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" /> New Post
+            <Plus className="size-3.5" /> New Post
           </Btn>
         }
       />
@@ -552,7 +552,7 @@ export default function CalendarPage() {
                       const today = key === todayISO();
                       return (
                         <div key={key} className={cn("min-h-24 rounded-xl border p-1.5", today ? "border-primary/40 bg-primary/5" : "border-border/60")}>
-                          <span className={cn("text-[10.5px] font-semibold tabular-nums", today ? "text-primary" : "text-muted-foreground")}>{d.getDate()}</span>
+                          <span className={cn("text-micro font-semibold tabular-nums", today ? "text-primary" : "text-muted-foreground")}>{d.getDate()}</span>
                           <div className="mt-1 flex flex-col gap-1">
                             {dayPosts.slice(0, 3).map((p) => (
                               <button
@@ -562,10 +562,10 @@ export default function CalendarPage() {
                                 className="flex items-center gap-1 rounded-md bg-muted/60 px-1.5 py-0.5 text-left transition-colors hover:bg-muted"
                               >
                                 <span className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[p.status])} />
-                                <span className="truncate text-[10px] font-medium">{p.title}</span>
+                                <span className="truncate text-micro font-medium">{p.title}</span>
                               </button>
                             ))}
-                            {dayPosts.length > 3 && <span className="px-1 text-[9.5px] text-muted-foreground">+{dayPosts.length - 3} more</span>}
+                            {dayPosts.length > 3 && <span className="px-1 text-micro text-muted-foreground">+{dayPosts.length - 3} more</span>}
                           </div>
                         </div>
                       );
@@ -574,7 +574,7 @@ export default function CalendarPage() {
                 </CardShell>
                 <div className="min-w-0">
                   <SectionTitle title="All posts" subtitle={`${posts?.length ?? 0} total`} />
-                  <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{(posts ?? []).length} posts</span>}>
+                  <TableShell footer={<span className="text-meta text-muted-foreground">{(posts ?? []).length} posts</span>}>
                     <div className="max-h-[560px] overflow-y-auto">
                       <table className="w-full">
                         <THead>
@@ -590,12 +590,12 @@ export default function CalendarPage() {
                             <Tr key={p.id} index={i}>
                               <Td className="max-w-48">
                                 <p className="truncate font-medium">{p.title}</p>
-                                {p.project && <p className="text-[10.5px] text-muted-foreground">{p.project.name}</p>}
+                                {p.project && <p className="text-micro text-muted-foreground">{p.project.name}</p>}
                               </Td>
                               <Td>
                                 <div className="flex gap-1">
                                   {(p.platforms ?? []).map((pl: string) => (
-                                    <span key={pl} className={cn("rounded-md px-1 py-0.5 text-[9px] font-bold uppercase", PLATFORM_STYLES[pl] ?? "bg-muted text-muted-foreground")}>
+                                    <span key={pl} className={cn("rounded-md px-1 py-0.5 text-micro font-bold uppercase", PLATFORM_STYLES[pl] ?? "bg-muted text-muted-foreground")}>
                                       {PLATFORM_SHORT[pl] ?? pl.slice(0, 2)}
                                     </span>
                                   ))}
@@ -604,7 +604,7 @@ export default function CalendarPage() {
                               <Td className="text-muted-foreground">{formatDay(p.scheduledDate)}</Td>
                               <Td className="text-muted-foreground">{p.scheduledTime ?? "—"}</Td>
                               <Td>
-                                <span className={cn("inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium capitalize", POST_STATUS_STYLES[p.status] ?? "bg-muted text-muted-foreground ring-1 ring-border")}>
+                                <span className={cn("inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-meta font-medium capitalize", POST_STATUS_STYLES[p.status] ?? "bg-muted text-muted-foreground ring-1 ring-border")}>
                                   {label(p.status)}
                                 </span>
                               </Td>
@@ -648,10 +648,10 @@ export default function CalendarPage() {
                 <div className="mb-3 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CalendarRange className="size-4 text-primary" />
-                    <h3 className="text-[15px] font-heading font-semibold">Monthly Planner</h3>
+                    <h3 className="text-section font-heading font-semibold">Monthly Planner</h3>
                   </div>
                   <Btn variant="primary" onClick={() => setEventOpen(true)}>
-                    <Plus className="size-4" /> Add Event
+                    <Plus className="size-3.5" /> Add Event
                   </Btn>
                 </div>
                 <MonthNav anchor={eventMonth} setAnchor={setEventMonth} label={eventMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" })} />
@@ -664,22 +664,22 @@ export default function CalendarPage() {
                     const today = key === todayISO();
                     return (
                       <div key={key} className={cn("min-h-20 rounded-xl border p-1.5", today ? "border-primary/40 bg-primary/5" : "border-border/60")}>
-                        <span className={cn("text-[10.5px] font-semibold tabular-nums", today ? "text-primary" : "text-muted-foreground")}>{d.getDate()}</span>
+                        <span className={cn("text-micro font-semibold tabular-nums", today ? "text-primary" : "text-muted-foreground")}>{d.getDate()}</span>
                         <div className="mt-1 flex flex-col gap-1">
                           {dayEvents.slice(0, 3).map((ev) => (
-                            <button key={ev.id} title={ev.title} className={cn("group flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-left text-[10px] font-medium", TYPE_STYLES[ev.type] ?? "border-border bg-muted text-muted-foreground")}>
+                            <button key={ev.id} title={ev.title} className={cn("group flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-left text-micro font-medium", TYPE_STYLES[ev.type] ?? "border-border bg-muted text-muted-foreground")}>
                               <span className="truncate">{ev.title}</span>
-                              {ev.client && <span className="hidden truncate text-[9px] opacity-70 lg:inline">· {ev.client.companyName}</span>}
+                              {ev.client && <span className="hidden truncate text-micro opacity-70 lg:inline">· {ev.client.companyName}</span>}
                               <X
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   del(`/calendar/events/${ev.id}`, ev.title, "Event deleted");
                                 }}
-                                className="size-2.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                                className="size-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
                               />
                             </button>
                           ))}
-                          {dayEvents.length > 3 && <span className="px-1 text-[9.5px] text-muted-foreground">+{dayEvents.length - 3} more</span>}
+                          {dayEvents.length > 3 && <span className="px-1 text-micro text-muted-foreground">+{dayEvents.length - 3} more</span>}
                         </div>
                       </div>
                     );
@@ -692,14 +692,14 @@ export default function CalendarPage() {
                   {upcoming.length === 0 && <EmptyState title="No events yet" hint="Add a campaign, meeting or milestone" />}
                   {upcoming.map((ev) => (
                     <div key={ev.id} className="flex items-center gap-3 rounded-xl border border-border/60 px-3 py-2.5 transition-colors hover:bg-muted/40">
-                      <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide", TYPE_STYLES[ev.type] ?? "border-border bg-muted text-muted-foreground")}>
+                      <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-micro font-bold uppercase tracking-wide", TYPE_STYLES[ev.type] ?? "border-border bg-muted text-muted-foreground")}>
                         {label(ev.type)}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] font-semibold">{ev.title}</p>
-                        {ev.client && <p className="truncate text-[10.5px] text-muted-foreground">{ev.client.companyName}</p>}
+                        <p className="truncate text-body font-semibold">{ev.title}</p>
+                        {ev.client && <p className="truncate text-micro text-muted-foreground">{ev.client.companyName}</p>}
                       </div>
-                      <span className="shrink-0 text-[11px] font-medium tabular-nums text-muted-foreground">{formatDay(ev.date)}</span>
+                      <span className="shrink-0 text-meta font-medium tabular-nums text-muted-foreground">{formatDay(ev.date)}</span>
                       <button onClick={() => del(`/calendar/events/${ev.id}`, ev.title, "Event deleted")} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400">
                         <Trash2 className="size-3.5" />
                       </button>
@@ -717,11 +717,11 @@ export default function CalendarPage() {
           <FadeIn>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <Target className="size-4 text-primary" />
+                <Target className="size-3.5 text-primary" />
                 <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="!w-40" />
               </div>
               <Btn variant="primary" onClick={() => setTargetOpen(true)}>
-                <Plus className="size-4" /> Add Target
+                <Plus className="size-3.5" /> Add Target
               </Btn>
             </div>
           </FadeIn>
@@ -733,8 +733,8 @@ export default function CalendarPage() {
           ) : (
             <FadeIn delay={0.05}>
               <div className="grid grid-cols-2 gap-4">
-                <StatCard label="Total Targets" value={targets.length} sub={period} icon={<Target className="size-5" />} />
-                <StatCard label="Avg Progress" value={`${avgProgress}%`} sub="across all targets" icon={<TrendingUp className="size-5" />} />
+                <StatCard label="Total Targets" value={targets.length} sub={period} icon={<Target className="size-4" />} />
+                <StatCard label="Avg Progress" value={`${avgProgress}%`} sub="across all targets" icon={<TrendingUp className="size-4" />} />
               </div>
             </FadeIn>
           )}
@@ -742,7 +742,7 @@ export default function CalendarPage() {
             <SkeletonBlock className="h-72" />
           ) : (
             <FadeIn delay={0.1}>
-              <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{targets.length} targets · {period}</span>}>
+              <TableShell footer={<span className="text-meta text-muted-foreground">{targets.length} targets · {period}</span>}>
                 <table className="w-full">
                   <THead>
                     <Th>Title</Th>
@@ -756,7 +756,7 @@ export default function CalendarPage() {
                   <tbody>
                     {targets.length === 0 && (
                       <Tr index={0}>
-                        <Td className="py-10 text-center text-[12px] text-muted-foreground">
+                        <Td className="py-10 text-center text-body text-muted-foreground">
                           No targets for this period — add one to get started
                         </Td>
                       </Tr>
@@ -767,10 +767,10 @@ export default function CalendarPage() {
                         <Tr key={t.id} index={i}>
                           <Td>
                             <p className="font-medium">{t.title}</p>
-                            {t.period && <p className="text-[10.5px] text-muted-foreground">{t.period}</p>}
+                            {t.period && <p className="text-micro text-muted-foreground">{t.period}</p>}
                           </Td>
                           <Td>
-                            <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold capitalize", CATEGORY_STYLES[t.category] ?? "bg-muted text-muted-foreground")}>
+                            <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold capitalize", CATEGORY_STYLES[t.category] ?? "bg-muted text-muted-foreground")}>
                               {label(t.category ?? "—")}
                             </span>
                           </Td>
@@ -784,7 +784,7 @@ export default function CalendarPage() {
                               <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
                                 <div className={cn("h-full rounded-full transition-all", barTone(pct))} style={{ width: `${pct}%` }} />
                               </div>
-                              <span className="text-[10.5px] font-bold tabular-nums text-muted-foreground">{pct}%</span>
+                              <span className="text-micro font-bold tabular-nums text-muted-foreground">{pct}%</span>
                             </div>
                           </Td>
                           <Td>

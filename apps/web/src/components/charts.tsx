@@ -22,7 +22,7 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const tooltipStyle = {
   backgroundColor: "oklch(0.18 0.02 285)",
   borderRadius: 12,
-  fontSize: 12,
+  fontSize: 12.5,
   color: "#fff",
   border: "1px solid oklch(1 0 0 / 10%)",
   boxShadow: "0 16px 40px -8px rgba(0,0,0,.4)",
@@ -58,10 +58,10 @@ export function RevenueAreaChart({
 }) {
   return (
     <div>
-      <div className="mb-1.5 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-muted-foreground">
+      <div className="mb-1.5 flex flex-wrap items-center gap-3 text-micro font-semibold text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-3.5 rounded-full bg-[var(--chart-1)]" /> Invoiced</span>
         <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-3.5 rounded-full bg-[var(--chart-3)]" /> Collected</span>
-        <span className="ml-auto text-[9.5px] font-medium opacity-70">hover a point for exact amounts</span>
+        <span className="ml-auto text-micro font-medium opacity-70">hover a point for exact amounts</span>
       </div>
       <ResponsiveContainer width="100%" height={height}>
         <AreaChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: -14 }}>
@@ -78,13 +78,13 @@ export function RevenueAreaChart({
         <CartesianGrid {...gridStyle} vertical={false} />
         <XAxis
           dataKey="month"
-          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+          tick={{ fontSize: 11.5, fill: "var(--muted-foreground)" }}
           axisLine={false}
           tickLine={false}
           interval="preserveStartEnd"
         />
         <YAxis
-          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+          tick={{ fontSize: 11.5, fill: "var(--muted-foreground)" }}
           axisLine={false}
           tickLine={false}
           width={52}
@@ -176,8 +176,8 @@ export function PaymentDonut({
           </PieChart>
         </ResponsiveContainer>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Collected</span>
-          <span className="text-sm font-heading font-bold tabular-nums">
+          <span className="text-micro uppercase tracking-wider text-muted-foreground">Collected</span>
+          <span className="text-body font-heading font-bold tabular-nums">
             ৳{(total / 100000).toFixed(2)}L
           </span>
         </div>
@@ -186,10 +186,10 @@ export function PaymentDonut({
         {chartData.map((d) => (
           <div key={d.method} className="flex min-w-0 items-center gap-2">
             <span className="size-2.5 shrink-0 rounded-full" style={{ background: d.fill }} />
-            <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate text-body text-muted-foreground">
               {METHOD_LABELS[d.method] ?? d.method.replace(/_/g, " ")}
             </span>
-            <span className="shrink-0 text-[12.5px] font-bold tabular-nums">
+            <span className="shrink-0 text-body font-bold tabular-nums">
               {Math.round((d.amount / total) * 100)}%
             </span>
           </div>
@@ -209,9 +209,9 @@ export function StageBarChart({
 }) {
   return (
     <div>
-      <div className="mb-1.5 flex flex-wrap items-center gap-3 text-[10px] font-semibold text-muted-foreground">
+      <div className="mb-1.5 flex flex-wrap items-center gap-3 text-micro font-semibold text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3.5 rounded-full bg-gradient-to-r from-[var(--chart-1)] to-[var(--chart-2)]" /> Pipeline value (৳)</span>
-        <span className="ml-auto text-[9.5px] font-medium opacity-70">hover a bar for the lead count &amp; value</span>
+        <span className="ml-auto text-micro font-medium opacity-70">hover a bar for the lead count &amp; value</span>
       </div>
       <ResponsiveContainer width="100%" height={height}>
         <BarChart
@@ -229,7 +229,7 @@ export function StageBarChart({
         <CartesianGrid {...gridStyle} horizontal={false} />
         <XAxis
           type="number"
-          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+          tick={{ fontSize: 11.5, fill: "var(--muted-foreground)" }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v: number) => (v >= 100000 ? `৳${(v / 100000).toFixed(1)}L` : `${v}`)}
@@ -238,7 +238,7 @@ export function StageBarChart({
           type="category"
           dataKey="stage"
           width={92}
-          tick={{ fontSize: 12, fill: "var(--muted-foreground)" }}
+          tick={{ fontSize: 11.5, fill: "var(--muted-foreground)" }}
           axisLine={false}
           tickLine={false}
         />
@@ -284,10 +284,10 @@ export function SourceBarChart({
   const max = Math.max(1, ...rows.map((d) => d.count));
   return (
     <div className="flex flex-col gap-3 overflow-y-auto pr-1" style={{ height }}>
-      {rows.length === 0 && <p className="text-[11.5px] text-muted-foreground">No data yet</p>}
+      {rows.length === 0 && <p className="text-meta text-muted-foreground">No data yet</p>}
       {rows.map((d, i) => (
         <motion.div key={d.name} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06, duration: 0.45, ease: EASE }} className="group flex items-center gap-3" title={`${d.name}: ${d.count} leads · ${d.won} won · ${d.conversionRate ?? 0}% · ৳${(d.value / 100000).toFixed(2)}L`}>
-          <span className="w-32 shrink-0 truncate text-[11.5px] font-semibold text-muted-foreground capitalize">{srcLabel(d.name)}</span>
+          <span className="w-32 shrink-0 truncate text-meta font-semibold text-muted-foreground capitalize">{srcLabel(d.name)}</span>
           <div className="relative h-6 flex-1 overflow-hidden rounded-lg bg-muted/50">
             <motion.div
               className="absolute inset-y-0 left-0 rounded-lg bg-gradient-to-r from-primary/70 to-primary shadow-sm"
@@ -302,9 +302,9 @@ export function SourceBarChart({
               transition={{ delay: 0.25 + i * 0.06, duration: 0.7, ease: EASE }}
             />
           </div>
-          <span className="w-8 shrink-0 text-right text-[12.5px] font-bold tabular-nums">{d.count}</span>
-          <span className="w-12 shrink-0 text-right text-[11px] font-bold tabular-nums text-emerald-400">{d.conversionRate != null ? `${d.conversionRate}%` : "—"}</span>
-          <span className="w-14 shrink-0 text-right text-[10.5px] font-semibold tabular-nums text-muted-foreground">৳{(d.value / 100000).toFixed(1)}L</span>
+          <span className="w-8 shrink-0 text-right text-body font-bold tabular-nums">{d.count}</span>
+          <span className="w-12 shrink-0 text-right text-meta font-bold tabular-nums text-emerald-400">{d.conversionRate != null ? `${d.conversionRate}%` : "—"}</span>
+          <span className="w-14 shrink-0 text-right text-micro font-semibold tabular-nums text-muted-foreground">৳{(d.value / 100000).toFixed(1)}L</span>
         </motion.div>
       ))}
     </div>
@@ -325,12 +325,12 @@ export function HealthBarChart({
         <CartesianGrid {...gridStyle} vertical={false} />
         <XAxis
           dataKey="name"
-          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+          tick={{ fontSize: 11.5, fill: "var(--muted-foreground)" }}
           axisLine={false}
           tickLine={false}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+          tick={{ fontSize: 11.5, fill: "var(--muted-foreground)" }}
           axisLine={false}
           tickLine={false}
           allowDecimals={false}
@@ -362,13 +362,13 @@ export function UtilizationHeatmap({
       <table className="border-separate border-spacing-1.5">
         <thead>
           <tr>
-            <th className="pr-3 pb-1 text-left text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+            <th className="pr-3 pb-1 text-left text-micro font-medium uppercase tracking-widest text-muted-foreground">
               Team
             </th>
             {weeks.map((w) => (
               <th
                 key={w}
-                className="pb-1 text-center text-[10px] font-medium uppercase tracking-wider text-muted-foreground"
+                className="pb-1 text-center text-micro font-medium uppercase tracking-wider text-muted-foreground"
               >
                 {w}
               </th>
@@ -378,12 +378,12 @@ export function UtilizationHeatmap({
         <tbody>
           {rows.map((r) => (
             <tr key={r.name}>
-              <td className="pr-3 text-[12px] text-muted-foreground">{r.name}</td>
+              <td className="pr-3 text-body text-muted-foreground">{r.name}</td>
               {r.values.map((v, i) => (
                 <td key={i} title={`${r.name} · W${i + 1} — ${Math.round(v * 100)}%`}>
                   <span
                     className={cn(
-                      "block aspect-square w-9 rounded-lg text-center text-[10px] font-bold leading-[36px] text-white shadow-sm transition-transform duration-200 hover:scale-110",
+                      "block aspect-square w-9 rounded-lg text-center text-micro font-bold leading-[36px] text-white shadow-sm transition-transform duration-200 hover:scale-110",
                       v >= 1.05
                         ? "bg-rose-500"
                         : v >= 0.95
@@ -442,7 +442,7 @@ export function ProgressRing({
           transform="rotate(-90 32 32)"
         />
       </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-[13px] font-bold tabular-nums">
+      <span className="absolute inset-0 flex items-center justify-center text-body-lg font-bold tabular-nums">
         {label ?? `${Math.round(value)}%`}
       </span>
     </div>

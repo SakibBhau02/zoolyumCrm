@@ -140,13 +140,13 @@ export function Topbar() {
       </button>
 
       <div className="hidden items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 md:flex">
-        <span className="text-[11.5px] text-muted-foreground">{dateLabel}</span>
+        <span className="text-meta text-muted-foreground">{dateLabel}</span>
         <span className="h-3 w-px bg-border" />
-        <span className="text-[11.5px] font-medium text-foreground">{fiscalLabel}</span>
+        <span className="text-meta font-medium text-foreground">{fiscalLabel}</span>
       </div>
 
       <div ref={searchRef} className="relative w-full max-w-xs sm:w-72">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           value={query}
           onChange={(e) => {
@@ -163,7 +163,7 @@ export function Topbar() {
           }}
           placeholder="Search leads, clients, invoices…"
           aria-label="Search leads, clients, projects, invoices and tasks"
-          className="w-full rounded-xl border border-border bg-card/60 py-2 pl-9 pr-8 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+          className="w-full rounded-xl border border-border bg-card/60 py-2 pl-9 pr-8 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
         />
         {searching && (
           <Loader2 className="absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
@@ -172,7 +172,7 @@ export function Topbar() {
         {searchOpen && query.trim().length >= 2 && (
           <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
             {hits.length === 0 && !searching ? (
-              <p className="px-3 py-3 text-[12px] text-muted-foreground">No matches for “{query.trim()}”.</p>
+              <p className="px-3 py-3 text-body text-muted-foreground">No matches for “{query.trim()}”.</p>
             ) : (
               <ul className="max-h-80 overflow-y-auto py-1">
                 {hits.map((hit) => {
@@ -189,8 +189,8 @@ export function Topbar() {
                           <Icon className="size-3.5" />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12.5px] font-semibold">{hit.title}</span>
-                          <span className="block truncate text-[10.5px] text-muted-foreground">
+                          <span className="block truncate text-body font-semibold">{hit.title}</span>
+                          <span className="block truncate text-micro text-muted-foreground">
                             {meta.label}
                             {hit.subtitle ? ` · ${hit.subtitle}` : ""}
                           </span>
@@ -226,8 +226,8 @@ export function Topbar() {
           >
             <Avatar name={user?.name ?? "Z"} />
             <span className="hidden text-left sm:block">
-              <span className="block text-[12px] font-semibold leading-tight">{user?.name ?? "—"}</span>
-              <span className="block text-[10.5px] leading-tight text-muted-foreground">
+              <span className="block text-body font-semibold leading-tight">{user?.name ?? "—"}</span>
+              <span className="block text-micro leading-tight text-muted-foreground">
                 {user?.role ?? ""}
               </span>
             </span>
@@ -240,15 +240,15 @@ export function Topbar() {
               className="absolute right-0 top-[calc(100%+6px)] z-50 w-56 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-xl"
             >
               <div className="border-b border-border/60 px-3 py-2">
-                <p className="truncate text-[12.5px] font-semibold">{user?.name}</p>
-                <p className="truncate text-[10.5px] text-muted-foreground">{user?.email}</p>
+                <p className="truncate text-body font-semibold">{user?.name}</p>
+                <p className="truncate text-micro text-muted-foreground">{user?.email}</p>
               </div>
               {canPeople && (
                 <Link
                   href="/people/me"
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 text-[12px] font-medium transition-colors hover:bg-muted/60"
+                  className="flex items-center gap-2 px-3 py-2 text-body font-medium transition-colors hover:bg-muted/60"
                 >
                   <User className="size-3.5 text-muted-foreground" /> My space
                 </Link>
@@ -258,7 +258,7 @@ export function Topbar() {
                   href="/control"
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
-                  className="flex items-center gap-2 px-3 py-2 text-[12px] font-medium transition-colors hover:bg-muted/60"
+                  className="flex items-center gap-2 px-3 py-2 text-body font-medium transition-colors hover:bg-muted/60"
                 >
                   <Settings className="size-3.5 text-muted-foreground" /> Admin panel
                 </Link>
@@ -267,7 +267,7 @@ export function Topbar() {
                 type="button"
                 role="menuitem"
                 onClick={logout}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-medium text-rose-500 transition-colors hover:bg-rose-500/10"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-body font-medium text-rose-500 transition-colors hover:bg-rose-500/10"
               >
                 <LogOut className="size-3.5" /> Sign out
               </button>

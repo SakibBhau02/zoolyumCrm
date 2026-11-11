@@ -75,10 +75,10 @@ function EditPayrollModal({ record, onClose, onSaved, notify }: { record: any; o
   const audit: any[] = Array.isArray(record?.auditTrail) ? record.auditTrail : [];
 
   return (
-    <Modal open={!!record} onClose={onClose} title={`Edit payroll — ${record?.employee?.name ?? ""} (${record?.period ?? ""})`} size="lg">
+    <Modal closeOnBackdrop={false} open={!!record} onClose={onClose} title={`Edit payroll — ${record?.employee?.name ?? ""} (${record?.period ?? ""})`} size="lg">
       <form onSubmit={(e) => { e.preventDefault(); void save(false); }} className="flex flex-col gap-4">
         {record?.salaryExpense && (
-          <p className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-[11.5px] text-sky-600 dark:text-sky-300">
+          <p className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-meta text-sky-600 dark:text-sky-300">
             Already posted to finance — saving here updates the salary expense, ledger and bank automatically.
           </p>
         )}
@@ -92,20 +92,20 @@ function EditPayrollModal({ record, onClose, onSaved, notify }: { record: any; o
           <Field label="Unpaid leave deduction"><Input type="number" min={0} step="0.01" value={f.unpaidLeaveDeduction} onChange={(e) => setF({ ...f, unpaidLeaveDeduction: e.target.value })} placeholder="0" /></Field>
         </div>
         <div className="flex items-center justify-between rounded-xl bg-muted/40 px-3 py-2.5">
-          <span className="text-[12px] font-semibold text-muted-foreground">Net pay preview</span>
-          <span className="text-[15px] font-bold tabular-nums">{formatBDT(preview)}</span>
+          <span className="text-body font-semibold text-muted-foreground">Net pay preview</span>
+          <span className="text-section font-bold tabular-nums">{formatBDT(preview)}</span>
         </div>
         {audit.length > 0 && (
           <div className="flex flex-col gap-1">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">History</p>
+            <p className="text-meta font-bold uppercase tracking-wider text-muted-foreground">History</p>
             {audit.slice(-4).map((a: any, i: number) => (
-              <p key={i} className="text-[11.5px] text-muted-foreground">
+              <p key={i} className="text-meta text-muted-foreground">
                 {a.action}{a.after?.netPay != null && ` → ${formatBDT(a.after.netPay)}`} · {a.by ?? "system"} · {a.at ? String(a.at).slice(0, 16).replace("T", " ") : ""}
               </p>
             ))}
           </div>
         )}
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {record?.status !== "PAID" && (
             <Btn variant="outline" onClick={() => void save(true)} disabled={busy}>
@@ -141,10 +141,12 @@ export default function PayrollPage() {
   const jumped = useRef(false);
   useEffect(() => {
     if (jumped.current || loading || !status?.period) return;
-    if ((records ?? []).length === 0 && status.period !== period) {
-      jumped.current = true;
-      setPeriod(status.period);
-    }
+    // The auto-jump is a one-shot courtesy on first paint only. It used to be
+    // re-armed for as long as the current period had records, which snapped the
+    // picker back to the previous month and made "run payroll for a new month"
+    // unreachable.
+    jumped.current = true;
+    if ((records ?? []).length === 0 && status.period !== period) setPeriod(status.period);
   }, [loading, records, status, period]);
 
   const table = useTable<any>(records, { keys: (r) => [r.employee?.name, r.status, r.period], pageSize: 8 });
@@ -178,8 +180,16 @@ export default function PayrollPage() {
     e.preventDefault();
     setRunBusy(true);
     try {
-      await apiFetch("/people/payroll/run", { method: "POST", body: JSON.stringify({ period }) });
-      notify(`Payroll generated for ${period}`);
+      const res = await apiFetch<any>("/people/payroll/run", { method: "POST", body: JSON.stringify({ period }) });
+      const created = res?.createdCount ?? 0;
+      const skipped = res?.skipped ?? 0;
+      notify(
+        res?.warning
+          ? `${created} record(s) created · ${res.warning}`
+          : created === 0
+            ? `Nothing to do — ${skipped} record(s) already exist for ${period}`
+            : `Payroll generated for ${period} · ${created} record(s)${skipped ? ` · ${skipped} already existed` : ""}`
+      );
       setRunOpen(false);
       reload();
     } catch (e2: any) { notify(e2.message ?? "Run failed"); setRunOpen(false); } finally { setRunBusy(false); }
@@ -223,8 +233,8 @@ export default function PayrollPage() {
         ]}
         actions={
           <div className="flex items-center gap-1.5">
-            <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="!w-36 !py-1 text-[11.5px]" />
-            <Btn variant="primary" onClick={() => setRunOpen(true)} className="!px-2.5 !py-1.5 text-[11px]"><Play className="size-3.5" /> Run</Btn>
+            <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="!w-36 !py-1 text-meta" />
+            <Btn variant="primary" onClick={() => setRunOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Play className="size-3.5" /> Run</Btn>
           </div>
         }
       />
@@ -249,7 +259,7 @@ export default function PayrollPage() {
         right={
           selected.length > 0 ? (
             <>
-              <span className="text-[11.5px] font-semibold text-foreground">{selected.length} selected</span>
+              <span className="text-meta font-semibold text-foreground">{selected.length} selected</span>
               <Btn variant="outline" onClick={() => void bulkSetStatus("FINALIZED")} disabled={runBusy} className="!py-1.5">Finalize selected</Btn>
               <Btn variant="primary" onClick={() => void bulkSetStatus("PAID")} disabled={runBusy} className="!py-1.5">Mark paid</Btn>
               <Btn variant="ghost" onClick={() => setSelected([])} className="!py-1.5">Clear</Btn>
@@ -276,7 +286,7 @@ export default function PayrollPage() {
         rows={table.paged.map((r: any, i: number) => (
           <Tr key={r.id} index={i}>
             <Td><RowCheck checked={selected.includes(r.id)} label={`Select ${r.employee?.name ?? "record"}`} onChange={(v) => toggle(r.id, v)} /></Td>
-            <Td><div className="flex items-center gap-2.5"><Avatar name={r.employee?.name} /><div><p className="font-medium"><Link href={`/people/attendance/${r.employee?.id}`} className="hover:text-primary hover:underline">{r.employee?.name}</Link></p><p className="text-[11px] text-muted-foreground">{r.employee?.roleTitle}{r.employee?.department ? ` · ${r.employee.department}` : ""}</p></div></div></Td>
+            <Td><div className="flex items-center gap-2.5"><Avatar name={r.employee?.name} /><div><p className="font-medium"><Link href={`/people/attendance/${r.employee?.id}`} className="hover:text-primary hover:underline">{r.employee?.name}</Link></p><p className="text-meta text-muted-foreground">{r.employee?.roleTitle}{r.employee?.department ? ` · ${r.employee.department}` : ""}</p></div></div></Td>
             <Td className="font-semibold tabular-nums">{formatBDT(r.basicSalary != null ? Number(r.basicSalary) : null)}</Td>
             <Td className="tabular-nums text-emerald-600 dark:text-emerald-400">{(Number(r.allowances ?? 0) || Number(r.bonus ?? 0)) ? `+${formatBDT(Number(r.allowances ?? 0) + Number(r.bonus ?? 0))}` : "—"}</Td>
             <Td className="tabular-nums text-amber-600">−{formatBDT(r.lateDeduction != null ? Number(r.lateDeduction) : 0)}</Td>
@@ -287,8 +297,8 @@ export default function PayrollPage() {
             <Td><StatusBadge status={r.status} /></Td>
             <Td>
               <div className="flex items-center gap-1.5">
-                <Link href={`/people/payroll/payslip/${r.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11.5px] font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"><FileText className="size-3.5" /> Payslip</Link>
-                <button onClick={() => setEditRec(r)} title="Edit amounts" aria-label={`Edit ${r.employee?.name ?? "record"}`} className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50"><Pencil className="size-4" /></button>
+                <Link href={`/people/payroll/payslip/${r.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-meta font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"><FileText className="size-3.5" /> Payslip</Link>
+                <button onClick={() => setEditRec(r)} title="Edit amounts" aria-label={`Edit ${r.employee?.name ?? "record"}`} className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50"><Pencil className="size-3.5" /></button>
                 {r.status === "DRAFT" && <Btn variant="outline" onClick={() => setStatus(r, "FINALIZED")}>Finalize</Btn>}
                 {r.status === "FINALIZED" && (
                   <>
@@ -296,10 +306,10 @@ export default function PayrollPage() {
                     <Btn variant="ghost" onClick={() => reopenRec(r)}>Reopen</Btn>
                   </>
                 )}
-                {r.status === "PAID" && <span className="text-[11.5px] text-muted-foreground">—</span>}
-                {r.status === "DRAFT" && <button onClick={() => deleteRec(r)} title="Delete draft" aria-label="Delete draft" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-rose-500/10 hover:text-rose-500 focus-visible:ring-2 focus-visible:ring-rose-500/50"><Trash2 className="size-4" /></button>}
+                {r.status === "PAID" && <span className="text-meta text-muted-foreground">—</span>}
+                {r.status === "DRAFT" && <button onClick={() => deleteRec(r)} title="Delete draft" aria-label="Delete draft" className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-rose-500/10 hover:text-rose-500 focus-visible:ring-2 focus-visible:ring-rose-500/50"><Trash2 className="size-3.5" /></button>}
               </div>
-              {r.salaryExpense && <p className="mt-1 text-[10.5px] text-sky-600 dark:text-sky-300">Posted to finance · <Link href="/capital/expenses" className="font-semibold hover:underline">view expense</Link></p>}
+              {r.salaryExpense && <p className="mt-1 text-micro text-sky-600 dark:text-sky-300">Posted to finance · <Link href="/capital/expenses" className="font-semibold hover:underline">view expense</Link></p>}
             </Td>
           </Tr>
         ))}
@@ -308,9 +318,9 @@ export default function PayrollPage() {
       )}
       </div>
       <EditPayrollModal record={editRec} onClose={() => setEditRec(null)} onSaved={reload} notify={notify} />
-      <Modal open={runOpen} onClose={() => setRunOpen(false)} title="Run payroll">
+      <Modal closeOnBackdrop={false} open={runOpen} onClose={() => setRunOpen(false)} title="Run payroll">
         <form onSubmit={run} className="flex flex-col gap-4">
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="text-body leading-relaxed text-muted-foreground">
             Generate payroll records for <span className="font-semibold text-foreground">{period}</span>? Net pay is calculated from salary minus attendance deductions: late arrivals (per the late ladder), half-day LOP, absent days and unpaid leave. Existing records are kept and re-run for missing employees.
           </p>
           <FormActions busy={runBusy} cancel={() => setRunOpen(false)} submitLabel={`Run payroll — ${period}`} />

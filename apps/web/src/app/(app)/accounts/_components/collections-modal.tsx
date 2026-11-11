@@ -141,23 +141,23 @@ export function CollectionsModal({
         {/* Headline */}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-rose-500/25 bg-rose-500/5 px-3 py-2">
-            <p className="text-[9.5px] font-bold uppercase tracking-wider text-rose-500">Money to collect</p>
-            <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums text-rose-600 dark:text-rose-300">
+            <p className="text-micro font-bold uppercase tracking-wider text-rose-500">Money to collect</p>
+            <p className="mt-0.5 font-heading text-section font-bold tabular-nums text-rose-600 dark:text-rose-300">
               {formatBDT(totals.due)}
             </p>
-            <p className="text-[10px] text-muted-foreground">
+            <p className="text-micro text-muted-foreground">
               {totals.overdueCount} overdue · {unpaidCount} unpaid
             </p>
           </div>
           <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2">
-            <p className="text-[9.5px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-300">Oldest overdue</p>
-            <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{totals.oldest ? `${totals.oldest}d` : "—"}</p>
-            <p className="text-[10px] text-muted-foreground">chase the oldest first</p>
+            <p className="text-micro font-bold uppercase tracking-wider text-amber-600 dark:text-amber-300">Oldest overdue</p>
+            <p className="mt-0.5 font-heading text-section font-bold tabular-nums">{totals.oldest ? `${totals.oldest}d` : "—"}</p>
+            <p className="text-micro text-muted-foreground">chase the oldest first</p>
           </div>
           <div className="col-span-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 sm:col-span-1">
-            <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Work at risk</p>
-            <p className="mt-0.5 font-heading text-[16px] font-bold tabular-nums">{workRows.length}</p>
-            <p className="text-[10px] text-muted-foreground">not moving / delayed</p>
+            <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Work at risk</p>
+            <p className="mt-0.5 font-heading text-section font-bold tabular-nums">{workRows.length}</p>
+            <p className="text-micro text-muted-foreground">not moving / delayed</p>
           </div>
         </div>
 
@@ -169,12 +169,12 @@ export function CollectionsModal({
               type="button"
               onClick={() => setTab(c.id)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors",
+                "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-meta font-bold transition-colors",
                 tab === c.id ? "bg-brand-gradient text-white" : "border border-border bg-card text-muted-foreground hover:text-foreground"
               )}
             >
               {c.label}
-              <span className={cn("rounded-full px-1.5 py-px text-[9px] tabular-nums", tab === c.id ? "bg-white/20" : "bg-muted")}>{c.count}</span>
+              <span className={cn("rounded-full px-1.5 py-px text-micro tabular-nums", tab === c.id ? "bg-white/20" : "bg-muted")}>{c.count}</span>
             </button>
           ))}
           <div className="relative ml-auto w-full max-w-[220px]">
@@ -183,7 +183,7 @@ export function CollectionsModal({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder={tab === "work" ? "Search project or client…" : "Search invoice or client…"}
-              className="w-full rounded-lg border border-border bg-card py-1 pl-8 pr-2.5 text-[11.5px] outline-none placeholder:text-muted-foreground focus:border-primary/40"
+              className="w-full rounded-lg border border-border bg-card py-1 pl-8 pr-2.5 text-meta outline-none placeholder:text-muted-foreground focus:border-primary/40"
             />
           </div>
         </div>
@@ -205,8 +205,8 @@ export function CollectionsModal({
                       <FolderKanban className="size-4" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12px] font-semibold">{p.name}</p>
-                      <p className="truncate text-[10.5px] text-muted-foreground">
+                      <p className="truncate text-body font-semibold">{p.name}</p>
+                      <p className="truncate text-micro text-muted-foreground">
                         {p.client?.companyName ?? "No client"}
                         {p.assignedPm?.name ? ` · PM ${p.assignedPm.name}` : ""}
                         {p.targetEndDate ? ` · due ${formatDate(p.targetEndDate)}` : ""}
@@ -215,24 +215,24 @@ export function CollectionsModal({
                         <div className="h-1 w-24 overflow-hidden rounded-full bg-muted">
                           <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.min(100, Math.max(0, Number(p.progress ?? 0)))}%` }} />
                         </div>
-                        <span className="text-[9.5px] tabular-nums text-muted-foreground">{Number(p.progress ?? 0)}%</span>
-                        {p.riskScore != null && <span className="rounded-full bg-muted px-1.5 py-px text-[9px] font-bold">risk {p.riskScore}</span>}
+                        <span className="text-micro tabular-nums text-muted-foreground">{Number(p.progress ?? 0)}%</span>
+                        {p.riskScore != null && <span className="rounded-full bg-muted px-1.5 py-px text-micro font-bold">risk {p.riskScore}</span>}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5">
                       <StatusBadge status={p.status} />
                       {p.healthStatus && <StatusBadge status={p.healthStatus} />}
                       {p.client?.id && (
-                        <Btn variant="ghost" onClick={() => { onClose(); onOpenClient(p.client.id, "projects"); }} className="!px-2 !py-1 text-[10.5px]">
+                        <Btn variant="ghost" onClick={() => { onClose(); onOpenClient(p.client.id, "projects"); }} className="!px-2 !py-1 text-micro">
                           Client
                         </Btn>
                       )}
                       <Link
                         href={`/flow/${p.id}`}
                         onClick={onClose}
-                        className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-[10.5px] font-bold text-primary transition-colors hover:bg-muted"
+                        className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-micro font-bold text-primary transition-colors hover:bg-muted"
                       >
-                        Open <ExternalLink className="size-3" />
+                        Open <ExternalLink className="size-3.5" />
                       </Link>
                     </div>
                   </div>
@@ -249,19 +249,19 @@ export function CollectionsModal({
               {rows.map(({ inv, balance, grand, paid, days, overdue }) => (
                 <div key={inv.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-2">
                   <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", overdue ? "bg-rose-500/10 text-rose-500" : "bg-sky-500/10 text-sky-500")}>
-                    {overdue ? <AlertTriangle className="size-4" /> : <Wallet className="size-4" />}
+                    {overdue ? <AlertTriangle className="size-3.5" /> : <Wallet className="size-3.5" />}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="truncate text-[12px] font-semibold">{inv.client?.companyName ?? "Unknown client"}</span>
-                      <span className="rounded bg-muted px-1.5 py-px text-[9.5px] font-bold tabular-nums">{inv.invoiceNumber}</span>
+                      <span className="truncate text-body font-semibold">{inv.client?.companyName ?? "Unknown client"}</span>
+                      <span className="rounded bg-muted px-1.5 py-px text-micro font-bold tabular-nums">{inv.invoiceNumber}</span>
                       {overdue && (
-                        <span className={cn("rounded-full border px-1.5 py-px text-[9px] font-bold", ageTone(days))}>
+                        <span className={cn("rounded-full border px-1.5 py-px text-micro font-bold", ageTone(days))}>
                           {days}d overdue
                         </span>
                       )}
                     </div>
-                    <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">
+                    <p className="mt-0.5 truncate text-micro text-muted-foreground">
                       {inv.project?.name ? `${inv.project.name} · ` : ""}
                       issued {formatDate(inv.issueDate)}
                       {inv.dueDate ? ` · due ${formatDate(inv.dueDate)}` : " · no due date"}
@@ -269,19 +269,19 @@ export function CollectionsModal({
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-0.5">
-                    <span className="font-heading text-[13px] font-bold tabular-nums text-rose-600 dark:text-rose-400">{formatBDT(balance)}</span>
+                    <span className="font-heading text-body-lg font-bold tabular-nums text-rose-600 dark:text-rose-400">{formatBDT(balance)}</span>
                     <StatusBadge status={inv.status} />
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <Btn variant="ghost" onClick={() => { onClose(); onOpenClient(inv.clientId ?? inv.client?.id, "invoices"); }} className="!px-2 !py-1 text-[10.5px]">
+                    <Btn variant="ghost" onClick={() => { onClose(); onOpenClient(inv.clientId ?? inv.client?.id, "invoices"); }} className="!px-2 !py-1 text-micro">
                       Client
                     </Btn>
                     <Link
                       href={`/capital/invoices?clientId=${inv.clientId ?? inv.client?.id ?? ""}&inv=${inv.id}`}
                       onClick={onClose}
-                      className="inline-flex items-center gap-1 rounded-lg bg-brand-gradient px-2 py-1 text-[10.5px] font-bold text-white transition-opacity hover:opacity-90"
+                      className="inline-flex items-center gap-1 rounded-lg bg-brand-gradient px-2 py-1 text-micro font-bold text-white transition-opacity hover:opacity-90"
                     >
-                      <FileText className="size-3" /> Invoice
+                      <FileText className="size-3.5" /> Invoice
                     </Link>
                   </div>
                 </div>
@@ -291,11 +291,11 @@ export function CollectionsModal({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
-          <p className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
-            <CalendarClock className="size-3" /> Invoice rows open the exact bill in Capital — payments, installments and reminders live there.
+          <p className="flex items-center gap-1 text-micro text-muted-foreground">
+            <CalendarClock className="size-3.5" /> Invoice rows open the exact bill in Capital — payments, installments and reminders live there.
           </p>
-          <Link href="/capital/invoices?quick=overdue" onClick={onClose} className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
-            All invoices <ArrowRight className="size-3" />
+          <Link href="/capital/invoices?quick=overdue" onClick={onClose} className="inline-flex items-center gap-1 text-meta font-bold text-primary hover:underline">
+            All invoices <ArrowRight className="size-3.5" />
           </Link>
         </div>
       </div>

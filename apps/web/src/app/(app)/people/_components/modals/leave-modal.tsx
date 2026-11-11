@@ -14,11 +14,12 @@ export function LeaveModal({ open, onClose, employees, onSaved }: { open: boolea
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!f.employeeId || !f.startDate || !f.endDate) { setErr("Employee and dates are required"); return; }
+    if (f.endDate < f.startDate) { setErr("End date must be on or after the start date"); return; }
     setBusy(true); setErr(null);
     try { await apiFetch("/people/leave-requests", { method: "POST", body: JSON.stringify({ employeeId: f.employeeId, leaveType: f.leaveType, startDate: f.startDate, endDate: f.endDate }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Request leave">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Request leave">
       <form onSubmit={save} className="flex flex-col gap-4">
         <Field label="Employee *">
           <Select value={f.employeeId} onChange={(e) => setF({ ...f, employeeId: e.target.value })}>
@@ -34,7 +35,7 @@ export function LeaveModal({ open, onClose, employees, onSaved }: { open: boolea
           <Field label="Start date *"><Input type="date" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} /></Field>
           <Field label="End date *"><Input type="date" value={f.endDate} onChange={(e) => setF({ ...f, endDate: e.target.value })} /></Field>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Submit request" />
       </form>
     </Modal>

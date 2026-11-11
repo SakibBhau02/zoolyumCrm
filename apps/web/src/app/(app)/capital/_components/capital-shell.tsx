@@ -13,7 +13,7 @@ export function CapitalFlash() {
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[12.5px] font-medium text-white shadow-xl"
+      className="fixed left-1/2 top-4 z-[70] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-body font-medium text-white shadow-xl"
     >
       {flash}
     </motion.div>
@@ -103,8 +103,16 @@ export function CapitalGlobalModals() {
       <ConfirmModal
         open={!!c.toDelete}
         onClose={() => c.setToDelete(null)}
-        title={c.toDelete?.kind === "invoice" ? "Delete invoice" : "Delete expense"}
-        message={c.toDelete ? `Delete "${c.toDelete.name}"? This cannot be undone.` : ""}
+        title={c.toDelete?.kind === "invoice" ? (c.toDelete.status && c.toDelete.status !== "DRAFT" ? "Void invoice" : "Delete draft invoice") : "Delete expense"}
+        message={
+          c.toDelete
+            ? c.toDelete.kind === "expense"
+              ? `Delete "${c.toDelete.name}"? Its ledger postings are reversed and any cash paid is returned to the bank.`
+              : c.toDelete.status && c.toDelete.status !== "DRAFT"
+                ? `Void "${c.toDelete.name}"? It stays in the ledger as a void document — refund or credit any payments first.`
+                : `Delete draft "${c.toDelete.name}"? This cannot be undone.`
+            : ""
+        }
         busy={c.deleting}
         onConfirm={() => void c.doDelete()}
       />

@@ -296,12 +296,12 @@ export function NotificationsDropdown() {
           if (!open) refresh();
         }}
         className="relative flex size-9 items-center justify-center rounded-xl border border-border bg-card/60 text-muted-foreground transition-colors hover:text-foreground"
-        aria-label="Notifications"
+        aria-label={unread > 0 ? `Notifications, ${unread > 99 ? "99+" : unread} unread` : "Notifications"}
       >
-        <Bell className="size-4" />
+        <Bell className="size-3.5" aria-hidden="true" />
         {unread > 0 && (
           <>
-            <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-white">
+            <span aria-hidden="true" className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-micro font-bold text-white">
               {unread > 99 ? "99+" : unread}
             </span>
             <span className="absolute -right-0.5 -top-0.5 size-2 animate-ping rounded-full bg-primary/60" />
@@ -321,15 +321,15 @@ export function NotificationsDropdown() {
                   {unread > 0 && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-primary ring-2 ring-card" />}
                 </span>
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 text-[13px] font-semibold leading-tight">
+                  <p className="flex items-center gap-1.5 text-body-lg font-semibold leading-tight">
                     Inbox
                     {unread > 0 && (
-                      <span className="rounded-full bg-primary/10 px-1.5 py-px text-[9.5px] font-bold tabular-nums text-primary">
+                      <span className="rounded-full bg-primary/10 px-1.5 py-px text-micro font-bold tabular-nums text-primary">
                         {unread > 99 ? "99+" : unread} new
                       </span>
                     )}
                   </p>
-                  <p className="mt-0.5 truncate text-[10.5px] text-muted-foreground">
+                  <p className="mt-0.5 truncate text-micro text-muted-foreground">
                     {unread > 0 ? `${summary?.today ?? 0} today · ${summary?.thisWeek ?? 0} this week` : "You're all caught up"}
                   </p>
                 </div>
@@ -356,7 +356,7 @@ export function NotificationsDropdown() {
                   aria-label="Mark all read"
                   className="flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
                 >
-                  <CheckCheck className="size-3.5" />
+                  <CheckCheck className="size-4" />
                 </button>
               </div>
             </div>
@@ -365,14 +365,14 @@ export function NotificationsDropdown() {
           {showPrefs ? (
             <div className="scroll-slim min-h-0 flex-1 overflow-y-auto p-2">
               <div className="sticky top-0 z-10 -mx-2 flex items-center justify-between gap-2 bg-card px-4 pb-2 pt-1.5">
-                <p className="text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground">Delivery per type</p>
-                <p className="flex items-center gap-3 text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <span className="flex items-center gap-1"><Bell className="size-2.5" /> In-app</span>
-                  <span className="flex items-center gap-1"><Send className="size-2.5" /> Telegram</span>
+                <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Delivery per type</p>
+                <p className="flex items-center gap-3 text-micro font-semibold uppercase tracking-wide text-muted-foreground">
+                  <span className="flex items-center gap-1"><Bell className="size-3.5" /> In-app</span>
+                  <span className="flex items-center gap-1"><Send className="size-3.5" /> Telegram</span>
                 </p>
               </div>
               {prefTypes.length === 0 && (
-                <p className="px-2 py-6 text-center text-[12px] text-muted-foreground">Loading preferences…</p>
+                <p className="px-2 py-6 text-center text-body text-muted-foreground">Loading preferences…</p>
               )}
               {prefTypes.map((type) => {
                 const push = prefFor(type, "PUSH")?.enabled ?? true;
@@ -381,12 +381,12 @@ export function NotificationsDropdown() {
                 const Icon = m.icon;
                 return (
                   <div key={type} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/50">
-                    <span className="flex min-w-0 items-center gap-2 text-[12px] font-medium">
+                    <span className="flex min-w-0 items-center gap-2 text-body font-medium">
                       <span className={cn("flex size-6 shrink-0 items-center justify-center rounded-md", m.tone)}>
                         <Icon className="size-3" />
                       </span>
                       <span className="truncate">{m.label}</span>
-                      <span className="hidden truncate font-mono text-[9.5px] text-muted-foreground sm:inline">{type}</span>
+                      <span className="hidden truncate font-mono text-micro text-muted-foreground sm:inline">{type}</span>
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       <button
@@ -422,7 +422,7 @@ export function NotificationsDropdown() {
                       key={f}
                       onClick={() => setFilter(f)}
                       className={cn(
-                        "rounded-[10px] px-2.5 py-1 text-[11px] font-semibold capitalize transition-all",
+                        "rounded-[10px] px-2.5 py-1 text-meta font-semibold capitalize transition-all",
                         filter === f ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                       )}
                     >
@@ -437,9 +437,9 @@ export function NotificationsDropdown() {
                     setShowPrefs(false);
                     router.push("/notifications");
                   }}
-                  className="group ml-auto flex items-center gap-0.5 rounded-lg px-1.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/10"
+                  className="group ml-auto flex items-center gap-0.5 rounded-lg px-1.5 py-1 text-meta font-semibold text-primary transition-colors hover:bg-primary/10"
                 >
-                  View all <ChevronRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+                  View all <ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                 </button>
               </div>
               <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/60 px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -450,7 +450,7 @@ export function NotificationsDropdown() {
                       key={c.id}
                       onClick={() => setCategory(c.id)}
                       className={cn(
-                        "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10.5px] font-semibold transition-colors",
+                        "flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-micro font-semibold transition-colors",
                         category === c.id
                           ? "bg-foreground text-background shadow-sm"
                           : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -458,7 +458,7 @@ export function NotificationsDropdown() {
                     >
                       {c.label}
                       {count > 0 && (
-                        <span className={cn("rounded-full px-1 text-[9px] font-bold tabular-nums", category === c.id ? "bg-background/20" : "bg-primary/15 text-primary")}>
+                        <span className={cn("rounded-full px-1 text-micro font-bold tabular-nums", category === c.id ? "bg-background/20" : "bg-primary/15 text-primary")}>
                           {count}
                         </span>
                       )}
@@ -486,19 +486,19 @@ export function NotificationsDropdown() {
                   {!loading && items.length === 0 && (
                     <div className="flex flex-col items-center gap-2 px-4 py-12 text-center">
                       <span className="flex size-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-inset ring-primary/15">
-                        <CheckCheck className="size-5 text-primary" />
+                        <CheckCheck className="size-4 text-primary" />
                       </span>
-                      <p className="mt-1 text-[12.5px] font-semibold">{filter === "unread" ? "All caught up" : "No notifications"}</p>
-                      <p className="max-w-[16rem] text-[11px] leading-relaxed text-muted-foreground">
+                      <p className="mt-1 text-body font-semibold">{filter === "unread" ? "All caught up" : "No notifications"}</p>
+                      <p className="max-w-[16rem] text-meta leading-relaxed text-muted-foreground">
                         {filter === "unread" ? "Nothing needs your attention right now." : "Assignments, payments and approvals will appear here."}
                       </p>
                     </div>
                   )}
                   {grouped.map(([bucket, rows]) => (
                     <div key={bucket}>
-                      <p className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/40 bg-card px-4 py-1.5 text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <p className="sticky top-0 z-10 flex items-center gap-2 border-b border-border/40 bg-card px-4 py-1.5 text-micro font-bold uppercase tracking-widest text-muted-foreground">
                         <span>{bucket}</span>
-                        <span className="rounded-full bg-muted px-1.5 text-[9px] font-bold tabular-nums text-muted-foreground/80">{rows.length}</span>
+                        <span className="rounded-full bg-muted px-1.5 text-micro font-bold tabular-nums text-muted-foreground/80">{rows.length}</span>
                       </p>
                       {rows.map((n) => {
                         const m = typeMeta(n.type);
@@ -517,11 +517,11 @@ export function NotificationsDropdown() {
                             </span>
                             <button onClick={() => openItem(n)} className="min-w-0 flex-1 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
                               <p className="flex items-center gap-1.5">
-                                <span className={cn("truncate text-[12.5px] leading-snug", n.isRead ? "font-medium" : "font-semibold")}>{n.title}</span>
+                                <span className={cn("truncate text-body leading-snug", n.isRead ? "font-medium" : "font-semibold")}>{n.title}</span>
                                 {!n.isRead && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
                               </p>
-                              <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">{n.message}</p>
-                              <p className="mt-1.5 flex items-center gap-1.5 text-[9.5px] text-muted-foreground/70">
+                              <p className="mt-0.5 line-clamp-2 text-meta leading-snug text-muted-foreground">{n.message}</p>
+                              <p className="mt-1.5 flex items-center gap-1.5 text-micro text-muted-foreground/70">
                                 <span>{timeAgo(n.createdAt)}</span>
                                 <span className="size-0.5 rounded-full bg-current" />
                                 <span className="font-semibold uppercase tracking-wide">{m.label}</span>
@@ -541,7 +541,7 @@ export function NotificationsDropdown() {
                                   aria-label="Mark read"
                                   className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                                 >
-                                  <Check className="size-3" />
+                                  <Check className="size-3.5" />
                                 </button>
                               )}
                               <button
@@ -550,7 +550,7 @@ export function NotificationsDropdown() {
                                 aria-label="Delete notification"
                                 className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"
                               >
-                                <Trash2 className="size-3" />
+                                <Trash2 className="size-3.5" />
                               </button>
                             </div>
                           </div>
@@ -563,11 +563,11 @@ export function NotificationsDropdown() {
               <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 bg-muted/20 px-4 py-2.5">
                 <button
                   onClick={() => { setShowPrefs(true); if (!prefs.length) loadPrefs(); }}
-                  className="flex items-center gap-1.5 rounded-lg text-[10.5px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                  className="flex items-center gap-1.5 rounded-lg text-micro font-semibold text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  <SlidersHorizontal className="size-3" /> Preferences
+                  <SlidersHorizontal className="size-3.5" /> Preferences
                 </button>
-                <p className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <p className="flex items-center gap-1.5 text-micro text-muted-foreground">
                   <span className="size-0.5 rounded-full bg-current" />
                   {summary?.thisWeek ?? 0} this week
                 </p>

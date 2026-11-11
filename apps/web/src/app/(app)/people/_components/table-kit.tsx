@@ -65,11 +65,11 @@ export function TableToolbar({
             value={q}
             onChange={(e) => onQ(e.target.value)}
             placeholder={placeholder}
-            className="w-full rounded-xl border border-border bg-card py-1.5 pl-9 pr-3 text-[12px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-xl border border-border bg-card py-1.5 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
           />
         </div>
       )}
-      {count && <span className="text-[11.5px] text-muted-foreground">{count}</span>}
+      {count && <span className="text-meta text-muted-foreground">{count}</span>}
       {right && <div className="ml-auto flex flex-wrap items-center gap-2">{right}</div>}
     </div>
   );
@@ -95,7 +95,7 @@ export function Pager({
   const to = Math.min((page + 1) * pageSize, total);
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 px-1 py-2">
-      <p className="text-[11.5px] text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         {from}–{to} of {total} {label}
       </p>
       {pages > 1 && (
@@ -122,7 +122,7 @@ export function Pager({
                 onClick={() => onPage(n)}
                 aria-current={n === page ? "page" : undefined}
                 className={cn(
-                  "min-w-7 rounded-lg px-1.5 py-1 text-[11px] font-bold tabular-nums transition-colors",
+                  "min-w-7 rounded-lg px-1.5 py-1 text-meta font-bold tabular-nums transition-colors",
                   n === page ? "bg-brand-gradient text-white" : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
@@ -130,7 +130,7 @@ export function Pager({
               </button>
             );
           })}
-          {pages > 5 && <span className="px-1 text-[11px] text-muted-foreground">…</span>}
+          {pages > 5 && <span className="px-1 text-meta text-muted-foreground">…</span>}
           <button
             onClick={() => onPage(Math.min(pages - 1, page + 1))}
             disabled={page >= pages - 1}

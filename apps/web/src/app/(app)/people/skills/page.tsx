@@ -53,7 +53,7 @@ export default function SkillsPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search a skill or department…"
-            className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
           />
         </div>
       </div>
@@ -66,7 +66,7 @@ export default function SkillsPage() {
           error={error}
           onRetry={reload}
           skeleton={6}
-          footer={<span className="text-[11.5px] text-muted-foreground">{rows.length} of {totalSkills} skills</span>}
+          footer={<span className="text-meta text-muted-foreground">{rows.length} of {totalSkills} skills</span>}
           cols={["Skill", "Coverage", "Departments", "Avg time with the team", "People"]}
           rows={rows.map((s: any, i: number) => (
             <Tr key={s.skill} index={i}>
@@ -76,27 +76,27 @@ export default function SkillsPage() {
                   <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
                     <div className={cn("h-full rounded-full", (s.count ?? 0) >= 3 ? "bg-emerald-500" : (s.count ?? 0) === 2 ? "bg-amber-400" : "bg-rose-500")} style={{ width: `${Math.min((s.count ?? 0) / Math.max(1, deepest?.count ?? 1), 1) * 100}%` }} />
                   </div>
-                  <span className="text-[11.5px] font-bold tabular-nums">{s.count ?? 0}</span>
+                  <span className="text-meta font-bold tabular-nums">{s.count ?? 0}</span>
                 </div>
               </Td>
               <Td>
                 <span className="flex flex-wrap gap-1">
-                  {(s.departments ?? []).length === 0 && <span className="text-[11px] text-muted-foreground">—</span>}
+                  {(s.departments ?? []).length === 0 && <span className="text-meta text-muted-foreground">—</span>}
                   {(s.departments ?? []).map((d: string) => (
-                    <span key={d} className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">{d}</span>
+                    <span key={d} className="rounded-full bg-muted px-2 py-0.5 text-micro font-medium text-muted-foreground">{d}</span>
                   ))}
                 </span>
               </Td>
               <Td className="tabular-nums text-muted-foreground">{s.avgExperience != null ? `${s.avgExperience} yr` : "—"}</Td>
               <Td>
                 <span className="flex flex-wrap gap-1.5">
-                  {(s.employees ?? []).length === 0 && <span className="text-[11px] text-muted-foreground">—</span>}
+                  {(s.employees ?? []).length === 0 && <span className="text-meta text-muted-foreground">—</span>}
                   {(s.employees ?? []).slice(0, 5).map((name: string) => (
-                    <span key={name} className="flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-[10.5px] font-medium text-muted-foreground">
+                    <span key={name} className="flex items-center gap-1 rounded-full bg-muted/60 px-2 py-0.5 text-micro font-medium text-muted-foreground">
                       <Avatar name={name} size="size-4" />{name}
                     </span>
                   ))}
-                  {(s.employees ?? []).length > 5 && <span className="text-[10.5px] text-muted-foreground">+{(s.employees ?? []).length - 5}</span>}
+                  {(s.employees ?? []).length > 5 && <span className="text-micro text-muted-foreground">+{(s.employees ?? []).length - 5}</span>}
                 </span>
               </Td>
             </Tr>

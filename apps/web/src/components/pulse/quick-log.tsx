@@ -141,7 +141,7 @@ export function QuickLogModal({
             <Avatar name={lead.name} />
             <span className="min-w-0">
               <span className="block truncate">Log a touch</span>
-              <span className="block truncate text-[12.5px] font-normal text-muted-foreground">
+              <span className="block truncate text-body font-normal text-muted-foreground">
                 {lead.name}
                 {lead.company ? ` · ${lead.company}` : ""}
               </span>
@@ -166,7 +166,7 @@ export function QuickLogModal({
                   type="button"
                   onClick={() => setOutcome(o.value)}
                   className={cn(
-                    "rounded-xl border px-2 py-2 text-[12.5px] font-semibold transition-colors",
+                    "rounded-xl border px-2 py-2 text-body font-semibold transition-colors",
                     outcome === o.value ? tone(o.tone) : "border-border bg-card text-muted-foreground hover:border-primary/30 hover:text-foreground"
                   )}
                 >
@@ -191,10 +191,10 @@ export function QuickLogModal({
         </Field>
 
         <div className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-3.5">
-          <p className="flex items-center gap-1.5 text-[11px] font-bold tracking-wider text-primary uppercase">
+          <p className="flex items-center gap-1.5 text-meta font-bold tracking-wider text-primary uppercase">
             <CalendarClock className="size-3.5" /> Next step
           </p>
-          <p className="mt-1 text-[12.5px] text-muted-foreground">
+          <p className="mt-1 text-body text-muted-foreground">
             {lead?.nextFollowUpAt
               ? "This replaces the current plan if it is earlier."
               : "No step is planned — pick one so this lead does not go dark."}
@@ -212,7 +212,7 @@ export function QuickLogModal({
                 type="button"
                 onClick={() => setNextMode(o.key)}
                 className={cn(
-                  "rounded-full border px-2.5 py-1 text-[12px] font-bold transition-colors",
+                  "rounded-full border px-2.5 py-1 text-body font-bold transition-colors",
                   nextMode === o.key
                     ? "border-primary/40 bg-primary/10 text-primary"
                     : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -256,13 +256,13 @@ export function QuickLogModal({
           )}
         </div>
 
-        {err && <p className="text-[13px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body-lg font-medium text-rose-400">{err}</p>}
 
         <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-4">
-          <div className="flex min-w-0 items-center gap-2 text-[12px] text-muted-foreground">
+          <div className="flex min-w-0 items-center gap-2 text-body text-muted-foreground">
             {lead?.contactPhone ? (
               <a href={`tel:${lead.contactPhone.replace(/[^+\d]/g, "")}`} className="inline-flex items-center gap-1 hover:text-foreground">
-                <Phone className="size-3" /> Call first
+                <Phone className="size-3.5" /> Call first
               </a>
             ) : null}
             {lead?.contactPhone ? (
@@ -272,7 +272,7 @@ export function QuickLogModal({
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-emerald-500 hover:text-emerald-400"
               >
-                <MessageCircle className="size-3" /> WhatsApp
+                <MessageCircle className="size-3.5" /> WhatsApp
               </a>
             ) : null}
           </div>
@@ -291,8 +291,8 @@ export function QuickLogModal({
             </Btn>
           </div>
         </div>
-        <p className="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
-          <Sparkles className="size-3 text-primary" />
+        <p className="flex items-center gap-1.5 text-meta text-muted-foreground">
+          <Sparkles className="size-3.5 text-primary" />
           Saving records the touch, refreshes the lead score and puts the next step in Today.
         </p>
       </div>

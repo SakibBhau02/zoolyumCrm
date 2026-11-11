@@ -318,7 +318,7 @@ function InvoicingSection({ settings, busy, onSave }: any) {
       </div>
       <div className="flex items-center gap-3">
         <Field label="Accent color"><ColorInput value={draft.accentColor ?? "#7C3AED"} onChange={(v) => set("accentColor", v)} /></Field>
-        <p className="pt-6 text-[12px] text-muted-foreground">Accent used for headings and totals on generated PDFs</p>
+        <p className="pt-6 text-body text-muted-foreground">Accent used for headings and totals on generated PDFs</p>
       </div>
       <Field label="Payment terms text"><Textarea value={draft.paymentTermsText ?? ""} onChange={(e) => set("paymentTermsText", e.target.value)} /></Field>
       <Field label="Default notes"><Textarea value={draft.defaultNotes ?? ""} onChange={(e) => set("defaultNotes", e.target.value)} /></Field>
@@ -353,8 +353,8 @@ function FinanceSection({ settings, busy, onSave }: any) {
       </div>
 
       <div className="rounded-xl border border-border/60 p-3.5">
-        <p className="text-[11.5px] font-semibold text-muted-foreground">Dollar desk</p>
-        <p className="mb-2.5 text-[10.5px] text-muted-foreground">
+        <p className="text-meta font-semibold text-muted-foreground">Dollar desk</p>
+        <p className="mb-2.5 text-micro text-muted-foreground">
           The cost rate used to calculate profit when a client buys dollars. Each sale keeps the rate it was recorded with, so changing this never rewrites past profit.
         </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -368,14 +368,14 @@ function FinanceSection({ settings, busy, onSave }: any) {
             />
           </Field>
           <div className="flex items-end">
-            <p className="rounded-xl bg-muted/40 px-3 py-2 text-[10.5px] text-muted-foreground">
+            <p className="rounded-xl bg-muted/40 px-3 py-2 text-micro text-muted-foreground">
               Sell ৳4,500 for $30 at cost ৳130 → cost ৳3,900, profit ৳600 (13.3% margin).
             </p>
           </div>
         </div>
       </div>
       <div className="rounded-xl border border-border/60 p-3.5">
-        <p className="mb-2.5 text-[11.5px] font-semibold text-muted-foreground">Payment methods</p>
+        <p className="mb-2.5 text-meta font-semibold text-muted-foreground">Payment methods</p>
         <div className="flex flex-col gap-2">
           {(draft.paymentMethods ?? []).map((m: any, i: number) => (
             <div key={i} className="flex items-center gap-2.5">
@@ -390,7 +390,7 @@ function FinanceSection({ settings, busy, onSave }: any) {
         </Btn>
       </div>
       <div className="rounded-xl border border-border/60 p-3.5">
-        <p className="mb-2.5 text-[11.5px] font-semibold text-muted-foreground">Tax configurations</p>
+        <p className="mb-2.5 text-meta font-semibold text-muted-foreground">Tax configurations</p>
         <div className="flex flex-col gap-2">
           {(draft.taxConfigs ?? []).map((t: any, i: number) => (
             <div key={t.id ?? i} className="flex items-center gap-2.5">
@@ -398,7 +398,7 @@ function FinanceSection({ settings, busy, onSave }: any) {
               <Input type="number" step="0.5" value={t.rate ?? 0} onChange={(e) => patchTax(i, { rate: Number(e.target.value) })} className="!w-24" />
               <div className="flex items-center gap-1.5">
                 <Toggle checked={!!t.isDefault} onChange={(v) => patchTax(i, { isDefault: v })} />
-                <span className="text-[10.5px] font-medium text-muted-foreground">default</span>
+                <span className="text-micro font-medium text-muted-foreground">default</span>
               </div>
               <DelBtn onClick={() => patch({ taxConfigs: draft.taxConfigs.filter((_: any, j: number) => j !== i) })} />
             </div>
@@ -563,18 +563,18 @@ function ScoringLinkSection() {
             ["Explainability", "Each score carries a factor breakdown, so anyone can see why it is what it is."],
           ].map(([title, desc]) => (
             <div key={title} className="rounded-xl border border-border/60 bg-background px-3 py-2.5">
-              <p className="text-[11.5px] font-bold">{title}</p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">{desc}</p>
+              <p className="text-meta font-bold">{title}</p>
+              <p className="mt-0.5 text-meta text-muted-foreground">{desc}</p>
             </div>
           ))}
         </div>
         <Link
           href="/control/scoring"
-          className="inline-flex h-9 w-fit items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[12px] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+          className="inline-flex h-9 w-fit items-center gap-1.5 rounded-lg bg-primary px-3.5 text-body font-semibold text-primary-foreground transition-opacity hover:opacity-90"
         >
           <HeartPulse className="size-3.5" /> Open the scoring engine
         </Link>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           The old weight table lived here but the engine never read it. It has been replaced by the page above,
           which drives the actual calculation, the history snapshots and the nightly recompute.
         </p>
@@ -613,14 +613,14 @@ function TasksSection({ settings, busy, onSave }: any) {
     >
       <div className="flex flex-wrap items-center gap-2">
         {statuses.map((s, i) => (
-          <span key={`${s}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1.5 text-[12px] font-medium">
+          <span key={`${s}-${i}`} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1.5 text-body font-medium">
             {s}
             <button type="button" onClick={() => setStatuses(statuses.filter((_, j) => j !== i))} className="text-muted-foreground transition-colors hover:text-rose-400">
-              <X className="size-3" />
+              <X className="size-3.5" />
             </button>
           </span>
         ))}
-        {statuses.length === 0 && <p className="text-[12px] text-muted-foreground">No custom statuses</p>}
+        {statuses.length === 0 && <p className="text-body text-muted-foreground">No custom statuses</p>}
       </div>
       <div className="flex items-center gap-2">
         <Input value={newStatus} onChange={(e) => setNewStatus(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())} placeholder="New status…" className="max-w-xs" />
@@ -628,8 +628,8 @@ function TasksSection({ settings, busy, onSave }: any) {
       </div>
       <div className="flex items-center justify-between rounded-xl border border-border/60 px-3.5 py-3">
         <div>
-          <p className="text-[12.5px] font-semibold">Auto-assign from templates</p>
-          <p className="text-[11px] text-muted-foreground">Automatically generate tasks when a deal enters the pipeline</p>
+          <p className="text-body font-semibold">Auto-assign from templates</p>
+          <p className="text-meta text-muted-foreground">Automatically generate tasks when a deal enters the pipeline</p>
         </div>
         <Toggle checked={automation} onChange={setAutomation} />
       </div>
@@ -666,7 +666,7 @@ function NotificationsSection({ settings, busy, onSave }: any) {
           {chans.map((c) => (
             <div key={c.key} className="flex items-center gap-1.5">
               <Toggle checked={!!r[c.key]} onChange={(v) => patch(i, { [c.key]: v })} />
-              <span className="text-[10.5px] font-medium text-muted-foreground">{c.label}</span>
+              <span className="text-micro font-medium text-muted-foreground">{c.label}</span>
             </div>
           ))}
           <DelBtn onClick={() => setRows(rows.filter((_: any, j: number) => j !== i))} />
@@ -716,8 +716,8 @@ function EmailTemplatesSection({ settings, busy, onSave, notify }: any) {
         {templates.map((t, i) => (
           <div key={t.id} className="flex items-center gap-3 rounded-xl border border-border/60 px-3.5 py-2.5">
             <div className="min-w-0 flex-1">
-              <p className="text-[12.5px] font-semibold">{t.name}</p>
-              <p className="truncate text-[11px] text-muted-foreground">{t.subject || "No subject"}</p>
+              <p className="text-body font-semibold">{t.name}</p>
+              <p className="truncate text-meta text-muted-foreground">{t.subject || "No subject"}</p>
             </div>
             <Btn variant="ghost" onClick={() => openEdit(i)}><Pencil className="size-3.5" /> Edit</Btn>
             <DelBtn onClick={() => persist(templates.filter((_: any, j: number) => j !== i))} />
@@ -920,8 +920,8 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {/* Dark Logo */}
             <div className="flex flex-col gap-2">
-              <p className="text-[12px] font-semibold">Dark Logo</p>
-              <p className="text-[11px] text-muted-foreground">Shown on light backgrounds</p>
+              <p className="text-body font-semibold">Dark Logo</p>
+              <p className="text-meta text-muted-foreground">Shown on light backgrounds</p>
               <div
                 onDragOver={(e) => { e.preventDefault(); setDragDark(true); }}
                 onDragLeave={() => setDragDark(false)}
@@ -936,9 +936,9 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
                 {darkPreview ? (
                   <img src={darkPreview} alt="Dark Logo preview" className="max-h-20 max-w-full object-contain" />
                 ) : (
-                  <span className="text-[11.5px] text-muted-foreground">Drop image or click to upload</span>
+                  <span className="text-meta text-muted-foreground">Drop image or click to upload</span>
                 )}
-                {uploadingDark && <span className="text-[11px] text-muted-foreground">Uploading…</span>}
+                {uploadingDark && <span className="text-meta text-muted-foreground">Uploading…</span>}
               </div>
               <input
                 ref={darkInputRef}
@@ -954,8 +954,8 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
 
             {/* Light Logo */}
             <div className="flex flex-col gap-2">
-              <p className="text-[12px] font-semibold">Light Logo</p>
-              <p className="text-[11px] text-muted-foreground">Shown on dark / sidebar backgrounds</p>
+              <p className="text-body font-semibold">Light Logo</p>
+              <p className="text-meta text-muted-foreground">Shown on dark / sidebar backgrounds</p>
               <div
                 onDragOver={(e) => { e.preventDefault(); setDragLight(true); }}
                 onDragLeave={() => setDragLight(false)}
@@ -971,9 +971,9 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
                 {lightPreview ? (
                   <img src={lightPreview} alt="Light Logo preview" className="max-h-20 max-w-full object-contain" />
                 ) : (
-                  <span className="text-[11.5px] text-muted-foreground">Drop image or click to upload</span>
+                  <span className="text-meta text-muted-foreground">Drop image or click to upload</span>
                 )}
-                {uploadingLight && <span className="text-[11px] text-muted-foreground">Uploading…</span>}
+                {uploadingLight && <span className="text-meta text-muted-foreground">Uploading…</span>}
               </div>
               <input
                 ref={lightInputRef}
@@ -1004,7 +1004,7 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-[11.5px] font-semibold text-muted-foreground">Gradient preview</span>
+            <span className="text-meta font-semibold text-muted-foreground">Gradient preview</span>
             <div
               className="h-12 rounded-xl border border-border/60"
               style={{ background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})` }}
@@ -1133,10 +1133,10 @@ function InvoiceCompanyProfileSection({ notify }: { notify: (msg: string) => voi
             <Field label="Signer title"><Input value={f.authorizedSignerTitle} onChange={(e) => set("authorizedSignerTitle", e.target.value)} placeholder="Managing Director" /></Field>
           </div>
           <div className="flex flex-col gap-2">
-            <p className="text-[12px] font-semibold">Signature image</p>
+            <p className="text-body font-semibold">Signature image</p>
             <div className="flex items-center gap-3">
               <div className="flex h-20 w-56 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-card">
-                {sigPreview ? <img src={sigPreview} alt="Signature preview" className="max-h-full object-contain" /> : <span className="text-[11px] text-muted-foreground">No signature — cursive fallback prints</span>}
+                {sigPreview ? <img src={sigPreview} alt="Signature preview" className="max-h-full object-contain" /> : <span className="text-meta text-muted-foreground">No signature — cursive fallback prints</span>}
               </div>
               <div className="flex flex-col gap-2">
                 <input ref={sigInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleSigFile(file); e.target.value = ""; }} />
@@ -1146,7 +1146,7 @@ function InvoiceCompanyProfileSection({ notify }: { notify: (msg: string) => voi
             </div>
           </div>
 
-          <p className="text-[12px] font-semibold">Default payment instructions</p>
+          <p className="text-body font-semibold">Default payment instructions</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Method">
               <Select value={f.payMethod} onChange={(e) => set("payMethod", e.target.value)}>
@@ -1181,7 +1181,7 @@ function SignatureTips() {
         title="Signature & invoice artwork tips"
         subtitle="These settings drive the downloaded PDF and the browser print view"
       />
-      <ul className="mt-2 flex flex-col gap-2 text-[12px] leading-relaxed text-muted-foreground">
+      <ul className="mt-2 flex flex-col gap-2 text-body leading-relaxed text-muted-foreground">
         <li>• Upload a transparent PNG cropped tight around the signature — it is scaled into a 40 × 13 mm slot without stretching.</li>
         <li>• The signer name and title print under the rule, centred on the same vertical axis as the image.</li>
         <li>• Leave “Signature image” empty to print the cursive “Authorized Representative” fallback instead.</li>
@@ -1224,7 +1224,7 @@ function SecuritySection({ settings, busy, onSave }: any) {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/20 p-3.5">
-        <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Password requirements</p>
+        <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Password requirements</p>
         <RuleToggle label="Require a number" desc="At least one digit" value={!!d.requireNumber} onChange={(v) => set("requireNumber", v)} />
         <RuleToggle label="Require an uppercase letter" desc="At least one A–Z character" value={!!d.requireUppercase} onChange={(v) => set("requireUppercase", v)} />
         <RuleToggle label="Require a symbol" desc="At least one punctuation character" value={!!d.requireSymbol} onChange={(v) => set("requireSymbol", v)} />
@@ -1238,7 +1238,7 @@ function SecuritySection({ settings, busy, onSave }: any) {
         />
       </Field>
 
-      <p className="flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11.5px] leading-relaxed text-amber-600 dark:text-amber-400">
+      <p className="flex items-start gap-2 rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-meta leading-relaxed text-amber-600 dark:text-amber-400">
         <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
         Resetting a password, changing a role or deactivating a user revokes that user&apos;s existing session immediately.
       </p>
@@ -1278,14 +1278,14 @@ function EmailSection({ settings, busy, onSave }: any) {
         <div className="flex flex-col justify-end gap-2">
           <RuleToggle label="Use TLS/SSL" desc="Secure connection on connect" value={!!d.secure} onChange={(v) => set("secure", v)} />
           {settings.email.hasSmtpPassword && (
-            <label className="flex cursor-pointer items-center gap-2 text-[11.5px] font-medium text-rose-500">
+            <label className="flex cursor-pointer items-center gap-2 text-meta font-medium text-rose-500">
               <input type="checkbox" checked={clear} onChange={(e) => setClear(e.target.checked)} className="size-3.5 accent-rose-500" />
               Remove stored password
             </label>
           )}
         </div>
       </div>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-meta text-muted-foreground">
         Passwords are encrypted at rest (AES-256-GCM) and are never returned by the API.
       </p>
     </SectionShell>
@@ -1295,10 +1295,10 @@ function EmailSection({ settings, busy, onSave }: any) {
 function HealthCard({ label, value, tone = "text-foreground", icon }: { label: string; value: React.ReactNode; tone?: string; icon: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border/60 bg-card px-3 py-2.5">
-      <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">
         {icon} {label}
       </p>
-      <p className={cn("mt-1 text-[13px] font-bold tabular-nums", tone)}>{value}</p>
+      <p className={cn("mt-1 text-body-lg font-bold tabular-nums", tone)}>{value}</p>
     </div>
   );
 }
@@ -1342,7 +1342,7 @@ function SystemSection({ settings, busy, onSave }: any) {
           )}
         </div>
 
-        <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Feature flags</p>
+        <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Feature flags</p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {[
             { key: "clientPortal", label: "Client portal", desc: "Public portal and approvals" },
@@ -1370,29 +1370,29 @@ function SystemSection({ settings, busy, onSave }: any) {
           </Btn>
         </div>
         {hError ? (
-          <p className="text-[12px] font-medium text-rose-400">{hError}</p>
+          <p className="text-body font-medium text-rose-400">{hError}</p>
         ) : hLoading && !health ? (
           <SkeletonBlock className="h-28" />
         ) : health ? (
           <>
             <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4">
-              <HealthCard label="API" value={health.ok ? "Operational" : "Degraded"} tone={health.ok ? "text-emerald-500" : "text-rose-500"} icon={health.ok ? <CheckCircle2 className="size-3" /> : <XCircle className="size-3" />} />
-              <HealthCard label="Database" value={`${health.database?.latencyMs ?? "—"} ms`} tone={health.database?.ok ? "text-emerald-500" : "text-rose-500"} icon={<Database className="size-3" />} />
-              <HealthCard label="Cache" value={health.cache === "redis" ? "Redis" : health.cache === "memory" ? "In-memory" : "Down"} tone={health.cache === "redis" ? "text-emerald-500" : health.cache === "memory" ? "text-amber-500" : "text-rose-500"} icon={<Activity className="size-3" />} />
-              <HealthCard label="Uptime" value={uptime} icon={<Server className="size-3" />} />
-              <HealthCard label="Memory" value={`${health.process?.rssMb ?? 0} MB`} icon={<HardDrive className="size-3" />} />
-              <HealthCard label="Uploads" value={`${health.storage?.uploadsMb ?? 0} MB`} icon={<HardDrive className="size-3" />} />
-              <HealthCard label="Users" value={`${health.counts?.activeUsers ?? 0}/${health.counts?.users ?? 0} active`} icon={<Users className="size-3" />} />
-              <HealthCard label="Audit events" value={health.counts?.auditEvents ?? 0} icon={<ShieldCheck className="size-3" />} />
+              <HealthCard label="API" value={health.ok ? "Operational" : "Degraded"} tone={health.ok ? "text-emerald-500" : "text-rose-500"} icon={health.ok ? <CheckCircle2 className="size-3.5" /> : <XCircle className="size-3.5" />} />
+              <HealthCard label="Database" value={`${health.database?.latencyMs ?? "—"} ms`} tone={health.database?.ok ? "text-emerald-500" : "text-rose-500"} icon={<Database className="size-4" />} />
+              <HealthCard label="Cache" value={health.cache === "redis" ? "Redis" : health.cache === "memory" ? "In-memory" : "Down"} tone={health.cache === "redis" ? "text-emerald-500" : health.cache === "memory" ? "text-amber-500" : "text-rose-500"} icon={<Activity className="size-4" />} />
+              <HealthCard label="Uptime" value={uptime} icon={<Server className="size-4" />} />
+              <HealthCard label="Memory" value={`${health.process?.rssMb ?? 0} MB`} icon={<HardDrive className="size-4" />} />
+              <HealthCard label="Uploads" value={`${health.storage?.uploadsMb ?? 0} MB`} icon={<HardDrive className="size-4" />} />
+              <HealthCard label="Users" value={`${health.counts?.activeUsers ?? 0}/${health.counts?.users ?? 0} active`} icon={<Users className="size-4" />} />
+              <HealthCard label="Audit events" value={health.counts?.auditEvents ?? 0} icon={<ShieldCheck className="size-4" />} />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-              <HealthCard label="Node" value={health.process?.node ?? "—"} icon={<Server className="size-3" />} />
-              <HealthCard label="Environment" value={health.environment ?? "—"} icon={<Globe2 className="size-3" />} />
-              <HealthCard label="Version" value={health.version ?? "—"} icon={<Tags className="size-3" />} />
-              <HealthCard label="Clients / projects" value={`${health.counts?.clients ?? 0} / ${health.counts?.projects ?? 0}`} icon={<Building2 className="size-3" />} />
+              <HealthCard label="Node" value={health.process?.node ?? "—"} icon={<Server className="size-4" />} />
+              <HealthCard label="Environment" value={health.environment ?? "—"} icon={<Globe2 className="size-4" />} />
+              <HealthCard label="Version" value={health.version ?? "—"} icon={<Tags className="size-4" />} />
+              <HealthCard label="Clients / projects" value={`${health.counts?.clients ?? 0} / ${health.counts?.projects ?? 0}`} icon={<Building2 className="size-4" />} />
             </div>
             {health.lastAudit && (
-              <p className="mt-3 text-[11px] text-muted-foreground">
+              <p className="mt-3 text-meta text-muted-foreground">
                 Last audit event: <span className="font-medium text-foreground">{health.lastAudit.action}</span> on {health.lastAudit.entityType} · {timeAgo(health.lastAudit.timestamp)}
               </p>
             )}
@@ -1425,8 +1425,8 @@ function AppearanceSection({ settings, busy, onSave }: any) {  const [draft, set
       {rows.map((r) => (
         <div key={r.key} className="flex items-center justify-between rounded-xl border border-border/60 px-3.5 py-3">
           <div>
-            <p className="text-[12.5px] font-semibold">{r.title}</p>
-            <p className="text-[11px] text-muted-foreground">{r.desc}</p>
+            <p className="text-body font-semibold">{r.title}</p>
+            <p className="text-meta text-muted-foreground">{r.desc}</p>
           </div>
           <Toggle checked={!!draft[r.key]} onChange={(v) => set(r.key, v)} />
         </div>
@@ -1507,8 +1507,8 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
 
       <div className="flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 px-3.5 py-3">
         <div>
-          <p className="text-[12.5px] font-semibold">Rule engine</p>
-          <p className="text-[11px] text-muted-foreground">Master switch. Off = every lead is accepted exactly as typed.</p>
+          <p className="text-body font-semibold">Rule engine</p>
+          <p className="text-meta text-muted-foreground">Master switch. Off = every lead is accepted exactly as typed.</p>
         </div>
         <Toggle checked={!!rules.enabled} onChange={(v) => set("enabled", v)} />
       </div>
@@ -1523,10 +1523,10 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
           <RuleToggle label="Company required" desc="B2B: every lead must belong to a business" value={rules.intake.requireCompany.enabled} onChange={(v) => set("intake.requireCompany.enabled", v)} />
           <RuleToggle label="Real source required" desc="Warns when the source is left as “Other”" value={rules.intake.requireSource.enabled} onChange={(v) => set("intake.requireSource.enabled", v)} />
           <RuleToggle label="Deal size required" desc="No estimate = no pipeline forecast" value={rules.intake.requireDealSize.enabled} onChange={(v) => set("intake.requireDealSize.enabled", v)}>
-            <Input type="number" min={0} value={rules.intake.requireDealSize.minAmount ?? 0} onChange={(e) => set("intake.requireDealSize.minAmount", Number(e.target.value))} className="!w-28 !py-1 text-[11.5px]" />
+            <Input type="number" min={0} value={rules.intake.requireDealSize.minAmount ?? 0} onChange={(e) => set("intake.requireDealSize.minAmount", Number(e.target.value))} className="!w-28 !py-1 text-meta" />
           </RuleToggle>
           <RuleToggle label="Notes required" desc="At least a line of context from the first call" value={rules.intake.requireNotes.enabled} onChange={(v) => set("intake.requireNotes.enabled", v)}>
-            <Input type="number" min={0} value={rules.intake.requireNotes.minChars ?? 20} onChange={(e) => set("intake.requireNotes.minChars", Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
+            <Input type="number" min={0} value={rules.intake.requireNotes.minChars ?? 20} onChange={(e) => set("intake.requireNotes.minChars", Number(e.target.value))} className="!w-20 !py-1 text-meta" />
           </RuleToggle>
         </RuleCard>
 
@@ -1544,10 +1544,10 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
           <RuleToggle label="Include converted clients" desc="Warn when an old customer comes back" value={rules.duplicates.includeConverted.enabled} onChange={(v) => set("duplicates.includeConverted.enabled", v)} />
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[12px] font-semibold">Lookback window</p>
-              <p className="text-[10.5px] text-muted-foreground">How far back to search (0 = whole database)</p>
+              <p className="text-body font-semibold">Lookback window</p>
+              <p className="text-micro text-muted-foreground">How far back to search (0 = whole database)</p>
             </div>
-            <Input type="number" min={0} value={rules.duplicates.lookbackDays ?? 180} onChange={(e) => set("duplicates.lookbackDays", Number(e.target.value))} className="!w-24 !py-1 text-[11.5px]" />
+            <Input type="number" min={0} value={rules.duplicates.lookbackDays ?? 180} onChange={(e) => set("duplicates.lookbackDays", Number(e.target.value))} className="!w-24 !py-1 text-meta" />
           </div>
         </RuleCard>
 
@@ -1555,10 +1555,10 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
         <RuleCard title="Ownership & routing" hint="Nobody should have to ask “whose lead is this?”">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[12px] font-semibold">Assignment</p>
-              <p className="text-[10.5px] text-muted-foreground">How a new lead finds an owner</p>
+              <p className="text-body font-semibold">Assignment</p>
+              <p className="text-micro text-muted-foreground">How a new lead finds an owner</p>
             </div>
-            <Select value={rules.routing.mode} onChange={(e) => set("routing.mode", e.target.value)} className="!w-56 !py-1 text-[11.5px]">
+            <Select value={rules.routing.mode} onChange={(e) => set("routing.mode", e.target.value)} className="!w-56 !py-1 text-meta">
               <option value="VERTICAL_THEN_ROUND_ROBIN">Vertical owner, else round-robin</option>
               <option value="ROUND_ROBIN">Round-robin only</option>
               <option value="CREATOR">Whoever created it</option>
@@ -1567,8 +1567,8 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
           </div>
           {verticalKeys.map((v) => (
             <div key={v} className="flex items-center justify-between gap-3">
-              <p className="text-[12px] font-semibold">{v.charAt(0) + v.slice(1).toLowerCase()} owner</p>
-              <Select value={rules.routing.verticalOwners?.[v] ?? ""} onChange={(e) => set("routing.verticalOwners." + v, e.target.value)} className="!w-44 !py-1 text-[11.5px]">
+              <p className="text-body font-semibold">{v.charAt(0) + v.slice(1).toLowerCase()} owner</p>
+              <Select value={rules.routing.verticalOwners?.[v] ?? ""} onChange={(e) => set("routing.verticalOwners." + v, e.target.value)} className="!w-44 !py-1 text-meta">
                 <option value="">Use round-robin</option>
                 {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
               </Select>
@@ -1576,27 +1576,27 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
           ))}
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[12px] font-semibold">Fallback owner</p>
-              <p className="text-[10.5px] text-muted-foreground">Used when nobody is in the rotation</p>
+              <p className="text-body font-semibold">Fallback owner</p>
+              <p className="text-micro text-muted-foreground">Used when nobody is in the rotation</p>
             </div>
-            <Select value={rules.routing.fallbackUserId ?? ""} onChange={(e) => set("routing.fallbackUserId", e.target.value)} className="!w-44 !py-1 text-[11.5px]">
+            <Select value={rules.routing.fallbackUserId ?? ""} onChange={(e) => set("routing.fallbackUserId", e.target.value)} className="!w-44 !py-1 text-meta">
               <option value="">Creator</option>
               {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </Select>
           </div>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[12px] font-semibold">Auto follow-up</p>
-              <p className="text-[10.5px] text-muted-foreground">Creates the first call task N hours after intake</p>
+              <p className="text-body font-semibold">Auto follow-up</p>
+              <p className="text-micro text-muted-foreground">Creates the first call task N hours after intake</p>
             </div>
             <div className="flex items-center gap-2">
-              <Input type="number" min={0} value={rules.routing.autoFollowUpHours ?? 0} onChange={(e) => set("routing.autoFollowUpHours", Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
-              <span className="text-[11px] text-muted-foreground">hrs</span>
+              <Input type="number" min={0} value={rules.routing.autoFollowUpHours ?? 0} onChange={(e) => set("routing.autoFollowUpHours", Number(e.target.value))} className="!w-20 !py-1 text-meta" />
+              <span className="text-meta text-muted-foreground">hrs</span>
             </div>
           </div>
           <RuleToggle label="Auto-tag by source" desc="facebook, google-ads… so source filters work" value={rules.routing.autoTagSource} onChange={(v) => set("routing.autoTagSource", v)} />
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] font-semibold text-muted-foreground">Round-robin roles:</span>
+            <span className="text-meta font-semibold text-muted-foreground">Round-robin roles:</span>
             {roles.map((r) => {
               const on = (rules.routing.roundRobinRoles ?? []).includes(r);
               return (
@@ -1607,7 +1607,7 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
                     const list: string[] = rules.routing.roundRobinRoles ?? [];
                     set("routing.roundRobinRoles", on ? list.filter((x) => x !== r) : [...list, r]);
                   }}
-                  className={cn("rounded-full border px-2 py-0.5 text-[10.5px] font-semibold", on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}
+                  className={cn("rounded-full border px-2 py-0.5 text-micro font-semibold", on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground")}
                 >
                   {r}
                 </button>
@@ -1620,8 +1620,8 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
         <RuleCard title="Lead scoring" hint="Rank the queue; thresholds drive HOT / COLD">
           <RuleToggle label="Scoring on" desc="Off = every lead scores 0 and temperature stays manual" value={rules.scoring.enabled} onChange={(v) => set("scoring.enabled", v)} />
           <div className="flex items-center justify-between gap-3">
-            <p className="text-[12px] font-semibold">Base points</p>
-            <Input type="number" value={rules.scoring.base ?? 0} onChange={(e) => set("scoring.base", Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
+            <p className="text-body font-semibold">Base points</p>
+            <Input type="number" value={rules.scoring.base ?? 0} onChange={(e) => set("scoring.base", Number(e.target.value))} className="!w-20 !py-1 text-meta" />
           </div>
           <div className="grid grid-cols-3 gap-2">
             <MiniNum label="Email pts" value={rules.scoring.contact.email} onChange={(v) => set("scoring.contact.email", v)} />
@@ -1632,36 +1632,36 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
             <MiniNum label="Per activity" value={rules.scoring.activity.perActivity} onChange={(v) => set("scoring.activity.perActivity", v)} />
           </div>
           <RuleToggle label="Auto temperature" desc="Score sets HOT / WARM / COLD on save" value={rules.scoring.autoTemperature} onChange={(v) => set("scoring.autoTemperature", v)} />
-          <button type="button" onClick={() => setShowWeights((v) => !v)} className="text-left text-[11.5px] font-bold text-primary hover:underline">
+          <button type="button" onClick={() => setShowWeights((v) => !v)} className="text-left text-meta font-bold text-primary hover:underline">
             {showWeights ? "Hide weight tables" : "Edit weight tables"}
           </button>
           {showWeights && (
             <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-muted/10 p-3">
-              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Source</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Source</p>
               <div className="grid grid-cols-2 gap-1.5">
                 {sourceKeys.map((s) => (
                   <MiniNum key={s} label={s.replace(/_/g, " ")} value={rules.scoring.source[s] ?? 0} onChange={(v) => set("scoring.source." + s, v)} />
                 ))}
               </div>
-              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Priority</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Priority</p>
               <div className="grid grid-cols-2 gap-1.5">
                 {priorityKeys.map((p) => (
                   <MiniNum key={p} label={p} value={rules.scoring.priority[p] ?? 0} onChange={(v) => set("scoring.priority." + p, v)} />
                 ))}
               </div>
-              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Vertical</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Vertical</p>
               <div className="grid grid-cols-2 gap-1.5">
                 {verticalKeys.map((v) => (
                   <MiniNum key={v} label={v === "D2C" ? "D2C" : v.charAt(0) + v.slice(1).toLowerCase()} value={rules.scoring.vertical[v] ?? 0} onChange={(x) => set("scoring.vertical." + v, x)} />
                 ))}
               </div>
-              <p className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Deal size bands</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Deal size bands</p>
               <div className="flex flex-col gap-1.5">
                 {(rules.scoring.dealSizeBands ?? []).map((b: any, i: number) => (
                   <div key={i} className="flex items-center gap-2">
-                    <Input type="number" value={b.min} onChange={(e) => set(`scoring.dealSizeBands.${i}.min`, Number(e.target.value))} className="!w-32 !py-1 text-[11.5px]" />
-                    <span className="text-[11px] text-muted-foreground">+ points</span>
-                    <Input type="number" value={b.points} onChange={(e) => set(`scoring.dealSizeBands.${i}.points`, Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
+                    <Input type="number" value={b.min} onChange={(e) => set(`scoring.dealSizeBands.${i}.min`, Number(e.target.value))} className="!w-32 !py-1 text-meta" />
+                    <span className="text-meta text-muted-foreground">+ points</span>
+                    <Input type="number" value={b.points} onChange={(e) => set(`scoring.dealSizeBands.${i}.points`, Number(e.target.value))} className="!w-20 !py-1 text-meta" />
                   </div>
                 ))}
               </div>
@@ -1679,12 +1679,12 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
           </div>
           <div className="flex items-center justify-between gap-3">
             <div>
-              <p className="text-[12px] font-semibold">Stale after</p>
-              <p className="text-[10.5px] text-muted-foreground">No contact for N days = stale</p>
+              <p className="text-body font-semibold">Stale after</p>
+              <p className="text-micro text-muted-foreground">No contact for N days = stale</p>
             </div>
             <div className="flex items-center gap-2">
-              <Input type="number" min={1} value={rules.sla.staleDays ?? 7} onChange={(e) => set("sla.staleDays", Number(e.target.value))} className="!w-20 !py-1 text-[11.5px]" />
-              <span className="text-[11px] text-muted-foreground">days</span>
+              <Input type="number" min={1} value={rules.sla.staleDays ?? 7} onChange={(e) => set("sla.staleDays", Number(e.target.value))} className="!w-20 !py-1 text-meta" />
+              <span className="text-meta text-muted-foreground">days</span>
             </div>
           </div>
           <RuleToggle label="Nightly audit" desc="03:15 — normalise phones, refresh flags and scores" value={rules.audit.nightly} onChange={(v) => set("audit.nightly", v)} />
@@ -1703,8 +1703,8 @@ function LeadRulesSection({ onSave, notify }: { onSave: (partial: any) => void; 
 function RuleCard({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-border/60 bg-card p-3.5">
-      <p className="text-[12.5px] font-bold">{title}</p>
-      {hint && <p className="mb-2 text-[10.5px] text-muted-foreground">{hint}</p>}
+      <p className="text-body font-bold">{title}</p>
+      {hint && <p className="mb-2 text-micro text-muted-foreground">{hint}</p>}
       <div className="flex flex-col gap-2">{children}</div>
     </div>
   );
@@ -1726,8 +1726,8 @@ function RuleToggle({
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <p className="text-[12px] font-semibold">{label}</p>
-        {desc && <p className="text-[10.5px] text-muted-foreground">{desc}</p>}
+        <p className="text-body font-semibold">{label}</p>
+        {desc && <p className="text-micro text-muted-foreground">{desc}</p>}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {children}
@@ -1739,7 +1739,7 @@ function RuleToggle({
 
 function ActionSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)} className="!w-24 !py-1 text-[11px]">
+    <Select value={value} onChange={(e) => onChange(e.target.value)} className="!w-24 !py-1 text-meta">
       <option value="BLOCK">Block</option>
       <option value="WARN">Warn</option>
     </Select>
@@ -1749,12 +1749,12 @@ function ActionSelect({ value, onChange }: { value: string; onChange: (v: string
 function MiniNum({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
     <label className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-2 py-1">
-      <span className="truncate text-[10.5px] font-semibold capitalize text-muted-foreground">{label.toLowerCase()}</span>
+      <span className="truncate text-micro font-semibold capitalize text-muted-foreground">{label.toLowerCase()}</span>
       <input
         type="number"
         value={value ?? 0}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-14 shrink-0 rounded-md border border-border bg-background px-1.5 py-0.5 text-right text-[11.5px] tabular-nums outline-none focus:border-primary/40"
+        className="w-14 shrink-0 rounded-md border border-border bg-background px-1.5 py-0.5 text-right text-meta tabular-nums outline-none focus:border-primary/40"
       />
     </label>
   );
@@ -1813,7 +1813,7 @@ function SettingsTab({ settings, settingsLoading, settingsError, saving, onSave,
               key={s.id}
               onClick={() => setSection(s.id)}
               className={cn(
-                "flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-[12.5px] font-semibold transition-all",
+                "flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-body font-semibold transition-all",
                 section === s.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
@@ -1895,12 +1895,12 @@ function UserFormModal({ open, onClose, roles, initial, onSaved }: any) {
           <Input type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} placeholder="••••••••" />
         </Field>
         {editing && (
-          <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+          <label className="flex cursor-pointer items-center gap-2 text-body font-medium">
             <input type="checkbox" checked={f.isActive} onChange={(e) => setF({ ...f, isActive: e.target.checked })} className="size-3.5 accent-primary" />
             Account active
           </label>
         )}
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save changes" : "Create user"} />
       </form>
     </Modal>
@@ -1955,7 +1955,7 @@ function ResetPasswordModal({ user, onClose }: any) {
     <Modal open={!!user} onClose={onClose} title={`Reset password — ${user?.name ?? ""}`}>
       {temp ? (
         <div className="flex flex-col gap-4">
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="text-body leading-relaxed text-muted-foreground">
             Share this one-time password with the user. It is shown only once and their old sessions have been revoked.
           </p>
           <div className="flex items-center gap-2">
@@ -1971,7 +1971,7 @@ function ResetPasswordModal({ user, onClose }: any) {
           <Field label="New password" hint="Leave blank to generate a secure temporary password automatically.">
             <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="••••••••" autoFocus autoComplete="new-password" />
           </Field>
-          {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+          {err && <p className="text-body font-medium text-rose-400">{err}</p>}
           <FormActions busy={busy} cancel={onClose} submitLabel="Reset password" />
         </form>
       )}
@@ -2037,7 +2037,7 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search name or email…"
-              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
             />
           </div>
           <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="!w-40">
@@ -2065,7 +2065,7 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
         </CardShell>
       ) : (
         <FadeIn>
-          <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{filtered.length} users</span>}>
+          <TableShell footer={<span className="text-meta text-muted-foreground">{filtered.length} users</span>}>
             <table className="w-full">
               <THead>
                 <Th>User</Th>
@@ -2090,13 +2090,13 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
                         <Avatar name={u.name} />
                         <div className="min-w-0">
                           <p className="truncate font-medium">{u.name}</p>
-                          <p className="truncate text-[10.5px] text-muted-foreground">{u.email}</p>
-                          {u.employee?.roleTitle && <p className="truncate text-[10.5px] text-muted-foreground">{u.employee.roleTitle}</p>}
+                          <p className="truncate text-micro text-muted-foreground">{u.email}</p>
+                          {u.employee?.roleTitle && <p className="truncate text-micro text-muted-foreground">{u.employee.roleTitle}</p>}
                         </div>
                       </div>
                     </Td>
                     <Td>
-                      <Select value={u.roleId ?? ""} onChange={(e) => changeRole(u, e.target.value)} className="!w-32 !py-1 !text-[11px]">
+                      <Select value={u.roleId ?? ""} onChange={(e) => changeRole(u, e.target.value)} className="!w-32 !py-1 !text-meta">
                         {(roles ?? []).map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
                       </Select>
                     </Td>
@@ -2105,15 +2105,15 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
                         <StatusBadge status={u.isActive ? "ACTIVE" : "INACTIVE"} />
                       </button>
                     </Td>
-                    <Td className="text-[11px] text-muted-foreground">
+                    <Td className="text-meta text-muted-foreground">
                       {u.lastLoginAt ? (
                         <span>
                           {formatDate(u.lastLoginAt)}
-                          <span className="block text-[10px]">{timeAgo(u.lastLoginAt)}</span>
+                          <span className="block text-micro">{timeAgo(u.lastLoginAt)}</span>
                         </span>
                       ) : "Never"}
                     </Td>
-                    <Td className="text-[11px] text-muted-foreground">{formatDate(u.createdAt ?? null)}</Td>
+                    <Td className="text-meta text-muted-foreground">{formatDate(u.createdAt ?? null)}</Td>
                     <Td>
                       <div className="flex items-center justify-end gap-1">
                         <Btn variant="ghost" onClick={() => setEditUser(u)} title="Edit user"><Pencil className="size-3.5" /></Btn>
@@ -2133,13 +2133,13 @@ function UsersTab({ users, loading, error, roles, onRefresh, notify }: any) {
       <UserFormModal open={!!editUser} onClose={() => setEditUser(null)} roles={roles} initial={editUser} onSaved={() => { setEditUser(null); notify("User updated"); onRefresh(); }} />
       <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} onDone={() => notify("Password reset")} />
       <Modal open={!!deleteUser} onClose={() => setDeleteUser(null)} title="Delete user?">
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-body leading-relaxed text-muted-foreground">
           {deleteUser?.name} will permanently lose access to the workspace. Tasks, leads and other records they own stay
           in the system. This cannot be undone.
         </p>
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={() => setDeleteUser(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
-          <button onClick={removeUser} disabled={deleting} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02] disabled:opacity-60">
+          <button onClick={() => setDeleteUser(null)} className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
+          <button onClick={removeUser} disabled={deleting} className="rounded-xl bg-rose-500 px-4 py-2 text-body font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02] disabled:opacity-60">
             {deleting ? "Deleting…" : "Delete user"}
           </button>
         </div>
@@ -2212,7 +2212,7 @@ function RoleModal({ open, onClose, role, onSaved, notify }: any) {
         </div>
 
         {isOwner ? (
-          <p className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-[12px] text-primary">
+          <p className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-body text-primary">
             The Owner role always has full access to every module and cannot be edited.
           </p>
         ) : (
@@ -2229,7 +2229,7 @@ function RoleModal({ open, onClose, role, onSaved, notify }: any) {
                   const p = perm(m);
                   return (
                     <Tr key={m} index={i}>
-                      <Td className="text-[12px] font-medium">{label(m)}</Td>
+                      <Td className="text-body font-medium">{label(m)}</Td>
                       {(["view", "edit", "approve"] as const).map((k) => (
                         <Td key={k} className="text-center">
                           <input
@@ -2248,7 +2248,7 @@ function RoleModal({ open, onClose, role, onSaved, notify }: any) {
           </div>
         )}
 
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={role ? "Save role" : "Create role"} />
       </form>
     </Modal>
@@ -2307,15 +2307,15 @@ function RolesTab({ roles, loading, error, onRetry, notify, onRefresh }: any) {
               <CardShell key={r.id} className="flex flex-col gap-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="flex items-center gap-2 font-heading text-[15px] font-semibold">
+                    <p className="flex items-center gap-2 font-heading text-section font-semibold">
                       {r.name}
-                      {r.name === "Owner" && <ShieldCheck className="size-4 text-primary" />}
+                      {r.name === "Owner" && <ShieldCheck className="size-3.5 text-primary" />}
                     </p>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    <p className="mt-0.5 text-meta text-muted-foreground">
                       {r.name === "Owner" ? "Full access to every module" : r.description || "No description"}
                     </p>
                   </div>
-                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{r._count?.users ?? 0} users</span>
+                  <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-meta font-semibold text-muted-foreground">{r._count?.users ?? 0} users</span>
                 </div>
 
                 {r.name !== "Owner" && (
@@ -2332,7 +2332,7 @@ function RolesTab({ roles, loading, error, onRetry, notify, onRefresh }: any) {
                           const p = r.modulePermissions?.[m];
                           return (
                             <Tr key={m} index={i}>
-                              <Td className="text-[12px] font-medium">{label(m)}</Td>
+                              <Td className="text-body font-medium">{label(m)}</Td>
                               {["view", "edit", "approve"].map((k) => (
                                 <Td key={k}><input type="checkbox" checked={!!p?.[k]} disabled className="size-3.5 accent-primary" /></Td>
                               ))}
@@ -2362,13 +2362,13 @@ function RolesTab({ roles, loading, error, onRetry, notify, onRefresh }: any) {
 
       <RoleModal open={open} onClose={() => { setOpen(false); setEditing(null); }} role={editing} notify={notify} onSaved={onRefresh} />
       <Modal open={!!deleting} onClose={() => setDeleting(null)} title="Delete role?">
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-body leading-relaxed text-muted-foreground">
           <span className="font-semibold text-foreground">{deleting?.name}</span> will be removed. Roles that still have
           users assigned cannot be deleted.
         </p>
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={() => setDeleting(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
-          <button onClick={remove} disabled={busy} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white transition-all hover:scale-[1.02] disabled:opacity-60">
+          <button onClick={() => setDeleting(null)} className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
+          <button onClick={remove} disabled={busy} className="rounded-xl bg-rose-500 px-4 py-2 text-body font-bold text-white transition-all hover:scale-[1.02] disabled:opacity-60">
             {busy ? "Deleting…" : "Delete role"}
           </button>
         </div>
@@ -2437,8 +2437,8 @@ function IntegrationModal({ open, onClose, integration, onSaved, notify }: any) 
         </div>
 
         <div className="flex flex-col gap-2">
-          <p className="text-[12px] font-semibold">Credentials</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-body font-semibold">Credentials</p>
+          <p className="text-meta text-muted-foreground">
             Stored encrypted (AES-256-GCM) and never returned by the API.
             {editing ? " Leave blank to keep the existing values." : ""}
           </p>
@@ -2463,7 +2463,7 @@ function IntegrationModal({ open, onClose, integration, onSaved, notify }: any) 
                 className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"
                 aria-label="Remove field"
               >
-                <X className="size-4" />
+                <X className="size-3.5" />
               </button>
             </div>
           ))}
@@ -2472,7 +2472,7 @@ function IntegrationModal({ open, onClose, integration, onSaved, notify }: any) 
           </Btn>
         </div>
 
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save integration" : "Add integration"} />
       </form>
     </Modal>
@@ -2559,13 +2559,13 @@ function IntegrationsTab({ integrations, loading, error, onRefresh, notify }: an
                     <Plug className="size-4 text-muted-foreground" />
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-[13px] font-semibold">{i.providerName}</p>
-                    <p className="truncate text-[10.5px] text-muted-foreground">
+                    <p className="truncate text-body-lg font-semibold">{i.providerName}</p>
+                    <p className="truncate text-micro text-muted-foreground">
                       {label(i.type)}
                       {i.connectedBy?.name ? ` · connected by ${i.connectedBy.name}` : ""}
                       {i.connectedAt ? ` · ${timeAgo(i.connectedAt)}` : " · never connected"}
                     </p>
-                    <p className="mt-0.5 text-[10px] font-semibold">
+                    <p className="mt-0.5 text-micro font-semibold">
                       {i.hasCredentials ? (
                         <span className="text-emerald-500">{i.credentialKeys?.length ?? 0} credential field(s) stored</span>
                       ) : (
@@ -2602,12 +2602,12 @@ function IntegrationsTab({ integrations, loading, error, onRefresh, notify }: an
         notify={notify}
       />
       <Modal open={!!deleting} onClose={() => setDeleting(null)} title="Remove integration?">
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-body leading-relaxed text-muted-foreground">
           <span className="font-semibold text-foreground">{deleting?.providerName}</span> and its stored credentials will be removed.
         </p>
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={() => setDeleting(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
-          <button onClick={remove} disabled={busyId === deleting?.id} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white transition-all hover:scale-[1.02] disabled:opacity-60">
+          <button onClick={() => setDeleting(null)} className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
+          <button onClick={remove} disabled={busyId === deleting?.id} className="rounded-xl bg-rose-500 px-4 py-2 text-body font-bold text-white transition-all hover:scale-[1.02] disabled:opacity-60">
             {busyId === deleting?.id ? "Removing…" : "Remove"}
           </button>
         </div>
@@ -2787,7 +2787,7 @@ function WhatsappTab({ notify }: { notify: (m: string) => void }) {
           <Btn variant="primary" onClick={save} className={saving ? "opacity-50" : ""}>{saving ? "Saving…" : "Save settings"}</Btn>
           <Btn variant="outline" onClick={testConn} className={testing ? "opacity-50" : ""}><Plug className="size-3.5" /> {testing ? "Testing…" : "Test connection"}</Btn>
           <Btn variant="outline" onClick={runSweep}>Run due sweep now</Btn>
-          {testResult && <p className="w-full text-[12px] text-muted-foreground">{testResult}</p>}
+          {testResult && <p className="w-full text-body text-muted-foreground">{testResult}</p>}
         </div>
       </CardShell>
 
@@ -2795,13 +2795,13 @@ function WhatsappTab({ notify }: { notify: (m: string) => void }) {
         <SectionTitle title="Automation triggers" subtitle="Which events send WhatsApp automatically (dedupe + audit built in)" />
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {AUTO_LABELS.map(([k, lbl]) => (
-            <label key={k} className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2.5 text-[12.5px]">
+            <label key={k} className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2.5 text-body">
               <input type="checkbox" checked={!!cfg.auto?.[k]} onChange={(e) => setAuto(k, e.target.checked)} className="size-3.5 accent-primary" />
               {lbl}
             </label>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-muted-foreground">Remember to press Save settings after changing triggers.</p>
+        <p className="mt-2 text-meta text-muted-foreground">Remember to press Save settings after changing triggers.</p>
       </CardShell>
 
       <CardShell>
@@ -2810,11 +2810,11 @@ function WhatsappTab({ notify }: { notify: (m: string) => void }) {
           {(cfg.templates ?? []).map((t: any) => (
             <div key={t.id} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 px-3 py-2">
               <div className="min-w-0">
-                <p className="font-mono text-[12px] font-bold">{t.name} <span className="text-muted-foreground">· {t.language} · {t.category}</span></p>
-                <p className="truncate text-[11px] text-muted-foreground">{t.bodyPreview}</p>
-                <p className="text-[10.5px] text-muted-foreground">vars: {(t.variables ?? []).join(", ") || "—"}{t.metaStatus ? ` · Meta: ${t.metaStatus}` : ""}</p>
+                <p className="font-mono text-body font-bold">{t.name} <span className="text-muted-foreground">· {t.language} · {t.category}</span></p>
+                <p className="truncate text-meta text-muted-foreground">{t.bodyPreview}</p>
+                <p className="text-micro text-muted-foreground">vars: {(t.variables ?? []).join(", ") || "—"}{t.metaStatus ? ` · Meta: ${t.metaStatus}` : ""}</p>
               </div>
-              <button type="button" onClick={() => toggleTpl(t)} className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-bold ${t.isActive ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
+              <button type="button" onClick={() => toggleTpl(t)} className={`shrink-0 rounded-full px-3 py-1 text-meta font-bold ${t.isActive ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
                 {t.isActive ? "ON" : "OFF"}
               </button>
             </div>
@@ -2859,12 +2859,12 @@ function WhatsappTab({ notify }: { notify: (m: string) => void }) {
                     <Td className="font-mono">{l.to}</Td>
                     <Td className="font-mono">{l.templateName ?? l.messageType}</Td>
                     <Td><StatusBadge status={l.status} /></Td>
-                    <Td className="max-w-[140px] truncate font-mono text-[10.5px] text-muted-foreground">{l.wamid ?? "—"}</Td>
+                    <Td className="max-w-[140px] truncate font-mono text-micro text-muted-foreground">{l.wamid ?? "—"}</Td>
                     <Td>
                       {cfg.mode === "mock" && l.wamid && ["sent", "queued"].includes(l.status) && (
                         <div className="flex gap-1">
-                          <button type="button" onClick={() => simulate(l.wamid, "delivered")} className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-bold hover:bg-muted/70">Delivered</button>
-                          <button type="button" onClick={() => simulate(l.wamid, "read")} className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-bold hover:bg-muted/70">Read</button>
+                          <button type="button" onClick={() => simulate(l.wamid, "delivered")} className="rounded-md bg-muted px-2 py-0.5 text-micro font-bold hover:bg-muted/70">Delivered</button>
+                          <button type="button" onClick={() => simulate(l.wamid, "read")} className="rounded-md bg-muted px-2 py-0.5 text-micro font-bold hover:bg-muted/70">Read</button>
                         </div>
                       )}
                     </Td>
@@ -3002,10 +3002,10 @@ function DataTab({ onRefresh, notify }: any) {
         <CardShell>
           <SectionTitle title="Backup" subtitle="Full JSON snapshot of business data — no passwords or secrets" />
           <div className="mb-3 grid grid-cols-2 gap-2">
-            <HealthCard label="Clients" value={health?.counts?.clients ?? "—"} icon={<Building2 className="size-3" />} />
-            <HealthCard label="Projects" value={health?.counts?.projects ?? "—"} icon={<Activity className="size-3" />} />
-            <HealthCard label="Invoices" value={health?.counts?.invoices ?? "—"} icon={<FileText className="size-3" />} />
-            <HealthCard label="Tasks" value={health?.counts?.tasks ?? "—"} icon={<ListChecks className="size-3" />} />
+            <HealthCard label="Clients" value={health?.counts?.clients ?? "—"} icon={<Building2 className="size-4" />} />
+            <HealthCard label="Projects" value={health?.counts?.projects ?? "—"} icon={<Activity className="size-4" />} />
+            <HealthCard label="Invoices" value={health?.counts?.invoices ?? "—"} icon={<FileText className="size-4" />} />
+            <HealthCard label="Tasks" value={health?.counts?.tasks ?? "—"} icon={<ListChecks className="size-4" />} />
           </div>
           <Btn variant="primary" onClick={exportData} disabled={exporting}>
             <Download className="size-3.5" /> {exporting ? "Exporting…" : "Export all data"}
@@ -3015,16 +3015,16 @@ function DataTab({ onRefresh, notify }: any) {
         <CardShell>
           <SectionTitle title="Storage & system" subtitle="Uploads and audit volume for this workspace" />
           <div className="grid grid-cols-2 gap-2">
-            <HealthCard label="Uploads" value={`${health?.storage?.uploadsMb ?? 0} MB`} icon={<HardDrive className="size-3" />} />
-            <HealthCard label="Audit events" value={health?.counts?.auditEvents ?? "—"} icon={<ShieldCheck className="size-3" />} />
-            <HealthCard label="Environment" value={health?.environment ?? "—"} icon={<Globe2 className="size-3" />} />
-            <HealthCard label="Uptime" value={health?.uptimeSeconds ? `${Math.floor(health.uptimeSeconds / 3600)}h` : "—"} icon={<Server className="size-3" />} />
+            <HealthCard label="Uploads" value={`${health?.storage?.uploadsMb ?? 0} MB`} icon={<HardDrive className="size-4" />} />
+            <HealthCard label="Audit events" value={health?.counts?.auditEvents ?? "—"} icon={<ShieldCheck className="size-4" />} />
+            <HealthCard label="Environment" value={health?.environment ?? "—"} icon={<Globe2 className="size-4" />} />
+            <HealthCard label="Uptime" value={health?.uptimeSeconds ? `${Math.floor(health.uptimeSeconds / 3600)}h` : "—"} icon={<Server className="size-4" />} />
           </div>
         </CardShell>
 
         <CardShell className="border-rose-500/30">
           <SectionTitle title="Danger zone" subtitle="Irreversibly wipe every business record" />
-          <p className="mb-3 flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="mb-3 flex items-start gap-2 text-meta leading-relaxed text-muted-foreground">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-rose-400" />
             Users, roles, settings, integrations and the audit trail are kept.
           </p>
@@ -3054,7 +3054,7 @@ function DataTab({ onRefresh, notify }: any) {
               value={q}
               onChange={(e) => { setQ(e.target.value); setPage(1); }}
               placeholder="Search action / entity / id…"
-              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12px] outline-none focus:border-primary/40"
+              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none focus:border-primary/40"
             />
           </div>
           <Select value={action} onChange={(e) => { setAction(e.target.value); setPage(1); }}>
@@ -3070,7 +3070,7 @@ function DataTab({ onRefresh, notify }: any) {
         </div>
 
         {auditErr ? (
-          <p className="mt-3 text-[12px] font-medium text-rose-400">{auditErr}</p>
+          <p className="mt-3 text-body font-medium text-rose-400">{auditErr}</p>
         ) : auditLoading && !audit ? (
           <SkeletonBlock className="mt-3 h-40" />
         ) : (
@@ -3090,27 +3090,27 @@ function DataTab({ onRefresh, notify }: any) {
                   )}
                   {(audit?.rows ?? []).map((r: any, i: number) => (
                     <Tr key={r.id} index={i}>
-                      <Td className="whitespace-nowrap text-[11px] text-muted-foreground">{formatDate(r.timestamp)} · {new Date(r.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</Td>
-                      <Td className="text-[12px]">
+                      <Td className="whitespace-nowrap text-meta text-muted-foreground">{formatDate(r.timestamp)} · {new Date(r.timestamp).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</Td>
+                      <Td className="text-body">
                         {r.actor ? (
                           <span>
                             <span className="font-medium">{r.actor.name}</span>
-                            <span className="block text-[10.5px] text-muted-foreground">{r.actor.email}</span>
+                            <span className="block text-micro text-muted-foreground">{r.actor.email}</span>
                           </span>
                         ) : (
                           <span className="text-muted-foreground">system</span>
                         )}
                       </Td>
-                      <Td className="text-[12px] font-medium">{r.action}</Td>
-                      <Td className="text-[11.5px] text-muted-foreground">{r.entityType}</Td>
-                      <Td className="max-w-[180px] truncate text-[11px] text-muted-foreground">{r.entityId}</Td>
+                      <Td className="text-body font-medium">{r.action}</Td>
+                      <Td className="text-meta text-muted-foreground">{r.entityType}</Td>
+                      <Td className="max-w-[180px] truncate text-meta text-muted-foreground">{r.entityId}</Td>
                     </Tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[11.5px] text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 {audit?.total ?? 0} event(s) · page {audit?.page ?? 1} of {audit?.pages ?? 1}
               </p>
               <div className="flex items-center gap-2">
@@ -3127,7 +3127,7 @@ function DataTab({ onRefresh, notify }: any) {
 
       <Modal open={deleteOpen} onClose={() => setDeleteOpen(false)} title="Delete all business data?">
         <div className="flex flex-col gap-4">
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="text-body leading-relaxed text-muted-foreground">
             This permanently wipes all business records — clients, leads, projects, tasks, invoices, employees,
             expenses, payments and more. This action cannot be undone. Type{" "}
             <span className="font-bold text-rose-400">DELETE</span> to confirm.
@@ -3136,8 +3136,8 @@ function DataTab({ onRefresh, notify }: any) {
             <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="DELETE" autoFocus />
           </Field>
           <div className="flex justify-end gap-2">
-            <button onClick={() => setDeleteOpen(false)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
-            <button onClick={wipe} disabled={confirm !== "DELETE" || deleting} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50">
+            <button onClick={() => setDeleteOpen(false)} className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Cancel</button>
+            <button onClick={wipe} disabled={confirm !== "DELETE" || deleting} className="rounded-xl bg-rose-500 px-4 py-2 text-body font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-50">
               {deleting ? "Deleting…" : "Delete everything"}
             </button>
           </div>
@@ -3203,7 +3203,7 @@ function ControlWorkspace() {
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[12.5px] font-medium text-white shadow-xl"
+          className="fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-body font-medium text-white shadow-xl"
         >
           {flash}
         </motion.div>
@@ -3215,7 +3215,7 @@ function ControlWorkspace() {
           <div className="flex items-center gap-2">
             <Link
               href="/control/scoring"
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-[12px] font-semibold transition-colors hover:border-violet-400/60 hover:text-violet-500"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-body font-semibold transition-colors hover:border-violet-400/60 hover:text-violet-500"
             >
               <HeartPulse className="size-3.5" /> Scoring engine
             </Link>
@@ -3236,12 +3236,12 @@ function ControlWorkspace() {
         }
       />
       <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
-        <HealthCard label="API status" value={health ? (health.ok ? "Operational" : "Degraded") : "—"} tone={health ? (health.ok ? "text-emerald-500" : "text-rose-500") : undefined} icon={<Activity className="size-3" />} />
-        <HealthCard label="Staff users" value={`${health?.counts?.activeUsers ?? "—"} / ${health?.counts?.users ?? "—"}`} icon={<Users className="size-3" />} />
-        <HealthCard label="Roles" value={(roles ?? []).length} icon={<ShieldCheck className="size-3" />} />
-        <HealthCard label="Integrations" value={(integrations ?? []).length} icon={<Plug className="size-3" />} />
-        <HealthCard label="Audit events" value={health?.counts?.auditEvents ?? "—"} icon={<ListChecks className="size-3" />} />
-        <HealthCard label="Maintenance" value={health?.maintenanceMode ? "ON" : "Off"} tone={health?.maintenanceMode ? "text-rose-500" : "text-emerald-500"} icon={<Server className="size-3" />} />
+        <HealthCard label="API status" value={health ? (health.ok ? "Operational" : "Degraded") : "—"} tone={health ? (health.ok ? "text-emerald-500" : "text-rose-500") : undefined} icon={<Activity className="size-4" />} />
+        <HealthCard label="Staff users" value={`${health?.counts?.activeUsers ?? "—"} / ${health?.counts?.users ?? "—"}`} icon={<Users className="size-4" />} />
+        <HealthCard label="Roles" value={(roles ?? []).length} icon={<ShieldCheck className="size-4" />} />
+        <HealthCard label="Integrations" value={(integrations ?? []).length} icon={<Plug className="size-4" />} />
+        <HealthCard label="Audit events" value={health?.counts?.auditEvents ?? "—"} icon={<ListChecks className="size-4" />} />
+        <HealthCard label="Maintenance" value={health?.maintenanceMode ? "ON" : "Off"} tone={health?.maintenanceMode ? "text-rose-500" : "text-emerald-500"} icon={<Server className="size-4" />} />
       </div>
       {tab === "settings" && (
         <SettingsTab

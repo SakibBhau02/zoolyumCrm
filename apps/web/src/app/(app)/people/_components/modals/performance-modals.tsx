@@ -4,6 +4,9 @@ import { Plus, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Field, FormActions, Input, Modal, Select } from "@/components/ui";
 
+/** Current quarter label, e.g. "2026-Q4". */
+const currentQuarter = () => `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth() / 3) + 1}`;
+
 export function ReviewModal({ open, onClose, employees, onSaved }: { open: boolean; onClose: () => void; employees: any[]; onSaved: () => void }) {
   const [f, setF] = useState({ employeeId: "", reviewPeriod: "", overallRating: "4" });
   const [busy, setBusy] = useState(false);
@@ -18,20 +21,20 @@ export function ReviewModal({ open, onClose, employees, onSaved }: { open: boole
     try { await apiFetch("/people/reviews", { method: "POST", body: JSON.stringify({ employeeId: f.employeeId, reviewPeriod: f.reviewPeriod.trim(), overallRating: Number(f.overallRating) }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Add performance review">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Add performance review">
       <form onSubmit={save} className="flex flex-col gap-4">
         <Field label="Employee *">
           <Select value={f.employeeId} onChange={(e) => setF({ ...f, employeeId: e.target.value })}>
             {employees.map((emp: any) => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
           </Select>
         </Field>
-        <Field label="Review period *"><Input value={f.reviewPeriod} onChange={(e) => setF({ ...f, reviewPeriod: e.target.value })} placeholder="Q3 2026" /></Field>
+        <Field label="Review period *"><Input value={f.reviewPeriod} onChange={(e) => setF({ ...f, reviewPeriod: e.target.value })} placeholder={currentQuarter()} /></Field>
         <Field label="Overall rating (1–5)">
           <Select value={f.overallRating} onChange={(e) => setF({ ...f, overallRating: e.target.value })}>
             {[5, 4, 3, 2, 1].map((v) => <option key={v} value={v}>{v} — {v >= 5 ? "outstanding" : v >= 4 ? "exceeds" : v >= 3 ? "meets" : v >= 2 ? "below" : "critical"}</option>)}
           </Select>
         </Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add review" />
       </form>
     </Modal>
@@ -54,7 +57,7 @@ export function OkrModal({ open, onClose, employees, onSaved }: { open: boolean;
     try { await apiFetch("/people/okrs", { method: "POST", body: JSON.stringify({ employeeId: f.employeeId, title: f.title.trim(), quarter: f.quarter.trim(), keyResults: rows.map((k) => ({ title: k.title.trim(), target: Number(k.target) || 0, current: Number(k.current) || 0 })) }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Add OKR" size="lg">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Add OKR" size="lg">
       <form onSubmit={save} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-4">
           <Field label="Employee *">
@@ -77,10 +80,10 @@ export function OkrModal({ open, onClose, employees, onSaved }: { open: boolean;
                 )}
               </div>
             ))}
-            <button type="button" onClick={() => setKrs([...krs, { title: "", target: "", current: "" }])} className="flex items-center gap-1 self-start rounded-lg text-[11.5px] font-bold text-primary transition-colors hover:text-primary dark:text-primary"><Plus className="size-3.5" /> Add key result</button>
+            <button type="button" onClick={() => setKrs([...krs, { title: "", target: "", current: "" }])} className="flex items-center gap-1 self-start rounded-lg text-meta font-bold text-primary transition-colors hover:text-primary dark:text-primary"><Plus className="size-3.5" /> Add key result</button>
           </div>
         </Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add OKR" />
       </form>
     </Modal>

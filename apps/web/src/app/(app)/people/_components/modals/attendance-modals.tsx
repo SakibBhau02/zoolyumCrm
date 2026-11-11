@@ -25,7 +25,7 @@ export function AttendanceModal({ open, onClose, employees, edit, onSaved }: { o
     } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title={edit ? "Correct attendance" : "Record attendance"}>
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title={edit ? "Correct attendance" : "Record attendance"}>
       <form onSubmit={save} className="flex flex-col gap-4">
         <Field label="Employee *">
           <Select value={f.employeeId} onChange={(e) => setF({ ...f, employeeId: e.target.value })} disabled={!!edit}>
@@ -33,7 +33,9 @@ export function AttendanceModal({ open, onClose, employees, edit, onSaved }: { o
           </Select>
         </Field>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Date *"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          <Field label={edit ? "Date" : "Date *"} hint={edit ? "The date cannot be changed — correct the right day, or delete and re-record" : undefined}>
+            <Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} disabled={!!edit} />
+          </Field>
           <Field label="Status">
             <Select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })}>
               {ATT_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
@@ -41,7 +43,7 @@ export function AttendanceModal({ open, onClose, employees, edit, onSaved }: { o
           </Field>
         </div>
         {edit && <Field label="Correction reason"><Input value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="e.g. late punch missed - employee informed" /></Field>}
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={edit ? "Save correction" : "Record attendance"} />
       </form>
     </Modal>
@@ -68,13 +70,13 @@ export function ImportPunchModal({ open, onClose, onSaved }: { open: boolean; on
     try { const r = await apiFetch<any>("/people/punches/import", { method: "POST", body: JSON.stringify({ rows }) }); onSaved(r); onClose(); } catch (e2: any) { setErr(e2.message ?? "Import failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Import punches" size="lg">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Import punches" size="lg">
       <form onSubmit={save} className="flex flex-col gap-4">
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">Paste rows exported from the fingerprint device. One punch per line: <span className="font-mono text-[11.5px] text-foreground">deviceId, datetime, verify, workcode</span>. Punches with unknown device IDs are left unmatched for you to map.</p>
+        <p className="text-body leading-relaxed text-muted-foreground">Paste rows exported from the fingerprint device. One punch per line: <span className="font-mono text-meta text-foreground">deviceId, datetime, verify, workcode</span>. Punches with unknown device IDs are left unmatched for you to map.</p>
         <Field label="Punch rows *">
-          <Textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={"101\t2026-08-20 09:05:12\t2\t1\n102\t2026-08-20 10:35:12\t2\t1"} className="font-mono text-[12px]" />
+          <Textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={"101\t2026-08-20 09:05:12\t2\t1\n102\t2026-08-20 10:35:12\t2\t1"} className="font-mono text-body" />
         </Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Import punches" />
       </form>
     </Modal>

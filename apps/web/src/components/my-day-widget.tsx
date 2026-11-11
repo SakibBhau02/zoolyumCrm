@@ -199,21 +199,21 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
               <Clock className="size-4" />
             </span>
             <div className="min-w-0">
-              <p className="flex flex-wrap items-center gap-2 font-heading text-[14px] font-semibold">
+              <p className="flex flex-wrap items-center gap-2 font-heading text-body-lg font-semibold">
                 Time clock
                 <StatusBadge status={mine.status} />
                 {mine.hasDeviceId && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
-                    <ShieldCheck className="size-3" /> Machine linked
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                    <ShieldCheck className="size-3.5" /> Machine linked
                   </span>
                 )}
                 {hasFingerprint && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-primary">
-                    <Fingerprint className="size-3" /> Fingerprint on
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-micro font-bold uppercase tracking-wide text-primary">
+                    <Fingerprint className="size-3.5" /> Fingerprint on
                   </span>
                 )}
               </p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-meta text-muted-foreground">
                 {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
                 {" · "}
                 {mine.checkIn ? `working since ${fmtTime(mine.checkIn)}` : "not checked in yet"}
@@ -226,24 +226,24 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
 
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-xl border border-border/60 px-3 py-2">
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Check in</p>
-              <p className="mt-0.5 text-[15px] font-heading font-bold tabular-nums">{fmtTime(mine.checkIn)}</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Check in</p>
+              <p className="mt-0.5 text-section font-heading font-bold tabular-nums">{fmtTime(mine.checkIn)}</p>
             </div>
             <div className="rounded-xl border border-border/60 px-3 py-2">
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Check out</p>
-              <p className={cn("mt-0.5 text-[15px] font-heading font-bold tabular-nums", !mine.checkOut && "text-muted-foreground")}>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Check out</p>
+              <p className={cn("mt-0.5 text-section font-heading font-bold tabular-nums", !mine.checkOut && "text-muted-foreground")}>
                 {fmtTime(mine.checkOut)}
               </p>
             </div>
             <div className="rounded-xl border border-border/60 px-3 py-2">
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Worked</p>
-              <p className="mt-0.5 text-[15px] font-heading font-bold tabular-nums">{fmtDur(workedMinutes)}</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Worked</p>
+              <p className="mt-0.5 text-section font-heading font-bold tabular-nums">{fmtDur(workedMinutes)}</p>
             </div>
             <div className="rounded-xl border border-border/60 px-3 py-2">
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Late</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Late</p>
               <p
                 className={cn(
-                  "mt-0.5 text-[15px] font-heading font-bold tabular-nums",
+                  "mt-0.5 text-section font-heading font-bold tabular-nums",
                   (mine.minutesLate ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
                 )}
               >
@@ -253,17 +253,17 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
           </div>
 
           <div className="mt-3 rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
-            <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              <Timer className="size-3" /> Today&apos;s punches
+            <p className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">
+              <Timer className="size-3.5" /> Today&apos;s punches
             </p>
             {(!mine.punches || mine.punches.length === 0) ? (
-              <p className="text-[11.5px] text-muted-foreground">No punches yet. Use a button on the right or the fingerprint machine.</p>
+              <p className="text-meta text-muted-foreground">No punches yet. Use a button on the right or the fingerprint machine.</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {mine.punches.map((p: any, i: number) => (
                   <span
                     key={`${p.at}-${i}`}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2 py-0.5 text-[10.5px] font-medium"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card px-2 py-0.5 text-micro font-medium"
                   >
                     <span className="tabular-nums">{fmtTime(p.at)}</span>
                     <span className="text-muted-foreground">{sourceLabel(p.source)}</span>
@@ -271,13 +271,13 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
                 ))}
               </div>
             )}
-            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted-foreground">
+            <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-muted-foreground">
               <span className="inline-flex items-center gap-1">
-                <LogIn className="size-3" />
+                <LogIn className="size-3.5" />
                 Browser login: {loginAt ? `${loginToday ? "" : `${loginAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} `}${fmtTime(loginAt.toISOString())}` : "—"}
               </span>
               <span className="inline-flex items-center gap-1">
-                <RefreshCw className="size-3" />
+                <RefreshCw className="size-3.5" />
                 Last synced punch: {fmtTime(mine.lastPunchAt)}
               </span>
             </p>
@@ -292,7 +292,7 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
             onClick={() => punch(action)}
             disabled={!!busy}
           >
-            {action === "in" ? <LogIn className="size-4" /> : <LogOut className="size-4" />}
+            {action === "in" ? <LogIn className="size-4" /> : <LogOut className="size-3.5" />}
             {busy === "in" || busy === "out"
               ? "Saving…"
               : action === "in"
@@ -307,14 +307,14 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
             disabled={!!busy || !hasFingerprint || !supported}
             title={!hasFingerprint ? "Enable fingerprint first" : "Verify with fingerprint then punch"}
           >
-            <Fingerprint className="size-4" />
+            <Fingerprint className="size-3.5" />
             {busy === "bio" ? "Verifying…" : `Fingerprint ${action === "in" ? "clock in" : "clock out"}`}
           </Btn>
 
           {!hasFingerprint ? (
             <Btn
               variant="ghost"
-              className="w-full justify-center !text-[11.5px]"
+              className="w-full justify-center !text-meta"
               onClick={enableFingerprint}
               disabled={!!busy || !supported}
             >
@@ -324,7 +324,7 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
           ) : (
             <button
               onClick={() => setManage((v) => !v)}
-              className="text-center text-[10.5px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+              className="text-center text-micro font-semibold text-muted-foreground transition-colors hover:text-foreground"
             >
               {manage ? "Hide devices" : `${fingerprints.length} fingerprint device(s)`}
             </button>
@@ -333,15 +333,15 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
           {manage && hasFingerprint && (
             <div className="flex flex-col gap-1 rounded-xl border border-border/60 p-1.5">
               {fingerprints.map((f) => (
-                <div key={f.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-[11px]">
-                  <Smartphone className="size-3 text-muted-foreground" />
+                <div key={f.id} className="flex items-center gap-2 rounded-lg px-1.5 py-1 text-meta">
+                  <Smartphone className="size-3.5 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate">{f.deviceLabel ?? "This device"}</span>
                   <button
                     onClick={() => removeFingerprint(f.id)}
                     className="rounded p-1 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500"
                     title="Remove fingerprint"
                   >
-                    <Trash2 className="size-3" />
+                    <Trash2 className="size-3.5" />
                   </button>
                 </div>
               ))}
@@ -350,7 +350,7 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
 
           <Link
             href="/people/me"
-            className="inline-flex items-center justify-center gap-1 rounded-xl border border-border/60 py-2 text-[11.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="inline-flex items-center justify-center gap-1 rounded-xl border border-border/60 py-2 text-meta font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             My attendance <CheckCircle2 className="size-3.5" />
           </Link>
@@ -358,19 +358,19 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
           {notice && (
             <p
               className={cn(
-                "flex items-start gap-1.5 rounded-xl px-2.5 py-2 text-[10.5px] font-medium leading-snug",
+                "flex items-start gap-1.5 rounded-xl px-2.5 py-2 text-micro font-medium leading-snug",
                 notice.tone === "ok"
                   ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                   : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
               )}
             >
-              {notice.tone === "ok" ? <CheckCircle2 className="mt-0.5 size-3 shrink-0" /> : <AlertTriangle className="mt-0.5 size-3 shrink-0" />}
+              {notice.tone === "ok" ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" /> : <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />}
               {notice.text}
             </p>
           )}
 
           {!supported && (
-            <p className="text-[10px] leading-snug text-muted-foreground">
+            <p className="text-micro leading-snug text-muted-foreground">
               Fingerprint needs a device with Windows Hello / Touch ID and a secure (https or localhost) connection.
             </p>
           )}

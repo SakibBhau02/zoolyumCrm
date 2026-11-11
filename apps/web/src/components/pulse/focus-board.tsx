@@ -190,16 +190,16 @@ export function FocusBoard({
       {/* header + scope */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 font-heading text-[19px] font-semibold tracking-tight">
-            <Sparkles className="size-4 text-primary" />
+          <h2 className="flex items-center gap-2 font-heading text-title font-semibold tracking-tight">
+            <Sparkles className="size-3.5 text-primary" />
             Today
             {totalToDo > 0 && (
-              <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-[11px] font-bold text-rose-500">
+              <span className="rounded-full bg-rose-500/15 px-2 py-0.5 text-meta font-bold text-rose-500">
                 {totalToDo} to contact
               </span>
             )}
           </h2>
-          <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+          <p className="mt-0.5 text-body text-muted-foreground">
             {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })} · work
             the queue top to bottom, log the outcome, set the next step.
           </p>
@@ -237,14 +237,14 @@ export function FocusBoard({
             >
               <span className={cn("absolute inset-y-0 left-0 w-0.5 transition-opacity", TONE[b.tone].bar, on ? "opacity-100" : "opacity-0")} />
               <div className="flex items-center justify-between gap-2">
-                <span className="flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                <span className="flex items-center gap-1.5 text-meta font-bold tracking-wide text-muted-foreground uppercase">
                   <b.icon className={cn("size-3.5", on ? "text-primary" : "")} />
                   {b.label}
                 </span>
                 {on && <span className={cn("size-1.5 rounded-full", TONE[b.tone].dot)} />}
               </div>
-              <p className="mt-1 text-[22px] font-heading font-bold tabular-nums leading-none">{n}</p>
-              <p className="mt-1 text-[11.5px] text-muted-foreground">{b.hint}</p>
+              <p className="mt-1 text-stat font-heading font-bold tabular-nums leading-none">{n}</p>
+              <p className="mt-1 text-meta text-muted-foreground">{b.hint}</p>
             </button>
           );
         })}
@@ -255,14 +255,14 @@ export function FocusBoard({
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3.5 py-2.5">
           <div className="flex items-center gap-2">
             <span className={cn("size-1.5 rounded-full", TONE[active.tone].dot)} />
-            <p className="text-[13px] font-bold">{active.label}</p>
-            <span className="text-[12px] text-muted-foreground">
+            <p className="text-body-lg font-bold">{active.label}</p>
+            <span className="text-body text-muted-foreground">
               {items.length} {items.length === 1 ? "lead" : "leads"}
               {bucket === "unscheduled" ? " with no plan" : ""}
             </span>
           </div>
           {bucket === "unscheduled" && (
-            <p className="text-[11.5px] text-muted-foreground">Every active lead should have a next step.</p>
+            <p className="text-meta text-muted-foreground">Every active lead should have a next step.</p>
           )}
         </div>
 
@@ -279,12 +279,12 @@ export function FocusBoard({
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
             <span className="flex size-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-500">
-              <CheckCircle2 className="size-5" />
+              <CheckCircle2 className="size-4" />
             </span>
-            <p className="text-[14px] font-semibold">
+            <p className="text-body-lg font-semibold">
               {bucket === "overdue" ? "Nothing overdue — clean slate" : `No leads in ${active.label.toLowerCase()}`}
             </p>
-            <p className="max-w-sm text-[12.5px] text-muted-foreground">
+            <p className="max-w-sm text-body text-muted-foreground">
               {bucket === "overdue"
                 ? "Pick up the due-today list so tomorrow does not start in the red."
                 : "Move to another bucket, or add a lead to get started."}
@@ -322,27 +322,27 @@ export function FocusBoard({
                         <div className="flex flex-wrap items-center gap-1.5">
                           <button
                             onClick={() => onOpenLead(l.id)}
-                            className="max-w-full truncate text-left text-[14px] font-semibold hover:text-primary hover:underline"
+                            className="max-w-full truncate text-left text-body-lg font-semibold hover:text-primary hover:underline"
                           >
                             {l.name}
                           </button>
                           {l.priority === "URGENT" && (
-                            <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold text-rose-500">
+                            <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-micro font-bold text-rose-500">
                               URGENT
                             </span>
                           )}
                           {l.stale && !noPlan && (
-                            <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-300">
+                            <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-micro font-bold text-amber-600 dark:text-amber-300">
                               STALE
                             </span>
                           )}
                         </div>
-                        <p className="truncate text-[12px] text-muted-foreground">
+                        <p className="truncate text-body text-muted-foreground">
                           {l.company ?? "—"}
                           {l.uid ? ` · ${l.uid}` : ""}
                           {scope === "all" && l.assignedTo ? ` · ${l.assignedTo.name}` : ""}
                         </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-meta text-muted-foreground">
                           {l.lastContactedAt ? (
                             <span>last touch {l.daysSinceContact === 0 ? "today" : `${l.daysSinceContact}d ago`}</span>
                           ) : (
@@ -357,7 +357,7 @@ export function FocusBoard({
 
                     {/* deal + stage */}
                     <div className="flex items-center gap-2 lg:block lg:text-right">
-                      <p className="text-[13px] font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</p>
+                      <p className="text-body-lg font-bold tabular-nums">{formatBDT(l.estimatedDealSize)}</p>
                       <div className="lg:mt-0.5">
                         <StatusBadge status={l.stage} />
                       </div>
@@ -367,7 +367,7 @@ export function FocusBoard({
                     <div className="flex items-center gap-1.5">
                       <span
                         className={cn(
-                          "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11.5px] font-bold",
+                          "inline-flex items-center gap-1 rounded-full border px-2 py-1 text-meta font-bold",
                           noPlan
                             ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300"
                             : overdue
@@ -375,12 +375,12 @@ export function FocusBoard({
                               : "border-primary/25 bg-primary/[0.07] text-primary"
                         )}
                       >
-                        {noPlan ? <CircleDashed className="size-3" /> : <CalendarClock className="size-3" />}
+                        {noPlan ? <CircleDashed className="size-3.5" /> : <CalendarClock className="size-3.5" />}
                         {dueLabel(l.nextFollowUpAt)}
                       </span>
                       {l.leadScore != null && (
-                        <span className="hidden items-center gap-0.5 text-[11px] font-bold text-muted-foreground lg:inline-flex">
-                          <Flame className="size-3 text-amber-500" />
+                        <span className="hidden items-center gap-0.5 text-meta font-bold text-muted-foreground lg:inline-flex">
+                          <Flame className="size-3.5 text-amber-500" />
                           {l.leadScore}
                         </span>
                       )}
@@ -414,12 +414,12 @@ export function FocusBoard({
                           className="hidden size-8 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-colors hover:border-primary/30 hover:bg-muted hover:text-foreground sm:flex"
                           title={`Email ${l.contactEmail}`}
                         >
-                          <Mail className="size-3.5" />
+                          <Mail className="size-4" />
                         </a>
                       )}
                       <Btn
                         variant="primary"
-                        className="!px-2.5 !py-1.5 text-[12px]"
+                        className="!px-2.5 !py-1.5 text-body"
                         onClick={() => setLogLead(l)}
                         title="Log what happened and set the next step"
                       >
@@ -445,7 +445,7 @@ export function FocusBoard({
                         </button>
                         {menuOpen && (
                           <div className="absolute right-0 top-9 z-20 w-40 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
-                            <p className="border-b border-border/60 px-2.5 py-1.5 text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                            <p className="border-b border-border/60 px-2.5 py-1.5 text-micro font-bold tracking-wide text-muted-foreground uppercase">
                               Move follow-up
                             </p>
                             {[
@@ -456,7 +456,7 @@ export function FocusBoard({
                               <button
                                 key={o.days}
                                 onClick={() => snooze.mutate({ id: l.id, days: o.days })}
-                                className="block w-full px-2.5 py-1.5 text-left text-[12.5px] font-medium transition-colors hover:bg-muted"
+                                className="block w-full px-2.5 py-1.5 text-left text-body font-medium transition-colors hover:bg-muted"
                               >
                                 {o.label}
                               </button>
@@ -475,7 +475,7 @@ export function FocusBoard({
 
       {/* footer insight */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-3.5 py-2.5">
-        <div className="flex flex-wrap items-center gap-4 text-[12px] text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-4 text-body text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <Users className="size-3.5" /> {counts?.stale ?? 0} stale leads
           </span>
@@ -486,7 +486,7 @@ export function FocusBoard({
             <Flame className="size-3.5" /> {formatBDT(counts?.pipelineValue ?? 0)} in play
           </span>
         </div>
-        <p className="text-[11.5px] text-muted-foreground">
+        <p className="text-meta text-muted-foreground">
           Tip: log every call — the note and the next step are what make tomorrow easy.
         </p>
       </div>

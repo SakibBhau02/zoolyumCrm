@@ -119,7 +119,7 @@ export function ProjectContextPanel({
 
   if (loading && !data) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-3 text-[11.5px] text-muted-foreground">
+      <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-3 text-meta text-muted-foreground">
         <Loader2 className="size-3.5 animate-spin" /> Loading project context…
       </div>
     );
@@ -128,8 +128,8 @@ export function ProjectContextPanel({
   if (err) {
     return (
       <div className="flex items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
-        <span className="text-[11.5px] font-semibold text-amber-500">Project context unavailable — {err}</span>
-        <Btn variant="outline" onClick={load} className="!py-1"><RefreshCw className="size-3" /></Btn>
+        <span className="text-meta font-semibold text-amber-500">Project context unavailable — {err}</span>
+        <Btn variant="outline" onClick={load} className="!py-1"><RefreshCw className="size-3.5" /></Btn>
       </div>
     );
   }
@@ -156,8 +156,8 @@ export function ProjectContextPanel({
       >
         <FolderKanban className="size-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[12.5px] font-bold">{project.name}</p>
-          <p className="truncate text-[10.5px] text-muted-foreground">
+          <p className="truncate text-body font-bold">{project.name}</p>
+          <p className="truncate text-micro text-muted-foreground">
             {project.client?.companyName ? `${project.client.companyName}` : ""}
             {/* _count only comes from the task-scoped endpoint; the form-mode
                 project fetch doesn't include it, so don't print a wrong "0". */}
@@ -166,31 +166,31 @@ export function ProjectContextPanel({
             {fileCount ? ` · ${fileCount} files` : ""}
           </p>
         </div>
-        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[9.5px] font-bold text-primary">{project.progress}%</span>
+        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-micro font-bold text-primary">{project.progress}%</span>
         {collapsible && (
-          <span className="shrink-0 text-[10px] font-bold text-muted-foreground">{open ? "Hide" : "View"}</span>
+          <span className="shrink-0 text-micro font-bold text-muted-foreground">{open ? "Hide" : "View"}</span>
         )}
       </button>
 
       {open && (
         <div className="flex flex-col gap-3 border-t border-border/60 px-3 py-3">
           {project.description && (
-            <p className="text-[11.5px] leading-relaxed text-muted-foreground">{project.description}</p>
+            <p className="text-meta leading-relaxed text-muted-foreground">{project.description}</p>
           )}
 
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[9.5px] font-bold text-muted-foreground">{project.status}</span>
-            <span className={cn("rounded-full px-2 py-0.5 text-[9.5px] font-bold",
+            <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground">{project.status}</span>
+            <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold",
               project.healthStatus === "ON_TRACK" ? "bg-emerald-500/10 text-emerald-500"
                 : project.healthStatus === "AT_RISK" ? "bg-amber-500/10 text-amber-500"
                   : "bg-rose-500/10 text-rose-500")}>{project.healthStatus}</span>
             {project.assignedPm && (
-              <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[9.5px] font-bold text-muted-foreground">
-                <Users className="size-2.5" /> PM {project.assignedPm.name}
+              <span className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground">
+                <Users className="size-3.5" /> PM {project.assignedPm.name}
               </span>
             )}
             {project.targetEndDate && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[9.5px] font-bold text-muted-foreground">
+              <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground">
                 due {new Date(project.targetEndDate).toLocaleDateString()}
               </span>
             )}
@@ -198,14 +198,14 @@ export function ProjectContextPanel({
 
           {data.briefLinks.length > 0 && (
             <div>
-              <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                <Link2 className="size-3" /> Project brief links
+              <p className="mb-1.5 flex items-center gap-1 text-micro font-bold uppercase tracking-wide text-muted-foreground">
+                <Link2 className="size-3.5" /> Project brief links
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {data.briefLinks.map((l) => (
                   <a key={l.label} href={l.url} target="_blank" rel="noreferrer"
-                    className="flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[10.5px] font-semibold transition-colors hover:border-primary/40 hover:text-primary">
-                    {l.label} <ExternalLink className="size-2.5" />
+                    className="flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-micro font-semibold transition-colors hover:border-primary/40 hover:text-primary">
+                    {l.label} <ExternalLink className="size-3.5" />
                   </a>
                 ))}
               </div>
@@ -213,20 +213,20 @@ export function ProjectContextPanel({
           )}
 
           <div>
-            <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-              <FileText className="size-3" /> Research & references ({refCount})
+            <p className="mb-1.5 flex items-center gap-1 text-micro font-bold uppercase tracking-wide text-muted-foreground">
+              <FileText className="size-3.5" /> Research & references ({refCount})
             </p>
             {refCount === 0 ? (
-              <p className="text-[11px] text-muted-foreground/70">No research material uploaded to this project yet.</p>
+              <p className="text-meta text-muted-foreground/70">No research material uploaded to this project yet.</p>
             ) : (
               <div className="flex flex-col gap-1">
                 {data.references.slice(0, compact ? 4 : 12).map((r) => {
                   const href = r.fileUrl || r.url || undefined;
                   const Inner = (
                     <>
-                      <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold", REF_TONES[r.type] ?? REF_TONES.OTHER)}>{r.type}</span>
-                      <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold">{r.title}</span>
-                      {href && <ExternalLink className="size-3 shrink-0 text-muted-foreground" />}
+                      <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-micro font-bold", REF_TONES[r.type] ?? REF_TONES.OTHER)}>{r.type}</span>
+                      <span className="min-w-0 flex-1 truncate text-meta font-semibold">{r.title}</span>
+                      {href && <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />}
                     </>
                   );
                   return href ? (
@@ -239,7 +239,7 @@ export function ProjectContextPanel({
                   );
                 })}
                 {compact && refCount > 4 && (
-                  <p className="text-[10.5px] text-muted-foreground">+{refCount - 4} more in the project</p>
+                  <p className="text-micro text-muted-foreground">+{refCount - 4} more in the project</p>
                 )}
               </div>
             )}
@@ -247,17 +247,17 @@ export function ProjectContextPanel({
 
           {fileCount > 0 && (
             <div>
-              <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                <FileText className="size-3" /> Files ({fileCount})
+              <p className="mb-1.5 flex items-center gap-1 text-micro font-bold uppercase tracking-wide text-muted-foreground">
+                <FileText className="size-3.5" /> Files ({fileCount})
               </p>
               <div className="flex flex-col gap-1">
                 {data.files.slice(0, compact ? 3 : 10).map((file) => (
                   <a key={file.id} href={file.fileUrl} target="_blank" rel="noreferrer"
                     className="flex items-center gap-2 rounded-lg border border-border/60 bg-card px-2.5 py-1.5 transition-colors hover:border-primary/40">
                     <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate text-[11.5px] font-semibold">{fileName(file.fileUrl)}</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">v{file.versionNumber}</span>
-                    {file.approvalStatus === "APPROVED" && <CheckCircle2 className="size-3 shrink-0 text-emerald-500" />}
+                    <span className="min-w-0 flex-1 truncate text-meta font-semibold">{fileName(file.fileUrl)}</span>
+                    <span className="shrink-0 text-micro text-muted-foreground">v{file.versionNumber}</span>
+                    {file.approvalStatus === "APPROVED" && <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />}
                   </a>
                 ))}
               </div>
@@ -266,13 +266,13 @@ export function ProjectContextPanel({
 
           {data.deliverables.length > 0 && (
             <div>
-              <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                <Target className="size-3" /> Deliverables
+              <p className="mb-1.5 flex items-center gap-1 text-micro font-bold uppercase tracking-wide text-muted-foreground">
+                <Target className="size-3.5" /> Deliverables
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {data.deliverables.map((d) => (
                   <span key={d.id}
-                    className={cn("rounded-full border px-2.5 py-1 text-[10.5px] font-semibold",
+                    className={cn("rounded-full border px-2.5 py-1 text-micro font-semibold",
                       d.id === data.focusedDeliverableId ? "border-primary/40 bg-primary/15 text-primary" : "border-border bg-card text-muted-foreground")}>
                     {d.title}
                   </span>

@@ -107,16 +107,16 @@ export function SprintPicker({
       <button
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "flex items-center gap-2 rounded-xl border px-3 py-2 text-[12px] font-semibold transition-colors",
+          "flex items-center gap-2 rounded-xl border px-3 py-2 text-body font-semibold transition-colors",
           current ? "border-primary/30 bg-primary/5 text-primary" : "border-border bg-card text-muted-foreground hover:text-foreground"
         )}
       >
         <Target className="size-3.5" />
         <span className="max-w-40 truncate">{current?.name ?? "All tasks"}</span>
         {current && (
-          <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-bold", STATUS_TONES[current.status])}>{current.status}</span>
+          <span className={cn("rounded-full px-1.5 py-0.5 text-micro font-bold", STATUS_TONES[current.status])}>{current.status}</span>
         )}
-        <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
@@ -125,7 +125,7 @@ export function SprintPicker({
           <div className="absolute right-0 top-full z-40 mt-2 w-80 rounded-2xl border border-border bg-card p-3 shadow-2xl">
             <button
               onClick={() => { onChange(""); setOpen(false); }}
-              className={cn("flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[12px] font-semibold transition-colors hover:bg-muted/60", !value && "bg-muted/60")}
+              className={cn("flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-body font-semibold transition-colors hover:bg-muted/60", !value && "bg-muted/60")}
             >
               All tasks (no sprint filter)
             </button>
@@ -143,10 +143,10 @@ export function SprintPicker({
                     )}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-[12px] font-bold">{s.name}</span>
-                      <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold", STATUS_TONES[s.status])}>{s.status}</span>
+                      <span className="min-w-0 flex-1 truncate text-body font-bold">{s.name}</span>
+                      <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-micro font-bold", STATUS_TONES[s.status])}>{s.status}</span>
                     </div>
-                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                    <p className="mt-0.5 text-micro text-muted-foreground">
                       {new Date(s.startDate).toLocaleDateString()} → {new Date(s.endDate).toLocaleDateString()}
                       {s._count ? ` · ${s._count.tasks} tasks` : ""}
                       {s.project ? ` · ${s.project.name}` : ""}
@@ -158,7 +158,7 @@ export function SprintPicker({
                       aria-label="Delete sprint"
                       className="flex size-6 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100"
                     >
-                      <Trash2 className="size-3" />
+                      <Trash2 className="size-3.5" />
                     </button>
                   )}
                 </div>
@@ -174,28 +174,28 @@ export function SprintPicker({
                   value={draft.name}
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                   placeholder="Sprint name (e.g. Sprint 12)"
-                  className="rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-primary/40"
+                  className="rounded-xl border border-border bg-background px-3 py-2 text-body outline-none focus:border-primary/40"
                 />
                 <input
                   value={draft.goal}
                   onChange={(e) => setDraft({ ...draft, goal: e.target.value })}
                   placeholder="Sprint goal (optional)"
-                  className="rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-primary/40"
+                  className="rounded-xl border border-border bg-background px-3 py-2 text-body outline-none focus:border-primary/40"
                 />
                 <Select value={draft.projectId} onChange={(e) => setDraft({ ...draft, projectId: e.target.value })} className="!w-full">
                   <option value="">All projects</option>
                   {projects.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
                 </Select>
                 <div className="flex gap-2">
-                  <input type="date" value={draft.startDate} onChange={(e) => setDraft({ ...draft, startDate: e.target.value })} className="min-w-0 flex-1 rounded-xl border border-border bg-background px-2 py-2 text-[11px] outline-none focus:border-primary/40" />
-                  <input type="date" value={draft.endDate} onChange={(e) => setDraft({ ...draft, endDate: e.target.value })} className="min-w-0 flex-1 rounded-xl border border-border bg-background px-2 py-2 text-[11px] outline-none focus:border-primary/40" />
+                  <input type="date" value={draft.startDate} onChange={(e) => setDraft({ ...draft, startDate: e.target.value })} className="min-w-0 flex-1 rounded-xl border border-border bg-background px-2 py-2 text-meta outline-none focus:border-primary/40" />
+                  <input type="date" value={draft.endDate} onChange={(e) => setDraft({ ...draft, endDate: e.target.value })} className="min-w-0 flex-1 rounded-xl border border-border bg-background px-2 py-2 text-meta outline-none focus:border-primary/40" />
                 </div>
                 <input
                   type="number"
                   value={draft.capacityHours}
                   onChange={(e) => setDraft({ ...draft, capacityHours: e.target.value })}
                   placeholder="Capacity hours (optional)"
-                  className="rounded-xl border border-border bg-background px-3 py-2 text-[12px] outline-none focus:border-primary/40"
+                  className="rounded-xl border border-border bg-background px-3 py-2 text-body outline-none focus:border-primary/40"
                 />
                 <div className="flex items-center gap-2">
                   <Btn variant="primary" onClick={create} disabled={busy || !draft.name.trim() || !draft.startDate || !draft.endDate}>
@@ -205,7 +205,7 @@ export function SprintPicker({
                 </div>
               </div>
             ) : canPlan ? (
-              <button onClick={() => setCreating(true)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[12px] font-bold text-primary transition-colors hover:bg-primary/10">
+              <button onClick={() => setCreating(true)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-body font-bold text-primary transition-colors hover:bg-primary/10">
                 <Plus className="size-3.5" /> New sprint
               </button>
             ) : null}
@@ -260,8 +260,8 @@ export function SprintBurndown({ sprintId }: { sprintId: string }) {
     };
   }, [data]);
 
-  if (err) return <p className="text-[11.5px] text-muted-foreground">Burndown unavailable: {err}</p>;
-  if (!data) return <div className="flex items-center gap-2 py-6 text-[11.5px] text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Loading burndown…</div>;
+  if (err) return <p className="text-meta text-muted-foreground">Burndown unavailable: {err}</p>;
+  if (!data) return <div className="flex items-center gap-2 py-6 text-meta text-muted-foreground"><Loader2 className="size-3.5 animate-spin" /> Loading burndown…</div>;
 
   const { summary } = data;
 
@@ -269,24 +269,24 @@ export function SprintBurndown({ sprintId }: { sprintId: string }) {
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-border/60 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Completion</p>
-          <p className="mt-0.5 font-heading text-[17px] font-bold">{summary.completionPct}%</p>
-          <p className="text-[10px] text-muted-foreground">{summary.done}/{summary.total} tasks</p>
+          <p className="text-micro font-semibold uppercase tracking-wide text-muted-foreground">Completion</p>
+          <p className="mt-0.5 font-heading text-title font-bold">{summary.completionPct}%</p>
+          <p className="text-micro text-muted-foreground">{summary.done}/{summary.total} tasks</p>
         </div>
         <div className="rounded-xl border border-border/60 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Open</p>
-          <p className="mt-0.5 font-heading text-[17px] font-bold">{summary.open}</p>
-          <p className="text-[10px] text-muted-foreground">remaining</p>
+          <p className="text-micro font-semibold uppercase tracking-wide text-muted-foreground">Open</p>
+          <p className="mt-0.5 font-heading text-title font-bold">{summary.open}</p>
+          <p className="text-micro text-muted-foreground">remaining</p>
         </div>
         <div className="rounded-xl border border-border/60 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hours</p>
-          <p className="mt-0.5 font-heading text-[17px] font-bold">{summary.actualHours}<span className="text-[12px] text-muted-foreground">/{summary.estimatedHours}</span></p>
-          <p className="text-[10px] text-muted-foreground">{summary.capacityHours ? `of ${summary.capacityHours}h capacity` : "actual / estimated"}</p>
+          <p className="text-micro font-semibold uppercase tracking-wide text-muted-foreground">Hours</p>
+          <p className="mt-0.5 font-heading text-title font-bold">{summary.actualHours}<span className="text-body text-muted-foreground">/{summary.estimatedHours}</span></p>
+          <p className="text-micro text-muted-foreground">{summary.capacityHours ? `of ${summary.capacityHours}h capacity` : "actual / estimated"}</p>
         </div>
         <div className="rounded-xl border border-border/60 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Window</p>
-          <p className="mt-0.5 font-heading text-[13px] font-bold">{new Date(data.sprint.startDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })} – {new Date(data.sprint.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>
-          <p className="text-[10px] text-muted-foreground">{data.sprint.status}</p>
+          <p className="text-micro font-semibold uppercase tracking-wide text-muted-foreground">Window</p>
+          <p className="mt-0.5 font-heading text-body-lg font-bold">{new Date(data.sprint.startDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })} – {new Date(data.sprint.endDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</p>
+          <p className="text-micro text-muted-foreground">{data.sprint.status}</p>
         </div>
       </div>
 
@@ -300,7 +300,7 @@ export function SprintBurndown({ sprintId }: { sprintId: string }) {
             )}
             <circle cx={geo.last[0]} cy={geo.last[1]} r="3.5" className="fill-primary" />
           </svg>
-          <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+          <div className="mt-1 flex items-center justify-between text-micro text-muted-foreground">
             <span>{data.days[0]?.date}</span>
             <span className="flex items-center gap-3">
               <span className="flex items-center gap-1"><span className="inline-block h-0.5 w-4 rounded bg-primary" /> actual remaining</span>
@@ -328,13 +328,13 @@ export function SprintBurndownCard({ sprint, onClose }: { sprint: Sprint; onClos
       <div className="flex items-center gap-2">
         <CalendarRange className="size-4 text-primary" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-bold">{sprint.name}</p>
-          {sprint.goal && <p className="truncate text-[11px] text-muted-foreground">{sprint.goal}</p>}
+          <p className="truncate text-body-lg font-bold">{sprint.name}</p>
+          {sprint.goal && <p className="truncate text-meta text-muted-foreground">{sprint.goal}</p>}
         </div>
-        <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1 text-[11px] font-bold text-muted-foreground hover:text-foreground">
+        <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1 text-meta font-bold text-muted-foreground hover:text-foreground">
           <TrendingDown className="size-3.5" /> {open ? "Hide" : "Burndown"}
         </button>
-        <button onClick={onClose} className="text-[11px] font-bold text-muted-foreground hover:text-foreground">Clear</button>
+        <button onClick={onClose} className="text-meta font-bold text-muted-foreground hover:text-foreground">Clear</button>
       </div>
       {open && <div className="mt-3"><SprintBurndown sprintId={sprint.id} /></div>}
     </div>

@@ -18,7 +18,7 @@ export function EmployeeModal({ open, onClose, onSaved }: { open: boolean; onClo
     try { await apiFetch("/people/employees", { method: "POST", body: JSON.stringify({ name: f.name.trim(), email: f.email.trim() || undefined, phone: f.phone.trim() || undefined, roleTitle: f.roleTitle.trim(), department: f.department.trim() || undefined, workLocation: f.workLocation.trim() || undefined, employmentType: f.employmentType, salary: f.salary ? Number(f.salary) : undefined, joinedDate: f.joinedDate || undefined, joinDate: f.joinedDate || undefined, deviceId: f.deviceId.trim() || undefined, education: f.education.trim() || undefined, emergencyContactName: f.emergencyContactName.trim() || undefined, emergencyContactPhone: f.emergencyContactPhone.trim() || undefined, emergencyContactRelation: f.emergencyContactRelation.trim() || undefined }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Add employee" size="lg">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Add employee" size="lg">
       <form onSubmit={save} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-4">
           <Field label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Rahim Ahmed" autoFocus /></Field>
@@ -36,7 +36,7 @@ export function EmployeeModal({ open, onClose, onSaved }: { open: boolean; onClo
           <Field label="Emergency phone"><Input value={f.emergencyContactPhone} onChange={(e) => setF({ ...f, emergencyContactPhone: e.target.value })} placeholder="+8801…" /></Field>
           <Field label="Emergency relation"><Input value={f.emergencyContactRelation} onChange={(e) => setF({ ...f, emergencyContactRelation: e.target.value })} placeholder="Spouse / Parent" /></Field>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add employee" />
       </form>
     </Modal>

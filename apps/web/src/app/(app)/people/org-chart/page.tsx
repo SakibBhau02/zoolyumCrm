@@ -25,20 +25,20 @@ function OrgNode({ node, depth = 0 }: { node: any; depth?: number }) {
       >
         <Avatar name={node.name} size={depth === 0 ? "size-9" : "size-7"} />
         <div className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 truncate text-[12.5px] font-semibold">
+          <p className="flex items-center gap-1.5 truncate text-body font-semibold">
             {node.name}
             {depth === 0 && (
-              <span className="rounded-full bg-brand-gradient px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-wide text-white">root</span>
+              <span className="rounded-full bg-brand-gradient px-1.5 py-0.5 text-micro font-bold uppercase tracking-wide text-white">root</span>
             )}
           </p>
-          <p className="truncate text-[10.5px] text-muted-foreground">
+          <p className="truncate text-micro text-muted-foreground">
             {node.roleTitle}
             {node.department ? ` · ${node.department}` : ""}
           </p>
         </div>
         {reports.length > 0 && (
-          <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-            <Users className="size-2.5" />{reports.length}
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-micro font-semibold text-muted-foreground">
+            <Users className="size-3.5" />{reports.length}
           </span>
         )}
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />

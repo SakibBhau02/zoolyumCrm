@@ -17,7 +17,7 @@ export function CandidateModal({ open, onClose, onSaved }: { open: boolean; onCl
     try { await apiFetch("/people/candidates", { method: "POST", body: JSON.stringify({ firstName: f.firstName.trim(), lastName: f.lastName.trim(), email: f.email.trim(), phone: f.phone.trim() || undefined, position: f.position.trim(), department: f.department.trim() || undefined, source: f.source.trim() || undefined }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Add candidate" size="lg">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Add candidate" size="lg">
       <form onSubmit={save} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-4">
           <Field label="First name *"><Input value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} placeholder="Sadia" autoFocus /></Field>
@@ -28,7 +28,7 @@ export function CandidateModal({ open, onClose, onSaved }: { open: boolean; onCl
           <Field label="Department"><Input value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })} placeholder="Design" /></Field>
           <Field label="Source"><Input value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} placeholder="LinkedIn" /></Field>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add candidate" />
       </form>
     </Modal>

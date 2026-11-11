@@ -34,13 +34,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return (
         <div className="flex h-screen items-center justify-center bg-mesh px-6">
           <div className="w-full max-w-sm rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-            <p className="font-heading text-[15px] font-semibold">Can&apos;t reach the server</p>
-            <p className="mt-1 text-[12.5px] text-muted-foreground">
+            <p className="font-heading text-section font-semibold">Can&apos;t reach the server</p>
+            <p className="mt-1 text-body text-muted-foreground">
               {loadError ?? "The API is not responding. Your session is still valid."}
             </p>
             <button
               onClick={retry}
-              className="mt-4 inline-flex items-center justify-center rounded-lg bg-brand-gradient px-4 py-2 text-[12.5px] font-semibold text-white"
+              className="mt-4 inline-flex items-center justify-center rounded-lg bg-brand-gradient px-4 py-2 text-body font-semibold text-white"
             >
               Try again
             </button>

@@ -79,11 +79,11 @@ export function TelegramConnect({ employeeId, employeeName }: { employeeId: stri
       <SectionTitle
         title="Telegram"
         subtitle="Meeting reminders, leave decisions and payroll alerts in their pocket"
-        icon={<Send className="size-3.5" />}
+        icon={<Send className="size-4" />}
         action={
           link ? (
-            <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-bold text-emerald-600 dark:text-emerald-300">
-              <Check className="size-3" /> Connected
+            <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro font-bold text-emerald-600 dark:text-emerald-300">
+              <Check className="size-3.5" /> Connected
             </span>
           ) : undefined
         }
@@ -92,8 +92,8 @@ export function TelegramConnect({ employeeId, employeeName }: { employeeId: stri
       {link ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-muted/40 px-3 py-2.5">
           <div className="min-w-0">
-            <p className="text-[12.5px] font-semibold">{link.firstName ?? link.username ?? "Telegram chat"}</p>
-            <p className="font-mono text-[10.5px] text-muted-foreground">
+            <p className="text-body font-semibold">{link.firstName ?? link.username ?? "Telegram chat"}</p>
+            <p className="font-mono text-micro text-muted-foreground">
               {link.username ? `@${link.username} · ` : ""}chat {link.chatId}
             </p>
           </div>
@@ -105,27 +105,27 @@ export function TelegramConnect({ employeeId, employeeName }: { employeeId: stri
         <div className="flex flex-col gap-2">
           {code.deepLink ? (
             <>
-              <p className="text-[12px] text-muted-foreground">
+              <p className="text-body text-muted-foreground">
                 Send this link to {employeeName}. It works once and expires in {code.ttlMinutes} minutes.
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded-xl border border-border bg-muted/40 px-3 py-2 font-mono text-[11.5px]">{code.deepLink}</code>
+                <code className="min-w-0 flex-1 truncate rounded-xl border border-border bg-muted/40 px-3 py-2 font-mono text-meta">{code.deepLink}</code>
                 <Btn variant="outline" onClick={copy}><Copy className="size-3.5" /> {copied ? "Copied" : "Copy"}</Btn>
                 <a
                   href={code.deepLink}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-3 py-2 text-[12px] font-semibold text-white"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-3 py-2 text-body font-semibold text-white"
                 >
                   <Send className="size-3.5" /> Open Telegram
                 </a>
               </div>
-              <p className="text-[10.5px] text-muted-foreground">
+              <p className="text-micro text-muted-foreground">
                 Or they can send <span className="font-mono font-semibold text-foreground">/start {code.code}</span> to the bot.
               </p>
             </>
           ) : (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-700 dark:text-amber-300">
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-meta text-amber-700 dark:text-amber-300">
               Bot name is not configured yet. Set the bot username in Control → Telegram, or share this code: <span className="font-mono font-bold">{code.code}</span>
             </div>
           )}
@@ -136,7 +136,7 @@ export function TelegramConnect({ employeeId, employeeName }: { employeeId: stri
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[12px] text-muted-foreground">
+          <p className="text-body text-muted-foreground">
             Not connected. Generate a one-tap link — no chat ID to copy.
           </p>
           <Btn variant="outline" onClick={generate} disabled={busy}>
@@ -145,7 +145,7 @@ export function TelegramConnect({ employeeId, employeeName }: { employeeId: stri
         </div>
       )}
 
-      {error && <p className={cn("mt-2 text-[11.5px] font-medium text-rose-500")}>{error}</p>}
+      {error && <p className={cn("mt-2 text-meta font-medium text-rose-500")}>{error}</p>}
     </CardShell>
   );
 }

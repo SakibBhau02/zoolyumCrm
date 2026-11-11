@@ -58,13 +58,13 @@ export default function LandingPage() {
         <div className="flex items-center gap-2">
           <Link
             href="/portal-login"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-[12.5px] font-semibold text-foreground transition-colors hover:bg-muted"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-body font-semibold text-foreground transition-colors hover:bg-muted"
           >
             Client portal
           </Link>
           <Link
             href="/login"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-4 py-2 text-[12.5px] font-bold text-white shadow-primary/25 transition-transform hover:scale-[1.02]"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-4 py-2 text-body font-bold text-white shadow-primary/25 transition-transform hover:scale-[1.02]"
           >
             Sign in <ArrowRight className="size-3.5" />
           </Link>
@@ -77,8 +77,8 @@ export default function LandingPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: EASE }}
         >
-          <span className="mb-5 inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3.5 py-1.5 text-[11px] font-semibold text-primary">
-            <Plug className="size-3" /> 9 modules · one operating system
+          <span className="mb-5 inline-flex items-center gap-1.5 rounded-full border border-primary/25 bg-primary/10 px-3.5 py-1.5 text-meta font-semibold text-primary">
+            <Plug className="size-3.5" /> 9 modules · one operating system
           </span>
           <h1 className="mx-auto max-w-3xl font-heading text-4xl font-bold leading-tight md:text-6xl">
             Every signal in your agency,{" "}
@@ -91,18 +91,18 @@ export default function LandingPage() {
               on one dashboard
             </span>
           </h1>
-          <p className="mx-auto mt-5 max-w-xl text-[14px] leading-relaxed text-muted-foreground">
+          <p className="mx-auto mt-5 max-w-xl text-body-lg leading-relaxed text-muted-foreground">
             Zoolyum OS unifies leads, clients, projects, tasks, people, finance and insights — from first
             pitch to final payment.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
             <Link
               href="/login"
-              className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-6 py-3 text-[13px] font-bold text-white transition-transform hover:scale-[1.02]"
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-gradient px-6 py-3 text-body-lg font-bold text-white transition-transform hover:scale-[1.02]"
             >
-              Open dashboard <ArrowRight className="size-4" />
+              Open dashboard <ArrowRight className="size-3.5" />
             </Link>
-            <span className="rounded-xl border border-border bg-card px-4 py-3 text-[12px] text-muted-foreground">
+            <span className="rounded-xl border border-border bg-card px-4 py-3 text-body text-muted-foreground">
               demo · <span className="font-mono text-foreground">sakib@zoolyum.com</span>
             </span>
           </div>
@@ -114,8 +114,8 @@ export default function LandingPage() {
               <div className="flex size-10 items-center justify-center rounded-xl bg-brand-gradient-soft">
                 <m.icon className="size-5 text-primary" />
               </div>
-              <h3 className="mt-3 font-heading text-[15px] font-semibold">{m.name}</h3>
-              <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">{m.desc}</p>
+              <h3 className="mt-3 font-heading text-section font-semibold">{m.name}</h3>
+              <p className="mt-1 text-body leading-relaxed text-muted-foreground">{m.desc}</p>
             </LandingCard>
           ))}
         </div>

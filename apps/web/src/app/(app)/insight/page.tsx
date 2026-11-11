@@ -66,9 +66,9 @@ const SCHEDULE_LABELS: Record<string, string> = {
 function ErrorCard({ msg, onRetry }: { msg: string; onRetry: () => void }) {
   return (
     <CardShell className="flex flex-col items-center gap-3 py-12">
-      <p className="text-[13px] text-muted-foreground">{msg}</p>
+      <p className="text-body-lg text-muted-foreground">{msg}</p>
       <Btn variant="outline" onClick={onRetry}>
-        <RefreshCw className="size-4" /> Retry
+        <RefreshCw className="size-3.5" /> Retry
       </Btn>
     </CardShell>
   );
@@ -82,8 +82,8 @@ function useReload() {
 function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
-      <p className="text-[10.5px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-heading font-bold tabular-nums">{value}</p>
+      <p className="text-micro font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-1 text-stat font-heading font-bold tabular-nums">{value}</p>
     </div>
   );
 }
@@ -94,19 +94,19 @@ function BarList({ items, valueKey = "revenue", barClass = "bg-brand-gradient" }
     <div className="flex flex-col gap-3">
       {items.map((it: any) => (
         <div key={it.name} className="flex items-center gap-3">
-          <span className="w-32 truncate text-[12px] text-muted-foreground">{it.name}</span>
+          <span className="w-32 truncate text-body text-muted-foreground">{it.name}</span>
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
             <div
               className={cn("h-full rounded-full transition-all", barClass)}
               style={{ width: `${(it[valueKey] / max) * 100}%` }}
             />
           </div>
-          <span className="w-20 text-right text-[12.5px] font-bold tabular-nums">
+          <span className="w-20 text-right text-body font-bold tabular-nums">
             {formatBDT(it[valueKey])}
           </span>
         </div>
       ))}
-      {!items.length && <p className="text-[12px] text-muted-foreground">No data yet</p>}
+      {!items.length && <p className="text-body text-muted-foreground">No data yet</p>}
     </div>
   );
 }
@@ -279,7 +279,7 @@ export default function ReportsPage() {
         subtitle="Executive overview, saved report library, and cross-module analytics."
         actions={
           <Btn variant="primary" onClick={openCreate}>
-            <Plus className="size-4" /> New Report
+            <Plus className="size-3.5" /> New Report
           </Btn>
         }
       />
@@ -289,7 +289,7 @@ export default function ReportsPage() {
       </div>
 
       {actionErr && (
-        <div className="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-[12.5px] text-rose-600 dark:text-rose-300">
+        <div className="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-body text-rose-600 dark:text-rose-300">
           {actionErr}
         </div>
       )}
@@ -307,13 +307,13 @@ export default function ReportsPage() {
           {!ovLoading && !ovErr && ov && (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard label="Revenue This Month" value={formatBDT(ov.summary.revenueThisMonth)} sub="invoiced" icon={<TrendingUp className="size-5" />} index={0} />
-                <StatCard label="Collected" value={formatBDT(ov.summary.collectedThisMonth)} sub="this month" icon={<Wallet className="size-5" />} index={1} />
-                <StatCard label="Expenses" value={formatBDT(ov.summary.expensesThisMonth)} sub="this month" icon={<Receipt className="size-5" />} index={2} />
-                <StatCard label="Active Clients" value={ov.summary.activeClients} sub="total clients" icon={<Users className="size-5" />} index={3} />
-                <StatCard label="Active Projects" value={ov.summary.activeProjects} sub="active + planning" icon={<FolderKanban className="size-5" />} index={0} />
-                <StatCard label="Lead Conversion" value={percent(ov.summary.conversionRate)} sub="won of all leads" icon={<Target className="size-5" />} index={1} />
-                <StatCard label="Outstanding" value={formatBDT(ov.summary.outstanding)} sub="unpaid balance" icon={<AlertCircle className="size-5" />} index={2} />
+                <StatCard label="Revenue This Month" value={formatBDT(ov.summary.revenueThisMonth)} sub="invoiced" icon={<TrendingUp className="size-4" />} index={0} />
+                <StatCard label="Collected" value={formatBDT(ov.summary.collectedThisMonth)} sub="this month" icon={<Wallet className="size-4" />} index={1} />
+                <StatCard label="Expenses" value={formatBDT(ov.summary.expensesThisMonth)} sub="this month" icon={<Receipt className="size-4" />} index={2} />
+                <StatCard label="Active Clients" value={ov.summary.activeClients} sub="total clients" icon={<Users className="size-4" />} index={3} />
+                <StatCard label="Active Projects" value={ov.summary.activeProjects} sub="active + planning" icon={<FolderKanban className="size-4" />} index={0} />
+                <StatCard label="Lead Conversion" value={percent(ov.summary.conversionRate)} sub="won of all leads" icon={<Target className="size-4" />} index={1} />
+                <StatCard label="Outstanding" value={formatBDT(ov.summary.outstanding)} sub="unpaid balance" icon={<AlertCircle className="size-4" />} index={2} />
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -329,7 +329,7 @@ export default function ReportsPage() {
                     {ov.paymentMethods.length ? (
                       <PaymentDonut data={ov.paymentMethods} />
                     ) : (
-                      <p className="text-[12px] text-muted-foreground">No payments recorded yet</p>
+                      <p className="text-body text-muted-foreground">No payments recorded yet</p>
                     )}
                   </CardShell>
                 </FadeIn>
@@ -341,7 +341,7 @@ export default function ReportsPage() {
                         <div key={c.name} className="flex items-center gap-3">
                           <span
                             className={cn(
-                              "flex size-6 shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold",
+                              "flex size-6 shrink-0 items-center justify-center rounded-full text-micro font-bold",
                               i < 3
                                 ? "bg-brand-gradient text-white"
                                 : "bg-muted text-muted-foreground"
@@ -349,12 +349,12 @@ export default function ReportsPage() {
                           >
                             {i + 1}
                           </span>
-                          <span className="flex-1 truncate text-[12.5px] font-medium">{c.name}</span>
-                          <span className="text-[12.5px] font-bold tabular-nums">{formatBDT(c.revenue)}</span>
+                          <span className="flex-1 truncate text-body font-medium">{c.name}</span>
+                          <span className="text-body font-bold tabular-nums">{formatBDT(c.revenue)}</span>
                         </div>
                       ))}
                       {!ov.topClients.length && (
-                        <p className="text-[12px] text-muted-foreground">No client revenue yet</p>
+                        <p className="text-body text-muted-foreground">No client revenue yet</p>
                       )}
                     </div>
                   </CardShell>
@@ -394,32 +394,32 @@ export default function ReportsPage() {
                         <Tr key={rpt.id} index={i}>
                           <Td className="font-semibold">{rpt.name}</Td>
                           <Td className="max-w-64">
-                            <span className="block truncate text-[12px] text-muted-foreground">
+                            <span className="block truncate text-body text-muted-foreground">
                               {(rpt.metrics ?? []).join(", ") || "—"}
                             </span>
                           </Td>
                           <Td>
                             {rpt.schedule ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary dark:text-primary">
-                                <BarChart3 className="size-3" />
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-meta font-semibold text-primary dark:text-primary">
+                                <BarChart3 className="size-3.5" />
                                 {SCHEDULE_LABELS[rpt.schedule] ?? rpt.schedule}
                               </span>
                             ) : (
-                              <span className="text-[12px] text-muted-foreground">No schedule</span>
+                              <span className="text-body text-muted-foreground">No schedule</span>
                             )}
                           </Td>
                           <Td>
-                            <span className="text-[12px] tabular-nums text-muted-foreground">
+                            <span className="text-body tabular-nums text-muted-foreground">
                               {timeAgo(rpt.lastRunAt)}
                             </span>
                           </Td>
                           <Td className="text-right">
                             <div className="flex justify-end gap-1">
                               <Btn variant="ghost" onClick={() => runReport(rpt)}>
-                                <Play className="size-4" />
+                                <Play className="size-3.5" />
                               </Btn>
                               <Btn variant="ghost" onClick={() => openEdit(rpt)}>
-                                <Pencil className="size-4" />
+                                <Pencil className="size-3.5" />
                               </Btn>
                               <Btn
                                 variant="ghost"
@@ -430,7 +430,7 @@ export default function ReportsPage() {
                                   confirmId === rpt.id ? deleteReport(rpt) : setConfirmId(rpt.id)
                                 }
                               >
-                                <Trash2 className="size-4" />
+                                <Trash2 className="size-3.5" />
                               </Btn>
                             </div>
                           </Td>
@@ -440,7 +440,7 @@ export default function ReportsPage() {
                   </table>
                 </TableShell>
               )}
-              <p className="mt-3 text-[11.5px] text-muted-foreground">
+              <p className="mt-3 text-meta text-muted-foreground">
                 Click delete twice to confirm removal.
               </p>
             </>
@@ -479,14 +479,14 @@ export default function ReportsPage() {
                             <StatusBadge status={c.healthLevel ?? "GREEN"} />
                           </Td>
                           <Td>
-                            <span className="text-[12px] tabular-nums">{formatDate(c.renewalDate)}</span>
+                            <span className="text-body tabular-nums">{formatDate(c.renewalDate)}</span>
                           </Td>
                           <Td>
                             <span className="tabular-nums">{c.activeProjects}</span>
                           </Td>
                           <Td className="font-semibold tabular-nums">{formatBDT(c.totalRevenue)}</Td>
                           <Td>
-                            <span className="block max-w-56 truncate text-[12px] text-muted-foreground" title={c.lastNote ?? ""}>
+                            <span className="block max-w-56 truncate text-body text-muted-foreground" title={c.lastNote ?? ""}>
                               {c.lastNote ?? "—"}
                             </span>
                           </Td>
@@ -545,7 +545,7 @@ export default function ReportsPage() {
                   </table>
                 </TableShell>
               )}
-              <p className="mt-3 text-[11.5px] text-muted-foreground">
+              <p className="mt-3 text-meta text-muted-foreground">
                 Estimated tax @ {Math.round(tax.taxRate * 100)}% of net (collected − expenses).
               </p>
             </>
@@ -565,8 +565,8 @@ export default function ReportsPage() {
           {!perfLoading && !perfErr && perf && (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard label="Avg Deal Value" value={formatBDT(perf.avgDealValue)} sub="won deals" icon={<Briefcase className="size-5" />} index={0} />
-                <StatCard label="Team Size" value={perf.teamSize} sub="employees" icon={<Users className="size-5" />} index={1} />
+                <StatCard label="Avg Deal Value" value={formatBDT(perf.avgDealValue)} sub="won deals" icon={<Briefcase className="size-4" />} index={0} />
+                <StatCard label="Team Size" value={perf.teamSize} sub="employees" icon={<Users className="size-4" />} index={1} />
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -629,8 +629,8 @@ export default function ReportsPage() {
           {!metricsErr && !corrErr && !digestsErr && (
             <>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard label="Active Insights" value={corr?.length ?? "—"} sub="correlation engine" icon={<Lightbulb className="size-5" />} index={0} />
-                <StatCard label="Digests Delivered" value={digests?.length ?? "—"} sub="executive summaries" icon={<FileText className="size-5" />} index={1} />
+                <StatCard label="Active Insights" value={corr?.length ?? "—"} sub="correlation engine" icon={<Lightbulb className="size-4" />} index={0} />
+                <StatCard label="Digests Delivered" value={digests?.length ?? "—"} sub="executive summaries" icon={<FileText className="size-4" />} index={1} />
               </div>
 
               <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -656,8 +656,8 @@ export default function ReportsPage() {
                               <Lightbulb className="size-3.5 text-white" />
                             </span>
                             <div className="flex-1">
-                              <p className="text-[12.5px] font-medium leading-snug">{ins.description}</p>
-                              <p className="mt-1 text-[10.5px] text-muted-foreground">
+                              <p className="text-body font-medium leading-snug">{ins.description}</p>
+                              <p className="mt-1 text-micro text-muted-foreground">
                                 {ins.confidenceLevel ? `${Math.round(ins.confidenceLevel * 100)}% confidence` : "New"} · {timeAgo(ins.surfacedAt)}
                                 {ins.dismissedAt ? " · dismissed" : ""}
                               </p>
@@ -675,7 +675,7 @@ export default function ReportsPage() {
                         </div>
                       ))}
                       {!corr?.length && (
-                        <p className="text-[12px] text-muted-foreground">No insights yet — data history accumulates</p>
+                        <p className="text-body text-muted-foreground">No insights yet — data history accumulates</p>
                       )}
                     </div>
                   </CardShell>
@@ -694,15 +694,15 @@ export default function ReportsPage() {
                               <FileText className="size-4 text-primary dark:text-primary" />
                             </span>
                             <div>
-                              <p className="text-[12.5px] font-semibold">{d.period}</p>
-                              <p className="text-[10.5px] text-muted-foreground">{timeAgo(d.generatedAt)}</p>
+                              <p className="text-body font-semibold">{d.period}</p>
+                              <p className="text-micro text-muted-foreground">{timeAgo(d.generatedAt)}</p>
                             </div>
                           </div>
                           <StatusBadge status={d.deliveryStatus ?? "SENT"} />
                         </div>
                       ))}
                       {!digests?.length && (
-                        <p className="text-[12px] text-muted-foreground">No digests generated yet</p>
+                        <p className="text-body text-muted-foreground">No digests generated yet</p>
                       )}
                     </div>
                   </CardShell>
@@ -733,7 +733,7 @@ export default function ReportsPage() {
                     type="button"
                     onClick={() => toggleMetric(m.value)}
                     className={cn(
-                      "rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-all",
+                      "rounded-full border px-3 py-1.5 text-body font-semibold transition-all",
                       on
                         ? "border-primary/50 bg-primary/10 text-primary dark:text-primary"
                         : "border-border text-muted-foreground hover:text-foreground"
@@ -756,7 +756,7 @@ export default function ReportsPage() {
               <option value="monthly">Monthly</option>
             </Select>
           </Field>
-          <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+          <label className="flex cursor-pointer items-center gap-2 text-body font-medium">
             <input
               type="checkbox"
               checked={form.runNow}
@@ -766,7 +766,7 @@ export default function ReportsPage() {
             Run immediately after saving
           </label>
           {formErr && (
-            <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-600 dark:text-rose-300">
+            <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-body text-rose-600 dark:text-rose-300">
               {formErr}
             </p>
           )}
@@ -788,20 +788,20 @@ export default function ReportsPage() {
             </div>
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <div>
-                <p className="mb-2 text-[12px] font-semibold text-muted-foreground">Revenue Trend</p>
+                <p className="mb-2 text-body font-semibold text-muted-foreground">Revenue Trend</p>
                 <RevenueAreaChart data={r.trend} height={200} />
               </div>
               <div>
-                <p className="mb-2 text-[12px] font-semibold text-muted-foreground">Payment Methods</p>
+                <p className="mb-2 text-body font-semibold text-muted-foreground">Payment Methods</p>
                 {r.paymentMethods.length ? (
                   <PaymentDonut data={r.paymentMethods} />
                 ) : (
-                  <p className="text-[12px] text-muted-foreground">No payments recorded</p>
+                  <p className="text-body text-muted-foreground">No payments recorded</p>
                 )}
               </div>
             </div>
             <div>
-              <p className="mb-2 text-[12px] font-semibold text-muted-foreground">Top Clients</p>
+              <p className="mb-2 text-body font-semibold text-muted-foreground">Top Clients</p>
               <BarList items={r.topClients} />
             </div>
           </div>

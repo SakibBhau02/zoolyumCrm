@@ -17,7 +17,7 @@ export function HolidayModal({ open, onClose, onSaved }: { open: boolean; onClos
     try { await apiFetch("/people/holidays", { method: "POST", body: JSON.stringify({ date: f.date, name: f.name.trim(), description: f.description.trim() || undefined, tentative: f.tentative, isGovernment: f.isGovernment }) }); onSaved(); onClose(); } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
   return (
-    <Modal open={open} onClose={onClose} title="Add holiday">
+    <Modal closeOnBackdrop={false} open={open} onClose={onClose} title="Add holiday">
       <form onSubmit={save} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-4">
           <Field label="Date *"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
@@ -25,10 +25,10 @@ export function HolidayModal({ open, onClose, onSaved }: { open: boolean; onClos
         </div>
         <Field label="Description"><Input value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Public holiday" /></Field>
         <div className="flex flex-wrap gap-4">
-          <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium"><input type="checkbox" checked={f.isGovernment} onChange={(e) => setF({ ...f, isGovernment: e.target.checked })} className="size-3.5 rounded border-border accent-primary" /> Government holiday</label>
-          <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium"><input type="checkbox" checked={f.tentative} onChange={(e) => setF({ ...f, tentative: e.target.checked })} className="size-3.5 rounded border-border accent-amber-500" /> Tentative date (e.g. Eid, subject to moon sighting)</label>
+          <label className="flex cursor-pointer items-center gap-2 text-body font-medium"><input type="checkbox" checked={f.isGovernment} onChange={(e) => setF({ ...f, isGovernment: e.target.checked })} className="size-3.5 rounded border-border accent-primary" /> Government holiday</label>
+          <label className="flex cursor-pointer items-center gap-2 text-body font-medium"><input type="checkbox" checked={f.tentative} onChange={(e) => setF({ ...f, tentative: e.target.checked })} className="size-3.5 rounded border-border accent-amber-500" /> Tentative date (e.g. Eid, subject to moon sighting)</label>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add holiday" />
       </form>
     </Modal>

@@ -35,7 +35,7 @@ export default function TaskSetupPage() {
         actions={
           <Link
             href="/tasks"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-body font-semibold text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" /> Back to board
           </Link>
@@ -44,7 +44,7 @@ export default function TaskSetupPage() {
 
       <WorkloadPanel onNotify={notify} />
 
-      <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
         <TemplatesPanel onNotify={notify} />
         <TaskTypeRulesPanel onNotify={notify} />
       </div>

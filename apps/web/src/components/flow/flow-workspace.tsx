@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  AlertTriangle, Banknote, Calendar, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, ClipboardList, Download, Eye, Facebook, FileArchive,
+  AlertTriangle, ArrowUpRight, Banknote, Calendar, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, ClipboardList, Download, Eye, Facebook, FileArchive,
   FileSpreadsheet, FileText, Globe, HandCoins, History, Image, Instagram, LayoutGrid, Linkedin, Link2, List, Music2, Pencil, Plus, ReceiptText, RefreshCw,
   Rocket, Search, Send, SlidersHorizontal, SquareKanban, Trash2, Twitter, Upload, UploadCloud, Users, Wallet, X, Youtube,
 } from "lucide-react";
@@ -53,10 +53,10 @@ const STATUS_BAR: Record<string, string> = {
 /** Removable chip for one active filter. */
 function FilterPill({ label: text, onClear }: { label: string; onClear: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10.5px] font-bold text-primary">
+    <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-micro font-bold text-primary">
       {text}
       <button onClick={onClear} title="Remove filter" className="rounded-full p-0.5 transition-colors hover:bg-primary/20">
-        <X className="size-2.5" />
+        <X className="size-3.5" />
       </button>
     </span>
   );
@@ -161,43 +161,43 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense, currency 
       <InvoiceDetailModal selectedId={selInv} onClose={() => setSelInv(null)} onEdit={() => setSelInv(null)} />
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-border/60 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Invoiced</p>
-          <p className="mt-0.5 text-[14px] font-heading font-bold tabular-nums">{money(finance?.totalInvoiced, cur)}</p>
+          <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Invoiced</p>
+          <p className="mt-0.5 text-body-lg font-heading font-bold tabular-nums">{money(finance?.totalInvoiced, cur)}</p>
         </div>
         <div className="rounded-xl border border-border/60 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Collected</p>
-          <p className="mt-0.5 text-[14px] font-heading font-bold tabular-nums text-emerald-500">{money(finance?.collected, cur)}</p>
+          <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Collected</p>
+          <p className="mt-0.5 text-body-lg font-heading font-bold tabular-nums text-emerald-500">{money(finance?.collected, cur)}</p>
         </div>
         <div className="rounded-xl border border-border/60 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Outstanding</p>
-          <p className={cn("mt-0.5 text-[14px] font-heading font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-500" : "text-emerald-500")}>{money(finance?.outstanding, cur)}</p>
+          <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Outstanding</p>
+          <p className={cn("mt-0.5 text-body-lg font-heading font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-500" : "text-emerald-500")}>{money(finance?.outstanding, cur)}</p>
         </div>
         <div className="rounded-xl border border-border/60 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Expenses</p>
-          <p className="mt-0.5 text-[14px] font-heading font-bold tabular-nums text-rose-500">{money(finance?.expensesTotal, cur)}</p>
+          <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Expenses</p>
+          <p className="mt-0.5 text-body-lg font-heading font-bold tabular-nums text-rose-500">{money(finance?.expensesTotal, cur)}</p>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Project profit</p>
-          <p className={cn("mt-0.5 text-[13px] font-heading font-bold tabular-nums", Number(finance?.profit ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500")}>{money(finance?.profit, cur)}</p>
+          <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Project profit</p>
+          <p className={cn("mt-0.5 text-body-lg font-heading font-bold tabular-nums", Number(finance?.profit ?? 0) >= 0 ? "text-emerald-500" : "text-rose-500")}>{money(finance?.profit, cur)}</p>
         </div>
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Margin</p>
-          <p className="mt-0.5 text-[13px] font-heading font-bold tabular-nums">{finance?.margin != null ? `${finance.margin}%` : "—"}</p>
+          <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Margin</p>
+          <p className="mt-0.5 text-body-lg font-heading font-bold tabular-nums">{finance?.margin != null ? `${finance.margin}%` : "—"}</p>
         </div>
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Payment status</p>
-          <p className="mt-0.5 text-[13px] font-heading font-bold">{finance?.project?.paymentStatus ? label(finance.project.paymentStatus) : "—"}</p>
+          <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Payment status</p>
+          <p className="mt-0.5 text-body-lg font-heading font-bold">{finance?.project?.paymentStatus ? label(finance.project.paymentStatus) : "—"}</p>
         </div>
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Next billing</p>
-          <p className="mt-0.5 text-[13px] font-heading font-bold">{finance?.project?.nextBillingDate ? formatDate(finance.project.nextBillingDate) : "—"}</p>
+          <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Next billing</p>
+          <p className="mt-0.5 text-body-lg font-heading font-bold">{finance?.project?.nextBillingDate ? formatDate(finance.project.nextBillingDate) : "—"}</p>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Invoices</p>
+        <p className="text-meta font-bold uppercase tracking-wider text-muted-foreground">Invoices</p>
         <div className="flex items-center gap-2">
           <Btn variant="outline" onClick={onExpense}><ReceiptText className="size-3.5" /> Add Expense</Btn>
           <Btn variant="primary" onClick={onInvoice}><Plus className="size-3.5" /> Create Invoice</Btn>
@@ -215,9 +215,9 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense, currency 
                 <Td>
                   <span className="font-medium tabular-nums">{inv.invoiceNumber}</span>
                   {inv.invoiceType === "ADVANCE" && (
-                    <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Adv</span>
+                    <span className="ml-1.5 rounded-full bg-amber-500/15 px-1.5 py-px text-micro font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">Adv</span>
                   )}
-                  {inv.title && <span className="block text-[10.5px] font-normal text-muted-foreground">{inv.title}</span>}
+                  {inv.title && <span className="block text-micro font-normal text-muted-foreground">{inv.title}</span>}
                 </Td>
                 <Td><StatusBadge status={inv.status} /></Td>
                 <Td className="text-right font-semibold tabular-nums">{money(inv.amount, cur)}</Td>
@@ -230,7 +230,7 @@ function ProjectFinancePanel({ finance, loading, onInvoice, onExpense, currency 
         </table>
       </TableShell>
 
-      <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Expenses</p>
+      <p className="text-meta font-bold uppercase tracking-wider text-muted-foreground">Expenses</p>
       <TableShell>
         <table className="w-full">
           <THead><Th>Description</Th><Th>Category</Th><Th className="text-right">Amount</Th><Th>Date</Th><Th>Status</Th><Th>By</Th></THead>
@@ -336,7 +336,7 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
     <Modal open={open} onClose={onClose} title={`Create invoice — ${project?.name ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
         {fin && (
-          <div className="rounded-xl bg-muted/40 px-3 py-2.5 text-[12px]">
+          <div className="rounded-xl bg-muted/40 px-3 py-2.5 text-body">
             <div className="flex justify-between"><span className="text-muted-foreground">Project value</span><span className="font-bold tabular-nums">{money(Number(project?.amount ?? project?.budgetAmount ?? fin.project?.budgetAmount ?? 0))}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Billed so far</span><span className="font-medium tabular-nums">{money(fin.totalInvoiced ?? 0, project?.currency)}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Paid</span><span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">{money(fin.collected ?? 0, project?.currency)}</span></div>
@@ -348,9 +348,9 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
           <div className="flex items-center gap-2">
             <div className="relative w-28">
               <Input type="number" min={0} max={100} step="any" value={pct} onChange={(e) => applyPct(e.target.value)} placeholder="50" className="pr-7" />
-              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] font-bold text-muted-foreground">%</span>
+              <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-body font-bold text-muted-foreground">%</span>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-meta text-muted-foreground">
               {Number(pct) > 0 && Number(pct) <= 100
                 ? <span>Advance <span className="font-bold tabular-nums text-foreground">{money(Math.round((projectValue * Number(pct)) / 100 * 100) / 100, project?.currency)}</span> of {money(projectValue, project?.currency)}</span>
                 : "Milestone % of project value"}
@@ -358,10 +358,10 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
           </div>
         )}
         {Number(pct) > 0 && Number(pct) <= 100 && f.amount && f.amount !== lastAuto.current && (
-          <p className="-mt-2 text-[11px] text-amber-600 dark:text-amber-400">Amount was edited by hand — clear it to apply the % again.</p>
+          <p className="-mt-2 text-meta text-amber-600 dark:text-amber-400">Amount was edited by hand — clear it to apply the % again.</p>
         )}
         {fin && Number(pct) > 0 && Number(pct) <= 100 && Math.round((projectValue * Number(pct)) / 100 * 100) / 100 > Math.max(projectValue - (fin.totalInvoiced ?? 0), 0) && (
-          <p className="-mt-2 text-[11px] text-amber-600 dark:text-amber-400">
+          <p className="-mt-2 text-meta text-amber-600 dark:text-amber-400">
             {String(Number(pct))}% of full value ({money(projectValue, project?.currency)}) exceeds the remaining {money(Math.max(projectValue - (fin.totalInvoiced ?? 0), 0), project?.currency)} — {money(fin.totalInvoiced ?? 0, project?.currency)} already billed.
           </p>
         )}
@@ -370,7 +370,7 @@ function ProjectInvoiceModal({ open, project, onClose, onSaved }: { open: boolea
           <Field label="Due date"><Input type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></Field>
         </div>
         <Field label="Notes"><Textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Payment terms…" /></Field>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Create invoice" />
       </form>
     </Modal>
@@ -408,7 +408,7 @@ function ProjectExpenseModal({ open, project, bankAccounts, onClose, onSaved }: 
     <Modal open={open} onClose={onClose} title={`Add expense — ${project?.name ?? ""}`}>
       <form onSubmit={save} className="flex flex-col gap-4">
         {(project?.client?.companyName || project?.clientId) && (
-          <p className="rounded-xl bg-muted/40 px-3 py-2 text-[11.5px] text-muted-foreground">
+          <p className="rounded-xl bg-muted/40 px-3 py-2 text-meta text-muted-foreground">
             Project expense{project?.client?.companyName ? ` · ${project.client.companyName}` : ""} — what kind of cost is recorded via Category below.
           </p>
         )}
@@ -420,11 +420,11 @@ function ProjectExpenseModal({ open, project, bankAccounts, onClose, onSaved }: 
           <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{(bankAccounts ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.accountName}</option>)}</Select></Field>
         </div>
         {canDirect ? (
-          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[11.5px] text-emerald-600 dark:text-emerald-400">Posts to bank & ledger immediately.</p>
+          <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-meta text-emerald-600 dark:text-emerald-400">Posts to bank & ledger immediately.</p>
         ) : (
-          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-600 dark:text-amber-400">Sends a request — admin approves it in Expenses before accounts update.</p>
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-meta text-amber-600 dark:text-amber-400">Sends a request — admin approves it in Expenses before accounts update.</p>
         )}
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Add expense" />
       </form>
     </Modal>
@@ -526,7 +526,7 @@ function ChannelsModal({
   return (
     <Modal open={open} onClose={onClose} title="Project links & social" size="lg">
       <form onSubmit={submit} className="flex flex-col gap-3">
-        <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+        <p className="text-meta leading-relaxed text-muted-foreground">
           Everything clients see on the project page and portal — the live URL, their website, social
           handles, and working docs. Leave a field blank to remove that link.
         </p>
@@ -545,27 +545,27 @@ function ChannelsModal({
           </Field>
         </div>
         <div>
-          <p className="mb-1.5 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">Social handles</p>
+          <p className="mb-1.5 text-micro font-bold tracking-wide text-muted-foreground uppercase">Social handles</p>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
             {CHANNEL_FIELDS.map(({ key, label: text, Icon }) => (
               <Field key={key} label={text}>
                 <div className="relative">
                   <Icon className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={f.socialLinks[key]} onChange={(e) => setSocial(key, e.target.value)} placeholder="https://…" className="pl-9 text-[12px]" />
+                  <Input value={f.socialLinks[key]} onChange={(e) => setSocial(key, e.target.value)} placeholder="https://…" className="pl-9 text-body" />
                 </div>
               </Field>
             ))}
           </div>
         </div>
         <div>
-          <p className="mb-1.5 text-[10px] font-bold tracking-wide text-muted-foreground uppercase">Working docs</p>
+          <p className="mb-1.5 text-micro font-bold tracking-wide text-muted-foreground uppercase">Working docs</p>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-            <Field label="Brief"><Input value={f.briefLink} onChange={(e) => setF({ ...f, briefLink: e.target.value })} placeholder="Brief doc URL" className="text-[12px]" /></Field>
-            <Field label="Drive"><Input value={f.driveLink} onChange={(e) => setF({ ...f, driveLink: e.target.value })} placeholder="Drive folder URL" className="text-[12px]" /></Field>
-            <Field label="Research"><Input value={f.researchLink} onChange={(e) => setF({ ...f, researchLink: e.target.value })} placeholder="Research URL" className="text-[12px]" /></Field>
+            <Field label="Brief"><Input value={f.briefLink} onChange={(e) => setF({ ...f, briefLink: e.target.value })} placeholder="Brief doc URL" className="text-body" /></Field>
+            <Field label="Drive"><Input value={f.driveLink} onChange={(e) => setF({ ...f, driveLink: e.target.value })} placeholder="Drive folder URL" className="text-body" /></Field>
+            <Field label="Research"><Input value={f.researchLink} onChange={(e) => setF({ ...f, researchLink: e.target.value })} placeholder="Research URL" className="text-body" /></Field>
           </div>
         </div>
-        {err && <p className="text-[12px] font-medium text-rose-400">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Save links" />
       </form>
     </Modal>
@@ -1319,7 +1319,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
         <div className="h-1.5 w-14 overflow-hidden rounded-full bg-muted">
           <div className={`h-full rounded-full ${s >= 60 ? "bg-rose-500" : s >= 35 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${Math.min(s, 100)}%` }} />
         </div>
-        <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{s}</span>
+        <span className="text-meta font-semibold tabular-nums text-muted-foreground">{s}</span>
       </div>
     );
   };
@@ -1337,20 +1337,20 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
         <div className="h-1.5 w-10 overflow-hidden rounded-full bg-muted">
           <div className={`h-full rounded-full ${pct >= 90 ? "bg-rose-500" : pct >= 70 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} />
         </div>
-        <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{money(p.spentAmount ?? (p as any).budgetSpent ?? 0, p.currency)} / {money((p as any).amount ?? p.budgetAmount, p.currency)}</span>
+        <span className="text-meta font-semibold tabular-nums text-muted-foreground">{money(p.spentAmount ?? (p as any).budgetSpent ?? 0, p.currency)} / {money((p as any).amount ?? p.budgetAmount, p.currency)}</span>
       </div>
     );
   };
 
   const badge = (style: string, text: string) => (
-    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide", style)}>{text}</span>
+    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-micro font-bold uppercase tracking-wide", style)}>{text}</span>
   );
 
   const progressBar = (p: ProjectRow) => {
     const prog = p.progress ?? 0;
     return (
       <div>
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <div className="flex items-center justify-between text-micro text-muted-foreground">
           <span className="font-semibold">Progress</span>
           <span className="font-bold tabular-nums">{prog}%</span>
         </div>
@@ -1388,19 +1388,19 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
           {badge(PRIORITY_STYLE[p.priority ?? "MEDIUM"] ?? PRIORITY_STYLE.MEDIUM, p.priority ?? "MEDIUM")}
           {p.billingType === "RECURRING" && badge("border-primary/30 bg-primary/10 text-primary", "recurring")}
         </div>
-        <span className="text-[10px] font-bold tabular-nums text-muted-foreground">{p.uid ?? ""}</span>
+        <span className="text-micro font-bold tabular-nums text-muted-foreground">{p.uid ?? ""}</span>
       </div>
-      <h3 className="mt-2.5 truncate text-[13.5px] font-bold">{p.name}</h3>
-      <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{p.client.companyName}{p.assignedPm ? ` · PM: ${p.assignedPm.name}` : ""}</p>
+      <h3 className="mt-2.5 truncate text-body-lg font-bold">{p.name}</h3>
+      <p className="mt-0.5 truncate text-meta text-muted-foreground">{p.client.companyName}{p.assignedPm ? ` · PM: ${p.assignedPm.name}` : ""}</p>
       <div className="mt-3">{progressBar(p)}</div>
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {badge(STATUS_STYLE[p.status] ?? STATUS_STYLE.PLANNING, label(p.status))}
         {p.targetEndDate && (
-          <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
-            <Calendar className="size-3" /> {formatDate(p.targetEndDate)}
+          <span className="flex items-center gap-1 text-micro text-muted-foreground">
+            <Calendar className="size-3.5" /> {formatDate(p.targetEndDate)}
           </span>
         )}
-        <span className="ml-auto text-[10.5px] font-semibold tabular-nums text-muted-foreground">
+        <span className="ml-auto text-micro font-semibold tabular-nums text-muted-foreground">
           {p.tasksCompleted ?? 0}/{p.tasksTotal ?? 0} tasks
         </span>
       </div>
@@ -1409,12 +1409,12 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
           {p.team?.length ? (
             <div className="flex -space-x-1.5">
               {p.team.slice(0, 3).map((n, i) => <Avatar key={i} name={n} size="size-5" />)}
-              {p.team.length > 3 && <span className="flex size-5 items-center justify-center rounded-full border border-border bg-muted text-[8.5px] font-bold text-muted-foreground">+{p.team.length - 3}</span>}
+              {p.team.length > 3 && <span className="flex size-5 items-center justify-center rounded-full border border-border bg-muted text-micro font-bold text-muted-foreground">+{p.team.length - 3}</span>}
             </div>
           ) : (
-            <span className="text-[10px] text-muted-foreground">no team</span>
+            <span className="text-micro text-muted-foreground">no team</span>
           )}
-          <span className="text-[10px] font-semibold tabular-nums text-muted-foreground">{money(p.spentAmount ?? p.budgetSpent ?? 0, p.currency)} / {money(p.budgetAmount, p.currency)}</span>
+          <span className="text-micro font-semibold tabular-nums text-muted-foreground">{money(p.spentAmount ?? p.budgetSpent ?? 0, p.currency)} / {money(p.budgetAmount, p.currency)}</span>
         </div>
         <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
           <button onClick={(e) => { e.stopPropagation(); openProject(p.id); }} className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="View">
@@ -1436,7 +1436,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
     if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return <Image className="size-4" />;
     if (["xlsx", "xls", "csv"].includes(ext)) return <FileSpreadsheet className="size-4" />;
     if (["zip", "rar", "7z", "tar", "gz"].includes(ext)) return <FileArchive className="size-4" />;
-    return <FileText className="size-4" />;
+    return <FileText className="size-3.5" />;
   };
 
   const fileSize = (n: number | null | undefined) =>
@@ -1457,7 +1457,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
           aria-live="polite"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-[12.5px] font-medium text-white shadow-xl"
+          className="fixed left-1/2 top-4 z-[60] -translate-x-1/2 rounded-xl bg-sidebar px-4 py-2.5 text-body font-medium text-white shadow-xl"
         >
           {flash}
         </motion.div>
@@ -1495,11 +1495,11 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <div className="flex items-baseline gap-2">
-                  <span className="font-heading text-[26px] font-bold leading-none tabular-nums">{stats.total}</span>
-                  <span className="text-[12px] font-semibold text-muted-foreground">projects</span>
-                  <span className="ml-2 text-[11.5px] font-semibold text-emerald-500">{stats.active} running</span>
+                  <span className="font-heading text-page font-bold leading-none tabular-nums">{stats.total}</span>
+                  <span className="text-body font-semibold text-muted-foreground">projects</span>
+                  <span className="ml-2 text-meta font-semibold text-emerald-500">{stats.active} running</span>
                 </div>
-                <span className="text-[11px] font-semibold text-muted-foreground">
+                <span className="text-meta font-semibold text-muted-foreground">
                   {overview?.completion != null ? `${overview.completion}% of all tasks done` : ""}
                 </span>
               </div>
@@ -1518,7 +1518,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     <button
                       key={s}
                       onClick={() => setStatusFilter((v) => (v === s ? "" : s))}
-                      className={cn("flex items-center gap-1.5 text-[11px] font-semibold transition-opacity hover:opacity-70", statusFilter === s ? "text-foreground" : "text-muted-foreground")}
+                      className={cn("flex items-center gap-1.5 text-meta font-semibold transition-opacity hover:opacity-70", statusFilter === s ? "text-foreground" : "text-muted-foreground")}
                     >
                       <span className={cn("size-2 rounded-sm", STATUS_BAR[s])} />
                       {label(s)}
@@ -1530,8 +1530,8 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             </div>
             <div className="rounded-2xl border border-border bg-card p-4">
               <div className="flex items-baseline justify-between">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Budget burn</span>
-                <span className={cn("text-[11px] font-bold tabular-nums", stats.budget && stats.spent / stats.budget >= 0.9 ? "text-rose-500" : "text-muted-foreground")}>
+                <span className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Budget burn</span>
+                <span className={cn("text-meta font-bold tabular-nums", stats.budget && stats.spent / stats.budget >= 0.9 ? "text-rose-500" : "text-muted-foreground")}>
                   {stats.totals.length === 1 && stats.budget ? `${Math.round((stats.spent / stats.budget) * 100)}%` : "—"}
                 </span>
               </div>
@@ -1539,13 +1539,13 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 <div className="mt-1 flex flex-col gap-0.5">
                   {stats.totals.map((t) => (
                     <div key={t.currency} className="flex items-baseline justify-between gap-2">
-                      <span className="font-heading text-[17px] font-bold tabular-nums">{money(t.spent, t.currency)}</span>
-                      <span className="text-[10.5px] tabular-nums text-muted-foreground">of {money(t.budget, t.currency)}</span>
+                      <span className="font-heading text-title font-bold tabular-nums">{money(t.spent, t.currency)}</span>
+                      <span className="text-micro tabular-nums text-muted-foreground">of {money(t.budget, t.currency)}</span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <p className="mt-1 font-heading text-[20px] font-bold tabular-nums">—</p>
+                <p className="mt-1 font-heading text-stat font-bold tabular-nums">—</p>
               )}
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
@@ -1553,7 +1553,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   style={{ width: `${stats.budget ? Math.min(100, Math.round((stats.spent / stats.budget) * 100)) : 0}%` }}
                 />
               </div>
-              <p className="mt-2 text-[10px] text-muted-foreground">
+              <p className="mt-2 text-micro text-muted-foreground">
                 {stats.totals.length === 1
                   ? `${money(Math.max(0, stats.budget - stats.spent), stats.totals[0].currency)} remaining`
                   : `${stats.totals.length} currencies — totals shown per currency`}
@@ -1561,7 +1561,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             </div>
           </div>
           {stats.atRisk > 0 && (
-            <button onClick={() => setHealthFilter("AT_RISK")} className="mt-3 flex w-full items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-left text-[11.5px] font-semibold text-amber-500 transition-colors hover:bg-amber-500/15">
+            <button onClick={() => setHealthFilter("AT_RISK")} className="mt-3 flex w-full items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-left text-meta font-semibold text-amber-500 transition-colors hover:bg-amber-500/15">
               <AlertTriangle className="size-3.5" /> {stats.atRisk} project{stats.atRisk > 1 ? "s" : ""} at risk or delayed — click to filter
             </button>
           )}
@@ -1569,30 +1569,30 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             <div className="mb-3 flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative min-w-44 max-w-sm flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Search projects, clients, uid…"
-                    className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+                    className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
-                <Btn variant="outline" onClick={() => setAdvanced((v) => !v)} className="!px-3 !py-2 text-[11.5px]">
+                <Btn variant="outline" onClick={() => setAdvanced((v) => !v)} className="!px-3 !py-2 text-meta">
                   <SlidersHorizontal className="size-3.5" /> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
                 </Btn>
                 {hasFilters && (
-                  <button onClick={clearFilters} className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
-                    <X className="size-3" /> Clear all
+                  <button onClick={clearFilters} className="flex items-center gap-1 text-meta font-bold text-primary hover:underline">
+                    <X className="size-3.5" /> Clear all
                   </button>
                 )}
-                <span className="ml-auto text-[11.5px] font-semibold tabular-nums text-muted-foreground">
+                <span className="ml-auto text-meta font-semibold tabular-nums text-muted-foreground">
                   {filtered.length} project{filtered.length === 1 ? "" : "s"}
                 </span>
                 <Segmented
                   options={[
-                    { value: "table", label: <List className="size-3.5" /> },
-                    { value: "grid", label: <LayoutGrid className="size-3.5" /> },
-                    { value: "kanban", label: <SquareKanban className="size-3.5" /> },
+                    { value: "table", label: <List className="size-4" /> },
+                    { value: "grid", label: <LayoutGrid className="size-4" /> },
+                    { value: "kanban", label: <SquareKanban className="size-4" /> },
                   ]}
                   value={view}
                   onChange={(v) => setViewWithUrl(v as any)}
@@ -1645,7 +1645,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   <TableShell
                     footer={
                       <>
-                        <span className="text-[11.5px] text-muted-foreground">{filtered.length} projects · on-time rate {overview?.onTimeRate ?? "—"}%</span>
+                        <span className="text-meta text-muted-foreground">{filtered.length} projects · on-time rate {overview?.onTimeRate ?? "—"}%</span>
                         <Btn variant="ghost" onClick={() => setTab("capacity")}>Capacity planner</Btn>
                       </>
                     }
@@ -1669,22 +1669,22 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                                 <div>
                                   <p className="flex items-center gap-1.5 font-medium">
                                     {p.name}
-                                    {p.uid && <span className="text-[10.5px] font-semibold text-muted-foreground">{p.uid}</span>}
+                                    {p.uid && <span className="text-micro font-semibold text-muted-foreground">{p.uid}</span>}
                                   </p>
-                                  <p className="text-[11px] text-muted-foreground">{p.client.companyName}{p.assignedPm ? ` · ${p.assignedPm.name}` : ""}{p.category ? ` · ${p.category}` : ""}</p>
+                                  <p className="text-meta text-muted-foreground">{p.client.companyName}{p.assignedPm ? ` · ${p.assignedPm.name}` : ""}{p.category ? ` · ${p.category}` : ""}</p>
                                 </div>
                               </div>
                             </Td>
                             <Td onClick={(e) => e.stopPropagation()}>
                               <span
                                 className={cn(
-                                  "relative inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                                  "relative inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-bold uppercase tracking-wide",
                                   STATUS_STYLE[p.status] ?? STATUS_STYLE.PLANNING
                                 )}
                                 title="Move to another status"
                               >
                                 {label(p.status)}
-                                <ChevronDown className="size-2.5 opacity-50" />
+                                <ChevronDown className="size-3.5 opacity-50" />
                                 <select
                                   value={p.status}
                                   onChange={(e) => patchStatus(p, e.target.value)}
@@ -1739,16 +1739,16 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                         className={cn("w-64 shrink-0 rounded-2xl border bg-muted/30 p-2.5", dragId && "border-dashed")}
                       >
                         <div className="mb-2.5 flex items-center justify-between px-1">
-                          <span className="flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase">
+                          <span className="flex items-center gap-1.5 text-meta font-bold tracking-wide text-muted-foreground uppercase">
                             <span className={cn("size-1.5 rounded-full", STATUS_STYLE[col.status].split(" ").find((c) => c.startsWith("bg-")) ?? "bg-muted")} />
                             {label(col.status)}
                           </span>
-                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-muted-foreground">{col.items.length}</span>
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-bold tabular-nums text-muted-foreground">{col.items.length}</span>
                         </div>
                         <div className="flex flex-col gap-2">
                           {col.items.map((p) => <ProjectCard key={p.id} p={p} kanban />)}
                           {!col.items.length && (
-                            <div className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-[10.5px] text-muted-foreground">Drop projects here</div>
+                            <div className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-micro text-muted-foreground">Drop projects here</div>
                           )}
                         </div>
                       </div>
@@ -1773,7 +1773,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             <FadeIn>
               <TableShell
                 footer={
-                  <span className="text-[11.5px] text-muted-foreground">
+                  <span className="text-meta text-muted-foreground">
                     {capRows.length} active {capRows.length === 1 ? "person" : "people"} · {capWindow.capacityHours || 160}h capacity each (rolling 4 weeks)
                   </span>
                 }
@@ -1795,7 +1795,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                             <Avatar name={e.name} size="size-7" />
                             <div className="min-w-0">
                               <p className="font-medium">{e.name}</p>
-                              <p className="text-[10.5px] text-muted-foreground">{e.roleTitle || e.department || "—"}</p>
+                              <p className="text-micro text-muted-foreground">{e.roleTitle || e.department || "—"}</p>
                             </div>
                           </div>
                         </Td>
@@ -1803,16 +1803,16 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                           {e.projects.length ? (
                             <div className="flex max-w-[340px] flex-wrap gap-1">
                               {e.projects.slice(0, 3).map((p) => (
-                                <span key={p.projectId} className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                                <span key={p.projectId} className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-micro font-semibold text-muted-foreground">
                                   {p.projectName} · {p.hours}h
                                 </span>
                               ))}
                               {e.projects.length > 3 && (
-                                <span className="text-[10px] font-semibold text-muted-foreground">+{e.projects.length - 3} more</span>
+                                <span className="text-micro font-semibold text-muted-foreground">+{e.projects.length - 3} more</span>
                               )}
                             </div>
                           ) : (
-                            <span className="text-[11.5px] text-muted-foreground">no logged time</span>
+                            <span className="text-meta text-muted-foreground">no logged time</span>
                           )}
                         </Td>
                         <Td className="font-semibold tabular-nums">{e.totalHours}h</Td>
@@ -1820,20 +1820,20 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                         <Td>
                           <div className="flex items-center gap-2.5">
                             <ProgressRing value={Math.min(100, Math.max(0, e.utilizationPct))} size={40} label={`${e.utilizationPct}%`} />
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="text-meta text-muted-foreground">
                               {e.capacityHours ? `${Math.round((e.totalHours / e.capacityHours) * 100)}% of capacity` : "—"}
                             </span>
                           </div>
                         </Td>
                         <Td>
                           {e.utilizationPct > 100 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-400">
-                              <AlertTriangle className="size-3" /> overbooked
+                            <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-micro font-bold text-rose-400">
+                              <AlertTriangle className="size-3.5" /> overbooked
                             </span>
                           ) : e.utilizationPct >= 85 ? (
-                            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-400">near limit</span>
+                            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-micro font-bold text-amber-400">near limit</span>
                           ) : (
-                            <span className="text-[11.5px] text-muted-foreground">healthy</span>
+                            <span className="text-meta text-muted-foreground">healthy</span>
                           )}
                         </Td>
                       </Tr>
@@ -1860,15 +1860,15 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             <Avatar name={detail?.client?.companyName ?? "?"} />
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
-                <h3 className="truncate font-heading text-[16px] font-bold leading-tight">{detail?.name ?? "Project"}</h3>
+                <h3 className="truncate font-heading text-section font-bold leading-tight">{detail?.name ?? "Project"}</h3>
                 {detail && (
-                  <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide", STATUS_STYLE[detail.status] ?? STATUS_STYLE.PLANNING)}>
+                  <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-micro font-bold uppercase tracking-wide", STATUS_STYLE[detail.status] ?? STATUS_STYLE.PLANNING)}>
                     {label(detail.status)}
                   </span>
                 )}
                 {detail && (
                   <span className={cn(
-                    "shrink-0 rounded-full border px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide",
+                    "shrink-0 rounded-full border px-2 py-0.5 text-micro font-bold uppercase tracking-wide",
                     detail.healthStatus === "ON_TRACK" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
                       : detail.healthStatus === "AT_RISK" ? "border-amber-500/30 bg-amber-500/10 text-amber-500"
                         : "border-rose-500/30 bg-rose-500/10 text-rose-500"
@@ -1878,7 +1878,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 )}
               </div>
               {detail && (
-                <p className="truncate text-[11px] text-muted-foreground">
+                <p className="truncate text-meta text-muted-foreground">
                   {detail.client?.companyName ?? ""}
                   {detail.uid ? " · " + detail.uid : ""}
                   {detail.category ? " · " + detail.category : ""}
@@ -1893,7 +1893,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   <Select
                     value={detail.assignedPm?.id ?? ""}
                     onChange={(e) => assignPm(e.target.value)}
-                    className={cn("!w-32 !border-0 !bg-transparent !py-0.5 text-[11.5px] font-semibold", pmBusy ? "opacity-50" : "")}
+                    className={cn("!w-32 !border-0 !bg-transparent !py-0.5 text-meta font-semibold", pmBusy ? "opacity-50" : "")}
                     title="Project manager"
                   >
                     <option value="">Unassigned</option>
@@ -1902,7 +1902,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     ))}
                   </Select>
                 </div>
-                <Btn variant="primary" onClick={() => setFinInvOpen(true)} className="!px-2.5 !py-1.5 text-[11.5px]">
+                <Btn variant="primary" onClick={() => setFinInvOpen(true)} className="!px-2.5 !py-1.5 text-meta">
                   <Plus className="size-3.5" /> Invoice
                 </Btn>
                 <button
@@ -1933,9 +1933,9 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             {/* ── status pipeline — click to move ── */}
             <section className="rounded-2xl border border-border/60 bg-muted/10 p-3.5">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[10.5px] font-bold tracking-wide text-muted-foreground uppercase">Status — click to move</p>
-                {detail.status === "COMPLETED" && <span className="text-[10px] font-semibold text-emerald-400">delivered ✓</span>}
-                {detail.status === "ARCHIVED" && <span className="text-[10px] font-semibold text-muted-foreground">archived</span>}
+                <p className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Status — click to move</p>
+                {detail.status === "COMPLETED" && <span className="text-micro font-semibold text-emerald-400">delivered ✓</span>}
+                {detail.status === "ARCHIVED" && <span className="text-micro font-semibold text-muted-foreground">archived</span>}
               </div>
               <div className="mt-2.5 flex items-center gap-1 overflow-x-auto pb-0.5">
                 {(["PLANNING", "ACTIVE", "COMPLETED"] as const).map((s, i, arr) => {
@@ -1949,14 +1949,14 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                       <button
                         onClick={() => patchProject({ status: s })}
                         className={cn(
-                          "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10.5px] font-bold transition-colors",
+                          "flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-micro font-bold transition-colors",
                           isCurrent && s === "COMPLETED" && "border-primary bg-primary text-primary-foreground shadow-sm",
                           isCurrent && s !== "COMPLETED" && "border-primary bg-primary text-primary-foreground shadow-sm",
                           !isCurrent && isDone && "border-primary/30 bg-primary/10 text-primary",
                           !isCurrent && !isDone && "border-border bg-card text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                         )}
                       >
-                        {isDone && !isCurrent && <CheckCircle2 className="size-3" />}
+                        {isDone && !isCurrent && <CheckCircle2 className="size-3.5" />}
                         {label(s)}
                       </button>
                     </div>
@@ -1965,14 +1965,14 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 {detail.status === "PAUSED" ? (
                   <button
                     onClick={() => patchProject({ status: "ACTIVE" })}
-                    className="ml-2 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-500/40 bg-amber-500 text-[10.5px] font-bold text-white shadow-sm"
+                    className="ml-2 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-500/40 bg-amber-500 text-micro font-bold text-white shadow-sm"
                   >
                     paused — resume?
                   </button>
                 ) : (
                   <button
                     onClick={() => patchProject({ status: "PAUSED" })}
-                    className="ml-2 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[10.5px] font-bold text-amber-400 transition-colors hover:bg-amber-500/20"
+                    className="ml-2 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-micro font-bold text-amber-400 transition-colors hover:bg-amber-500/20"
                   >
                     hold
                   </button>
@@ -1980,7 +1980,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 {detail.status !== "ARCHIVED" && (
                   <button
                     onClick={() => patchProject({ status: "ARCHIVED" })}
-                    className="ml-1 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-card px-2.5 py-1 text-[10.5px] font-bold text-muted-foreground transition-colors hover:bg-muted/60"
+                    className="ml-1 flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border bg-card px-2.5 py-1 text-micro font-bold text-muted-foreground transition-colors hover:bg-muted/60"
                     title="Archive project"
                   >
                     archive
@@ -1992,50 +1992,50 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             {/* ── KPI strip ── */}
             <section className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/40 lg:grid-cols-6">
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Progress</p>
+                <p className="truncate text-micro font-bold tracking-wide text-muted-foreground uppercase">Progress</p>
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <div className="h-1 w-10 overflow-hidden rounded-full bg-muted">
                     <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, detail.progress ?? 0)}%` }} />
                   </div>
-                  <span className="text-[12px] font-bold tabular-nums">{detail.progress ?? 0}%</span>
+                  <span className="text-body font-bold tabular-nums">{detail.progress ?? 0}%</span>
                 </div>
-                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{detail.tasksCompleted ?? 0}/{detail.tasksTotal ?? detail.tasks.length} tasks</p>
+                <p className="mt-0.5 truncate text-micro text-muted-foreground">{detail.tasksCompleted ?? 0}/{detail.tasksTotal ?? detail.tasks.length} tasks</p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Budget</p>
-                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">{(detail as any).amount != null || detail.budgetAmount != null ? money((detail as any).amount ?? detail.budgetAmount, detail.currency) : "—"}</p>
-                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{money(detail.spentAmount ?? (detail as any).budgetSpent ?? 0, detail.currency)} spent · {budgetPct(detail)}%</p>
+                <p className="truncate text-micro font-bold tracking-wide text-muted-foreground uppercase">Budget</p>
+                <p className="mt-0.5 truncate font-heading text-body-lg font-bold tabular-nums">{(detail as any).amount != null || detail.budgetAmount != null ? money((detail as any).amount ?? detail.budgetAmount, detail.currency) : "—"}</p>
+                <p className="mt-0.5 truncate text-micro text-muted-foreground">{money(detail.spentAmount ?? (detail as any).budgetSpent ?? 0, detail.currency)} spent · {budgetPct(detail)}%</p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Invoiced</p>
-                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums">{money(finance?.totalInvoiced ?? detail.totalBilled, detail.currency)}</p>
-                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{finance?.invoices?.length ?? 0} invoices</p>
+                <p className="truncate text-micro font-bold tracking-wide text-muted-foreground uppercase">Invoiced</p>
+                <p className="mt-0.5 truncate font-heading text-body-lg font-bold tabular-nums">{money(finance?.totalInvoiced ?? detail.totalBilled, detail.currency)}</p>
+                <p className="mt-0.5 truncate text-micro text-muted-foreground">{finance?.invoices?.length ?? 0} invoices</p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Collected</p>
-                <p className="mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums text-emerald-400">{money(finance?.collected ?? 0, detail.currency)}</p>
-                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{detail.paymentStatus ? label(detail.paymentStatus) : "—"}</p>
+                <p className="truncate text-micro font-bold tracking-wide text-muted-foreground uppercase">Collected</p>
+                <p className="mt-0.5 truncate font-heading text-body-lg font-bold tabular-nums text-emerald-400">{money(finance?.collected ?? 0, detail.currency)}</p>
+                <p className="mt-0.5 truncate text-micro text-muted-foreground">{detail.paymentStatus ? label(detail.paymentStatus) : "—"}</p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Outstanding</p>
-                <p className={cn("mt-0.5 truncate font-heading text-[14px] font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-400" : "text-emerald-400")}>{money(finance?.outstanding, detail.currency)}</p>
-                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">{finance?.expensesTotal ? `${money(finance.expensesTotal, detail.currency)} exp` : "no expenses"}</p>
+                <p className="truncate text-micro font-bold tracking-wide text-muted-foreground uppercase">Outstanding</p>
+                <p className={cn("mt-0.5 truncate font-heading text-body-lg font-bold tabular-nums", Number(finance?.outstanding ?? 0) > 0 ? "text-amber-400" : "text-emerald-400")}>{money(finance?.outstanding, detail.currency)}</p>
+                <p className="mt-0.5 truncate text-micro text-muted-foreground">{finance?.expensesTotal ? `${money(finance.expensesTotal, detail.currency)} exp` : "no expenses"}</p>
               </div>
               <div className="bg-card px-3.5 py-2.5">
-                <p className="truncate text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">{detail.billingType === "RECURRING" ? "Next billing" : "Due"}</p>
+                <p className="truncate text-micro font-bold tracking-wide text-muted-foreground uppercase">{detail.billingType === "RECURRING" ? "Next billing" : "Due"}</p>
                 {(() => {
                   if (detail.billingType === "RECURRING" && detail.nextBillingDate) {
-                    return <p className="mt-0.5 truncate text-[12.5px] font-bold text-primary">{formatDate(detail.nextBillingDate)}</p>;
+                    return <p className="mt-0.5 truncate text-body font-bold text-primary">{formatDate(detail.nextBillingDate)}</p>;
                   }
-                  if (!detail.targetEndDate) return <p className="mt-0.5 text-[12.5px] font-semibold text-muted-foreground/60">no date</p>;
+                  if (!detail.targetEndDate) return <p className="mt-0.5 text-body font-semibold text-muted-foreground/60">no date</p>;
                   const overdue = new Date(detail.targetEndDate).getTime() < Date.now() && detail.status !== "COMPLETED";
                   return (
-                    <p className={cn("mt-0.5 truncate text-[12.5px] font-bold", overdue ? "text-rose-400" : "text-foreground")}>
+                    <p className={cn("mt-0.5 truncate text-body font-bold", overdue ? "text-rose-400" : "text-foreground")}>
                       {overdue ? "overdue · " : ""}{formatDate(detail.targetEndDate)}
                     </p>
                   );
                 })()}
-                <p className="mt-0.5 truncate text-[9.5px] text-muted-foreground">start {formatDate(detail.startDate)}</p>
+                <p className="mt-0.5 truncate text-micro text-muted-foreground">start {formatDate(detail.startDate)}</p>
               </div>
             </section>
 
@@ -2057,14 +2057,14 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     key={t.id}
                     onClick={() => selectDetailTab(t.id)}
                     className={cn(
-                      "relative flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] font-semibold transition-colors",
+                      "relative flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-body font-semibold transition-colors",
                       detailTab === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                     )}
                   >
                     <t.icon className="size-3.5 shrink-0" />
                     <span className="truncate">{t.name}</span>
                     {t.count != null && t.count > 0 && (
-                      <span className="ml-auto rounded-full bg-muted px-1.5 py-px text-[9px] font-bold tabular-nums text-muted-foreground">{t.count}</span>
+                      <span className="ml-auto rounded-full bg-muted px-1.5 py-px text-micro font-bold tabular-nums text-muted-foreground">{t.count}</span>
                     )}
                   </button>
                 ))}
@@ -2077,20 +2077,20 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   {/* chips: type, category, billing, priority, health */}
                   <div className="flex flex-wrap items-center gap-1.5">
                     {detail.type && (
-                      <span className="rounded-full border border-primary/40 bg-primary/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-primary">{label(detail.type)}</span>
+                      <span className="rounded-full border border-primary/40 bg-primary/15 px-2.5 py-1 text-micro font-bold uppercase tracking-wide text-primary">{label(detail.type)}</span>
                     )}
                     {detail.category && (
-                      <span className="rounded-full border border-border bg-card px-2.5 py-1 text-[10px] font-bold text-foreground">{detail.category}</span>
+                      <span className="rounded-full border border-border bg-card px-2.5 py-1 text-micro font-bold text-foreground">{detail.category}</span>
                     )}
                     {detail.billingType && (
-                      <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[10px] font-bold text-primary">
+                      <span className="rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-micro font-bold text-primary">
                         {label(detail.billingType)}{detail.recurringInterval ? ` · ${detail.recurringInterval}` : ""}
                       </span>
                     )}
                     {detail.priority && (
-                      <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase", PRIORITY_STYLE[detail.priority])}>{label(detail.priority)}</span>
+                      <span className={cn("rounded-full border px-2.5 py-1 text-micro font-bold uppercase", PRIORITY_STYLE[detail.priority])}>{label(detail.priority)}</span>
                     )}
-                    <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase", detail.healthStatus === "ON_TRACK" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : detail.healthStatus === "AT_RISK" ? "border-amber-500/30 bg-amber-500/10 text-amber-400" : "border-rose-500/30 bg-rose-500/10 text-rose-400")}>
+                    <span className={cn("rounded-full border px-2.5 py-1 text-micro font-bold uppercase", detail.healthStatus === "ON_TRACK" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : detail.healthStatus === "AT_RISK" ? "border-amber-500/30 bg-amber-500/10 text-amber-400" : "border-rose-500/30 bg-rose-500/10 text-rose-400")}>
                       {label(detail.healthStatus)}
                     </span>
                   </div>
@@ -2107,34 +2107,34 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                           className="min-h-16"
                         />
                         <div className="flex justify-end gap-1.5">
-                          <button onClick={() => setDescEdit(false)} className="rounded-lg px-2 py-1 text-[11px] font-bold text-muted-foreground transition-colors hover:bg-muted">Cancel</button>
-                          <button onClick={saveDescription} disabled={descBusy} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-[11px] font-bold text-white disabled:opacity-60">{descBusy ? "Saving…" : "Save"}</button>
+                          <button onClick={() => setDescEdit(false)} className="rounded-lg px-2 py-1 text-meta font-bold text-muted-foreground transition-colors hover:bg-muted">Cancel</button>
+                          <button onClick={saveDescription} disabled={descBusy} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-meta font-bold text-white disabled:opacity-60">{descBusy ? "Saving…" : "Save"}</button>
                         </div>
                       </div>
                     ) : (detail as any).description ? (
                       <div className="group/desc">
-                        <p className={cn("text-[12.5px] leading-relaxed text-muted-foreground whitespace-pre-wrap", !descExpanded && "line-clamp-3")}>
+                        <p className={cn("text-body leading-relaxed text-muted-foreground whitespace-pre-wrap", !descExpanded && "line-clamp-3")}>
                           {(detail as any).description}
                         </p>
                         <div className="mt-1 flex items-center gap-2">
                           {(detail as any).description.length > 140 && (
-                            <button onClick={() => setDescExpanded((v) => !v)} className="text-[10.5px] font-bold text-primary hover:underline">
+                            <button onClick={() => setDescExpanded((v) => !v)} className="text-micro font-bold text-primary hover:underline">
                               {descExpanded ? "show less" : "read more"}
                             </button>
                           )}
                           <button
                             onClick={() => { setDescEdit(true); setDescDraft((detail as any).description ?? ""); }}
-                            className="flex items-center gap-1 text-[10.5px] font-bold text-muted-foreground transition-colors hover:text-foreground"
+                            className="flex items-center gap-1 text-micro font-bold text-muted-foreground transition-colors hover:text-foreground"
                             title="Edit the project description"
                           >
-                            <Pencil className="size-3" /> edit description
+                            <Pencil className="size-3.5" /> edit description
                           </button>
                         </div>
                       </div>
                     ) : (
                       <button
                         onClick={() => { setDescEdit(true); setDescDraft(""); }}
-                        className="flex items-center gap-1 text-[11.5px] font-bold text-primary transition-colors hover:underline"
+                        className="flex items-center gap-1 text-meta font-bold text-primary transition-colors hover:underline"
                       >
                         <Plus className="size-3.5" /> add description — what is this project about?
                       </button>
@@ -2144,74 +2144,74 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   {/* channels — client web & social */}
                   <div className="mt-3 border-t border-border/50 pt-3">
                     <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <p className="text-[9.5px] font-bold tracking-wide text-muted-foreground uppercase">Channels — web &amp; social</p>
+                      <p className="text-micro font-bold tracking-wide text-muted-foreground uppercase">Channels — web &amp; social</p>
                       <button
                         onClick={() => setChannelsOpen(true)}
-                        className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10.5px] font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-0.5 text-micro font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                         title="Add or edit the website, social handles and docs"
                       >
-                        <Pencil className="size-3" /> edit links
+                        <Pencil className="size-3.5" /> edit links
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {(detail as any).websiteUrl && (
-                        <a href={(detail as any).websiteUrl} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-bold text-sky-400 transition-colors hover:bg-sky-500/20" title={(detail as any).websiteUrl}>
+                        <a href={(detail as any).websiteUrl} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-meta font-bold text-sky-400 transition-colors hover:bg-sky-500/20" title={(detail as any).websiteUrl}>
                           <Globe className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).websiteUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
                         </a>
                       )}
                       {(detail as any).projectLink && (
-                        <a href={(detail as any).projectLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary transition-colors hover:bg-primary/20" title={(detail as any).projectLink}>
+                        <a href={(detail as any).projectLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-meta font-bold text-primary transition-colors hover:bg-primary/20" title={(detail as any).projectLink}>
                           <Globe className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">live · {(detail as any).projectLink.replace(/^https?:\/\//, "").replace(/\/$/, "")}</span>
                         </a>
                       )}
                       {(detail as any).socialLinks?.facebook && (
-                        <a href={(detail as any).socialLinks.facebook} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-2.5 py-1.5 text-[11px] font-bold text-blue-500 transition-colors hover:bg-blue-500/20" title={(detail as any).socialLinks.facebook}>
+                        <a href={(detail as any).socialLinks.facebook} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-blue-500/30 bg-blue-500/10 px-2.5 py-1.5 text-meta font-bold text-blue-500 transition-colors hover:bg-blue-500/20" title={(detail as any).socialLinks.facebook}>
                           <Facebook className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.facebook.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
                         </a>
                       )}
                       {(detail as any).socialLinks?.instagram && (
-                        <a href={(detail as any).socialLinks.instagram} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-pink-500/30 bg-pink-500/10 px-2.5 py-1.5 text-[11px] font-bold text-pink-500 transition-colors hover:bg-pink-500/20" title={(detail as any).socialLinks.instagram}>
+                        <a href={(detail as any).socialLinks.instagram} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-pink-500/30 bg-pink-500/10 px-2.5 py-1.5 text-meta font-bold text-pink-500 transition-colors hover:bg-pink-500/20" title={(detail as any).socialLinks.instagram}>
                           <Instagram className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.instagram.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
                         </a>
                       )}
                       {(detail as any).socialLinks?.linkedin && (
-                        <a href={(detail as any).socialLinks.linkedin} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-sky-600/30 bg-sky-600/10 px-2.5 py-1.5 text-[11px] font-bold text-sky-400 transition-colors hover:bg-sky-600/20" title={(detail as any).socialLinks.linkedin}>
+                        <a href={(detail as any).socialLinks.linkedin} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-sky-600/30 bg-sky-600/10 px-2.5 py-1.5 text-meta font-bold text-sky-400 transition-colors hover:bg-sky-600/20" title={(detail as any).socialLinks.linkedin}>
                           <Linkedin className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.linkedin.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
                         </a>
                       )}
                       {(detail as any).socialLinks?.youtube && (
-                        <a href={(detail as any).socialLinks.youtube} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-bold text-red-400 transition-colors hover:bg-red-500/20" title={(detail as any).socialLinks.youtube}>
+                        <a href={(detail as any).socialLinks.youtube} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-meta font-bold text-red-400 transition-colors hover:bg-red-500/20" title={(detail as any).socialLinks.youtube}>
                           <Youtube className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.youtube.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
                         </a>
                       )}
                       {(detail as any).socialLinks?.tiktok && (
-                        <a href={(detail as any).socialLinks.tiktok} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-2.5 py-1.5 text-[11px] font-bold text-teal-300 transition-colors hover:bg-teal-500/20" title={(detail as any).socialLinks.tiktok}>
+                        <a href={(detail as any).socialLinks.tiktok} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-2.5 py-1.5 text-meta font-bold text-teal-300 transition-colors hover:bg-teal-500/20" title={(detail as any).socialLinks.tiktok}>
                           <Music2 className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.tiktok.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
                         </a>
                       )}
                       {(detail as any).socialLinks?.x && (
-                        <a href={(detail as any).socialLinks.x} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-border bg-muted/60 px-2.5 py-1.5 text-[11px] font-bold text-foreground transition-colors hover:bg-muted" title={(detail as any).socialLinks.x}>
+                        <a href={(detail as any).socialLinks.x} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-border bg-muted/60 px-2.5 py-1.5 text-meta font-bold text-foreground transition-colors hover:bg-muted" title={(detail as any).socialLinks.x}>
                           <Twitter className="size-3.5 shrink-0" /> <span className="max-w-40 truncate">{(detail as any).socialLinks.x.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</span>
                         </a>
                       )}
                       {detail.briefLink && (
-                        <a href={detail.briefLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary transition-colors hover:bg-primary/20" title={detail.briefLink}>
+                        <a href={detail.briefLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-meta font-bold text-primary transition-colors hover:bg-primary/20" title={detail.briefLink}>
                           <FileText className="size-3.5 shrink-0" /> brief
                         </a>
                       )}
                       {detail.driveLink && (
-                        <a href={detail.driveLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-[11px] font-bold text-sky-400 transition-colors hover:bg-sky-500/20" title={detail.driveLink}>
+                        <a href={detail.driveLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-2.5 py-1.5 text-meta font-bold text-sky-400 transition-colors hover:bg-sky-500/20" title={detail.driveLink}>
                           <FileArchive className="size-3.5 shrink-0" /> drive
                         </a>
                       )}
                       {detail.researchLink && (
-                        <a href={detail.researchLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] font-bold text-emerald-400 transition-colors hover:bg-emerald-500/20" title={detail.researchLink}>
+                        <a href={detail.researchLink} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-meta font-bold text-emerald-400 transition-colors hover:bg-emerald-500/20" title={detail.researchLink}>
                           <Search className="size-3.5 shrink-0" /> research
                         </a>
                       )}
                       {!(detail as any).websiteUrl && !(detail as any).projectLink && !(detail as any).socialLinks?.facebook && !(detail as any).socialLinks?.instagram && !(detail as any).socialLinks?.linkedin && !(detail as any).socialLinks?.youtube && !(detail as any).socialLinks?.tiktok && !(detail as any).socialLinks?.x && (
-                        <button onClick={() => setChannelsOpen(true)} className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
-                          <Plus className="size-3" /> add channels — website, social pages
+                        <button onClick={() => setChannelsOpen(true)} className="flex items-center gap-1 text-meta font-bold text-primary hover:underline">
+                          <Plus className="size-3.5" /> add channels — website, social pages
                         </button>
                       )}
                     </div>
@@ -2220,16 +2220,16 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 {/* health & risk — computed by the scoring engine */}
                 <section className="rounded-2xl border border-border/60 p-4">
                   <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-                    <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold tracking-wide text-muted-foreground uppercase">
                       <AlertTriangle className="size-3.5" /> Health &amp; risk
-                      <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-bold text-violet-400">
+                      <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-micro font-bold text-violet-400">
                         computed
                       </span>
                     </h4>
                     <Select
                       value={detail.healthStatusOverride ?? "AUTO"}
                       onChange={(e) => setHealthOverride(e.target.value)}
-                      className="!w-44 !py-1.5 text-[11px]"
+                      className="!w-44 !py-1.5 text-meta"
                       title="AUTO uses the engine's derived level. Picking a level stores a manual override."
                     >
                       <option value="AUTO">AUTO (computed)</option>
@@ -2240,14 +2240,14 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   </div>
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
-                      <p className="text-[9.5px] font-bold uppercase tracking-wide text-muted-foreground">Health</p>
-                      <p className="text-lg font-heading font-semibold tabular-nums">
+                      <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Health</p>
+                      <p className="text-stat font-heading font-semibold tabular-nums">
                         {detail.riskScore != null ? 100 - detail.riskScore : "—"}
                       </p>
                     </div>
                     <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
-                      <p className="text-[9.5px] font-bold uppercase tracking-wide text-muted-foreground">Risk</p>
-                      <p className="text-lg font-heading font-semibold tabular-nums">{detail.riskScore ?? "—"}</p>
+                      <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Risk</p>
+                      <p className="text-stat font-heading font-semibold tabular-nums">{detail.riskScore ?? "—"}</p>
                     </div>
                     <Field label="PM confidence (1–5)">
                       <Input
@@ -2267,7 +2267,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   {Array.isArray((detail as any).healthBreakdown?.breakdown) && (
                     <div className="mt-3 space-y-1.5">
                       {(detail as any).healthBreakdown.breakdown.map((f: any) => (
-                        <div key={f.code} className="flex items-center gap-2 text-[10.5px]">
+                        <div key={f.code} className="flex items-center gap-2 text-micro">
                           <span className="w-32 truncate font-medium text-muted-foreground">{f.label}</span>
                           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                             <div
@@ -2292,7 +2292,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     </div>
                   )}
                   {detail.riskDriver && (
-                    <p className="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11.5px] font-semibold text-amber-400">
+                    <p className="mt-3 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-meta font-semibold text-amber-400">
                       <AlertTriangle className="size-3.5" /> {detail.riskDriver}
                     </p>
                   )}
@@ -2300,16 +2300,16 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 {/* Gantt-like milestone bars */}
                 {detail.milestones && detail.milestones.length > 0 && (
                   <section className="rounded-2xl border border-border/60 p-3">
-                    <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase"><Calendar className="size-3.5" /> Timeline (Gantt)</h4>
+                    <h4 className="mb-2 flex items-center gap-1.5 text-meta font-bold tracking-wide text-muted-foreground uppercase"><Calendar className="size-3.5" /> Timeline (Gantt)</h4>
                     <div className="flex flex-col gap-1.5">
                       {detail.milestones.slice(0, 6).map((m) => {
                         const done = m.status === "COMPLETED";
                         const prog = m.status === "IN_PROGRESS" ? 55 : done ? 100 : 10;
                         return (
                           <div key={m.id} className="flex items-center gap-2">
-                            <span className="w-28 truncate text-[11px] font-medium">{m.name}</span>
+                            <span className="w-28 truncate text-meta font-medium">{m.name}</span>
                             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"><div className={`h-full rounded-full ${done ? "bg-emerald-500" : prog > 10 ? "bg-primary" : "bg-muted-foreground/30"}`} style={{ width: `${prog}%` }} /></div>
-                            <span className="text-[10px] text-muted-foreground">{formatDate(m.dueDate)}</span>
+                            <span className="text-micro text-muted-foreground">{formatDate(m.dueDate)}</span>
                           </div>
                         );
                       })}
@@ -2318,54 +2318,54 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 )}
                 {detail.sourceLead && (
                   <div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
-                    <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-primary uppercase">
+                    <p className="mb-2.5 flex items-center gap-1.5 text-meta font-bold tracking-wide text-primary uppercase">
                       <Rocket className="size-3.5" /> Onboarded from lead
                     </p>
                     <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                       <div>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Lead</p>
-                        <p className="text-[12.5px] font-semibold">{detail.sourceLead.name}</p>
-                        <p className="text-[10.5px] text-muted-foreground">{detail.sourceLead.company ?? "—"} · source: {label(detail.sourceLead.source)} · {label(detail.sourceLead.vertical)}</p>
+                        <p className="text-micro font-bold text-muted-foreground uppercase">Lead</p>
+                        <p className="text-body font-semibold">{detail.sourceLead.name}</p>
+                        <p className="text-micro text-muted-foreground">{detail.sourceLead.company ?? "—"} · source: {label(detail.sourceLead.source)} · {label(detail.sourceLead.vertical)}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Deal size</p>
-                        <p className="text-[12.5px] font-semibold tabular-nums">{money(detail.sourceLead.estimatedDealSize, detail.currency)}</p>
+                        <p className="text-micro font-bold text-muted-foreground uppercase">Deal size</p>
+                        <p className="text-body font-semibold tabular-nums">{money(detail.sourceLead.estimatedDealSize, detail.currency)}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] font-bold text-muted-foreground uppercase">Contact</p>
-                        <p className="text-[12.5px] font-semibold">{detail.sourceLead.contactEmail ?? detail.sourceLead.contactPhone ?? "—"}</p>
+                        <p className="text-micro font-bold text-muted-foreground uppercase">Contact</p>
+                        <p className="text-body font-semibold">{detail.sourceLead.contactEmail ?? detail.sourceLead.contactPhone ?? "—"}</p>
                       </div>
                       {detail.sourceProposal ? (
                         <div className="ml-auto">
-                          <p className="text-[10px] font-bold text-muted-foreground uppercase">Proposal v{detail.sourceProposal.versionNumber}</p>
+                          <p className="text-micro font-bold text-muted-foreground uppercase">Proposal v{detail.sourceProposal.versionNumber}</p>
                           <div className="mt-1 flex items-center gap-2">
                             <StatusBadge status={detail.sourceProposal.status} />
                             {detail.sourceProposal.fileUrl && (
-                              <a href={absoluteUrl(detail.sourceProposal.fileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
-                                <FileText className="size-3" /> file
+                              <a href={absoluteUrl(detail.sourceProposal.fileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-meta font-bold text-primary hover:underline">
+                                <FileText className="size-3.5" /> file
                               </a>
                             )}
                             {detail.sourceProposal.portalLink && (
-                              <a href={detail.sourceProposal.portalLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[11px] font-bold text-primary hover:underline">
-                                <Link2 className="size-3" /> portal
+                              <a href={detail.sourceProposal.portalLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-meta font-bold text-primary hover:underline">
+                                <Link2 className="size-3.5" /> portal
                               </a>
                             )}
                           </div>
                         </div>
                       ) : (
-                        <div className="ml-auto rounded-xl border border-dashed border-border px-3 py-1.5 text-[10.5px] text-muted-foreground">No proposal linked</div>
+                        <div className="ml-auto rounded-xl border border-dashed border-border px-3 py-1.5 text-micro text-muted-foreground">No proposal linked</div>
                       )}
                     </div>
                   </div>
                 )}
                 {detail.team && detail.team.length > 0 && (
                   <section>
-                    <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                    <h4 className="mb-2 flex items-center gap-1.5 text-meta font-bold tracking-wide text-muted-foreground uppercase">
                       <Users className="size-3.5" /> Team ({detail.team.length})
                     </h4>
                     <div className="flex flex-wrap gap-1.5">
                       {detail.team.map((n, i) => (
-                        <span key={i} className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-semibold">
+                        <span key={i} className="flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-meta font-semibold">
                           <Avatar name={n} size="size-4" /> {n}
                         </span>
                       ))}
@@ -2374,10 +2374,10 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 )}
                 {detail.risks && detail.risks.length > 0 && (
                   <section>
-                    <h4 className="mb-2 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">Risks</h4>
+                    <h4 className="mb-2 text-meta font-bold tracking-wide text-muted-foreground uppercase">Risks</h4>
                     <div className="flex flex-col gap-1.5">
                       {detail.risks.map((r: any, i: number) => (
-                        <div key={i} className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-2 text-[12px]">
+                        <div key={i} className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-2 text-body">
                           <AlertTriangle className="size-3.5 shrink-0 text-amber-400" />
                           <span className="flex-1">{typeof r === "string" ? r : r.title ?? r.description ?? r.driver ?? "Risk"}</span>
                           {r.level && <StatusBadge status={r.level} />}
@@ -2398,7 +2398,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     <Plus className="size-3.5" /> Add
                   </Btn>
                 </div>
-                <p className="text-[10.5px] text-muted-foreground">
+                <p className="text-micro text-muted-foreground">
                   Deliverables are the commitments from the proposal — link tasks to them and completed tasks auto-mark the deliverable delivered. This list feeds Reports.
                 </p>
                 {!detail.deliverables?.length ? (
@@ -2412,18 +2412,18 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                             "size-2 shrink-0 rounded-full",
                             dv.status === "DELIVERED" ? "bg-emerald-500" : dv.status === "IN_PROGRESS" ? "bg-amber-400" : "bg-muted-foreground/30"
                           )} />
-                          <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{dv.title}</p>
+                          <p className="min-w-0 flex-1 truncate text-body font-semibold">{dv.title}</p>
                           {!!dv.tasks?.length && (
-                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9.5px] font-bold text-muted-foreground">
+                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-bold text-muted-foreground">
                               {dv.tasks.filter((t) => t.status === "DONE").length}/{dv.tasks.length} tasks
                             </span>
                           )}
                           {dv.status === "DELIVERED" ? (
-                            <button onClick={() => setDeliverableStatus(dv, "PENDING")} className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9.5px] font-bold text-emerald-400 transition-colors hover:bg-emerald-500/25" title="Reopen">
+                            <button onClick={() => setDeliverableStatus(dv, "PENDING")} className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-micro font-bold text-emerald-400 transition-colors hover:bg-emerald-500/25" title="Reopen">
                               delivered
                             </button>
                           ) : (
-                            <button onClick={() => setDeliverableStatus(dv, "DELIVERED")} className="rounded-full bg-muted px-2 py-0.5 text-[9.5px] font-bold text-muted-foreground transition-colors hover:bg-emerald-500/15 hover:text-emerald-400" title="Mark delivered">
+                            <button onClick={() => setDeliverableStatus(dv, "DELIVERED")} className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground transition-colors hover:bg-emerald-500/15 hover:text-emerald-400" title="Mark delivered">
                               mark delivered
                             </button>
                           )}
@@ -2442,12 +2442,12 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                             <Trash2 className="size-3.5" />
                           </button>
                         </div>
-                        {dv.description && <p className="mt-1 pl-4 text-[11px] text-muted-foreground">{dv.description}</p>}
+                        {dv.description && <p className="mt-1 pl-4 text-meta text-muted-foreground">{dv.description}</p>}
                         {dvEditId === dv.id && (
                           <div className="mt-2 rounded-lg border border-border/60 bg-muted/30 p-2">
-                            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Linked tasks (completion auto-updates deliverable)</p>
+                            <p className="mb-1.5 text-micro font-bold uppercase tracking-wide text-muted-foreground">Linked tasks (completion auto-updates deliverable)</p>
                             {!detail.tasks.length ? (
-                              <p className="text-[11px] text-muted-foreground">No tasks in this project yet — create tasks in the Tasks tab first.</p>
+                              <p className="text-meta text-muted-foreground">No tasks in this project yet — create tasks in the Tasks tab first.</p>
                             ) : (
                               <>
                                 <div className="flex flex-wrap gap-1.5">
@@ -2462,7 +2462,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                                           return next;
                                         })}
                                         className={cn(
-                                          "rounded-full border px-2 py-0.5 text-[10.5px] font-semibold transition-colors",
+                                          "rounded-full border px-2 py-0.5 text-micro font-semibold transition-colors",
                                           on ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:text-foreground"
                                         )}
                                       >
@@ -2472,7 +2472,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                                   })}
                                 </div>
                                 <div className="mt-2 flex justify-end">
-                                  <Btn variant="primary" className="!px-3 !py-1.5 text-[11px]" onClick={() => saveDeliverableTasks(dv)} disabled={dvBusy}>
+                                  <Btn variant="primary" className="!px-3 !py-1.5 text-meta" onClick={() => saveDeliverableTasks(dv)} disabled={dvBusy}>
                                     Save links
                                   </Btn>
                                 </div>
@@ -2491,8 +2491,8 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
               <div className="flex flex-col gap-3">
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/60 p-3">
                   <div>
-                    <p className="text-[11.5px] font-bold">Progress reports</p>
-                    <p className="text-[10.5px] text-muted-foreground">
+                    <p className="text-meta font-bold">Progress reports</p>
+                    <p className="text-micro text-muted-foreground">
                       Completed deliverables + billing snapshot auto-populate · PM notes editable
                       {detail.reportMode === "AUTOMATIC" && detail.reportFrequency ? ` · auto ${detail.reportFrequency}` : " · manual"}
                     </p>
@@ -2503,7 +2503,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   <Select
                     value={detail.reportMode === "AUTOMATIC" ? (detail.reportFrequency ?? "30-days") : "MANUAL"}
                     onChange={(e) => setReportSchedule(e.target.value)}
-                    className="!w-44 !py-1.5 text-[11px]"
+                    className="!w-44 !py-1.5 text-meta"
                     title="Report cadence"
                   >
                     <option value="MANUAL">Manual only</option>
@@ -2525,9 +2525,9 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                         )}
                       >
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="min-w-0 flex-1 truncate text-[12.5px] font-bold">{r.title}</p>
+                          <p className="min-w-0 flex-1 truncate text-body font-bold">{r.title}</p>
                           <span className={cn(
-                            "rounded-full px-2 py-0.5 text-[9.5px] font-bold",
+                            "rounded-full px-2 py-0.5 text-micro font-bold",
                             r.status === "DRAFT" ? "bg-muted text-muted-foreground"
                               : r.status === "FINAL" ? "bg-sky-500/15 text-sky-400"
                                 : "bg-emerald-500/15 text-emerald-400"
@@ -2535,7 +2535,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                             {label(r.status)}
                           </span>
                           {r.status !== "SENT" && (
-                            <button onClick={() => setReportStatus(r, "SENT")} className="rounded-lg px-2 py-1 text-[10.5px] font-bold text-emerald-400 transition-colors hover:bg-emerald-500/10" title="Mark sent to client">
+                            <button onClick={() => setReportStatus(r, "SENT")} className="rounded-lg px-2 py-1 text-micro font-bold text-emerald-400 transition-colors hover:bg-emerald-500/10" title="Mark sent to client">
                               send
                             </button>
                           )}
@@ -2543,42 +2543,42 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                             <Trash2 className="size-3.5" />
                           </button>
                         </div>
-                        <p className="mt-0.5 text-[10px] text-muted-foreground">
+                        <p className="mt-0.5 text-micro text-muted-foreground">
                           {formatDate(r.periodStart)} – {formatDate(r.periodEnd)} · generated {timeAgo(r.createdAt)}{r.generatedBy?.name ? ` by ${r.generatedBy.name}` : ""}
                           {r.sentAt ? ` · sent ${timeAgo(r.sentAt)}` : ""}
                         </p>
                         <div className="mt-2 grid gap-2 sm:grid-cols-2">
                           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2.5">
-                            <p className="text-[9.5px] font-bold uppercase tracking-wide text-emerald-400">Delivered ({r.completed.length})</p>
+                            <p className="text-micro font-bold uppercase tracking-wide text-emerald-400">Delivered ({r.completed.length})</p>
                             {r.completed.length ? (
                               <ul className="mt-1 flex flex-col gap-0.5">
                                 {r.completed.map((c) => (
-                                  <li key={c.deliverableId} className="flex items-center gap-1 text-[11.5px]">
-                                    <CheckCircle2 className="size-3 shrink-0 text-emerald-400" /> {c.title}
+                                  <li key={c.deliverableId} className="flex items-center gap-1 text-meta">
+                                    <CheckCircle2 className="size-3.5 shrink-0 text-emerald-400" /> {c.title}
                                   </li>
                                 ))}
                               </ul>
                             ) : (
-                              <p className="mt-1 text-[11px] text-muted-foreground">Nothing delivered in this period.</p>
+                              <p className="mt-1 text-meta text-muted-foreground">Nothing delivered in this period.</p>
                             )}
                           </div>
                           <div className="rounded-xl border border-border/60 bg-muted/30 p-2.5">
-                            <p className="text-[9.5px] font-bold uppercase tracking-wide text-muted-foreground">Pending ({r.pending.length})</p>
+                            <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Pending ({r.pending.length})</p>
                             {r.pending.length ? (
                               <ul className="mt-1 flex flex-col gap-0.5">
                                 {r.pending.map((c) => (
-                                  <li key={c.deliverableId} className="flex items-center gap-1 text-[11.5px] text-muted-foreground">
+                                  <li key={c.deliverableId} className="flex items-center gap-1 text-meta text-muted-foreground">
                                     <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" /> {c.title}
                                   </li>
                                 ))}
                               </ul>
                             ) : (
-                              <p className="mt-1 text-[11px] text-emerald-400">All deliverables done ✓</p>
+                              <p className="mt-1 text-meta text-emerald-400">All deliverables done ✓</p>
                             )}
                           </div>
                         </div>
                         {r.billing && (
-                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 rounded-xl bg-muted/40 px-2.5 py-1.5 text-[10.5px] text-muted-foreground">
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 rounded-xl bg-muted/40 px-2.5 py-1.5 text-micro text-muted-foreground">
                             <span>Billing — invoiced <span className="font-bold text-foreground">{money(r.billing.invoiced, detail.currency)}</span></span>
                             <span>collected <span className="font-bold text-emerald-400">{money(r.billing.collected, detail.currency)}</span></span>
                             <span>outstanding <span className="font-bold text-amber-400">{money(r.billing.outstanding, detail.currency)}</span></span>
@@ -2588,18 +2588,18 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                           <div className="mt-2 flex flex-col gap-1.5">
                             <Textarea value={repNotesEdit === r.id ? (repNotesDraft ?? r.pmNotes ?? "") : ""} onChange={(e) => setRepNotesDraft(e.target.value)} placeholder="PM notes / next steps (client-facing)…" className="min-h-16" />
                             <div className="flex justify-end gap-1.5">
-                              <button onClick={() => { setRepNotesEdit(null); setRepNotesDraft(null); }} className="rounded-lg px-2 py-1 text-[11px] font-bold text-muted-foreground hover:bg-muted">Cancel</button>
-                              <button onClick={() => saveReportNotes(r)} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-[11px] font-bold text-white">Save</button>
+                              <button onClick={() => { setRepNotesEdit(null); setRepNotesDraft(null); }} className="rounded-lg px-2 py-1 text-meta font-bold text-muted-foreground hover:bg-muted">Cancel</button>
+                              <button onClick={() => saveReportNotes(r)} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-meta font-bold text-white">Save</button>
                             </div>
                           </div>
                         ) : (
                           <div className="mt-2">
                             {r.pmNotes ? (
-                              <p className="rounded-xl bg-muted/30 px-2.5 py-1.5 text-[11.5px] text-muted-foreground whitespace-pre-wrap" title="Click to edit" onClick={() => { setRepNotesEdit(r.id); setRepNotesDraft(r.pmNotes); }}>
+                              <p className="rounded-xl bg-muted/30 px-2.5 py-1.5 text-meta text-muted-foreground whitespace-pre-wrap" title="Click to edit" onClick={() => { setRepNotesEdit(r.id); setRepNotesDraft(r.pmNotes); }}>
                                 <span className="font-bold text-foreground">PM notes: </span>{r.pmNotes}
                               </p>
                             ) : (
-                              <button onClick={() => { setRepNotesEdit(r.id); setRepNotesDraft(""); }} className="text-[11px] font-bold text-primary hover:underline">
+                              <button onClick={() => { setRepNotesEdit(r.id); setRepNotesDraft(""); }} className="text-meta font-bold text-primary hover:underline">
                                 + add PM notes
                               </button>
                             )}
@@ -2621,14 +2621,14 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   </Btn>
                 </div>
                 {!detail.milestones.length ? (
-                  <p className="mt-2 text-[11.5px] text-muted-foreground">No milestones yet</p>
+                  <p className="mt-2 text-meta text-muted-foreground">No milestones yet</p>
                 ) : (
                   detail.milestones.map((m) => (
                     <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 px-3 py-2">
                       <span className={cn("size-2 shrink-0 rounded-full", m.status === "COMPLETED" ? "bg-emerald-500" : m.status === "IN_PROGRESS" ? "bg-amber-400" : "bg-muted")} />
-                      <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{m.name}</p>
-                      <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
-                        <Calendar className="size-3" /> {formatDate(m.dueDate)}
+                      <p className="min-w-0 flex-1 truncate text-body font-semibold">{m.name}</p>
+                      <span className="flex items-center gap-1 text-micro text-muted-foreground">
+                        <Calendar className="size-3.5" /> {formatDate(m.dueDate)}
                       </span>
                       <Segmented options={MILESTONE_STATUSES.map((s) => ({ value: s, label: label(s) }))} value={m.status} onChange={(v) => setMilestoneStatus(m, v)} />
                       <button onClick={() => deleteMilestone(m.id)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400">
@@ -2642,14 +2642,14 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             {detailTab === "files" && (
               <div className="flex flex-col gap-2">
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted-foreground">{detail.files.length} attachments</span>
+                  <span className="text-meta text-muted-foreground">{detail.files.length} attachments</span>
                   <Btn variant="outline" onClick={() => fileRef.current?.click()} className={uploading ? "opacity-50" : ""}>
                     <Upload className="size-3.5" /> {uploading ? "Uploading…" : "Upload"}
                   </Btn>
                   <input ref={fileRef} type="file" className="hidden" onChange={onPickFile} />
                 </div>
                 {!detail.files.length ? (
-                  <p className="text-[11.5px] text-muted-foreground">No files yet — upload the first one.</p>
+                  <p className="text-meta text-muted-foreground">No files yet — upload the first one.</p>
                 ) : (
                   detail.files.map((f) => (
                     <div
@@ -2664,15 +2664,15 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                         {fileIcon(f.fileName ?? f.name ?? "file.pdf")}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] font-semibold">{f.fileName ?? (f as any).name ?? "file"}</p>
-                        <p className="truncate text-[10.5px] text-muted-foreground">{fileSize(f.size)} · {f.uploadedBy?.name ?? "unknown"} · {timeAgo(f.uploadedAt)}</p>
+                        <p className="truncate text-body font-semibold">{f.fileName ?? (f as any).name ?? "file"}</p>
+                        <p className="truncate text-micro text-muted-foreground">{fileSize(f.size)} · {f.uploadedBy?.name ?? "unknown"} · {timeAgo(f.uploadedAt)}</p>
                       </div>
                       <StatusBadge status={f.approvalStatus ?? "PENDING"} />
                       {f.approvalStatus !== "APPROVED" && (
-                        <button onClick={() => setApproval(f.id, "APPROVED")} className="rounded-lg px-2 py-1 text-[10.5px] font-bold text-emerald-400 transition-colors hover:bg-emerald-500/10">approve</button>
+                        <button onClick={() => setApproval(f.id, "APPROVED")} className="rounded-lg px-2 py-1 text-micro font-bold text-emerald-400 transition-colors hover:bg-emerald-500/10">approve</button>
                       )}
                       {f.approvalStatus !== "REVISION_REQUESTED" && (
-                        <button onClick={() => setApproval(f.id, "REVISION_REQUESTED")} className="rounded-lg px-2 py-1 text-[10.5px] font-bold text-amber-400 transition-colors hover:bg-amber-500/10">revise</button>
+                        <button onClick={() => setApproval(f.id, "REVISION_REQUESTED")} className="rounded-lg px-2 py-1 text-micro font-bold text-amber-400 transition-colors hover:bg-amber-500/10">revise</button>
                       )}
                       <a href={f.downloadUrl ?? absoluteUrl(f.fileUrl)} target="_blank" rel="noreferrer" className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" title="Download">
                         <Download className="size-3.5" />
@@ -2692,7 +2692,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     {[...Array(3)].map((_, i) => <SkeletonBlock key={i} className="h-14" />)}
                   </div>
                 ) : !discussions?.length ? (
-                  <p className="text-[11.5px] text-muted-foreground">No discussions yet — start the conversation.</p>
+                  <p className="text-meta text-muted-foreground">No discussions yet — start the conversation.</p>
                 ) : (
                   discussions.map((d) => {
                     const name = d.author?.name ?? d.portalUser?.name ?? "Team";
@@ -2701,11 +2701,11 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                         <Avatar name={name} size="size-7" />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-baseline gap-2">
-                            <p className="text-[12px] font-bold">{name}</p>
-                            <span className="text-[10px] text-muted-foreground">{timeAgo(d.createdAt)}</span>
-                            {d.portalUser && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold text-primary">client</span>}
+                            <p className="text-body font-bold">{name}</p>
+                            <span className="text-micro text-muted-foreground">{timeAgo(d.createdAt)}</span>
+                            {d.portalUser && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-micro font-bold text-primary">client</span>}
                           </div>
-                          <p className="mt-1 rounded-xl rounded-tl-sm border border-border/60 bg-muted/30 px-3 py-2 text-[12.5px] leading-relaxed">{d.content}</p>
+                          <p className="mt-1 rounded-xl rounded-tl-sm border border-border/60 bg-muted/30 px-3 py-2 text-body leading-relaxed">{d.content}</p>
                         </div>
                       </div>
                     );
@@ -2722,7 +2722,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             {detailTab === "tasks" && (
               <div className="flex flex-col gap-2">
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-[11.5px] text-muted-foreground">{detail.tasks.length} linked tasks</span>
+                  <span className="text-meta text-muted-foreground">{detail.tasks.length} linked tasks</span>
                   <div className="flex items-center gap-2">
                     <Btn variant="outline" onClick={() => setBulkOpen(true)}>
                       <Users className="size-3.5" /> Bulk assign
@@ -2733,7 +2733,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   </div>
                 </div>
                 {!detail.tasks.length ? (
-                  <p className="text-[11.5px] text-muted-foreground">No tasks linked to this project</p>
+                  <p className="text-meta text-muted-foreground">No tasks linked to this project</p>
                 ) : (
                   detail.tasks.map((t) => (
                     <button
@@ -2742,8 +2742,8 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                       className="group flex items-center gap-2 rounded-xl border border-border/60 px-3 py-2 text-left transition-colors hover:border-primary/30 hover:bg-muted/40"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] font-semibold">{t.title}</p>
-                        <p className="text-[10.5px] text-muted-foreground">{t.assignedTo?.name ?? "unassigned"}{t.dueDate ? ` · due ${formatDate(t.dueDate)}` : ""}</p>
+                        <p className="truncate text-body font-semibold">{t.title}</p>
+                        <p className="text-micro text-muted-foreground">{t.assignedTo?.name ?? "unassigned"}{t.dueDate ? ` · due ${formatDate(t.dueDate)}` : ""}</p>
                       </div>
                       <StatusBadge status={t.status} />
                       <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
@@ -2758,8 +2758,8 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
               ) : finance ? (
                 <div className="flex flex-col gap-4">
                   <div className="rounded-xl border border-border/60 p-3">
-                    <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-muted-foreground uppercase"><Wallet className="size-3.5" /> Budget burn</p>
-                    <div className="flex items-center justify-between text-[11.5px]">
+                    <p className="mb-1.5 flex items-center gap-1.5 text-meta font-bold tracking-wide text-muted-foreground uppercase"><Wallet className="size-3.5" /> Budget burn</p>
+                    <div className="flex items-center justify-between text-meta">
                       <span className="font-semibold tabular-nums">{money(detail.spentAmount ?? (detail as any).budgetSpent ?? 0, detail.currency)} spent</span>
                       <span className="text-muted-foreground tabular-nums">of {money((detail as any).amount ?? detail.budgetAmount ?? finance?.project?.budgetAmount, detail.currency)}</span>
                       <span className="font-bold tabular-nums">{budgetPct(detail)}%</span>
@@ -2778,12 +2778,12 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   {/* payment ledger */}
                   {!!finance?.payments?.length && (
                     <section>
-                      <h4 className="mb-2 flex items-center gap-1.5 text-[11.5px] font-bold tracking-wide text-muted-foreground uppercase">
+                      <h4 className="mb-2 flex items-center gap-1.5 text-meta font-bold tracking-wide text-muted-foreground uppercase">
                         <HandCoins className="size-3.5" /> Payment ledger
                       </h4>
                       <div className="overflow-hidden rounded-xl border border-border/60">
                         <table className="w-full text-left">
-                          <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          <thead className="bg-muted/40 text-micro uppercase tracking-wide text-muted-foreground">
                             <tr>
                               <th className="px-3 py-2 font-bold">Date</th>
                               <th className="px-3 py-2 font-bold">Amount</th>
@@ -2795,11 +2795,11 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                           <tbody>
                             {finance.payments.map((p: any) => (
                               <tr key={p.id} className="border-t border-border/40">
-                                <td className="px-3 py-2 text-[11.5px] font-semibold">{formatDate(p.paymentDate)}</td>
-                                <td className="px-3 py-2 text-[11.5px] font-bold tabular-nums text-emerald-400">{money(p.amount, detail.currency)}</td>
-                                <td className="px-3 py-2 text-[11.5px]">{label(p.paymentMethod)}</td>
-                                <td className="px-3 py-2 text-[11.5px] font-mono text-[10.5px]">{p.invoiceNumber}</td>
-                                <td className="px-3 py-2 text-[11px] text-muted-foreground">{p.referenceId ?? p.notes ?? "—"}</td>
+                                <td className="px-3 py-2 text-meta font-semibold">{formatDate(p.paymentDate)}</td>
+                                <td className="px-3 py-2 text-meta font-bold tabular-nums text-emerald-400">{money(p.amount, detail.currency)}</td>
+                                <td className="px-3 py-2 text-meta">{label(p.paymentMethod)}</td>
+                                <td className="px-3 py-2 text-meta font-mono text-micro">{p.invoiceNumber}</td>
+                                <td className="px-3 py-2 text-meta text-muted-foreground">{p.referenceId ?? p.notes ?? "—"}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -2817,26 +2817,26 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 {detail.sourceProposal && (
                   <section className="rounded-2xl border border-primary/30 bg-primary/5 p-3.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <FileText className="size-4 text-primary" />
-                      <p className="text-[12.5px] font-bold">Proposal v{detail.sourceProposal.versionNumber}</p>
+                      <FileText className="size-3.5 text-primary" />
+                      <p className="text-body font-bold">Proposal v{detail.sourceProposal.versionNumber}</p>
                       <StatusBadge status={detail.sourceProposal.status} />
                       {detail.sourceProposal.sentDate && (
-                        <span className="text-[10.5px] text-muted-foreground">sent {formatDate(detail.sourceProposal.sentDate)}</span>
+                        <span className="text-micro text-muted-foreground">sent {formatDate(detail.sourceProposal.sentDate)}</span>
                       )}
                       <div className="ml-auto flex items-center gap-2">
                         {detail.sourceProposal.fileUrl && (
-                          <a href={absoluteUrl(detail.sourceProposal.fileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-card px-2.5 py-1 text-[10.5px] font-bold text-primary transition-colors hover:bg-primary/10">
-                            <FileText className="size-3" /> PDF ↗
+                          <a href={absoluteUrl(detail.sourceProposal.fileUrl)} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-primary/30 bg-card px-2.5 py-1 text-micro font-bold text-primary transition-colors hover:bg-primary/10">
+                            <FileText className="size-3.5" /> PDF <ArrowUpRight className="size-3" />
                           </a>
                         )}
                         {detail.sourceProposal.portalLink && (
-                          <a href={detail.sourceProposal.portalLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-card px-2.5 py-1 text-[10.5px] font-bold text-sky-400 transition-colors hover:bg-sky-500/10">
-                            <Link2 className="size-3" /> portal ↗
+                          <a href={detail.sourceProposal.portalLink} target="_blank" rel="noreferrer" className="flex items-center gap-1 rounded-full border border-sky-500/30 bg-card px-2.5 py-1 text-micro font-bold text-sky-400 transition-colors hover:bg-sky-500/10">
+                            <Link2 className="size-3.5" /> portal <ArrowUpRight className="size-3" />
                           </a>
                         )}
                       </div>
                     </div>
-                    <p className="mt-1 text-[10.5px] text-muted-foreground">The proposal this project was confirmed from — deliverables were committed here.</p>
+                    <p className="mt-1 text-micro text-muted-foreground">The proposal this project was confirmed from — deliverables were committed here.</p>
                   </section>
                 )}
 
@@ -2846,19 +2846,19 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     type="button"
                     onClick={() => refFileRef.current?.click()}
                     disabled={refUploading}
-                    className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-6 text-[12px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
+                    className="flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-muted/30 px-4 py-6 text-body font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-60"
                   >
                     <UploadCloud className="size-5" />
                     {refUploading ? "Uploading…" : "Upload PDF / document"}
-                    <span className="text-[10.5px] font-medium text-muted-foreground/70">PDF, image or zip — max 15MB</span>
+                    <span className="text-micro font-medium text-muted-foreground/70">PDF, image or zip — max 15MB</span>
                   </button>
                   <input ref={refFileRef} type="file" className="hidden" onChange={onPickRefFile} accept=".pdf,.png,.jpg,.jpeg,.webp,.zip" />
                   <div className="flex flex-col gap-2 rounded-2xl border border-border/60 p-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Add link</p>
+                    <p className="text-meta font-bold uppercase tracking-wide text-muted-foreground">Add link</p>
                     <Input value={refTitle} onChange={(e) => setRefTitle(e.target.value)} placeholder="Title — e.g. Brand assets, Media plan" />
                     <Input value={refUrl} onChange={(e) => setRefUrl(e.target.value)} placeholder="https://drive.google.com/… / Notion / Figma / any URL" />
                     <div className="flex items-center gap-2">
-                      <Select value={refType} onChange={(e) => setRefType(e.target.value)} className="!w-32 !py-1.5 text-[11px]">
+                      <Select value={refType} onChange={(e) => setRefType(e.target.value)} className="!w-32 !py-1.5 text-meta">
                         {["DRIVE", "NOTION", "FIGMA", "OTHER"].map((t) => <option key={t} value={t}>{t}</option>)}
                       </Select>
                       <Btn variant="primary" onClick={addReferenceLink} className={refBusy ? "opacity-50" : ""}>
@@ -2886,11 +2886,11 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                               : isLink ? "border-sky-500/30 bg-sky-500/10 text-sky-400"
                                 : "border-border bg-muted/40 text-muted-foreground"
                           )}>
-                            {isPdf ? <FileText className="size-4" /> : isLink ? <Link2 className="size-4" /> : <FileSpreadsheet className="size-4" />}
+                            {isPdf ? <FileText className="size-3.5" /> : isLink ? <Link2 className="size-3.5" /> : <FileSpreadsheet className="size-4" />}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[12px] font-semibold" title={r.title}>{r.title}</p>
-                            <p className="truncate text-[10px] text-muted-foreground">
+                            <p className="truncate text-body font-semibold" title={r.title}>{r.title}</p>
+                            <p className="truncate text-micro text-muted-foreground">
                               {r.fileUrl ? "uploaded file" : r.url?.replace(/^https?:\/\/(www\.)?/, "")} · {r.uploadedBy?.name ?? "—"} · {timeAgo(r.createdAt)}
                             </p>
                           </div>
@@ -2918,7 +2918,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
               </div>
             )}
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
-              <span className="text-[11.5px] text-muted-foreground">{detail.milestones.length} milestones · {detail.files.length} files · {detail.tasks.length} tasks · {detail.deliverables?.length ?? 0} deliverables</span>
+              <span className="text-meta text-muted-foreground">{detail.milestones.length} milestones · {detail.files.length} files · {detail.tasks.length} tasks · {detail.deliverables?.length ?? 0} deliverables</span>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Btn variant="outline" onClick={() => setFinExpOpen(true)}>
                   <ReceiptText className="size-3.5" /> Add Expense
@@ -2964,7 +2964,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
       {/* Bulk assign tasks modal */}
       <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title={`Bulk assign tasks — ${detail?.name ?? ""}`} size="lg">
         <div className="flex flex-col gap-4">
-          <p className="text-[11.5px] text-muted-foreground">Select tasks from backlog (or any project) to assign to <span className="font-semibold text-foreground">{detail?.name}</span>. This will call <code className="rounded bg-muted px-1">POST /flow/projects/:id/tasks/bulk</code>.</p>
+          <p className="text-meta text-muted-foreground">Select tasks from backlog (or any project) to assign to <span className="font-semibold text-foreground">{detail?.name}</span>. This will call <code className="rounded bg-muted px-1">POST /flow/projects/:id/tasks/bulk</code>.</p>
           {bulkLoading ? (
             <div className="flex flex-col gap-2">{[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-10" />)}</div>
           ) : !bulkTasks || bulkTasks.length === 0 ? (
@@ -2972,10 +2972,10 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
           ) : (
             <>
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-muted-foreground">{bulkTasks.length} tasks • {bulkSelected.size} selected</span>
+                <span className="text-meta font-bold text-muted-foreground">{bulkTasks.length} tasks • {bulkSelected.size} selected</span>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setBulkSelected(new Set(bulkTasks.map((t:any)=>t.id)))} className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold hover:bg-muted">Select all</button>
-                  <button onClick={() => setBulkSelected(new Set())} className="rounded-lg border border-border px-2.5 py-1 text-[11px] font-semibold hover:bg-muted">Clear</button>
+                  <button onClick={() => setBulkSelected(new Set(bulkTasks.map((t:any)=>t.id)))} className="rounded-lg border border-border px-2.5 py-1 text-meta font-semibold hover:bg-muted">Select all</button>
+                  <button onClick={() => setBulkSelected(new Set())} className="rounded-lg border border-border px-2.5 py-1 text-meta font-semibold hover:bg-muted">Clear</button>
                 </div>
               </div>
               <div className="max-h-[360px] overflow-auto rounded-xl border border-border/60">
@@ -2986,8 +2986,8 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     <label key={t.id} className={`flex cursor-pointer items-center gap-3 border-b border-border/40 px-3 py-2 hover:bg-muted/30 ${checked ? "bg-primary/5" : ""} ${isAlready ? "opacity-60" : ""}`}>
                       <input type="checkbox" checked={checked} onChange={() => toggleBulkSelected(t.id)} className="size-3.5 accent-primary" />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] font-semibold">{t.title}</p>
-                        <p className="text-[10.5px] text-muted-foreground">{t.status ?? "BACKLOG"} • {t.project?.name ?? (t.projectId ? t.projectId.slice(0,6) : "no project")} {isAlready ? "• already linked" : ""}</p>
+                        <p className="truncate text-body font-semibold">{t.title}</p>
+                        <p className="text-micro text-muted-foreground">{t.status ?? "BACKLOG"} • {t.project?.name ?? (t.projectId ? t.projectId.slice(0,6) : "no project")} {isAlready ? "• already linked" : ""}</p>
                       </div>
                       <StatusBadge status={t.status ?? "BACKLOG"} />
                     </label>
@@ -2995,8 +2995,8 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 })}
               </div>
               <div className="flex justify-end gap-2">
-                <button onClick={() => setBulkOpen(false)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground hover:bg-muted">Cancel</button>
-                <button onClick={doBulkAssign} disabled={bulkBusy || bulkSelected.size===0} className="rounded-xl bg-primary px-4 py-2 text-[12.5px] font-bold text-primary-foreground disabled:opacity-60 hover:bg-primary/90">{bulkBusy ? "Assigning…" : `Assign ${bulkSelected.size} task(s)`}</button>
+                <button onClick={() => setBulkOpen(false)} className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground hover:bg-muted">Cancel</button>
+                <button onClick={doBulkAssign} disabled={bulkBusy || bulkSelected.size===0} className="rounded-xl bg-primary px-4 py-2 text-body font-bold text-primary-foreground disabled:opacity-60 hover:bg-primary/90">{bulkBusy ? "Assigning…" : `Assign ${bulkSelected.size} task(s)`}</button>
               </div>
             </>
           )}
@@ -3042,14 +3042,14 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
         }}
       />
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Delete project?">
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-body leading-relaxed text-muted-foreground">
           {deleteTarget ? `This permanently deletes "${deleteTarget.name}" and its milestones, files, reports and discussions. Projects that still have tasks, invoices, expenses, income or vendor engagements are blocked — archive those instead.` : ""}
         </p>
         <div className="mt-6 flex justify-end gap-2">
-          <button onClick={() => setDeleteTarget(null)} className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+          <button onClick={() => setDeleteTarget(null)} className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
             Cancel
           </button>
-          <button onClick={deleteProject} className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02]">
+          <button onClick={deleteProject} className="rounded-xl bg-rose-500 px-4 py-2 text-body font-bold text-white shadow-rose-500/30 transition-all hover:scale-[1.02]">
             Delete
           </button>
         </div>
@@ -3060,8 +3060,8 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
 function Fact({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-xl border border-border/60 px-3 py-2">
-      <p className="text-[10px] font-bold tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p className="mt-0.5 truncate text-[12.5px] font-semibold">{value}</p>
+      <p className="text-micro font-bold tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="mt-0.5 truncate text-body font-semibold">{value}</p>
     </div>
   );
 }

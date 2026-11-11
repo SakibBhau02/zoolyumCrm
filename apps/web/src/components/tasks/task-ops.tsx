@@ -88,18 +88,18 @@ export function ChecklistTab({ taskId, onChanged }: { taskId: string; onChanged?
               style={{ width: `${total ? (done / total) * 100 : 0}%` }}
             />
           </div>
-          <span className="shrink-0 text-[11px] font-bold text-muted-foreground">
+          <span className="shrink-0 text-meta font-bold text-muted-foreground">
             {done}/{total}
           </span>
         </div>
       )}
 
       {items === null ? (
-        <div className="flex items-center gap-2 py-2 text-[11.5px] text-muted-foreground">
+        <div className="flex items-center gap-2 py-2 text-meta text-muted-foreground">
           <Loader2 className="size-3.5 animate-spin" /> Loading checklist…
         </div>
       ) : total === 0 ? (
-        <p className="text-[11.5px] text-muted-foreground">No checklist items yet — add quick steps below.</p>
+        <p className="text-meta text-muted-foreground">No checklist items yet — add quick steps below.</p>
       ) : (
         <div className="flex flex-col gap-1">
           {items.map((item) => (
@@ -112,20 +112,20 @@ export function ChecklistTab({ taskId, onChanged }: { taskId: string; onChanged?
                   item.done ? "border-primary bg-primary text-white" : "border-border hover:border-primary/60"
                 )}
               >
-                {item.done && <Check className="size-3" strokeWidth={3} />}
+                {item.done && <Check className="size-3.5" />}
               </button>
-              <span className={cn("min-w-0 flex-1 text-[12px] leading-snug", item.done && "text-muted-foreground line-through")}>
+              <span className={cn("min-w-0 flex-1 text-body leading-snug", item.done && "text-muted-foreground line-through")}>
                 {item.content}
               </span>
               {item.done && item.doneBy && (
-                <span className="shrink-0 text-[9.5px] font-semibold text-muted-foreground/70">{item.doneBy.name}</span>
+                <span className="shrink-0 text-micro font-semibold text-muted-foreground/70">{item.doneBy.name}</span>
               )}
               <button
                 onClick={() => remove(item)}
                 aria-label={`Delete checklist item: ${item.content}`}
                 className="flex size-6 shrink-0 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-all hover:bg-rose-500/10 hover:text-rose-400 group-hover:opacity-100"
               >
-                <Trash2 className="size-3" />
+                <Trash2 className="size-3.5" />
               </button>
             </div>
           ))}
@@ -143,9 +143,9 @@ export function ChecklistTab({ taskId, onChanged }: { taskId: string; onChanged?
             }
           }}
           placeholder="Add a checklist item…"
-          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-[12px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
         />
-        <Btn variant="outline" onClick={add} disabled={busy || !draft.trim()}>
+        <Btn variant="outline" onClick={add} disabled={busy || !draft.trim()} aria-label="Add checklist item">
           {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
         </Btn>
       </div>
@@ -203,15 +203,15 @@ export function TimerPill({ onStopped }: { onStopped?: () => void }) {
   return (
     <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-1.5">
       <Timer className="size-3.5 shrink-0 text-primary" />
-      <span className="max-w-32 truncate text-[11.5px] font-semibold">{running.task?.title ?? "Task"}</span>
-      <span className="font-mono text-[11.5px] font-bold tabular-nums text-primary">{fmtElapsed(elapsed)}</span>
+      <span className="max-w-32 truncate text-meta font-semibold">{running.task?.title ?? "Task"}</span>
+      <span className="font-mono text-meta font-bold tabular-nums text-primary">{fmtElapsed(elapsed)}</span>
       <button
         onClick={stop}
         disabled={busy}
         aria-label="Stop timer"
         className="flex size-6 items-center justify-center rounded-lg bg-primary text-white transition-opacity hover:opacity-90 disabled:opacity-50"
       >
-        {busy ? <Loader2 className="size-3 animate-spin" /> : <Pause className="size-3" />}
+        {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Pause className="size-3.5" />}
       </button>
     </div>
   );

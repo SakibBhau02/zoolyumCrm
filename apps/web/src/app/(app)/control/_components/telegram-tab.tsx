@@ -127,10 +127,10 @@ export function TelegramTab({ notify }: { notify: (m: string) => void }) {
         <SectionTitle
           title="Telegram bot"
           subtitle="Bot token is encrypted at rest — it is never returned to the browser"
-          icon={<Bot className="size-3.5" />}
+          icon={<Bot className="size-4" />}
           action={
             <span className="flex items-center gap-1.5">
-              <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", cfg.enabled ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : "bg-muted text-muted-foreground")}>
+              <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold", cfg.enabled ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : "bg-muted text-muted-foreground")}>
                 {cfg.enabled ? "enabled" : "disabled"}
               </span>
               <Switch checked={cfg.enabled} onChange={(v) => void save({ enabled: v })} />
@@ -167,11 +167,11 @@ export function TelegramTab({ notify }: { notify: (m: string) => void }) {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
-          <span className="text-[11.5px] font-bold">Transport</span>
-          <span className="text-[11.5px] text-muted-foreground">
+          <span className="text-meta font-bold">Transport</span>
+          <span className="text-meta text-muted-foreground">
             {cfg.useWebhook ? "Webhook (production)" : "Long polling (dev / no public URL)"}
           </span>
-          <Input value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://your-domain.com" className="!w-72 !py-1.5 text-[11.5px]" />
+          <Input value={publicUrl} onChange={(e) => setPublicUrl(e.target.value)} placeholder="https://your-domain.com" className="!w-72 !py-1.5 text-meta" />
           <Btn variant="outline" className="!py-1.5" disabled={busy} onClick={() => act("Webhook", () => apiFetch("/control/telegram/webhook", { method: "POST", body: JSON.stringify({ publicUrl }) }))}>Register webhook</Btn>
           <Btn variant="ghost" className="!py-1.5" disabled={busy} onClick={() => act("Webhook removed", () => apiFetch("/control/telegram/webhook", { method: "DELETE" }))}>Remove</Btn>
           <Btn variant="ghost" className="!py-1.5" disabled={busy} onClick={() => act("Polling", () => apiFetch("/control/telegram/polling/sync", { method: "POST" }))}>
@@ -179,8 +179,8 @@ export function TelegramTab({ notify }: { notify: (m: string) => void }) {
           </Btn>
           <Btn variant="ghost" className="!py-1.5" onClick={() => act("Webhook info", async () => { const r = await apiFetch("/control/telegram/webhook-info"); setInfo(r); return { detail: "loaded below" }; })}>Info</Btn>
         </div>
-        {info && <pre className="mt-2 max-h-40 overflow-auto rounded-xl bg-muted/40 p-3 text-[10.5px]">{JSON.stringify(info, null, 2)}</pre>}
-        <p className="mt-2 text-[11px] text-muted-foreground">
+        {info && <pre className="mt-2 max-h-40 overflow-auto rounded-xl bg-muted/40 p-3 text-micro">{JSON.stringify(info, null, 2)}</pre>}
+        <p className="mt-2 text-meta text-muted-foreground">
           Telegram cannot call <span className="font-mono">localhost</span>. On a laptop keep polling on; register the webhook only when the API is reachable on public HTTPS (443/80/88/8443).
         </p>
       </CardShell>
@@ -190,7 +190,7 @@ export function TelegramTab({ notify }: { notify: (m: string) => void }) {
         <div className="grid gap-2 md:grid-cols-2">
           {AUTO_LABELS.map(([key, label]) => (
             <div key={key} className="flex items-center justify-between gap-3 rounded-xl border border-border/60 px-3 py-2.5">
-              <span className="text-[12px] font-medium">{label}</span>
+              <span className="text-body font-medium">{label}</span>
               <Switch
                 checked={!!cfg.auto[key]}
                 onChange={(v) => {
@@ -210,7 +210,7 @@ export function TelegramTab({ notify }: { notify: (m: string) => void }) {
       </CardShell>
 
       <CardShell>
-        <SectionTitle title={`Linked chats (${cfg.linkedChats})`} subtitle="People who pressed /start with a valid code" icon={<Link2 className="size-3.5" />} />
+        <SectionTitle title={`Linked chats (${cfg.linkedChats})`} subtitle="People who pressed /start with a valid code" icon={<Link2 className="size-4" />} />
         {links.length === 0 ? (
           <EmptyState title="Nobody linked yet" hint="Open an employee profile → Telegram → Connect, then send them the one-tap link." />
         ) : (
@@ -218,10 +218,10 @@ export function TelegramTab({ notify }: { notify: (m: string) => void }) {
             {links.map((l) => (
               <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 px-3 py-2">
                 <span className={cn("size-1.5 rounded-full", l.isActive ? "bg-emerald-500" : "bg-muted-foreground/40")} />
-                <span className="text-[12.5px] font-semibold">{l.employee?.name ?? l.user?.name ?? l.firstName ?? "Unknown"}</span>
-                <span className="font-mono text-[10.5px] text-muted-foreground">{l.username ? `@${l.username}` : l.chatId}</span>
+                <span className="text-body font-semibold">{l.employee?.name ?? l.user?.name ?? l.firstName ?? "Unknown"}</span>
+                <span className="font-mono text-micro text-muted-foreground">{l.username ? `@${l.username}` : l.chatId}</span>
                 <span className="ml-auto flex items-center gap-1.5">
-                  <Btn variant="ghost" className="!px-2 !py-1 text-[11px]" onClick={() => act("Removed", () => apiFetch(`/control/telegram/links/${l.id}`, { method: "DELETE" }))}>
+                  <Btn variant="ghost" className="!px-2 !py-1 text-meta" onClick={() => act("Removed", () => apiFetch(`/control/telegram/links/${l.id}`, { method: "DELETE" }))}>
                     <Trash2 className="size-3.5" />
                   </Btn>
                 </span>
@@ -234,16 +234,16 @@ export function TelegramTab({ notify }: { notify: (m: string) => void }) {
       <CardShell>
         <SectionTitle title="Message log" subtitle="Every send, its status and the failure reason" action={<Btn variant="ghost" onClick={() => void load()}>Refresh</Btn>} />
         {logs.length === 0 ? (
-          <p className="text-[12px] text-muted-foreground">Nothing sent yet.</p>
+          <p className="text-body text-muted-foreground">Nothing sent yet.</p>
         ) : (
           <div className="flex max-h-80 flex-col gap-1 overflow-y-auto">
             {logs.map((l) => (
               <div key={l.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-muted/40 px-3 py-1.5">
-                <span className={cn("rounded-full px-2 py-0.5 text-[9.5px] font-bold", l.status === "sent" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : l.status === "mock" ? "bg-sky-500/10 text-sky-600 dark:text-sky-300" : l.status === "failed" ? "bg-rose-500/10 text-rose-600 dark:text-rose-300" : "bg-muted text-muted-foreground")}>{l.status}</span>
-                <span className="text-[11px] font-semibold">{l.kind}</span>
-                <span className="truncate text-[11px] text-muted-foreground">{l.title ?? l.body?.slice(0, 60)}</span>
-                {l.error && <span className="text-[10.5px] text-rose-500">{l.error}</span>}
-                <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">{new Date(l.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold", l.status === "sent" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300" : l.status === "mock" ? "bg-sky-500/10 text-sky-600 dark:text-sky-300" : l.status === "failed" ? "bg-rose-500/10 text-rose-600 dark:text-rose-300" : "bg-muted text-muted-foreground")}>{l.status}</span>
+                <span className="text-meta font-semibold">{l.kind}</span>
+                <span className="truncate text-meta text-muted-foreground">{l.title ?? l.body?.slice(0, 60)}</span>
+                {l.error && <span className="text-micro text-rose-500">{l.error}</span>}
+                <span className="ml-auto text-micro tabular-nums text-muted-foreground">{new Date(l.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
               </div>
             ))}
           </div>

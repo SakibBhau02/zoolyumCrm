@@ -11,8 +11,8 @@ export default function PeopleLayout({ children }: { children: React.ReactNode }
     <div>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-baseline gap-2">
-          <h1 className="font-heading text-[19px] font-bold tracking-tight">People</h1>
-          <span className="hidden text-[11px] text-muted-foreground sm:inline">
+          <h1 className="font-heading text-title font-bold tracking-tight">People</h1>
+          <span className="hidden text-meta text-muted-foreground sm:inline">
             HRM · attendance, leave, payroll
           </span>
         </div>

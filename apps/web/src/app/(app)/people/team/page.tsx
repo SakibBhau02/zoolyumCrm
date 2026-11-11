@@ -28,6 +28,7 @@ import { PeopleHero } from "../_components/hero";
 import { Pager } from "../_components/table-kit";
 import { useToast, Toast } from "../_components/hooks";
 import { monthNow } from "../_components/constants";
+import { usePeopleAccess } from "../_components/permissions";
 
 const fmtDur = (mins?: number | null) => {
   if (mins == null) return "—";
@@ -56,6 +57,7 @@ export default function TeamPage() {
   const params = useSearchParams();
   const selectedId = params.get("id");
   const { flash, notify } = useToast();
+  const { canManagePulse } = usePeopleAccess();
 
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("");
@@ -119,7 +121,7 @@ export default function TeamPage() {
                 key={n}
                 onClick={() => setRange((r) => ({ ...r, type: "days", days: n }))}
                 className={cn(
-                  "rounded-lg px-2 py-1 text-[10.5px] font-bold transition-colors",
+                  "rounded-lg px-2 py-1 text-micro font-bold transition-colors",
                   range.type === "days" && range.days === n ? "bg-brand-gradient text-white" : "border border-border text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -130,7 +132,7 @@ export default function TeamPage() {
               type="month"
               value={range.month}
               onChange={(e) => setRange({ type: "month", month: e.target.value, days: 30 })}
-              className="rounded-lg border border-border bg-card px-2 py-1 text-[10.5px] font-semibold outline-none focus:border-primary/40"
+              className="rounded-lg border border-border bg-card px-2 py-1 text-micro font-semibold outline-none focus:border-primary/40"
             />
           </div>
         }
@@ -146,11 +148,11 @@ export default function TeamPage() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search name, role, dept…"
-                className="w-full rounded-xl border border-border bg-card py-1.5 pl-9 pr-3 text-[12px] outline-none placeholder:text-muted-foreground focus:border-primary/40"
+                className="w-full rounded-xl border border-border bg-card py-1.5 pl-9 pr-3 text-body outline-none placeholder:text-muted-foreground focus:border-primary/40"
               />
             </div>
             <div className="flex gap-1.5">
-              <Select value={dept} onChange={(e) => setDept(e.target.value)} className="!w-full !py-1.5 text-[11.5px]">
+              <Select value={dept} onChange={(e) => setDept(e.target.value)} className="!w-full !py-1.5 text-meta">
                 <option value="">All departments</option>
                 {(roster?.departments ?? []).map((d) => (
                   <option key={d} value={d}>{d}</option>
@@ -160,7 +162,7 @@ export default function TeamPage() {
             <button
               onClick={() => setOnlyAttention((v) => !v)}
               className={cn(
-                "rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-colors",
+                "rounded-xl border px-2.5 py-1.5 text-meta font-bold transition-colors",
                 onlyAttention ? "border-rose-500/40 bg-rose-500/10 text-rose-500" : "border-border text-muted-foreground hover:text-foreground"
               )}
             >
@@ -171,7 +173,7 @@ export default function TeamPage() {
           <div className="flex max-h-[320px] flex-col gap-0.5 overflow-y-auto pr-0.5">
             {rosterLoading && [...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-11" />)}
             {!rosterLoading && filtered.length === 0 && (
-              <p className="py-4 text-center text-[11.5px] text-muted-foreground">No match.</p>
+              <p className="py-4 text-center text-meta text-muted-foreground">No match.</p>
             )}
             {filtered.map((r) => {
               const active = r.id === selectedId;
@@ -187,8 +189,8 @@ export default function TeamPage() {
                 >
                   <Avatar name={r.name} size="size-7" />
                   <span className="min-w-0 flex-1">
-                    <span className={cn("block truncate text-[12px] font-semibold", active && "text-primary")}>{r.name}</span>
-                    <span className="block truncate text-[10px] text-muted-foreground">
+                    <span className={cn("block truncate text-body font-semibold", active && "text-primary")}>{r.name}</span>
+                    <span className="block truncate text-micro text-muted-foreground">
                       {r.roleTitle}{r.department ? ` · ${r.department}` : ""}
                     </span>
                   </span>
@@ -234,10 +236,10 @@ export default function TeamPage() {
                   <Avatar name={detail.employee.name} size="size-10" />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-heading text-[18px] font-bold">{detail.employee.name}</p>
+                      <p className="font-heading text-title font-bold">{detail.employee.name}</p>
                       <StatusBadge status={detail.employee.employmentStatus} />
                     </div>
-                    <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                    <p className="mt-0.5 text-meta text-muted-foreground">
                       {detail.employee.roleTitle}
                       {detail.employee.department ? ` · ${detail.employee.department}` : ""}
                       {detail.employee.reportingManager ? ` · reports to ${detail.employee.reportingManager.name}` : ""}
@@ -247,13 +249,13 @@ export default function TeamPage() {
                   <div className="flex items-center gap-1.5">
                     <Link
                       href={`/people/directory/${detail.employee.id}`}
-                      className="rounded-xl border border-border px-2.5 py-1.5 text-[11.5px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                      className="rounded-xl border border-border px-2.5 py-1.5 text-meta font-semibold text-muted-foreground transition-colors hover:text-foreground"
                     >
                       Profile
                     </Link>
                     <Link
                       href={`/tasks?assignee=${detail.employee.id}`}
-                      className="rounded-xl border border-border px-2.5 py-1.5 text-[11.5px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+                      className="rounded-xl border border-border px-2.5 py-1.5 text-meta font-semibold text-muted-foreground transition-colors hover:text-foreground"
                     >
                       Their tasks
                     </Link>
@@ -279,7 +281,7 @@ export default function TeamPage() {
                     key={t}
                     onClick={() => setTab(t)}
                     className={cn(
-                      "rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors",
+                      "rounded-lg px-2.5 py-1 text-meta font-bold transition-colors",
                       tab === t ? "bg-brand-gradient text-white" : "border border-border text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -296,7 +298,7 @@ export default function TeamPage() {
                     <SectionTitle
                       title="Day by day"
                       subtitle={`${formatDate(att?.range?.from)} → ${formatDate(att?.range?.to)} · hover a day for times`}
-                      icon={<CalendarDays className="size-3.5" />}
+                      icon={<CalendarDays className="size-4" />}
                     />
                     <AttendanceHeatmap days={days} />
                   </CardShell>
@@ -311,11 +313,11 @@ export default function TeamPage() {
                 const paged = logged.slice(safe * pageSize, safe * pageSize + pageSize);
                 return (
                   <CardShell>
-                    <SectionTitle title="Daily hours" subtitle="Check-in → check-out → worked, day by day" icon={<Timer className="size-3.5" />} />
+                    <SectionTitle title="Daily hours" subtitle="Check-in → check-out → worked, day by day" icon={<Timer className="size-4" />} />
                     <TableShell
                       footer={
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-[11.5px] text-muted-foreground">{logged.length} days · overtime counts past the policy threshold</span>
+                          <span className="text-meta text-muted-foreground">{logged.length} days · overtime counts past the policy threshold</span>
                           <Pager page={safe} pages={pages} onPage={setDayPage} total={logged.length} pageSize={pageSize} label="days" />
                         </div>
                       }
@@ -330,20 +332,20 @@ export default function TeamPage() {
                                 {["present", "late", "half", "absent"].includes(d.kind)
                                   ? <StatusBadge status={d.status ?? (d.kind === "half" ? "HALF_DAY" : d.kind.toUpperCase())} />
                                   : d.kind === "unrecorded"
-                                    ? <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground" title="No attendance row and no punch — this day was never processed">no record</span>
-                                    : <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold capitalize text-sky-500">{d.kind}</span>}
+                                    ? <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground" title="No attendance row and no punch — this day was never processed">no record</span>
+                                    : <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-micro font-bold capitalize text-sky-500">{d.kind}</span>}
                               </Td>
                               <Td className="tabular-nums text-muted-foreground">{d.checkIn ? new Date(d.checkIn).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "—"}</Td>
                               <Td className="tabular-nums text-muted-foreground">
                                 {d.checkOut
                                   ? new Date(d.checkOut).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
-                                  : d.stillInside ? <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-500">inside</span> : "—"}
+                                  : d.stillInside ? <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro font-bold text-emerald-500">inside</span> : "—"}
                               </Td>
                               <Td className="font-semibold tabular-nums">{fmtDur(d.workedMinutes)}</Td>
                               <Td className={cn("tabular-nums", (d.overtimeMinutes ?? 0) > 0 ? "font-bold text-amber-500" : "text-muted-foreground")}>
                                 {(d.overtimeMinutes ?? 0) > 0 ? fmtDur(d.overtimeMinutes) : "—"}
                               </Td>
-                              <Td className="text-[11px] text-muted-foreground">
+                              <Td className="text-meta text-muted-foreground">
                                 {d.leave ? "on leave" : typeof d.holiday === "string" ? d.holiday : (d.punches ?? 0) > 2 ? `${d.punches} punches` : ""}
                               </Td>
                             </Tr>
@@ -358,7 +360,7 @@ export default function TeamPage() {
               {tab === "Tasks" && (detail?.tasks ? (
                 <>
                   <CardShell className="!p-3">
-                    <SectionTitle title="Task output" subtitle={`Completed, on-time and open work · ${range.type === "days" ? `last ${range.days} days` : range.month}`} icon={<ListTodo className="size-3.5" />} />
+                    <SectionTitle title="Task output" subtitle={`Completed, on-time and open work · ${range.type === "days" ? `last ${range.days} days` : range.month}`} icon={<ListTodo className="size-4" />} />
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                       <Kpi label="Completed" value={detail.tasks.doneInRange} sub={`${detail.tasks.doneAllTime} all time`} tone="emerald" />
                       <Kpi label="On time" value={detail.tasks.onTimeRate != null ? `${detail.tasks.onTimeRate}%` : "—"} sub={`${detail.tasks.onTime}/${detail.tasks.doneInRange} met due date`} />
@@ -375,15 +377,15 @@ export default function TeamPage() {
 
                   <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                   <CardShell>
-                    <SectionTitle title="Recently completed" subtitle="Newest first" icon={<CheckCircle2 className="size-3.5" />} />
+                    <SectionTitle title="Recently completed" subtitle="Newest first" icon={<CheckCircle2 className="size-4" />} />
                     {(detail.tasks.recentDone ?? []).length === 0 ? (
-                      <p className="text-[11.5px] text-muted-foreground">Nothing completed in this window.</p>
+                      <p className="text-meta text-muted-foreground">Nothing completed in this window.</p>
                     ) : (
                       <div className="flex flex-col gap-1.5">
                         {detail.tasks.recentDone.slice(0, 2).map((t: any) => (
                           <div key={t.id} className="flex items-center justify-between gap-2 rounded-xl bg-muted/40 px-3 py-2">
-                            <p className="min-w-0 truncate text-[12px] font-medium">{t.title}</p>
-                            <span className="shrink-0 text-[10.5px] text-muted-foreground">
+                            <p className="min-w-0 truncate text-body font-medium">{t.title}</p>
+                            <span className="shrink-0 text-micro text-muted-foreground">
                               {t.project ? `${t.project} · ` : ""}{formatDate(t.completedAt)}
                             </span>
                           </div>
@@ -395,7 +397,7 @@ export default function TeamPage() {
                   <CardShell>
                     <SectionTitle title="Open work" subtitle="Soonest due first" />
                     {(detail.tasks.openList ?? []).length === 0 ? (
-                      <p className="text-[11.5px] text-muted-foreground">No open tasks.</p>
+                      <p className="text-meta text-muted-foreground">No open tasks.</p>
                     ) : (
                       <div className="flex flex-col gap-1.5">
                         {detail.tasks.openList.slice(0, 2).map((t: any) => (
@@ -404,11 +406,11 @@ export default function TeamPage() {
                             href={`/tasks?task=${t.id}`}
                             className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2 transition-colors hover:border-primary/40"
                           >
-                            <p className="min-w-0 truncate text-[12px] font-medium">{t.title}</p>
+                            <p className="min-w-0 truncate text-body font-medium">{t.title}</p>
                             <span className="flex shrink-0 items-center gap-2">
-                              <span className="text-[10px] font-bold uppercase text-muted-foreground">{t.priority}</span>
+                              <span className="text-micro font-bold uppercase text-muted-foreground">{t.priority}</span>
                               <StatusBadge status={normalizeStatus(t.status)} />
-                              <span className="text-[10.5px] text-muted-foreground">{t.dueDate ? formatDate(t.dueDate) : "no due"}</span>
+                              <span className="text-micro text-muted-foreground">{t.dueDate ? formatDate(t.dueDate) : "no due"}</span>
                             </span>
                           </Link>
                         ))}
@@ -418,13 +420,13 @@ export default function TeamPage() {
                   </div>
                 </>
               ) : (
-                <CardShell><p className="text-[12px] text-muted-foreground">No task data in this window.</p></CardShell>
+                <CardShell><p className="text-body text-muted-foreground">No task data in this window.</p></CardShell>
               ))}
 
               {tab === "Meetings" && (detail?.meetings ? (
                 <>
                   <CardShell className="!p-3">
-                    <SectionTitle title="Meeting load" subtitle="Invited vs actually attended" icon={<Video className="size-3.5" />} />
+                    <SectionTitle title="Meeting load" subtitle="Invited vs actually attended" icon={<Video className="size-4" />} />
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                       <Kpi label="Invited" value={detail.meetings.invited} sub="in this window" />
                       <Kpi label="Attended" value={detail.meetings.attended} sub={`${detail.meetings.attendanceRate ?? "—"}% show-up`} tone="emerald" />
@@ -433,7 +435,7 @@ export default function TeamPage() {
                       <Kpi label="Hours" value={`${detail.meetings.hours}h`} sub="total booked" />
                     </div>
                     {!detail.meetings.hasLogin && (
-                      <p className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] font-semibold text-amber-600 dark:text-amber-300">
+                      <p className="mt-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-meta font-semibold text-amber-600 dark:text-amber-300">
                         This employee has no login account. Meetings are recorded against the employee, so they still count — but they can't be invited by name from the lead panel until a user account is linked.
                       </p>
                     )}
@@ -442,21 +444,21 @@ export default function TeamPage() {
                   <CardShell className="!p-3">
                     <SectionTitle title="Meetings in window" subtitle="Marked per employee, newest first" />
                     {(detail.meetings.recent ?? []).length === 0 ? (
-                      <p className="text-[11.5px] text-muted-foreground">No meetings recorded for this person in the window.</p>
+                      <p className="text-meta text-muted-foreground">No meetings recorded for this person in the window.</p>
                     ) : (
-                      <TableShell footer={<span className="text-[11.5px] text-muted-foreground">{detail.meetings.recent.length} shown</span>}>
+                      <TableShell footer={<span className="text-meta text-muted-foreground">{Math.min(detail.meetings.recent.length, 3)} of {detail.meetings.recent.length} shown</span>}>
                         <table className="w-full">
                           <THead><Th>Meeting</Th><Th>Lead</Th><Th>When</Th><Th>Length</Th><Th>Outcome</Th><Th /></THead>
                           <tbody>
-                            {detail.meetings.recent.slice(0, 3).map((m: any) => (
-                              <Tr key={m.meetingId} index={0}>
+                            {detail.meetings.recent.slice(0, 3).map((m: any, i: number) => (
+                              <Tr key={m.meetingId} index={i}>
                                 <Td className="font-medium">{m.title}</Td>
                                 <Td className="text-muted-foreground">{m.lead ?? "—"}{m.company ? ` · ${m.company}` : ""}</Td>
                                 <Td className="whitespace-nowrap text-muted-foreground">{formatDate(m.scheduledAt)}</Td>
                                 <Td className="tabular-nums text-muted-foreground">{m.durationMins}m</Td>
                                 <Td>
                                   <span className={cn(
-                                    "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                                    "rounded-full px-2 py-0.5 text-micro font-bold",
                                     m.myStatus === "ATTENDED" ? "bg-emerald-500/10 text-emerald-500"
                                       : m.myStatus === "NO_SHOW" ? "bg-rose-500/10 text-rose-500"
                                         : "bg-muted text-muted-foreground"
@@ -465,24 +467,28 @@ export default function TeamPage() {
                                   </span>
                                 </Td>
                                 <Td>
-                                  <Select
-                                    value=""
-                                    onChange={(e) => {
-                                      if (!e.target.value) return;
-                                      apiFetch(`/pulse/meetings/${m.meetingId}/attendees/${detail.employee.id}`, {
-                                        method: "PATCH",
-                                        body: JSON.stringify({ status: e.target.value }),
-                                      })
-                                        .then(() => { notify("Attendance marked"); reload(); })
-                                        .catch((err: any) => notify(err.message ?? "Failed"));
-                                    }}
-                                    className="!w-32 !py-1 text-[11px]"
-                                  >
-                                    <option value="">Mark…</option>
-                                    <option value="ATTENDED">Attended</option>
-                                    <option value="NO_SHOW">No-show</option>
-                                    <option value="INVITED">Reset</option>
-                                  </Select>
+                                  {canManagePulse ? (
+                                    <Select
+                                      value=""
+                                      onChange={(e) => {
+                                        if (!e.target.value) return;
+                                        apiFetch(`/pulse/meetings/${m.meetingId}/attendees/${detail.employee.id}`, {
+                                          method: "PATCH",
+                                          body: JSON.stringify({ status: e.target.value }),
+                                        })
+                                          .then(() => { notify("Attendance marked"); reload(); })
+                                          .catch((err: any) => notify(err.message ?? "Failed"));
+                                      }}
+                                      className="!w-32 !py-1 text-meta"
+                                    >
+                                      <option value="">Mark…</option>
+                                      <option value="ATTENDED">Attended</option>
+                                      <option value="NO_SHOW">No-show</option>
+                                      <option value="INVITED">Reset</option>
+                                    </Select>
+                                  ) : (
+                                    <span className="text-micro text-muted-foreground">view only</span>
+                                  )}
                                 </Td>
                               </Tr>
                             ))}
@@ -493,20 +499,20 @@ export default function TeamPage() {
                   </CardShell>
                 </>
               ) : (
-                <CardShell><p className="text-[12px] text-muted-foreground">No meeting data.</p></CardShell>
+                <CardShell><p className="text-body text-muted-foreground">No meeting data.</p></CardShell>
               ))}
 
               {tab === "Leave" && (detail?.leave ? (
                 <>
                 <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
                   <CardShell className="!p-3">
-                    <SectionTitle title="Leave balances" subtitle="Current quota per leave type" icon={<CalendarDays className="size-3.5" />} />
+                    <SectionTitle title="Leave balances" subtitle="Current quota per leave type" icon={<CalendarDays className="size-4" />} />
                     {(detail.leave.balances ?? []).length === 0 ? (
-                      <p className="text-[11.5px] text-muted-foreground">No balances initialised for this employee.</p>
+                      <p className="text-meta text-muted-foreground">No balances initialised for this employee.</p>
                     ) : (
                       <div className="flex flex-wrap gap-1.5">
                         {detail.leave.balances.map((b: any) => (
-                          <span key={`${b.leaveType}-${b.period}`} className="rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-semibold tabular-nums">
+                          <span key={`${b.leaveType}-${b.period}`} className="rounded-full border border-border bg-card px-2.5 py-1 text-meta font-semibold tabular-nums">
                             {b.leaveType}: {b.balanceDays}d <span className="text-muted-foreground">({b.period})</span>
                           </span>
                         ))}
@@ -517,14 +523,14 @@ export default function TeamPage() {
                   <CardShell className="!p-3">
                     <SectionTitle title="Requests in window" subtitle="Approved, pending and rejected" />
                     {(detail.leave.requests ?? []).length === 0 ? (
-                      <p className="text-[11.5px] text-muted-foreground">No leave requests overlapping this window.</p>
+                      <p className="text-meta text-muted-foreground">No leave requests overlapping this window.</p>
                     ) : (
                       <div className="flex flex-col gap-1.5">
                         {detail.leave.requests.slice(0, 3).map((l: any) => (
                           <div key={l.id} className="flex items-center justify-between gap-2 rounded-xl bg-muted/40 px-3 py-2">
                             <div>
-                              <p className="text-[12px] font-medium">{l.leaveType}</p>
-                              <p className="text-[10.5px] text-muted-foreground">
+                              <p className="text-body font-medium">{l.leaveType}</p>
+                              <p className="text-micro text-muted-foreground">
                                 {formatDate(l.startDate)} → {formatDate(l.endDate)}
                                 {l.workingDays != null ? ` · ${l.workingDays} working day(s)` : ""}
                               </p>
@@ -571,14 +577,14 @@ function Kpi({
 }) {
   return (
     <div className="rounded-lg bg-muted/40 px-2 py-1">
-      <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className={cn(
-        "mt-0.5 font-heading text-[15px] font-bold tabular-nums",
+        "mt-0.5 font-heading text-section font-bold tabular-nums",
         tone === "emerald" ? "text-emerald-500" : tone === "rose" ? "text-rose-500" : tone === "amber" ? "text-amber-500" : tone === "muted" ? "text-muted-foreground" : ""
       )}>
         {value}
       </p>
-      {sub && <p className="text-[9.5px] text-muted-foreground">{sub}</p>}
+      {sub && <p className="text-micro text-muted-foreground">{sub}</p>}
     </div>
   );
 }
@@ -600,24 +606,24 @@ function BreakdownCard({
   const max = Math.max(1, ...list.map((r) => r.count));
   return (
     <CardShell>
-      <SectionTitle title={title} subtitle={subtitle} icon={<Users className="size-3.5" />} />
+      <SectionTitle title={title} subtitle={subtitle} icon={<Users className="size-4" />} />
       {list.length === 0 ? (
-        <p className="text-[11.5px] text-muted-foreground">No tasks yet.</p>
+        <p className="text-meta text-muted-foreground">No tasks yet.</p>
       ) : (
         <div className="flex flex-col gap-1.5">
           {list.map((r) => {
             const name = nameKey ? r.name ?? "—" : r.key ?? "—";
             return (
               <div key={name} className="flex items-center gap-2">
-                <span className="w-28 shrink-0 truncate text-[11.5px] font-semibold capitalize" title={name}>{name}</span>
+                <span className="w-28 shrink-0 truncate text-meta font-semibold capitalize" title={name}>{name}</span>
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                   <div className="h-full rounded-full bg-primary/70" style={{ width: `${(r.count / max) * 100}%` }} />
                 </div>
-                <span className="w-6 shrink-0 text-right text-[11px] font-bold tabular-nums text-muted-foreground">{r.count}</span>
+                <span className="w-6 shrink-0 text-right text-meta font-bold tabular-nums text-muted-foreground">{r.count}</span>
               </div>
             );
           })}
-          <p className="pt-0.5 text-[9.5px] uppercase tracking-wider text-muted-foreground">{keyLabel}</p>
+          <p className="pt-0.5 text-micro uppercase tracking-wider text-muted-foreground">{keyLabel}</p>
         </div>
       )}
     </CardShell>

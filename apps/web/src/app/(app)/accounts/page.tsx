@@ -17,11 +17,13 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  CircleDollarSign,
   Columns,
   Download,
   ExternalLink,
   FileText,
   Filter,
+  Flag,
   Gauge,
   HeartPulse,
   Layers,
@@ -47,7 +49,7 @@ import {
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useApi } from "@/lib/use-api";
-import { formatBDT, formatDate, timeAgo } from "@/lib/format";
+import { formatBDT, formatDate, formatNumber, timeAgo } from "@/lib/format";
 import type {
   AccountsOverview,
   Client,
@@ -395,7 +397,7 @@ function ClientFormModal({
           busy={busy}
           cancel={onClose}
           submitLabel={editing ? "Save changes" : "Create client"}
-          submitIcon={<Check className="size-3.5" />}
+          submitIcon={<Check className="size-4" />}
           hint="Fields marked * are required"
         />
       }
@@ -406,10 +408,10 @@ function ClientFormModal({
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-primary/[0.04] p-3.5">
           <Avatar name={f.companyName || "New Client"} size="size-10" />
           <div className="min-w-0 flex-1">
-            <p className="truncate font-heading text-[14.5px] font-semibold">
+            <p className="truncate font-heading text-body-lg font-semibold">
               {f.companyName.trim() || (editing ? initial!.companyName : "New client")}
             </p>
-            <p className="mt-0.5 truncate text-[11.5px] text-muted-foreground">
+            <p className="mt-0.5 truncate text-meta text-muted-foreground">
               {f.contactName.trim()
                 ? `${f.contactName.trim()}${f.contactRole.trim() ? ` · ${f.contactRole.trim()}` : ""}`
                 : editing
@@ -418,7 +420,7 @@ function ClientFormModal({
             </p>
           </div>
           {editing && (
-            <span className={cn("shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold", categoryTone(f.category))}>
+            <span className={cn("shrink-0 rounded-full border px-2.5 py-1 text-micro font-bold", categoryTone(f.category))}>
               {label(f.category)}
             </span>
           )}
@@ -437,13 +439,13 @@ function ClientFormModal({
               onBlur={(e) => void checkDuplicates(e.target.value)}
               placeholder="Acme Ltd."
               autoFocus
-              className="!py-2.5 !text-[13.5px] font-medium"
+              className="!py-2.5 !text-body-lg font-medium"
             />
           </Field>
-          {dupChecking && <p className="mt-1.5 text-[11px] text-muted-foreground">Checking for duplicates…</p>}
+          {dupChecking && <p className="mt-1.5 text-meta text-muted-foreground">Checking for duplicates…</p>}
           {dupHint && (
-            <p className="mt-1.5 flex items-start gap-1.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-              <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+            <p className="mt-1.5 flex items-start gap-1.5 text-meta font-medium text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
               {dupHint}
             </p>
           )}
@@ -538,7 +540,7 @@ function ClientFormModal({
             >
               <div className="flex items-center gap-2 border-b border-primary/15 px-3 py-2">
                 <Wallet className="size-3.5 text-primary" />
-                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-primary">Retainer auto-billing</p>
+                <p className="text-meta font-bold uppercase tracking-[0.08em] text-primary">Retainer auto-billing</p>
               </div>
               <div className="grid grid-cols-1 gap-3.5 p-3 sm:grid-cols-2">
                 <Field label="Interval">
@@ -559,7 +561,7 @@ function ClientFormModal({
                       placeholder="85000"
                       className="rounded-r-none"
                     />
-                    <span className="flex items-center rounded-r-xl border border-l-0 border-border bg-muted/60 px-2.5 text-[11.5px] font-semibold text-muted-foreground">
+                    <span className="flex items-center rounded-r-xl border border-l-0 border-border bg-muted/60 px-2.5 text-meta font-semibold text-muted-foreground">
                       {f.currencyPreference}
                     </span>
                   </div>
@@ -588,8 +590,8 @@ function ClientFormModal({
                 </Field>
               </div>
               {!(Number(f.monthlyAmount) > 0) && (
-                <p className="mx-3 mb-3 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-2 text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                  <AlertTriangle className="mt-0.5 size-3 shrink-0" />
+                <p className="mx-3 mb-3 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-2 text-meta font-medium text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
                   Without an amount the auto-billing cron skips this client — no retainer invoice will be raised.
                 </p>
               )}
@@ -616,7 +618,7 @@ function ClientFormModal({
         </FormSection>
 
         <Collapsible
-          icon={<FileText className="size-3.5" />}
+          icon={<FileText className="size-4" />}
           title="Notes"
           hint="Context, commitments, payment terms"
           badge={f.notes.trim() ? <CountBadge>1</CountBadge> : undefined}
@@ -697,7 +699,7 @@ function ContactFormModal({
       title={
         <span className="block">
           {editing ? "Edit contact" : "Add contact"}
-          {clientName && <span className="block text-[11.5px] font-normal text-muted-foreground">{clientName}</span>}
+          {clientName && <span className="block text-meta font-normal text-muted-foreground">{clientName}</span>}
         </span>
       }
     >
@@ -714,7 +716,7 @@ function ContactFormModal({
         <Field label="Phone">
           <Input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="+8801…" />
         </Field>
-        <label className="flex cursor-pointer items-center gap-2 text-[12.5px] font-medium">
+        <label className="flex cursor-pointer items-center gap-2 text-body font-medium">
           <input
             type="checkbox"
             checked={f.isPrimary}
@@ -723,7 +725,7 @@ function ContactFormModal({
           />
           Primary contact
         </label>
-        {err && <p className="text-[12px] font-medium text-rose-500">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-500">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={editing ? "Save contact" : "Add contact"} />
       </form>
     </Modal>
@@ -787,7 +789,7 @@ function DocumentFormModal({
         <Field label="File URL" hint="Google Drive / shared link">
           <Input value={fileUrl} onChange={(e) => setFileUrl(e.target.value)} placeholder="https://drive.zoolyum.com/…" autoFocus />
         </Field>
-        {err && <p className="text-[12px] font-medium text-rose-500">{err}</p>}
+        {err && <p className="text-body font-medium text-rose-500">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel="Attach" />
       </form>
     </Modal>
@@ -799,10 +801,10 @@ function SectionTitle({ icon, title, hint, action }: { icon: React.ReactNode; ti
   return (
     <div className="flex items-start justify-between gap-3">
       <div>
-        <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-foreground">
+        <h4 className="flex items-center gap-1.5 text-meta font-bold uppercase tracking-wide text-muted-foreground">
           {icon} {title}
         </h4>
-        {hint && <p className="mt-0.5 text-[11px] text-muted-foreground/80">{hint}</p>}
+        {hint && <p className="mt-0.5 text-meta text-muted-foreground/80">{hint}</p>}
       </div>
       {action}
     </div>
@@ -812,10 +814,10 @@ function SectionTitle({ icon, title, hint, action }: { icon: React.ReactNode; ti
 function Fact({ label, value, tone }: { label: string; value: string | null; tone?: "warn" | "muted" }) {
   return (
     <div className="rounded-xl border border-border/60 px-3 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">{label}</p>
       <p
         className={cn(
-          "mt-0.5 truncate text-[12.5px] font-semibold",
+          "mt-0.5 truncate text-body font-semibold",
           tone === "warn" && "text-amber-600 dark:text-amber-400",
           tone === "muted" && "text-muted-foreground"
         )}
@@ -851,9 +853,9 @@ function SortTh({
       >
         {labelText}
         {active ? (
-          sort.dir === "asc" ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />
+          sort.dir === "asc" ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" />
         ) : (
-          <ArrowUpDown className="size-3 opacity-30" />
+          <ArrowUpDown className="size-3.5 opacity-30" />
         )}
       </button>
     </Th>
@@ -1393,7 +1395,7 @@ export default function AccountsPage() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             className={cn(
-              "fixed left-1/2 top-4 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2.5 text-[12.5px] font-semibold text-white shadow-xl",
+              "fixed left-1/2 top-4 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2.5 text-body font-semibold text-white shadow-xl",
               toast.tone === "error" ? "bg-rose-600" : "bg-sidebar"
             )}
             role="status"
@@ -1443,18 +1445,18 @@ export default function AccountsPage() {
           onClick={() => setFocusOpen((v) => !v)}
           className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-muted/40"
         >
-          <Sparkles className="size-4 text-primary" />
-          <span className="text-[12.5px] font-bold">Today's focus</span>
-          <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[10.5px] font-bold text-rose-600 dark:text-rose-400">
+          <Sparkles className="size-3.5 text-primary" />
+          <span className="text-body font-bold">Today's focus</span>
+          <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-micro font-bold text-rose-600 dark:text-rose-400">
             {counts.attention} need attention
           </span>
           {!focusOpen && (
-            <span className="ml-2 hidden truncate text-[11.5px] text-muted-foreground sm:inline">
+            <span className="ml-2 hidden truncate text-meta text-muted-foreground sm:inline">
               {money(overview?.overdueAmount)} overdue · {counts.renewing} renewing · {overview?.dataGaps ?? 0} setup gaps
             </span>
           )}
           <span className="ml-auto text-muted-foreground">
-            {focusOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+            {focusOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-3.5" />}
           </span>
         </button>
 
@@ -1532,7 +1534,7 @@ export default function AccountsPage() {
             sub={`${overview?.newThisMonth ?? 0} added this month · ${counts.onhold} on hold${
               overview?.archivedClients ? ` · ${overview.archivedClients} archived` : ""
             }`}
-            icon={<Building2 className="size-5" />}
+            icon={<Building2 className="size-4" />}
           />
         </div>
         <div onClick={() => openCollections("overdue")} className="cursor-pointer" role="presentation">
@@ -1546,7 +1548,7 @@ export default function AccountsPage() {
                 : "Nothing overdue — nice"
             }
             tone={(overview?.overdueAmount ?? 0) > 0 ? "rose" : "emerald"}
-            icon={<Wallet className="size-5" />}
+            icon={<Wallet className="size-4" />}
           />
         </div>
         <div onClick={() => setShowFilters(true)} className="cursor-pointer" role="presentation">
@@ -1560,7 +1562,7 @@ export default function AccountsPage() {
                 : "All retainers priced"
             }
             tone={(overview?.retainerMissingAmount ?? 0) > 0 ? "amber" : "emerald"}
-            icon={<Receipt className="size-5" />}
+            icon={<Receipt className="size-4" />}
           />
         </div>
         <div onClick={() => goPreset("risk")} className="cursor-pointer" role="presentation">
@@ -1570,7 +1572,7 @@ export default function AccountsPage() {
             value={overview?.avgHealth != null ? overview.avgHealth : "—"}
             sub={`${counts.risk} at risk of churn`}
             tone="primary"
-            icon={<Gauge className="size-5" />}
+            icon={<Gauge className="size-4" />}
           />
         </div>
       </div>
@@ -1595,7 +1597,7 @@ export default function AccountsPage() {
               type="button"
               onClick={() => goPreset(key)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors",
+                "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-meta font-semibold transition-colors",
                 preset === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
               aria-pressed={preset === key}
@@ -1603,7 +1605,7 @@ export default function AccountsPage() {
               {text}
               <span
                 className={cn(
-                  "rounded-full px-1.5 text-[10px] tabular-nums",
+                  "rounded-full px-1.5 text-micro tabular-nums",
                   preset === key ? "bg-white/20" : "bg-muted text-muted-foreground"
                 )}
               >
@@ -1622,7 +1624,7 @@ export default function AccountsPage() {
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => e.key === "Escape" && setQ("")}
               placeholder="Search client, contact or owner…"
-              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-9 text-[12.5px] outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-9 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
               aria-label="Search clients"
             />
             {q ? (
@@ -1635,7 +1637,7 @@ export default function AccountsPage() {
                 <X className="size-3.5" />
               </button>
             ) : (
-              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-border px-1.5 text-[10px] text-muted-foreground sm:block">
+              <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 rounded border border-border px-1.5 text-micro text-muted-foreground sm:block">
                 /
               </kbd>
             )}
@@ -1645,7 +1647,7 @@ export default function AccountsPage() {
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[12px] font-semibold transition-colors",
+              "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-body font-semibold transition-colors",
               showFilters || activeFilterCount
                 ? "border-primary/40 bg-primary/5 text-primary"
                 : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -1654,7 +1656,7 @@ export default function AccountsPage() {
           >
             <Filter className="size-3.5" /> Filters
             {activeFilterCount > 0 && (
-              <span className="rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
+              <span className="rounded-full bg-primary px-1.5 text-micro font-bold text-primary-foreground">
                 {activeFilterCount}
               </span>
             )}
@@ -1667,7 +1669,7 @@ export default function AccountsPage() {
                 const [key, dir] = e.target.value.split(":") as [SortKey, "asc" | "desc"];
                 setSort({ key, dir });
               }}
-              className="!w-auto !py-2 text-[12px]"
+              className="!w-auto !py-2 text-body"
               aria-label="Sort clients"
             >
               {sortOptions.map((o) => (
@@ -1735,7 +1737,7 @@ export default function AccountsPage() {
 
         {(activeFilterCount > 0 || preset !== "all" || !!q.trim()) && (
           <div className="flex flex-wrap items-center gap-1.5 border-t border-border/60 px-3 py-2">
-            <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Active</span>
+            <span className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Active</span>
             {q.trim() && <Chip onClear={() => setQ("")}>Search: {q.trim()}</Chip>}
             {preset !== "all" && (
               <Chip onClear={() => setPreset("all")}>{presetLabel[preset]}</Chip>
@@ -1743,7 +1745,7 @@ export default function AccountsPage() {
             {health && <Chip onClear={() => setHealth("")}>Health: {label(health)}</Chip>}
             {vertical && <Chip onClear={() => setVertical("")}>{label(vertical)}</Chip>}
             {ownerId && <Chip onClear={() => setOwnerId("")}>Owner: {(users ?? []).find((u) => u.id === ownerId)?.name ?? "—"}</Chip>}
-            <span className="ml-auto text-[11.5px] text-muted-foreground">
+            <span className="ml-auto text-meta text-muted-foreground">
               {sorted.length} of {counts.all} clients
             </span>
           </div>
@@ -1762,10 +1764,10 @@ export default function AccountsPage() {
           <EmptyState title="Could not load clients" hint={clientsErr} />
         ) : sorted.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border py-14 text-center">
-            <p className="text-[13px] font-semibold">
+            <p className="text-body-lg font-semibold">
               {hasAnyFilter ? "No clients match these filters" : "No clients yet"}
             </p>
-            <p className="mt-1 text-[11.5px] text-muted-foreground">
+            <p className="mt-1 text-meta text-muted-foreground">
               {hasAnyFilter
                 ? "Try a different search, or clear the filters to see every client."
                 : "Add your first client to start tracking health and billing."}
@@ -1786,10 +1788,10 @@ export default function AccountsPage() {
                 <TableShell
                   footer={
                     <>
-                      <span className="text-[11.5px] text-muted-foreground">
+                      <span className="text-meta text-muted-foreground">
                         {sorted.length} client{sorted.length === 1 ? "" : "s"} · {money(sorted.reduce((s, c) => s + (c.totalDue ?? 0), 0))} outstanding
                       </span>
-                      <span className="text-[11px] text-muted-foreground">Click a row for the full client file</span>
+                      <span className="text-meta text-muted-foreground">Click a row for the full client file</span>
                     </>
                   }
                 >
@@ -1817,13 +1819,13 @@ export default function AccountsPage() {
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     <span className="truncate font-semibold">{c.companyName}</span>
                                     {c.category !== "ACTIVE" && (
-                                      <span className={cn("rounded-full border px-1.5 py-0.5 text-[9px] font-bold", categoryTone(c.category))}>
+                                      <span className={cn("rounded-full border px-1.5 py-0.5 text-micro font-bold", categoryTone(c.category))}>
                                         {label(c.category)}
                                       </span>
                                     )}
                                     {c._tier && tierVariety > 1 && (
                                       <span
-                                        className="rounded-full border px-1.5 py-0.5 text-[9px] font-bold"
+                                        className="rounded-full border px-1.5 py-0.5 text-micro font-bold"
                                         style={{ borderColor: `${c._tier.color}40`, background: `${c._tier.color}15`, color: c._tier.color }}
                                       >
                                         {c._tier.name}
@@ -1831,17 +1833,17 @@ export default function AccountsPage() {
                                     )}
                                     {c._gap && (
                                       <span title="Setup gap — missing retainer amount, contact or owner">
-                                        <AlertTriangle className="size-3 text-amber-500" aria-label="Setup gap" />
+                                        <AlertTriangle className="size-3.5 text-amber-500" aria-label="Setup gap" />
                                       </span>
                                     )}
                                   </div>
-                                  <p className="max-w-[260px] truncate text-[11px] text-muted-foreground">
+                                  <p className="max-w-[260px] truncate text-meta text-muted-foreground">
                                     {contact
                                       ? `${contact.name}${contact.roleTitle ? ` · ${contact.roleTitle}` : ""}`
                                       : "No contact on file"}
                                   </p>
                                   {c.healthLevel !== "GREEN" && c.healthDriver && (
-                                    <p className="max-w-[260px] truncate text-[10px] font-medium text-amber-600 dark:text-amber-400/90">
+                                    <p className="max-w-[260px] truncate text-micro font-medium text-amber-600 dark:text-amber-400/90">
                                       {c.healthDriver}
                                     </p>
                                   )}
@@ -1850,7 +1852,7 @@ export default function AccountsPage() {
                             </Td>
                             <Td>
                               <div className="flex items-center gap-2">
-                                <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-bold", healthTone(c.healthLevel))}>
+                                <span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold", healthTone(c.healthLevel))}>
                                   {c.healthLevel}
                                 </span>
                                 <ScoreBar score={c.healthScore} />
@@ -1865,7 +1867,7 @@ export default function AccountsPage() {
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); openClientBilling(c.id, "overdue"); }}
-                                    className="w-fit text-left text-[10px] font-semibold text-rose-500 hover:underline"
+                                    className="w-fit text-left text-micro font-semibold text-rose-500 hover:underline"
                                     title="Open the oldest overdue invoice"
                                   >
                                     {overdue} overdue · {money(c.overdueAmount)} →
@@ -1874,7 +1876,7 @@ export default function AccountsPage() {
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); openClientBilling(c.id, "unpaid"); }}
-                                    className="w-fit text-left text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+                                    className="w-fit text-left text-micro text-muted-foreground hover:text-foreground hover:underline"
                                     title="Open the unpaid invoices"
                                   >
                                     awaiting payment →
@@ -1887,28 +1889,28 @@ export default function AccountsPage() {
                                       pendingDetailView.current = { tab: "invoices", filter: "DRAFT" };
                                       setSelectedId(c.id);
                                     }}
-                                    className="w-fit text-left text-[10px] font-medium text-amber-600 hover:underline dark:text-amber-400"
+                                    className="w-fit text-left text-micro font-medium text-amber-600 hover:underline dark:text-amber-400"
                                     title="Open the draft invoices"
                                   >
                                     {c.draftCount} draft{(c.draftCount ?? 0) === 1 ? "" : "s"} · {money(c.draftAmount)} not issued
                                   </button>
                                 ) : (
-                                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">settled</span>
+                                  <span className="text-micro font-semibold text-emerald-600 dark:text-emerald-400">settled</span>
                                 )}
                               </div>
                             </Td>
                             <Td>
                               {c._days != null && c._days >= 0 && c._days <= 30 ? (
                                 <div className="flex flex-col gap-0.5">
-                                  <span className={cn("w-fit rounded-full border px-2 py-0.5 text-[10px] font-bold", renewalTone(c._days))}>
+                                  <span className={cn("w-fit rounded-full border px-2 py-0.5 text-micro font-bold", renewalTone(c._days))}>
                                     {c._days === 0 ? "today" : `in ${c._days}d`}
                                   </span>
-                                  <span className="text-[10px] text-muted-foreground">{formatDate(c.renewalDate)}</span>
+                                  <span className="text-micro text-muted-foreground">{formatDate(c.renewalDate)}</span>
                                 </div>
                               ) : (
                                 <div className="flex flex-col gap-0.5">
-                                  <span className="text-[12px]">{formatDate(c.renewalDate)}</span>
-                                  <span className="text-[10px] text-muted-foreground">{label(c.billingCycleType)}</span>
+                                  <span className="text-body">{formatDate(c.renewalDate)}</span>
+                                  <span className="text-micro text-muted-foreground">{label(c.billingCycleType)}</span>
                                 </div>
                               )}
                             </Td>
@@ -1916,10 +1918,10 @@ export default function AccountsPage() {
                               {c.accountOwner ? (
                                 <div className="flex items-center gap-1.5">
                                   <Avatar name={c.accountOwner.name} size="size-6" />
-                                  <span className="text-[12px]">{c.accountOwner.name}</span>
+                                  <span className="text-body">{c.accountOwner.name}</span>
                                 </div>
                               ) : (
-                                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-micro font-bold text-amber-600 dark:text-amber-400">
                                   Unassigned
                                 </span>
                               )}
@@ -1928,13 +1930,13 @@ export default function AccountsPage() {
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); openClientProjects(c.id); }}
-                                className="flex flex-col items-start gap-0.5 text-left text-[11.5px] hover:text-primary"
+                                className="flex flex-col items-start gap-0.5 text-left text-meta hover:text-primary"
                                 title="See this client's projects"
                               >
                                 <span className="font-semibold tabular-nums">
                                   {c._count?.projects ?? 0} project{(c._count?.projects ?? 0) === 1 ? "" : "s"}
                                 </span>
-                                <span className="text-[10px] text-muted-foreground">
+                                <span className="text-micro text-muted-foreground">
                                   {c._count?.invoices ?? 0} invoice{(c._count?.invoices ?? 0) === 1 ? "" : "s"}
                                 </span>
                               </button>
@@ -2007,20 +2009,20 @@ export default function AccountsPage() {
                           <div className="flex min-w-0 items-center gap-2.5">
                             <Avatar name={c.companyName} />
                             <div className="min-w-0">
-                              <p className="truncate text-[13px] font-semibold">{c.companyName}</p>
-                              <p className="truncate text-[11px] text-muted-foreground">
+                              <p className="truncate text-body-lg font-semibold">{c.companyName}</p>
+                              <p className="truncate text-meta text-muted-foreground">
                                 {label(c.industryVertical)} · {label(c.billingCycleType)}
                               </p>
                             </div>
                           </div>
-                          <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold", healthTone(c.healthLevel))}>
+                          <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-micro font-bold", healthTone(c.healthLevel))}>
                             {c.healthLevel}
                           </span>
                         </div>
 
                         <div className="mt-3 flex items-center gap-2">
                           <ScoreBar score={c.healthScore} />
-                          <span className={cn("ml-auto text-[12px] font-bold tabular-nums", due > 0 ? "text-rose-600 dark:text-rose-400" : (c.draftCount ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400")}>
+                          <span className={cn("ml-auto text-body font-bold tabular-nums", due > 0 ? "text-rose-600 dark:text-rose-400" : (c.draftCount ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400")}>
                             {due > 0 ? money(due) : (c.draftCount ?? 0) > 0 ? `${c.draftCount} draft` : "settled"}
                           </span>
                         </div>
@@ -2028,20 +2030,20 @@ export default function AccountsPage() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); openClientBilling(c.id, "overdue"); }}
-                            className="mt-1 block w-fit text-left text-[10.5px] font-semibold text-rose-500 hover:underline"
+                            className="mt-1 block w-fit text-left text-micro font-semibold text-rose-500 hover:underline"
                             title="Open the oldest overdue invoice"
                           >
                             {c._overdue} overdue · {money(c.overdueAmount)} →
                           </button>
                         )}
 
-                        <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+                        <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-3 text-meta text-muted-foreground">
                           <span className="truncate">{contact ? contact.name : "No contact"}</span>
                           <span className="shrink-0">
                             {c._count?.projects ?? 0} project{(c._count?.projects ?? 0) === 1 ? "" : "s"}
                           </span>
                         </div>
-                        <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+                        <div className="mt-2 flex items-center justify-between gap-2 text-meta">
                           <span className="truncate">{c.accountOwner?.name ?? "Unassigned"}</span>
                           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                             {contact?.phone && (
@@ -2078,15 +2080,15 @@ export default function AccountsPage() {
                     return (
                       <div key={cat} className={cn("rounded-2xl border p-3", headerTone)}>
                         <div className="mb-3 flex items-center justify-between">
-                          <h3 className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest">
-                            <span className={cn("rounded-full border px-2 py-0.5 text-[10px]", categoryTone(cat))}>{label(cat)}</span>
+                          <h3 className="flex items-center gap-2 text-meta font-bold uppercase tracking-widest">
+                            <span className={cn("rounded-full border px-2 py-0.5 text-micro", categoryTone(cat))}>{label(cat)}</span>
                             <span className="text-muted-foreground">{list.length}</span>
                           </h3>
-                          <span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{money(sumDue)} due</span>
+                          <span className="text-meta font-semibold tabular-nums text-muted-foreground">{money(sumDue)} due</span>
                         </div>
                         <div className="flex flex-col gap-2.5">
                           {list.length === 0 && (
-                            <p className="rounded-xl border border-dashed border-border bg-card/60 py-8 text-center text-[11.5px] text-muted-foreground">
+                            <p className="rounded-xl border border-dashed border-border bg-card/60 py-8 text-center text-meta text-muted-foreground">
                               Nothing here
                             </p>
                           )}
@@ -2100,14 +2102,14 @@ export default function AccountsPage() {
                                 <div className="flex min-w-0 items-center gap-2">
                                   <Avatar name={c.companyName} size="size-7" />
                                   <div className="min-w-0">
-                                    <p className="truncate text-[12.5px] font-semibold">{c.companyName}</p>
-                                    <p className="truncate text-[10.5px] text-muted-foreground">
+                                    <p className="truncate text-body font-semibold">{c.companyName}</p>
+                                    <p className="truncate text-micro text-muted-foreground">
                                       {c.accountOwner?.name ?? "Unassigned"} · {c._count?.projects ?? 0} project
                                       {(c._count?.projects ?? 0) === 1 ? "" : "s"}
                                     </p>
                                   </div>
                                 </div>
-                                <span className={cn("shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold", healthTone(c.healthLevel))}>
+                                <span className={cn("shrink-0 rounded-full border px-1.5 py-0.5 text-micro font-bold", healthTone(c.healthLevel))}>
                                   {c.healthLevel}
                                 </span>
                               </div>
@@ -2119,19 +2121,19 @@ export default function AccountsPage() {
                                     if ((c.totalDue ?? 0) > 0) openClientBilling(c.id, (c._overdue ?? 0) > 0 ? "overdue" : "unpaid");
                                     else setSelectedId(c.id);
                                   }}
-                                  className={cn("w-fit text-left text-[10.5px] font-semibold tabular-nums hover:underline", (c.totalDue ?? 0) > 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground")}
+                                  className={cn("w-fit text-left text-micro font-semibold tabular-nums hover:underline", (c.totalDue ?? 0) > 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground")}
                                   title={(c.totalDue ?? 0) > 0 ? "See the unpaid invoices" : "Open client"}
                                 >
                                   {money(c.totalDue ?? 0)} due{(c._overdue ?? 0) > 0 ? ` · ${c._overdue} overdue →` : ""}
                                 </button>
-                                <span className="text-[10px] text-muted-foreground">{formatDate(c.renewalDate)}</span>
+                                <span className="text-micro text-muted-foreground">{formatDate(c.renewalDate)}</span>
                               </div>
                               <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                                 <Select
                                   value={c.category ?? "ACTIVE"}
                                   onChange={(e) => setCategory(c as Client, e.target.value as ClientCategory)}
                                   disabled={!canEdit}
-                                  className="!w-full !py-1 text-[11px]"
+                                  className="!w-full !py-1 text-meta"
                                   aria-label={`Move ${c.companyName}`}
                                 >
                                   {CATEGORIES.map((opt) => (
@@ -2161,8 +2163,8 @@ export default function AccountsPage() {
           <div className="flex min-w-0 items-center gap-3">
             <Avatar name={clientName} size="size-10" />
             <div className="min-w-0">
-              <h3 className="truncate font-heading text-[16px] font-semibold">{clientName}</h3>
-              <p className="truncate text-[11px] text-muted-foreground">
+              <h3 className="truncate font-heading text-section font-semibold">{clientName}</h3>
+              <p className="truncate text-meta text-muted-foreground">
                 {detail ? `${label(detail.industryVertical)}${detail.accountOwner ? ` · ${detail.accountOwner.name}` : " · Unassigned"}` : ""}
               </p>
             </div>
@@ -2211,6 +2213,7 @@ export default function AccountsPage() {
           const tier = tierOf(detail.totalInvoiced, clientTiers);
           const aging = detail.aging ?? { current: 0, d30: 0, d60: 0, d90: 0, d90p: 0 };
           const maxAging = Math.max(aging.current, aging.d30, aging.d60, aging.d90, aging.d90p, 1);
+          const dollar = detail.dollar;
           const invStatusCounts: Record<string, number> = detail.invoices.reduce((acc: Record<string, number>, inv) => {
             acc[inv.status] = (acc[inv.status] ?? 0) + 1;
             return acc;
@@ -2257,7 +2260,7 @@ export default function AccountsPage() {
                   onChange={(e) => setCategory(detail as Client, e.target.value as ClientCategory)}
                   disabled={!canEdit}
                   className={cn(
-                    "!w-auto !rounded-full !py-1 !pl-2.5 !pr-7 !text-[10px] !font-bold",
+                    "!w-auto !rounded-full !py-1 !pl-2.5 !pr-7 !text-micro !font-bold",
                     categoryTone(detail.category)
                   )}
                   aria-label="Lifecycle stage"
@@ -2266,25 +2269,25 @@ export default function AccountsPage() {
                     <option key={c} value={c}>{label(c)}</option>
                   ))}
                 </Select>
-                <span className={cn("rounded-full border px-2.5 py-1 text-[10px] font-bold", healthTone(detail.healthLevel))}>
+                <span className={cn("rounded-full border px-2.5 py-1 text-micro font-bold", healthTone(detail.healthLevel))}>
                   {detail.healthLevel} · {detail.healthScore ?? "—"}
                 </span>
-                <span className="rounded-full border border-border bg-card px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+                <span className="rounded-full border border-border bg-card px-2.5 py-1 text-micro font-semibold text-muted-foreground">
                   {label(detail.billingCycleType)}
                 </span>
                 {tier && (
                   <span
-                    className="rounded-full border px-2.5 py-1 text-[10px] font-bold"
+                    className="rounded-full border px-2.5 py-1 text-micro font-bold"
                     style={{ borderColor: `${tier.color}40`, background: `${tier.color}15`, color: tier.color }}
                   >
                     {tier.name}
                   </span>
                 )}
-                <span className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
-                  <CalendarClock className="size-3" />
+                <span className="ml-auto flex items-center gap-1 text-meta text-muted-foreground">
+                  <CalendarClock className="size-3.5" />
                   Renewal {formatDate(detail.renewalDate)}
                   {days != null && days >= 0 && days <= 30 && (
-                    <span className={cn("ml-1 rounded-full border px-1.5 py-0.5 text-[9.5px] font-bold", renewalTone(days))}>
+                    <span className={cn("ml-1 rounded-full border px-1.5 py-0.5 text-micro font-bold", renewalTone(days))}>
                       in {days}d
                     </span>
                   )}
@@ -2295,11 +2298,11 @@ export default function AccountsPage() {
               {Array.isArray((detail as any).healthBreakdown?.breakdown) && (
                 <div className="rounded-xl border border-border/50 bg-card px-3 py-2.5">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">
                       Why this score
                     </p>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-micro text-muted-foreground">
                         {(detail as any).healthBreakdown.coverage ?? 0}% data coverage
                       </span>
                       {scoreProfiles.length > 0 && (
@@ -2307,7 +2310,7 @@ export default function AccountsPage() {
                           value={(detail as any).scoreProfile ?? ""}
                           onChange={(e) => setScoreProfile(detail as any, e.target.value)}
                           disabled={!canEdit}
-                          className="!h-7 !w-44 !py-0.5 !text-[10px]"
+                          className="!h-7 !w-44 !py-0.5 !text-micro"
                           title="Scoring profile for this client"
                         >
                           <option value="">Auto (by billing cycle)</option>
@@ -2322,7 +2325,7 @@ export default function AccountsPage() {
                   </div>
                   <div className="grid gap-1.5 sm:grid-cols-2">
                     {(detail as any).healthBreakdown.breakdown.map((f: any) => (
-                      <div key={f.code} className="flex items-center gap-2 text-[10.5px]">
+                      <div key={f.code} className="flex items-center gap-2 text-micro">
                         <span className="w-28 truncate text-muted-foreground">{f.label}</span>
                         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                           <div
@@ -2351,10 +2354,10 @@ export default function AccountsPage() {
               {/* setup warning */}
               {retainerGap && (
                 <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
-                  <AlertTriangle className="size-4 shrink-0 text-amber-500" />
+                  <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[12.5px] font-bold text-amber-700 dark:text-amber-300">Retainer amount not set</p>
-                    <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80">
+                    <p className="text-body font-bold text-amber-700 dark:text-amber-300">Retainer amount not set</p>
+                    <p className="text-meta text-amber-700/80 dark:text-amber-300/80">
                       Auto-billing is on but there is no amount, so the daily cron skips this client — no retainer invoice is ever raised.
                     </p>
                   </div>
@@ -2369,36 +2372,36 @@ export default function AccountsPage() {
               {/* money */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl border border-border/60 bg-card p-4">
-                  <p className="text-[10.5px] font-bold uppercase tracking-widest text-muted-foreground">Invoiced</p>
-                  <p className="mt-1.5 text-xl font-heading font-bold tabular-nums sm:text-2xl">{money(detail.totalInvoiced)}</p>
-                  <p className="mt-0.5 text-[10.5px] text-muted-foreground">
+                  <p className="text-micro font-bold uppercase tracking-widest text-muted-foreground">Invoiced</p>
+                  <p className="mt-1.5 text-stat font-heading font-bold tabular-nums">{money(detail.totalInvoiced)}</p>
+                  <p className="mt-0.5 text-micro text-muted-foreground">
                     {invoiceCount - (detail.draftCount ?? 0)} issued invoice
                     {invoiceCount - (detail.draftCount ?? 0) === 1 ? "" : "s"}
                   </p>
                   {(detail.draftCount ?? 0) > 0 && (
-                    <p className="mt-1 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                    <p className="mt-1 text-micro font-medium text-amber-600 dark:text-amber-400">
                       +{detail.draftCount} draft{(detail.draftCount ?? 0) === 1 ? "" : "s"} ({money(detail.draftAmount)}) not issued yet
                     </p>
                   )}
                 </div>
                 <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4">
-                  <p className="text-[10.5px] font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Collected</p>
-                  <p className="mt-1.5 text-xl font-heading font-bold tabular-nums text-emerald-600 dark:text-emerald-300 sm:text-2xl">
+                  <p className="text-micro font-bold uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Collected</p>
+                  <p className="mt-1.5 text-stat font-heading font-bold tabular-nums text-emerald-600 dark:text-emerald-300">
                     {money(detail.totalPaid)}
                   </p>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-emerald-500/20">
                     <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, paidPct)}%` }} />
                   </div>
-                  <p className="mt-1 text-[10px] text-emerald-700/80 dark:text-emerald-300/80">{paidPct}% of invoiced</p>
+                  <p className="mt-1 text-micro text-emerald-700/80 dark:text-emerald-300/80">{paidPct}% of invoiced</p>
                 </div>
                 <div className={cn("rounded-2xl border p-4", (detail.totalDue ?? 0) > 0 ? "border-rose-500/25 bg-rose-500/10" : "border-border/60 bg-card")}>
-                  <p className={cn("text-[10.5px] font-bold uppercase tracking-widest", (detail.totalDue ?? 0) > 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground")}>
+                  <p className={cn("text-micro font-bold uppercase tracking-widest", (detail.totalDue ?? 0) > 0 ? "text-rose-600 dark:text-rose-400" : "text-muted-foreground")}>
                     Outstanding
                   </p>
-                  <p className={cn("mt-1.5 text-xl font-heading font-bold tabular-nums sm:text-2xl", (detail.totalDue ?? 0) > 0 && "text-rose-600 dark:text-rose-300")}>
+                  <p className={cn("mt-1.5 text-stat font-heading font-bold tabular-nums", (detail.totalDue ?? 0) > 0 && "text-rose-600 dark:text-rose-300")}>
                     {money(detail.totalDue)}
                   </p>
-                  <p className={cn("mt-0.5 text-[10.5px]", (detail.overdueCount ?? 0) > 0 ? "font-semibold text-rose-500" : "text-muted-foreground")}>
+                  <p className={cn("mt-0.5 text-micro", (detail.overdueCount ?? 0) > 0 ? "font-semibold text-rose-500" : "text-muted-foreground")}>
                     {(detail.overdueCount ?? 0) > 0
                       ? `${detail.overdueCount} overdue · ${money(detail.overdueAmount)}`
                       : (detail.totalDue ?? 0) > 0
@@ -2412,9 +2415,9 @@ export default function AccountsPage() {
                         setDetailTab("invoices");
                         setInvoiceStatusFilter((detail.overdueCount ?? 0) > 0 ? "__overdue" : "__unpaid");
                       }}
-                      className="mt-1.5 inline-flex items-center gap-1 text-[10.5px] font-bold text-primary hover:underline"
+                      className="mt-1.5 inline-flex items-center gap-1 text-micro font-bold text-primary hover:underline"
                     >
-                      See which invoices <ArrowRight className="size-3" />
+                      See which invoices <ArrowRight className="size-3.5" />
                     </button>
                   )}
                 </div>
@@ -2424,8 +2427,8 @@ export default function AccountsPage() {
               <div className="grid gap-3 lg:grid-cols-2">
                 <div className={cn("rounded-2xl border p-4", healthTone(detail.healthLevel))}>
                   <div className="flex items-center justify-between">
-                    <p className="text-[11px] font-bold uppercase tracking-wide">Health score</p>
-                    <span className="text-lg font-black tabular-nums">{detail.healthScore ?? "—"}</span>
+                    <p className="text-meta font-bold uppercase tracking-wide">Health score</p>
+                    <span className="text-title font-black tabular-nums">{detail.healthScore ?? "—"}</span>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/10 dark:bg-black/20">
                     <div
@@ -2436,12 +2439,12 @@ export default function AccountsPage() {
                       style={{ width: `${detail.healthScore ?? 0}%` }}
                     />
                   </div>
-                  <p className="mt-2 text-[11.5px] font-medium">{detail.healthDriver ?? "Healthy — no active drivers"}</p>
+                  <p className="mt-2 text-meta font-medium">{detail.healthDriver ?? "Healthy — no active drivers"}</p>
                   {detail.churnFlags.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {detail.churnFlags.map((f) => (
-                        <span key={f.id} className="rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-semibold dark:bg-black/20">
-                          ⚑ {label(f.matchedPattern ?? f.riskLevel)}
+                        <span key={f.id} className="rounded-full bg-black/10 px-2 py-0.5 text-micro font-semibold dark:bg-black/20">
+                          <Flag className="mr-0.5 inline size-3" /> {label(f.matchedPattern ?? f.riskLevel)}
                         </span>
                       ))}
                     </div>
@@ -2449,13 +2452,13 @@ export default function AccountsPage() {
                 </div>
 
                 <div className="rounded-2xl border border-border/60 bg-card p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">Primary contact</p>
+                  <p className="text-meta font-bold uppercase tracking-wide text-muted-foreground">Primary contact</p>
                   {primary ? (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <Avatar name={primary.name} />
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[12.5px] font-semibold">{primary.name}</p>
-                        <p className="truncate text-[10.5px] text-muted-foreground">
+                        <p className="truncate text-body font-semibold">{primary.name}</p>
+                        <p className="truncate text-micro text-muted-foreground">
                           {[primary.roleTitle, primary.email, primary.phone].filter(Boolean).join(" · ") || "No details"}
                         </p>
                       </div>
@@ -2484,7 +2487,7 @@ export default function AccountsPage() {
                     </div>
                   ) : (
                     <div className="mt-2 flex items-center justify-between gap-2">
-                      <p className="text-[11.5px] text-muted-foreground">No contact — follow-ups have nowhere to go.</p>
+                      <p className="text-meta text-muted-foreground">No contact — follow-ups have nowhere to go.</p>
                       {canEdit && (
                         <Btn variant="outline" onClick={() => setContactModal({ open: true })}>
                           <UserPlus className="size-3.5" /> Add
@@ -2512,45 +2515,45 @@ export default function AccountsPage() {
                     {detail.finance && (
                       <section>
                         <SectionTitle
-                          icon={<TrendingUp className="size-3.5" />}
+                          icon={<TrendingUp className="size-4" />}
                           title="Profitability"
                           hint="Billed to the client vs. expenses booked against it"
                           action={
                             <a
                               href="/capital/profitability"
                               onClick={(e) => { e.preventDefault(); setSelectedId(null); router.push("/capital/profitability"); }}
-                              className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
+                              className="inline-flex items-center gap-1 text-meta font-bold text-primary hover:underline"
                             >
-                              Capital <ExternalLink className="size-3" />
+                              Capital <ExternalLink className="size-3.5" />
                             </a>
                           }
                         />
                         <div className="mt-2 grid grid-cols-2 gap-2">
                           <div className="rounded-xl border border-border/60 px-3 py-2">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Revenue</p>
-                            <p className="mt-0.5 text-[13px] font-bold tabular-nums">{money(detail.totalInvoiced)}</p>
+                            <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Revenue</p>
+                            <p className="mt-0.5 text-body-lg font-bold tabular-nums">{money(detail.totalInvoiced)}</p>
                           </div>
                           <div className="rounded-xl border border-rose-500/25 bg-rose-500/5 px-3 py-2">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-rose-500/80">Expenses</p>
-                            <p className="mt-0.5 text-[13px] font-bold tabular-nums text-rose-600 dark:text-rose-400">
+                            <p className="text-micro font-bold uppercase tracking-wide text-rose-500/80">Expenses</p>
+                            <p className="mt-0.5 text-body-lg font-bold tabular-nums text-rose-600 dark:text-rose-400">
                               {money(detail.finance.expensesTotal)}
                             </p>
                           </div>
                           <div className={cn("rounded-xl border px-3 py-2", detail.finance.profit >= 0 ? "border-emerald-500/25 bg-emerald-500/5" : "border-rose-500/25 bg-rose-500/5")}>
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Profit</p>
-                            <p className={cn("mt-0.5 text-[13px] font-bold tabular-nums", detail.finance.profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
+                            <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Profit</p>
+                            <p className={cn("mt-0.5 text-body-lg font-bold tabular-nums", detail.finance.profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
                               {money(detail.finance.profit)}
                             </p>
                           </div>
                           <div className="rounded-xl border border-border/60 px-3 py-2">
-                            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Margin</p>
-                            <p className="mt-0.5 text-[13px] font-bold tabular-nums">
+                            <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Margin</p>
+                            <p className="mt-0.5 text-body-lg font-bold tabular-nums">
                               {detail.finance.margin != null ? `${detail.finance.margin}%` : "—"}
                             </p>
                           </div>
                         </div>
                         {(detail.finance.pendingExpenses > 0 || detail.finance.expenseCount > 0) && (
-                          <p className="mt-1.5 text-[10.5px] text-muted-foreground">
+                          <p className="mt-1.5 text-micro text-muted-foreground">
                             {detail.finance.expenseCount} approved expense{detail.finance.expenseCount === 1 ? "" : "s"}
                             {detail.finance.pendingExpenses > 0
                               ? ` · ${money(detail.finance.pendingExpenses)} awaiting approval (not counted)`
@@ -2562,7 +2565,7 @@ export default function AccountsPage() {
                             {detail.finance.recentExpenses.slice(0, 3).map((e) => (
                               <div key={e.id} className="flex items-center gap-2 rounded-lg border border-border/40 bg-muted/20 px-2.5 py-1.5">
                                 <span className={cn(
-                                  "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold",
+                                  "shrink-0 rounded-full px-1.5 py-0.5 text-micro font-bold",
                                   e.approvalStatus === "APPROVED"
                                     ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                                     : e.approvalStatus === "REJECTED"
@@ -2571,8 +2574,8 @@ export default function AccountsPage() {
                                 )}>
                                   {label(e.approvalStatus)}
                                 </span>
-                                <span className="min-w-0 flex-1 truncate text-[11px]">{e.description}</span>
-                                <span className="shrink-0 text-[11px] font-bold tabular-nums">{money(e.amount)}</span>
+                                <span className="min-w-0 flex-1 truncate text-meta">{e.description}</span>
+                                <span className="shrink-0 text-meta font-bold tabular-nums">{money(e.amount)}</span>
                               </div>
                             ))}
                           </div>
@@ -2580,7 +2583,7 @@ export default function AccountsPage() {
                       </section>
                     )}
                     <section>
-                      <SectionTitle icon={<Building2 className="size-3.5" />} title="Client details" />
+                      <SectionTitle icon={<Building2 className="size-4" />} title="Client details" />
                       <div className="mt-2 grid grid-cols-2 gap-3">
                         <Fact label="Vertical" value={label(detail.industryVertical)} />
                         <Fact label="Owner" value={detail.accountOwner?.name ?? "Unassigned"} tone={detail.accountOwner ? undefined : "warn"} />
@@ -2615,8 +2618,8 @@ export default function AccountsPage() {
                       </div>
                       {detail.notes && (
                         <div className="mt-3">
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Notes</p>
-                          <p className="mt-1.5 whitespace-pre-wrap rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+                          <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Notes</p>
+                          <p className="mt-1.5 whitespace-pre-wrap rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-body leading-relaxed text-muted-foreground">
                             {detail.notes}
                           </p>
                         </div>
@@ -2624,22 +2627,22 @@ export default function AccountsPage() {
                     </section>
 
                     <section>
-                      <SectionTitle icon={<Gauge className="size-3.5" />} title="Health history" hint="Latest snapshots, newest first" />
+                      <SectionTitle icon={<Gauge className="size-4" />} title="Health history" hint="Latest snapshots, newest first" />
                       <div className="mt-2 flex max-h-[240px] flex-col gap-1.5 overflow-y-auto pr-1">
-                        {detail.healthLogs.length === 0 && <p className="text-[11.5px] text-muted-foreground">No history yet</p>}
+                        {detail.healthLogs.length === 0 && <p className="text-meta text-muted-foreground">No history yet</p>}
                         {detail.healthLogs.slice(0, 8).map((h, i) => (
-                          <div key={h.id} className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-1.5 text-[11.5px]">
+                          <div key={h.id} className="flex items-center gap-2 rounded-xl border border-border/60 px-3 py-1.5 text-meta">
                             <span
                               className={cn(
-                                "rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                                "rounded-full px-1.5 py-0.5 text-micro font-bold",
                                 h.score >= 70 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : h.score >= 40 ? "bg-amber-500/15 text-amber-600 dark:text-amber-400" : "bg-rose-500/15 text-rose-600 dark:text-rose-400"
                               )}
                             >
                               {h.score}
                             </span>
                             <span className="flex-1 truncate text-muted-foreground">{h.driverSummary ?? "healthy"}</span>
-                            <span className="shrink-0 text-[10px] text-muted-foreground/60">{timeAgo(h.recordedAt)}</span>
-                            {i === 0 && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9.5px] font-bold text-primary">now</span>}
+                            <span className="shrink-0 text-micro text-muted-foreground/60">{timeAgo(h.recordedAt)}</span>
+                            {i === 0 && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-micro font-bold text-primary">now</span>}
                           </div>
                         ))}
                       </div>
@@ -2649,23 +2652,23 @@ export default function AccountsPage() {
                   <div className="flex flex-col gap-5">
                     <section>
                       <SectionTitle
-                        icon={<Users className="size-3.5" />}
+                        icon={<Users className="size-4" />}
                         title={`Contacts (${detail.contacts.length})`}
                         action={
                           canEdit ? (
                             <button
                               type="button"
                               onClick={() => setContactModal({ open: true })}
-                              className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:underline"
+                              className="flex items-center gap-1 text-meta font-bold text-primary transition-colors hover:underline"
                             >
-                              <UserPlus className="size-3" /> Add
+                              <UserPlus className="size-3.5" /> Add
                             </button>
                           ) : undefined
                         }
                       />
                       <div className="mt-2 flex max-h-[260px] flex-col gap-1.5 overflow-y-auto pr-1">
                         {detail.contacts.length === 0 && (
-                          <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-[11.5px] text-muted-foreground">
+                          <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-meta text-muted-foreground">
                             No contacts yet
                           </p>
                         )}
@@ -2673,24 +2676,24 @@ export default function AccountsPage() {
                           <div key={c.id} className="group/contact flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
                             <Avatar name={c.name} size="size-7" />
                             <div className="min-w-0 flex-1">
-                              <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] font-semibold">
+                              <p className="flex flex-wrap items-center gap-1.5 text-body font-semibold">
                                 <span className="truncate">{c.name}</span>
-                                {c.isPrimary && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold text-primary">PRIMARY</span>}
-                                {c.portalAccessEnabled && <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">PORTAL</span>}
+                                {c.isPrimary && <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-micro font-bold text-primary">PRIMARY</span>}
+                                {c.portalAccessEnabled && <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-micro font-bold text-emerald-600 dark:text-emerald-400">PORTAL</span>}
                               </p>
-                              <p className="truncate text-[10.5px] text-muted-foreground">
+                              <p className="truncate text-micro text-muted-foreground">
                                 {[c.roleTitle, c.email, c.phone].filter(Boolean).join(" · ") || "No details"}
                               </p>
                             </div>
                             <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover/contact:opacity-100 focus-within:opacity-100">
                               {c.phone && (
                                 <QuickIcon href={`tel:${c.phone}`} label={`Call ${c.name}`}>
-                                  <Phone className="size-3" />
+                                  <Phone className="size-3.5" />
                                 </QuickIcon>
                               )}
                               {c.email && (
                                 <QuickIcon href={`mailto:${c.email}`} label={`Email ${c.name}`}>
-                                  <Mail className="size-3" />
+                                  <Mail className="size-3.5" />
                                 </QuickIcon>
                               )}
                               {canEdit && (
@@ -2701,7 +2704,7 @@ export default function AccountsPage() {
                                     onClick={() => setContactModal({ open: true, initial: c })}
                                     className="inline-flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
                                   >
-                                    <Pencil className="size-3" />
+                                    <Pencil className="size-3.5" />
                                   </button>
                                   <button
                                     type="button"
@@ -2709,7 +2712,7 @@ export default function AccountsPage() {
                                     onClick={() => setDeleteTarget(c)}
                                     className="inline-flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500"
                                   >
-                                    <Trash2 className="size-3" />
+                                    <Trash2 className="size-3.5" />
                                   </button>
                                 </>
                               )}
@@ -2721,32 +2724,32 @@ export default function AccountsPage() {
 
                     <section>
                       <SectionTitle
-                        icon={<FileText className="size-3.5" />}
+                        icon={<FileText className="size-4" />}
                         title={`Documents (${detail.documents.length})`}
                         action={
                           canEdit ? (
                             <button
                               type="button"
                               onClick={() => setDocModalOpen(true)}
-                              className="flex items-center gap-1 text-[11px] font-bold text-primary transition-colors hover:underline"
+                              className="flex items-center gap-1 text-meta font-bold text-primary transition-colors hover:underline"
                             >
-                              <Plus className="size-3" /> Attach
+                              <Plus className="size-3.5" /> Attach
                             </button>
                           ) : undefined
                         }
                       />
                       <div className="mt-2 flex max-h-[220px] flex-col gap-1.5 overflow-y-auto pr-1">
                         {detail.documents.length === 0 && (
-                          <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-[11.5px] text-muted-foreground">
+                          <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-meta text-muted-foreground">
                             No MOU, proposal or brand assets attached
                           </p>
                         )}
                         {detail.documents.map((d) => (
                           <div key={d.id} className="group/doc flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
-                            <FileText className="size-4 shrink-0 text-muted-foreground" />
+                            <FileText className="size-3.5 shrink-0 text-muted-foreground" />
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-[12.5px] font-semibold">{label(d.type)}</p>
-                              <p className="truncate text-[10.5px] text-muted-foreground">
+                              <p className="truncate text-body font-semibold">{label(d.type)}</p>
+                              <p className="truncate text-micro text-muted-foreground">
                                 {d.uploadedBy?.name ?? "unknown"} · {timeAgo(d.uploadedAt)}
                               </p>
                             </div>
@@ -2755,13 +2758,13 @@ export default function AccountsPage() {
                                 href={d.fileUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="shrink-0 rounded-lg border border-border px-2 py-1 text-[10.5px] font-bold text-primary hover:bg-muted"
+                                className="shrink-0 rounded-lg border border-border px-2 py-1 text-micro font-bold text-primary hover:bg-muted"
                               >
                                 Open
                               </a>
                             ) : (
                               <span
-                                className="shrink-0 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10.5px] font-bold text-amber-600 dark:text-amber-400"
+                                className="shrink-0 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-micro font-bold text-amber-600 dark:text-amber-400"
                                 title="This link is not a valid web address and was blocked for safety"
                               >
                                 Invalid link
@@ -2781,6 +2784,72 @@ export default function AccountsPage() {
                         ))}
                       </div>
                     </section>
+
+                    <section>
+                      <SectionTitle
+                        icon={<CircleDollarSign className="size-4" />}
+                        title="USD purchases"
+                        hint="Dollar Desk — dollars this client bought from the agency"
+                        action={
+                          <a
+                            href="/capital/dollar"
+                            onClick={(e) => { e.preventDefault(); setSelectedId(null); router.push("/capital/dollar"); }}
+                            className="inline-flex items-center gap-1 text-meta font-bold text-primary hover:underline"
+                          >
+                            Dollar Desk <ExternalLink className="size-3.5" />
+                          </a>
+                        }
+                      />
+                      {dollar && dollar.summary.count > 0 ? (
+                        <>
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <div className="rounded-xl border border-border/60 px-3 py-2">
+                              <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">USD bought</p>
+                              <p className="mt-0.5 text-body-lg font-bold tabular-nums">${formatNumber(dollar.summary.totalUsd)}</p>
+                            </div>
+                            <div className="rounded-xl border border-border/60 px-3 py-2">
+                              <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">BDT paid</p>
+                              <p className="mt-0.5 text-body-lg font-bold tabular-nums">{money(dollar.summary.totalBdt)}</p>
+                            </div>
+                            <div className="rounded-xl border border-border/60 px-3 py-2">
+                              <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Avg rate</p>
+                              <p className="mt-0.5 text-body-lg font-bold tabular-nums">
+                                {dollar.summary.averageRate ? `৳${dollar.summary.averageRate.toFixed(2)} / $` : "—"}
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-3 py-2">
+                              <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">FX margin</p>
+                              <p className="mt-0.5 text-body-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                {money(dollar.summary.totalProfit)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-col gap-1.5">
+                            {dollar.purchases.slice(0, 5).map((p: any) => (
+                              <div key={p.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 px-3 py-2 text-meta">
+                                <span className="shrink-0 text-muted-foreground">{formatDate(p.date)}</span>
+                                <span className="shrink-0 font-mono text-micro text-muted-foreground">{p.reference}</span>
+                                <span className="ml-auto font-semibold tabular-nums">${formatNumber(p.usdAmount)}</span>
+                                <span className="tabular-nums text-muted-foreground">@ ৳{p.rate.toFixed(2)}</span>
+                                <span className="w-20 text-right font-bold tabular-nums">{money(p.bdtAmount)}</span>
+                                <span className="w-16 text-right text-micro font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                                  +{money(p.profit)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                          {dollar.summary.count > 5 && (
+                            <p className="mt-1.5 text-micro text-muted-foreground">
+                              +{dollar.summary.count - 5} more in the Dollar Desk
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="mt-2 rounded-xl border border-dashed border-border px-3 py-4 text-center text-meta text-muted-foreground">
+                          No USD purchases yet — sales are recorded in Capital → Dollar Desk.
+                        </p>
+                      )}
+                    </section>
                   </div>
                 </div>
               )}
@@ -2789,18 +2858,18 @@ export default function AccountsPage() {
               {detailTab === "projects" && (
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Filter</span>
+                    <span className="text-meta font-bold uppercase tracking-widest text-muted-foreground">Filter</span>
                     <button
                       type="button"
                       onClick={() => setProjectStatusFilter(null)}
-                      className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors", !projectStatusFilter ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card text-muted-foreground hover:text-foreground")}
+                      className={cn("rounded-full border px-2.5 py-1 text-meta font-bold transition-colors", !projectStatusFilter ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card text-muted-foreground hover:text-foreground")}
                     >
                       All ({projectCount})
                     </button>
                     <button
                       type="button"
                       onClick={() => setProjectStatusFilter((p) => (p === "__attention" ? null : "__attention"))}
-                      className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors", projectStatusFilter === "__attention" ? "border-rose-500 bg-rose-500 text-white" : "border-rose-500/40 bg-rose-500/5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-300")}
+                      className={cn("rounded-full border px-2.5 py-1 text-meta font-bold transition-colors", projectStatusFilter === "__attention" ? "border-rose-500 bg-rose-500 text-white" : "border-rose-500/40 bg-rose-500/5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-300")}
                       title="Projects that are at risk or delayed"
                     >
                       Needs attention ({(projStatusCounts["AT_RISK"] ?? 0) + (projStatusCounts["DELAYED"] ?? 0)})
@@ -2810,12 +2879,12 @@ export default function AccountsPage() {
                         key={st}
                         type="button"
                         onClick={() => setProjectStatusFilter((prev) => (prev === st ? null : st))}
-                        className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors", projectStatusFilter === st ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card text-muted-foreground hover:text-foreground")}
+                        className={cn("rounded-full border px-2.5 py-1 text-meta font-bold transition-colors", projectStatusFilter === st ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card text-muted-foreground hover:text-foreground")}
                       >
                         {label(st)} ({cnt})
                       </button>
                     ))}
-                    <span className="ml-auto hidden items-center gap-3 text-[11px] text-muted-foreground sm:flex">
+                    <span className="ml-auto hidden items-center gap-3 text-meta text-muted-foreground sm:flex">
                       <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-emerald-500" /> {projStatusCounts["ON_TRACK"] ?? 0} on track</span>
                       <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-amber-500" /> {projStatusCounts["AT_RISK"] ?? 0} at risk</span>
                       <span className="flex items-center gap-1.5"><span className="size-2 rounded-full bg-rose-500" /> {projStatusCounts["DELAYED"] ?? 0} delayed</span>
@@ -2828,11 +2897,11 @@ export default function AccountsPage() {
                       {filteredProjects.map((p) => (
                         <div key={p.id} className="flex flex-col gap-2 rounded-xl border border-border/60 bg-card px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[13px] font-semibold">{p.name}</p>
-                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <p className="truncate text-body-lg font-semibold">{p.name}</p>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-meta text-muted-foreground">
                               {p.budgetAmount ? <span className="font-semibold tabular-nums text-foreground">{money(p.budgetAmount)}</span> : <span>No budget</span>}
                               {p.targetEndDate ? <span>· ends {formatDate(p.targetEndDate)}</span> : null}
-                              {p.riskScore != null ? <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-bold">risk {p.riskScore}</span> : null}
+                              {p.riskScore != null ? <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-bold">risk {p.riskScore}</span> : null}
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -2841,10 +2910,10 @@ export default function AccountsPage() {
                             <a
                               href={`/flow/${p.id}`}
                               onClick={(e) => { e.preventDefault(); setSelectedId(null); router.push(`/flow/${p.id}`); }}
-                              className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[11px] font-bold text-primary transition-colors hover:bg-muted"
+                              className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-meta font-bold text-primary transition-colors hover:bg-muted"
                               title={`Open ${p.name} in Flow`}
                             >
-                              Open project <ExternalLink className="size-3" />
+                              Open project <ExternalLink className="size-3.5" />
                             </a>
                           </div>
                         </div>
@@ -2854,7 +2923,7 @@ export default function AccountsPage() {
                   <a
                     href={`/flow?clientId=${detail.id}`}
                     onClick={(e) => { e.preventDefault(); setSelectedId(null); router.push(`/flow?clientId=${detail.id}`); }}
-                    className="inline-flex items-center gap-1 self-start text-[11.5px] font-bold text-primary hover:underline"
+                    className="inline-flex items-center gap-1 self-start text-meta font-bold text-primary hover:underline"
                   >
                     View all projects in Flow <ExternalLink className="size-3.5" />
                   </a>
@@ -2865,7 +2934,7 @@ export default function AccountsPage() {
               {detailTab === "invoices" && (
                 <div className="flex flex-col gap-5">
                   <div>
-                    <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold uppercase tracking-wide text-muted-foreground">
                       <Wallet className="size-3.5" /> Aging buckets
                     </h4>
                     <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -2881,8 +2950,8 @@ export default function AccountsPage() {
                         const borderTone = b.tone === "emerald" ? "border-emerald-500/25 bg-emerald-500/5" : b.tone === "rose" ? "border-rose-500/25 bg-rose-500/5" : b.tone === "orange" ? "border-orange-500/25 bg-orange-500/5" : "border-amber-500/25 bg-amber-500/5";
                         return (
                           <div key={b.key} className={cn("rounded-xl border p-3", borderTone)}>
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{b.label}</p>
-                            <p className="mt-1 truncate text-[13px] font-black tabular-nums">{money(b.value)}</p>
+                            <p className="text-micro font-bold uppercase tracking-widest text-muted-foreground">{b.label}</p>
+                            <p className="mt-1 truncate text-body-lg font-black tabular-nums">{money(b.value)}</p>
                             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
                               <div className={cn("h-full rounded-full", barTone)} style={{ width: `${pct}%` }} />
                             </div>
@@ -2893,21 +2962,21 @@ export default function AccountsPage() {
                   </div>
 
                   <div>
-                    <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold uppercase tracking-wide text-muted-foreground">
                       <FileText className="size-3.5" /> Invoice status
                     </h4>
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      <button type="button" onClick={() => setInvoiceStatusFilter((p) => (p === "__overdue" ? null : "__overdue"))} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors", invoiceStatusFilter === "__overdue" ? "border-rose-500 bg-rose-500 text-white" : "border-rose-500/40 bg-rose-500/5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-300")}>
+                      <button type="button" onClick={() => setInvoiceStatusFilter((p) => (p === "__overdue" ? null : "__overdue"))} className={cn("rounded-full border px-2.5 py-1 text-meta font-bold transition-colors", invoiceStatusFilter === "__overdue" ? "border-rose-500 bg-rose-500 text-white" : "border-rose-500/40 bg-rose-500/5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-300")}>
                         Overdue ({overdueCountList})
                       </button>
-                      <button type="button" onClick={() => setInvoiceStatusFilter((p) => (p === "__unpaid" ? null : "__unpaid"))} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors", invoiceStatusFilter === "__unpaid" ? "border-amber-500 bg-amber-500 text-white" : "border-amber-500/40 bg-amber-500/5 text-amber-600 hover:bg-amber-500/10 dark:text-amber-300")}>
+                      <button type="button" onClick={() => setInvoiceStatusFilter((p) => (p === "__unpaid" ? null : "__unpaid"))} className={cn("rounded-full border px-2.5 py-1 text-meta font-bold transition-colors", invoiceStatusFilter === "__unpaid" ? "border-amber-500 bg-amber-500 text-white" : "border-amber-500/40 bg-amber-500/5 text-amber-600 hover:bg-amber-500/10 dark:text-amber-300")}>
                         Unpaid ({unpaidInvoices.length})
                       </button>
-                      <button type="button" onClick={() => setInvoiceStatusFilter(null)} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors", !invoiceStatusFilter ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card text-muted-foreground hover:text-foreground")}>
+                      <button type="button" onClick={() => setInvoiceStatusFilter(null)} className={cn("rounded-full border px-2.5 py-1 text-meta font-bold transition-colors", !invoiceStatusFilter ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card text-muted-foreground hover:text-foreground")}>
                         All ({detail.invoices.length})
                       </button>
                       {Object.entries(invStatusCounts).map(([st, cnt]) => (
-                        <button key={st} type="button" onClick={() => setInvoiceStatusFilter((prev) => (prev === st ? null : st))} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold transition-colors", invoiceStatusFilter === st ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card text-muted-foreground hover:text-foreground")}>
+                        <button key={st} type="button" onClick={() => setInvoiceStatusFilter((prev) => (prev === st ? null : st))} className={cn("rounded-full border px-2.5 py-1 text-meta font-bold transition-colors", invoiceStatusFilter === st ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card text-muted-foreground hover:text-foreground")}>
                           {label(st)} ({cnt})
                         </button>
                       ))}
@@ -2915,7 +2984,7 @@ export default function AccountsPage() {
                   </div>
 
                   <div>
-                    <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold uppercase tracking-wide text-muted-foreground">
                       <Receipt className="size-3.5" /> Invoices ({filteredInvoices.length}{invoiceStatusFilter === "__overdue" ? " overdue" : invoiceStatusFilter === "__unpaid" ? " unpaid" : invoiceStatusFilter ? " filtered" : ""})
 
                     </h4>
@@ -2952,27 +3021,27 @@ export default function AccountsPage() {
                                 aria-expanded={isExpanded}
                               >
                                 <div className="min-w-0 flex-1">
-                                  <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] font-semibold">
+                                  <p className="flex flex-wrap items-center gap-1.5 text-body font-semibold">
                                     <span className="truncate">{inv.invoiceNumber}</span>
                                     {overdueNow && (
-                                      <span className="rounded-full border border-rose-500/40 bg-rose-500/10 px-1.5 py-px text-[9px] font-bold text-rose-600 dark:text-rose-300">
+                                      <span className="rounded-full border border-rose-500/40 bg-rose-500/10 px-1.5 py-px text-micro font-bold text-rose-600 dark:text-rose-300">
                                         {daysLate}d overdue
                                       </span>
                                     )}
-                                    <span className="hidden text-[10px] font-normal text-muted-foreground sm:inline">
+                                    <span className="hidden text-micro font-normal text-muted-foreground sm:inline">
                                       · {formatDate(inv.issueDate)}{inv.dueDate ? ` → ${formatDate(inv.dueDate)}` : ""}
                                     </span>
                                   </p>
-                                  <p className="mt-0.5 text-[10.5px] text-muted-foreground sm:hidden">
+                                  <p className="mt-0.5 text-micro text-muted-foreground sm:hidden">
                                     {formatDate(inv.issueDate)}{inv.dueDate ? ` · due ${formatDate(inv.dueDate)}` : ""}
                                   </p>
                                   <div className="mt-1.5 flex items-center gap-2">
                                     <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                                       <div className={cn("h-full rounded-full", pct >= 100 ? "bg-emerald-500" : pct > 0 ? "bg-amber-500" : "bg-rose-500")} style={{ width: `${pct}%` }} />
                                     </div>
-                                    <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{money(paid)} / {money(total)}</span>
+                                    <span className="shrink-0 text-micro tabular-nums text-muted-foreground">{money(paid)} / {money(total)}</span>
                                   </div>
-                                  <p className="mt-1 truncate text-[10.5px] text-muted-foreground">
+                                  <p className="mt-1 truncate text-micro text-muted-foreground">
                                     Due {money(due)}
                                     {inv.project ? ` · ${inv.project.name}` : ""} · {revenueTag}
                                     {(inv.refunded ?? 0) > 0 ? ` · refunded ${money(inv.refunded)}` : ""}
@@ -2980,27 +3049,27 @@ export default function AccountsPage() {
                                 </div>
                                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                                   <StatusBadge status={inv.status} />
-                                  <span className="text-[12px] font-bold tabular-nums">{money(total)}</span>
-                                  <span className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
-                                    {isExpanded ? <><ChevronUp className="size-3" /> Hide</> : <><ChevronDown className="size-3" /> Details</>}
+                                  <span className="text-body font-bold tabular-nums">{money(total)}</span>
+                                  <span className="flex items-center gap-1 text-micro font-bold text-muted-foreground">
+                                    {isExpanded ? <><ChevronUp className="size-3.5" /> Hide</> : <><ChevronDown className="size-3.5" /> Details</>}
                                   </span>
                                 </div>
                               </button>
                               {isExpanded && (
                                 <div className="border-t border-border/60 bg-muted/20 px-3 py-2">
-                                  <p className="text-[10.5px] font-bold uppercase tracking-widest text-muted-foreground">Line items</p>
+                                  <p className="text-micro font-bold uppercase tracking-widest text-muted-foreground">Line items</p>
                                   <div className="mt-1.5 flex flex-col gap-1">
                                     {inv.lineItems.length === 0 ? (
-                                      <p className="text-[11px] text-muted-foreground">No line items</p>
+                                      <p className="text-meta text-muted-foreground">No line items</p>
                                     ) : (
                                       inv.lineItems.map((li, idx) => (
-                                        <div key={idx} className="flex items-center justify-between gap-2 rounded-lg border border-border/40 bg-card px-2.5 py-1.5 text-[11.5px]">
+                                        <div key={idx} className="flex items-center justify-between gap-2 rounded-lg border border-border/40 bg-card px-2.5 py-1.5 text-meta">
                                           <span className="min-w-0 flex-1">
                                             <span className="block truncate font-medium">
                                               {li.description || label(li.revenueTag)}
                                             </span>
                                             {Number(li.quantity) > 1 && Number(li.unitPrice) > 0 && (
-                                              <span className="block truncate text-[9.5px] text-muted-foreground">
+                                              <span className="block truncate text-micro text-muted-foreground">
                                                 {Number(li.quantity)} × {money(Number(li.unitPrice))} · {label(li.revenueTag)}
                                               </span>
                                             )}
@@ -3010,35 +3079,35 @@ export default function AccountsPage() {
                                       ))
                                     )}
                                   </div>
-                                  <div className="mt-2 grid grid-cols-3 gap-2 text-[11px]">
+                                  <div className="mt-2 grid grid-cols-3 gap-2 text-meta">
                                     <span className="rounded-lg bg-card px-2 py-1 text-center">
-                                      <span className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Total</span>
+                                      <span className="block text-micro font-bold uppercase tracking-widest text-muted-foreground">Total</span>
                                       <span className="font-bold tabular-nums">{money(total)}</span>
                                     </span>
                                     <span className="rounded-lg bg-emerald-500/10 px-2 py-1 text-center">
-                                      <span className="block text-[10px] font-bold uppercase tracking-widest text-emerald-600">Paid</span>
+                                      <span className="block text-micro font-bold uppercase tracking-widest text-emerald-600">Paid</span>
                                       <span className="font-bold tabular-nums text-emerald-600">{money(paid)}</span>
                                     </span>
                                     <span className="rounded-lg bg-rose-500/10 px-2 py-1 text-center">
-                                      <span className="block text-[10px] font-bold uppercase tracking-widest text-rose-500">Due</span>
+                                      <span className="block text-micro font-bold uppercase tracking-widest text-rose-500">Due</span>
                                       <span className="font-bold tabular-nums text-rose-500">{money(due)}</span>
                                     </span>
                                   </div>
                                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
-                                    <p className="text-[10px] text-muted-foreground">
+                                    <p className="text-micro text-muted-foreground">
                                       Payments, installments &amp; reminders live in Capital.
                                     </p>
                                     <div className="flex items-center gap-1.5">
                                       {daysLate > 0 && (
-                                        <span className="rounded-full border border-rose-500/40 bg-rose-500/10 px-1.5 py-px text-[9.5px] font-bold text-rose-600 dark:text-rose-300">
+                                        <span className="rounded-full border border-rose-500/40 bg-rose-500/10 px-1.5 py-px text-micro font-bold text-rose-600 dark:text-rose-300">
                                           {daysLate} day{daysLate === 1 ? "" : "s"} overdue
                                         </span>
                                       )}
                                       <Link
                                         href={`/capital/invoices?clientId=${detail.id}&inv=${inv.id}`}
-                                        className="inline-flex items-center gap-1 rounded-lg bg-brand-gradient px-2 py-1 text-[10.5px] font-bold text-white transition-opacity hover:opacity-90"
+                                        className="inline-flex items-center gap-1 rounded-lg bg-brand-gradient px-2 py-1 text-micro font-bold text-white transition-opacity hover:opacity-90"
                                       >
-                                        <ExternalLink className="size-3" /> Open invoice
+                                        <ExternalLink className="size-3.5" /> Open invoice
                                       </Link>
                                     </div>
                                   </div>
@@ -3052,30 +3121,30 @@ export default function AccountsPage() {
                     <a
                       href={`/capital/invoices?clientId=${detail.id}`}
                       onClick={(e) => { e.preventDefault(); setSelectedId(null); router.push(`/capital/invoices?clientId=${detail.id}`); }}
-                      className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-bold text-primary hover:underline"
+                      className="mt-2 inline-flex items-center gap-1 text-meta font-bold text-primary hover:underline"
                     >
                       Full billing in Capital <ExternalLink className="size-3.5" />
                     </a>
                   </div>
 
                   <div>
-                    <h4 className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                    <h4 className="flex items-center gap-1.5 text-meta font-bold uppercase tracking-wide text-muted-foreground">
                       <Wallet className="size-3.5" /> Recent payments
                     </h4>
                     <div className="mt-2 flex flex-col gap-1.5">
-                      {!detail.payments?.length && <p className="text-[11.5px] text-muted-foreground">No payments recorded</p>}
+                      {!detail.payments?.length && <p className="text-meta text-muted-foreground">No payments recorded</p>}
                       {detail.payments?.slice(0, 5).map((p) => (
                         <div key={p.id} className="flex items-center gap-2.5 rounded-xl border border-border/60 px-3 py-2">
-                          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-micro font-bold text-emerald-600 dark:text-emerald-400">
                             {label(p.paymentMethod)}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[12.5px] font-semibold">{p.invoice.invoiceNumber}</p>
-                            <p className="text-[10.5px] text-muted-foreground">
+                            <p className="truncate text-body font-semibold">{p.invoice.invoiceNumber}</p>
+                            <p className="text-micro text-muted-foreground">
                               {formatDate(p.paymentDate)}{p.referenceId ? ` · ${p.referenceId}` : ""}
                             </p>
                           </div>
-                          <span className="shrink-0 text-[12.5px] font-bold tabular-nums text-emerald-600 dark:text-emerald-300">
+                          <span className="shrink-0 text-body font-bold tabular-nums text-emerald-600 dark:text-emerald-300">
                             +{money(Number(p.amount))}
                           </span>
                         </div>
@@ -3137,12 +3206,12 @@ export default function AccountsPage() {
       >
         {deleteTarget === "client" ? (
           <>
-            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            <p className="text-body leading-relaxed text-muted-foreground">
               <strong className="text-foreground">{detail?.companyName}</strong> has{" "}
               {detail?.invoiceCount ?? 0} invoice{(detail?.invoiceCount ?? 0) === 1 ? "" : "s"} and{" "}
               {detail?.projectCount ?? 0} project{(detail?.projectCount ?? 0) === 1 ? "" : "s"}.
             </p>
-            <div className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11.5px] text-amber-700 dark:text-amber-300">
+            <div className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-meta text-amber-700 dark:text-amber-300">
               Archiving keeps every invoice, project and health log. Deleting is only possible for a client with no
               billing history and cannot be undone.
             </div>
@@ -3150,7 +3219,7 @@ export default function AccountsPage() {
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 Cancel
               </button>
@@ -3158,7 +3227,7 @@ export default function AccountsPage() {
                 <button
                   type="button"
                   onClick={deleteClient}
-                  className="rounded-xl border border-rose-500/40 px-4 py-2 text-[12.5px] font-bold text-rose-500 transition-colors hover:bg-rose-500/10"
+                  className="rounded-xl border border-rose-500/40 px-4 py-2 text-body font-bold text-rose-500 transition-colors hover:bg-rose-500/10"
                 >
                   Delete permanently
                 </button>
@@ -3166,7 +3235,7 @@ export default function AccountsPage() {
               <button
                 type="button"
                 onClick={archiveClient}
-                className="rounded-xl bg-primary px-4 py-2 text-[12.5px] font-bold text-primary-foreground transition-colors hover:bg-primary/90"
+                className="rounded-xl bg-primary px-4 py-2 text-body font-bold text-primary-foreground transition-colors hover:bg-primary/90"
               >
                 <Archive className="mr-1 inline size-3.5" /> Archive client
               </button>
@@ -3174,7 +3243,7 @@ export default function AccountsPage() {
           </>
         ) : (
           <>
-            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            <p className="text-body leading-relaxed text-muted-foreground">
               Remove <strong className="text-foreground">{deleteTarget?.name}</strong> from this client? The health score
               will be recomputed.
             </p>
@@ -3182,14 +3251,14 @@ export default function AccountsPage() {
               <button
                 type="button"
                 onClick={() => setDeleteTarget(null)}
-                className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => deleteTarget && removeContact(deleteTarget.id)}
-                className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white transition-colors hover:bg-rose-500/90"
+                className="rounded-xl bg-rose-500 px-4 py-2 text-body font-bold text-white transition-colors hover:bg-rose-500/90"
               >
                 Remove contact
               </button>
@@ -3199,7 +3268,7 @@ export default function AccountsPage() {
       </Modal>
 
       <Modal open={!!docDelete} onClose={() => setDocDelete(null)} title="Remove document?">
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-body leading-relaxed text-muted-foreground">
           Remove <strong className="text-foreground">{docDelete?.label}</strong> from this client?
           The file itself is not deleted — only the link on this record.
         </p>
@@ -3207,7 +3276,7 @@ export default function AccountsPage() {
           <button
             type="button"
             onClick={() => setDocDelete(null)}
-            className="rounded-xl border border-border px-4 py-2 text-[12.5px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             Cancel
           </button>
@@ -3218,7 +3287,7 @@ export default function AccountsPage() {
               setDocDelete(null);
               if (target) void removeDocument(target.id);
             }}
-            className="rounded-xl bg-rose-500 px-4 py-2 text-[12.5px] font-bold text-white transition-colors hover:bg-rose-500/90"
+            className="rounded-xl bg-rose-500 px-4 py-2 text-body font-bold text-white transition-colors hover:bg-rose-500/90"
           >
             Remove
           </button>
@@ -3242,10 +3311,10 @@ export default function AccountsPage() {
 
 function Chip({ children, onClear }: { children: React.ReactNode; onClear: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 py-0.5 pl-2 pr-1 text-[10.5px] font-semibold text-primary">
+    <span className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/5 py-0.5 pl-2 pr-1 text-micro font-semibold text-primary">
       {children}
       <button type="button" onClick={onClear} aria-label="Remove filter" className="rounded-full p-0.5 hover:bg-primary/15">
-        <X className="size-3" />
+        <X className="size-3.5" />
       </button>
     </span>
   );
@@ -3292,9 +3361,9 @@ function FocusTile({
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">{title}</span>
-        <span className="mt-0.5 block text-[18px] font-heading font-bold leading-tight tabular-nums">{value}</span>
-        <span className="mt-0.5 block truncate text-[10.5px] text-muted-foreground">{hint}</span>
+        <span className="block text-micro font-bold uppercase tracking-wider text-muted-foreground">{title}</span>
+        <span className="mt-0.5 block text-title font-heading font-bold leading-tight tabular-nums">{value}</span>
+        <span className="mt-0.5 block truncate text-micro text-muted-foreground">{hint}</span>
       </span>
       {!disabled && <ArrowRight className="mt-1 size-3.5 shrink-0 text-muted-foreground/50" />}
     </button>

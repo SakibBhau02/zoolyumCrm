@@ -42,10 +42,10 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-heading font-semibold tracking-tight">{title}</h1>
-        {subtitle && <p className="mt-1 text-[13px] text-muted-foreground">{subtitle}</p>}
+        <h1 className="text-page font-heading font-semibold tracking-tight">{title}</h1>
+        {subtitle && <p className="mt-1 text-body-lg text-muted-foreground">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>}
     </div>
   );
 }
@@ -88,8 +88,8 @@ export function SectionTitle({
   return (
     <div className="mb-4 flex items-start justify-between">
       <div>
-        <h3 className="flex items-center gap-1.5 font-heading text-[15px] font-semibold">{icon}{title}</h3>
-        {subtitle && <p className="mt-0.5 text-[12px] text-muted-foreground">{subtitle}</p>}
+        <h3 className="flex items-center gap-1.5 font-heading text-section font-semibold">{icon}{title}</h3>
+        {subtitle && <p className="mt-0.5 text-body text-muted-foreground">{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -98,7 +98,7 @@ export function SectionTitle({
 
 export function GradientBadge({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-primary-foreground">
+    <span className="inline-flex items-center rounded-full bg-primary px-2.5 py-0.5 text-meta font-semibold text-primary-foreground">
       {children}
     </span>
   );
@@ -161,7 +161,7 @@ export function StatusBadge({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium capitalize",
+        "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-meta font-medium capitalize",
         STATUS_STYLES[status] ?? "bg-muted text-muted-foreground ring-1 ring-border"
       )}
     >
@@ -181,13 +181,13 @@ export function DeltaPill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums",
+        "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-micro font-semibold tabular-nums",
         good
           ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
           : "bg-rose-500/10 text-rose-600 dark:text-rose-300"
       )}
     >
-      {up ? <TrendingUp className="size-3" /> : <TrendingDown className="size-3" />}
+      {up ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
       {value}
     </span>
   );
@@ -224,20 +224,20 @@ export function StatCard({
 }) {
   const resolvedTone = tone ?? STAT_TONE_FALLBACK[index % STAT_TONE_FALLBACK.length];
   return (
-    <FadeIn delay={Math.min(index, 3) * 0.06}>
+    <FadeIn delay={Math.min(index, 3) * 0.06} className="min-w-0">
       <CardShell className="relative overflow-hidden">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <p className="text-meta font-semibold uppercase tracking-wider text-muted-foreground">
               {label}
             </p>
-            <p className="mt-1.5 text-2xl font-heading font-bold tabular-nums tracking-tight">
+            <p className="mt-1.5 text-stat font-heading font-bold tabular-nums tracking-tight">
               {value}
             </p>
             {(delta || sub) && (
-              <div className="mt-1.5 flex items-center gap-1.5">
+              <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
                 {delta && <DeltaPill value={delta} good={deltaGood ?? true} />}
-                {sub && <span className="truncate text-[11.5px] text-muted-foreground">{sub}</span>}
+                {sub && <span className="min-w-0 truncate text-meta text-muted-foreground">{sub}</span>}
               </div>
             )}
           </div>
@@ -271,8 +271,8 @@ export function SkeletonBlock({ className }: { className?: string }) {
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-12 text-center">
-      <p className="text-sm font-medium text-muted-foreground">{title}</p>
-      {hint && <p className="mt-1 text-xs text-muted-foreground/70">{hint}</p>}
+      <p className="text-body-lg font-medium text-muted-foreground">{title}</p>
+      {hint && <p className="mt-1 text-meta text-muted-foreground/70">{hint}</p>}
     </div>
   );
 }
@@ -296,7 +296,7 @@ export function Avatar({ name, size = "size-8" }: { name: string; size?: string 
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold text-white",
+        "flex shrink-0 items-center justify-center rounded-full text-micro font-bold text-white",
         size,
         g
       )}

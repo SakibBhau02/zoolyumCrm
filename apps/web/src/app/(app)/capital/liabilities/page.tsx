@@ -85,7 +85,7 @@ function statusOf(r: any) {
 function Pill({ r }: { r: any }) {
   const s = statusOf(r);
   return (
-    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10.5px] font-semibold", s.tone)}>
+    <span className={cn("inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-micro font-semibold", s.tone)}>
       <span className={cn("size-1.5 rounded-full", s.dot)} />
       {s.label}
     </span>
@@ -112,9 +112,9 @@ function Kpi({
       <div className="flex items-start justify-between gap-2">
         <span className={cn("flex size-9 items-center justify-center rounded-xl", tile ?? "bg-primary/10 text-primary")}>{icon}</span>
       </div>
-      <p className={cn("mt-3 font-heading text-[22px] font-bold leading-none tracking-tight tabular-nums", tone)}>{value}</p>
-      <p className="mt-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">{l}</p>
-      <p className="mt-1 truncate text-[10.5px] text-muted-foreground">{hint}</p>
+      <p className={cn("mt-3 font-heading text-stat font-bold leading-none tracking-tight tabular-nums", tone)}>{value}</p>
+      <p className="mt-1.5 text-micro font-semibold uppercase tracking-wider text-muted-foreground">{l}</p>
+      <p className="mt-1 truncate text-micro text-muted-foreground">{hint}</p>
     </CardShell>
   );
 }
@@ -172,8 +172,8 @@ function LiabilitiesContent() {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="font-heading text-[15px] font-semibold">Vendor liabilities</p>
-          <p className="text-[11.5px] text-muted-foreground">
+          <p className="font-heading text-section font-semibold">Vendor liabilities</p>
+          <p className="text-meta text-muted-foreground">
             What we agreed, what we already paid, and what is still owed — with TDS and due dates.
           </p>
         </div>
@@ -222,12 +222,12 @@ function LiabilitiesContent() {
         <CardShell className="xl:col-span-2">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-widest text-muted-foreground">
                 <Clock className="size-3.5" /> Payables aging
               </p>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">How long the unpaid balance has been sitting past its due date.</p>
+              <p className="mt-0.5 text-meta text-muted-foreground">How long the unpaid balance has been sitting past its due date.</p>
             </div>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold tabular-nums">{formatBDT(summary.totalPayable ?? 0)}</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-semibold tabular-nums">{formatBDT(summary.totalPayable ?? 0)}</span>
           </div>
           <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
             {[
@@ -240,8 +240,8 @@ function LiabilitiesContent() {
               const v = Number(aging[b.key] ?? 0);
               return (
                 <div key={b.key} className="rounded-xl border border-border/60 bg-muted/20 px-2.5 py-2">
-                  <p className={cn("text-[13px] font-bold tabular-nums", v > 0 && b.key !== "CURRENT" ? "text-foreground" : "text-foreground")}>{formatBDT(v)}</p>
-                  <p className="mt-0.5 text-[9.5px] font-semibold uppercase tracking-wide text-muted-foreground">{b.label}</p>
+                  <p className={cn("text-body-lg font-bold tabular-nums", v > 0 && b.key !== "CURRENT" ? "text-foreground" : "text-foreground")}>{formatBDT(v)}</p>
+                  <p className="mt-0.5 text-micro font-semibold uppercase tracking-wide text-muted-foreground">{b.label}</p>
                   <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
                     <div className={cn("h-full rounded-full", b.tone)} style={{ width: `${Math.max(2, (v / agingMax) * 100)}%` }} />
                   </div>
@@ -249,7 +249,7 @@ function LiabilitiesContent() {
               );
             })}
           </div>
-          <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-2.5 text-[10.5px]">
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-border/50 pt-2.5 text-micro">
             <span className="rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">Advances outstanding {formatBDT(summary.advanceOutstanding ?? 0)}</span>
             <span className="rounded-full bg-muted px-2 py-0.5 font-semibold text-muted-foreground">Retention held {formatBDT(summary.retentionHeld ?? 0)}</span>
             <span className="rounded-full bg-muted px-2 py-0.5 font-semibold text-muted-foreground">{summary.vendorCount ?? 0} vendors</span>
@@ -267,28 +267,28 @@ function LiabilitiesContent() {
         </CardShell>
 
         <CardShell>
-          <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-widest text-muted-foreground">
             <Users className="size-3.5" /> Exposure by vendor
           </p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Who we owe the most right now.</p>
+          <p className="mt-0.5 text-meta text-muted-foreground">Who we owe the most right now.</p>
           <div className="mt-3 flex flex-col gap-2">
             {(data?.byVendor ?? []).filter((v: any) => v.balance > 0).slice(0, 5).map((v: any) => (
               <div key={v.id} className="flex items-center gap-2">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-[10px] font-bold">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-micro font-bold">
                   {v.name.slice(0, 2).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[11.5px] font-medium">{v.name}</span>
-                  <span className="block text-[9.5px] text-muted-foreground">
+                  <span className="block truncate text-meta font-medium">{v.name}</span>
+                  <span className="block text-micro text-muted-foreground">
                     {formatBDT(v.paid)} paid of {formatBDT(v.total)}
                     {v.overdue > 0 ? ` · ${formatBDT(v.overdue)} overdue` : ""}
                   </span>
                 </span>
-                <span className="shrink-0 text-[11.5px] font-bold tabular-nums">{formatBDT(v.balance)}</span>
+                <span className="shrink-0 text-meta font-bold tabular-nums">{formatBDT(v.balance)}</span>
               </div>
             ))}
             {!(data?.byVendor ?? []).some((v: any) => v.balance > 0) && (
-              <p className="py-6 text-center text-[11.5px] text-muted-foreground">Nothing owed right now.</p>
+              <p className="py-6 text-center text-meta text-muted-foreground">Nothing owed right now.</p>
             )}
           </div>
         </CardShell>
@@ -317,12 +317,12 @@ function LiabilitiesContent() {
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </Select>
-        <span className="ml-auto text-[11px] text-muted-foreground">{filtered.length} of {rows.length} records</span>
+        <span className="ml-auto text-meta text-muted-foreground">{filtered.length} of {rows.length} records</span>
       </div>
 
       {/* Table */}
       {loading && !data ? (
-        <CardShell><p className="py-10 text-center text-[12px] text-muted-foreground">Loading liabilities…</p></CardShell>
+        <CardShell><p className="py-10 text-center text-body text-muted-foreground">Loading liabilities…</p></CardShell>
       ) : filtered.length === 0 ? (
         <CardShell>
           <EmptyState
@@ -334,8 +334,8 @@ function LiabilitiesContent() {
         <TableShell
           footer={
             <>
-              <span className="text-[11px] text-muted-foreground">Click any row for the payment history and actions.</span>
-              <span className="text-[11px] font-semibold tabular-nums">Balance shown: {formatBDT(filtered.reduce((s, r) => s + r.balance, 0))}</span>
+              <span className="text-meta text-muted-foreground">Click any row for the payment history and actions.</span>
+              <span className="text-meta font-semibold tabular-nums">Balance shown: {formatBDT(filtered.reduce((s, r) => s + r.balance, 0))}</span>
             </>
           }
         >
@@ -356,11 +356,11 @@ function LiabilitiesContent() {
                 <Tr key={r.id} index={i} onClick={() => setSelectedId(r.id)}>
                   <Td>
                     <p className="font-medium">{r.title}</p>
-                    <p className="text-[10px] text-muted-foreground">{r.reference} · {label(r.category)}</p>
+                    <p className="text-micro text-muted-foreground">{r.reference} · {label(r.category)}</p>
                   </Td>
                   <Td>
                     <p>{r.vendor?.name ?? "—"}</p>
-                    <p className="text-[10px] text-muted-foreground">{r.client?.companyName ?? "No client"}</p>
+                    <p className="text-micro text-muted-foreground">{r.client?.companyName ?? "No client"}</p>
                   </Td>
                   <Td className="hidden md:table-cell text-muted-foreground">{r.project?.name ?? "—"}</Td>
                   <Td className="text-right tabular-nums">{money(r.totalAmount)}</Td>
@@ -368,10 +368,10 @@ function LiabilitiesContent() {
                   <Td className={cn("text-right font-semibold tabular-nums", r.overdue ? "text-rose-500" : "")}>{money(r.balance)}</Td>
                   <Td className="hidden lg:table-cell text-muted-foreground">
                     {r.dueDate ? formatDay(r.dueDate) : "—"}
-                    {r.overdue && <span className="ml-1 text-[10px] font-semibold text-rose-500">{r.daysOverdue}d</span>}
+                    {r.overdue && <span className="ml-1 text-micro font-semibold text-rose-500">{r.daysOverdue}d</span>}
                   </Td>
                   <Td><Pill r={r} /></Td>
-                  <Td className="text-right"><ChevronRight className="size-4 text-muted-foreground/50" /></Td>
+                  <Td className="text-right"><ChevronRight className="size-3.5 text-muted-foreground/50" /></Td>
                 </Tr>
               ))}
             </tbody>
@@ -471,7 +471,7 @@ function LiabilitiesContent() {
               <Btn variant="outline" onClick={() => setEditing(selected)}>
                 <Pencil className="size-3.5" /> Edit
               </Btn>
-              <Link href={`/capital/vendors`} className="ml-auto text-[11px] font-semibold text-primary hover:underline">
+              <Link href={`/capital/vendors`} className="ml-auto text-meta font-semibold text-primary hover:underline">
                 Vendor directory
               </Link>
             </div>
@@ -512,21 +512,21 @@ function EngagementDetail({ r, onChange }: { r: any; onChange: () => void }) {
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
-          <p className="text-[15px] font-bold tabular-nums">{money(r.totalAmount)}</p>
-          <p className="mt-0.5 text-[9.5px] uppercase tracking-wide text-muted-foreground">Agreed</p>
+          <p className="text-section font-bold tabular-nums">{money(r.totalAmount)}</p>
+          <p className="mt-0.5 text-micro uppercase tracking-wide text-muted-foreground">Agreed</p>
         </div>
         <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
-          <p className="text-[15px] font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{money(r.paid)}</p>
-          <p className="mt-0.5 text-[9.5px] uppercase tracking-wide text-muted-foreground">Paid</p>
+          <p className="text-section font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{money(r.paid)}</p>
+          <p className="mt-0.5 text-micro uppercase tracking-wide text-muted-foreground">Paid</p>
         </div>
         <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
-          <p className={cn("text-[15px] font-bold tabular-nums", r.balance > 0 ? "text-rose-500" : "text-emerald-600 dark:text-emerald-400")}>{money(r.balance)}</p>
-          <p className="mt-0.5 text-[9.5px] uppercase tracking-wide text-muted-foreground">Balance</p>
+          <p className={cn("text-section font-bold tabular-nums", r.balance > 0 ? "text-rose-500" : "text-emerald-600 dark:text-emerald-400")}>{money(r.balance)}</p>
+          <p className="mt-0.5 text-micro uppercase tracking-wide text-muted-foreground">Balance</p>
         </div>
       </div>
 
       <div>
-        <div className="flex items-center justify-between text-[10.5px] text-muted-foreground">
+        <div className="flex items-center justify-between text-micro text-muted-foreground">
           <span>{pct}% settled</span>
           <span>{r.retention > 0 ? `Retention ${money(r.retention)}` : r.taxWithheld > 0 ? `TDS ${money(r.taxWithheld)}` : ""}</span>
         </div>
@@ -536,7 +536,7 @@ function EngagementDetail({ r, onChange }: { r: any; onChange: () => void }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border/60 p-3 text-[11.5px]">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl border border-border/60 p-3 text-meta">
         <Meta k="Vendor" v={r.vendor?.name ?? "—"} />
         <Meta k="Category" v={label(r.category)} />
         <Meta k="Project" v={r.project?.name ?? "No project"} />
@@ -549,11 +549,11 @@ function EngagementDetail({ r, onChange }: { r: any; onChange: () => void }) {
 
       <div>
         <div className="mb-1.5 flex items-center justify-between">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Payment history</p>
-          <span className="text-[10px] text-muted-foreground">{r.payments?.length ?? 0} entries</span>
+          <p className="text-micro font-bold uppercase tracking-widest text-muted-foreground">Payment history</p>
+          <span className="text-micro text-muted-foreground">{r.payments?.length ?? 0} entries</span>
         </div>
         {(r.payments ?? []).length === 0 ? (
-          <p className="rounded-xl bg-muted/30 px-3 py-4 text-center text-[11.5px] text-muted-foreground">
+          <p className="rounded-xl bg-muted/30 px-3 py-4 text-center text-meta text-muted-foreground">
             No payments yet. The full {money(r.totalAmount)} is still owed.
           </p>
         ) : (
@@ -567,14 +567,14 @@ function EngagementDetail({ r, onChange }: { r: any; onChange: () => void }) {
                   {p.type === "REFUND" ? <ArrowLeftRight className="size-3.5" /> : <Banknote className="size-3.5" />}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[11.5px] font-medium">{label(p.type)} · {label(p.paymentMethod)}</span>
-                  <span className="block text-[9.5px] text-muted-foreground">
+                  <span className="block text-meta font-medium">{label(p.type)} · {label(p.paymentMethod)}</span>
+                  <span className="block text-micro text-muted-foreground">
                     {formatDate(p.paymentDate)}
                     {p.referenceId ? ` · ${p.referenceId}` : ""}
                     {p.taxWithheld > 0 ? ` · TDS ${money(p.taxWithheld)}` : ""}
                   </span>
                 </span>
-                <span className={cn("shrink-0 text-[12px] font-bold tabular-nums", p.type === "REFUND" ? "text-rose-500" : "text-foreground")}>
+                <span className={cn("shrink-0 text-body font-bold tabular-nums", p.type === "REFUND" ? "text-rose-500" : "text-foreground")}>
                   {p.type === "REFUND" ? "−" : ""}{money(p.amount)}
                 </span>
               </div>
@@ -584,13 +584,13 @@ function EngagementDetail({ r, onChange }: { r: any; onChange: () => void }) {
       </div>
 
       {error && (
-        <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-[11px] text-rose-600 dark:text-rose-300">{error}</p>
+        <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-meta text-rose-600 dark:text-rose-300">{error}</p>
       )}
 
       <div className="flex flex-wrap gap-2 border-t border-border/60 pt-3">
         {confirming ? (
           <div className="flex w-full items-center justify-between gap-2 rounded-xl bg-rose-500/5 px-3 py-2">
-            <span className="text-[11px] text-rose-600 dark:text-rose-300">
+            <span className="text-meta text-rose-600 dark:text-rose-300">
               {confirming === "delete" ? "Delete this engagement?" : "Cancel this engagement?"}
             </span>
             <span className="flex gap-2">
@@ -622,7 +622,7 @@ function EngagementDetail({ r, onChange }: { r: any; onChange: () => void }) {
 function Meta({ k, v, danger }: { k: string; v: string; danger?: boolean }) {
   return (
     <div className="min-w-0">
-      <p className="text-[9.5px] uppercase tracking-wide text-muted-foreground">{k}</p>
+      <p className="text-micro uppercase tracking-wide text-muted-foreground">{k}</p>
       <p className={cn("truncate font-medium", danger && "text-rose-500")}>{v}</p>
     </div>
   );
@@ -746,8 +746,8 @@ function EngagementForm({
 
       {!editing && (
         <div className="rounded-xl border border-primary/20 bg-primary/[0.03] p-3">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold text-primary"><Banknote className="size-3.5" /> Advance paid now (optional)</p>
-          <p className="mt-0.5 text-[10.5px] text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-meta font-semibold text-primary"><Banknote className="size-3.5" /> Advance paid now (optional)</p>
+          <p className="mt-0.5 text-micro text-muted-foreground">
             The deal is recorded in full; only this amount leaves the bank today. The rest shows as the remaining liability.
           </p>
           <div className="mt-2.5 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -776,7 +776,7 @@ function EngagementForm({
         <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Call time, deliverables, bank details, anything the team should know…" />
       </Field>
 
-      {error && <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-[11px] text-rose-600 dark:text-rose-300">{error}</p>}
+      {error && <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-meta text-rose-600 dark:text-rose-300">{error}</p>}
 
       <div className="flex justify-end gap-2 border-t border-border/60 pt-3">
         <Btn variant="ghost" onClick={() => onDone()}>Cancel</Btn>
@@ -834,13 +834,13 @@ function PaymentForm({ engagement, bankAccounts, onDone }: { engagement: any; ba
   return (
     <div className="space-y-3">
       <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
-        <div className="flex items-center justify-between text-[11.5px]">
+        <div className="flex items-center justify-between text-meta">
           <span className="text-muted-foreground">Agreed</span><span className="font-semibold tabular-nums">{money(engagement.totalAmount)}</span>
         </div>
-        <div className="mt-1 flex items-center justify-between text-[11.5px]">
+        <div className="mt-1 flex items-center justify-between text-meta">
           <span className="text-muted-foreground">Already paid</span><span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">{money(engagement.paid)}</span>
         </div>
-        <div className="mt-1 flex items-center justify-between text-[11.5px]">
+        <div className="mt-1 flex items-center justify-between text-meta">
           <span className="text-muted-foreground">Balance</span><span className="font-bold tabular-nums text-rose-500">{money(engagement.balance)}</span>
         </div>
       </div>
@@ -879,7 +879,7 @@ function PaymentForm({ engagement, bankAccounts, onDone }: { engagement: any; ba
         </Field>
       </div>
 
-      {error && <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-[11px] text-rose-600 dark:text-rose-300">{error}</p>}
+      {error && <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-meta text-rose-600 dark:text-rose-300">{error}</p>}
 
       <div className="flex justify-end gap-2 border-t border-border/60 pt-3">
         <Btn variant="ghost" onClick={onDone}>Cancel</Btn>
@@ -916,7 +916,7 @@ function CompleteForm({ engagement, onDone }: { engagement: any; onDone: () => v
 
   return (
     <div className="space-y-3">
-      <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+      <p className="rounded-xl bg-amber-500/10 px-3 py-2 text-meta text-amber-700 dark:text-amber-300">
         Marking this delivered moves {money(engagement.totalAmount)} from a commitment into Accounts Payable and recognises the cost in the P&amp;L. Only do it when the work is actually done.
       </p>
       <div className="grid grid-cols-2 gap-3">
@@ -930,7 +930,7 @@ function CompleteForm({ engagement, onDone }: { engagement: any; onDone: () => v
           <Input type="date" value={billReceivedAt} onChange={(e) => setBillReceivedAt(e.target.value)} />
         </Field>
       </div>
-      {error && <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-[11px] text-rose-600 dark:text-rose-300">{error}</p>}
+      {error && <p className="rounded-xl bg-rose-500/10 px-3 py-2 text-meta text-rose-600 dark:text-rose-300">{error}</p>}
       <div className="flex justify-end gap-2 border-t border-border/60 pt-3">
         <Btn variant="ghost" onClick={onDone}>Cancel</Btn>
         <Btn variant="primary" onClick={() => void submit()} disabled={busy}>
@@ -943,7 +943,7 @@ function CompleteForm({ engagement, onDone }: { engagement: any; onDone: () => v
 
 export default function LiabilitiesPage() {
   return (
-    <Suspense fallback={<div className="py-10 text-center text-[12px] text-muted-foreground">Loading…</div>}>
+    <Suspense fallback={<div className="py-10 text-center text-body text-muted-foreground">Loading…</div>}>
       <LiabilitiesContent />
     </Suspense>
   );

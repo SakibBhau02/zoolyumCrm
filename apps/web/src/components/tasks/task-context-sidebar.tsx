@@ -135,7 +135,7 @@ function Card({
     <section className="overflow-hidden rounded-2xl border border-border/60 bg-card">
       <header className="flex items-center gap-2 border-b border-border/50 bg-muted/20 px-3.5 py-2.5">
         <span className="text-primary">{icon}</span>
-        <h4 className="flex-1 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">{title}</h4>
+        <h4 className="flex-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">{title}</h4>
         {action}
       </header>
       <div className="px-3.5 py-3">{children}</div>
@@ -160,10 +160,10 @@ function LinkRow({
     <>
       <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11.5px] font-semibold leading-snug">{title}</span>
-        {meta ? <span className="block truncate text-[10px] text-muted-foreground">{meta}</span> : null}
+        <span className="block truncate text-meta font-semibold leading-snug">{title}</span>
+        {meta ? <span className="block truncate text-micro text-muted-foreground">{meta}</span> : null}
       </span>
-      {trailing ?? (href ? <ExternalLink className="size-3 shrink-0 text-muted-foreground/70" /> : null)}
+      {trailing ?? (href ? <ExternalLink className="size-3.5 shrink-0 text-muted-foreground/70" /> : null)}
     </>
   );
   return href ? (
@@ -238,55 +238,55 @@ export function TaskContextSidebar({
   return (
     <div className="flex flex-col gap-3">
       {/* People & schedule — the assignee's first three questions */}
-      <Card icon={<Users className="size-3.5" />} title="Workflow">
+      <Card icon={<Users className="size-4" />} title="Workflow">
         <div className="flex flex-col gap-2.5">
           <div className="flex items-center gap-2.5">
             <Avatar name={detail?.assignedTo?.name ?? "?"} size="size-8" />
             <div className="min-w-0 flex-1">
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Assignee</p>
-              <p className="truncate text-[12px] font-semibold">{detail?.assignedTo?.name ?? "Unassigned"}</p>
-              {detail?.assignedTo?.roleTitle && <p className="truncate text-[10px] text-muted-foreground">{detail.assignedTo.roleTitle}</p>}
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Assignee</p>
+              <p className="truncate text-body font-semibold">{detail?.assignedTo?.name ?? "Unassigned"}</p>
+              {detail?.assignedTo?.roleTitle && <p className="truncate text-micro text-muted-foreground">{detail.assignedTo.roleTitle}</p>}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2 border-t border-border/50 pt-2">
             <div>
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Reporter</p>
-              <p className="truncate text-[11.5px] font-medium">{detail?.reporter?.name ?? "—"}</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Reporter</p>
+              <p className="truncate text-meta font-medium">{detail?.reporter?.name ?? "—"}</p>
             </div>
             <div>
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Due</p>
-              <p className="flex items-center gap-1 truncate text-[11.5px] font-medium">
-                <CalendarDays className="size-3 text-muted-foreground" />
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Due</p>
+              <p className="flex items-center gap-1 truncate text-meta font-medium">
+                <CalendarDays className="size-3.5 text-muted-foreground" />
                 {detail?.dueDate ? formatDate(detail.dueDate) : "No date"}
               </p>
             </div>
             <div>
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Estimate</p>
-              <p className="flex items-center gap-1 text-[11.5px] font-medium tabular-nums">
-                <Clock className="size-3 text-muted-foreground" />
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Estimate</p>
+              <p className="flex items-center gap-1 text-meta font-medium tabular-nums">
+                <Clock className="size-3.5 text-muted-foreground" />
                 {detail?.estimatedHours != null ? `${detail.estimatedHours}h` : "—"}
               </p>
             </div>
             <div>
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Logged</p>
-              <p className="flex items-center gap-1 text-[11.5px] font-medium tabular-nums">
-                <Target className="size-3 text-muted-foreground" />
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Logged</p>
+              <p className="flex items-center gap-1 text-meta font-medium tabular-nums">
+                <Target className="size-3.5 text-muted-foreground" />
                 {Number(detail?.actualHours ?? 0).toFixed(1)}h
               </p>
             </div>
           </div>
           {(detail?.assignees ?? []).length > 0 && (
             <div className="border-t border-border/50 pt-2">
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Also on this task</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Also on this task</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 {(detail.assignees as any[]).map((a) => (
-                  <span key={a.id} className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold">{a.name}</span>
+                  <span key={a.id} className="rounded-full bg-muted px-2 py-0.5 text-micro font-semibold">{a.name}</span>
                 ))}
               </div>
             </div>
           )}
           {detail?.sprint && (
-            <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2 text-[11px]">
+            <div className="flex items-center justify-between gap-2 border-t border-border/50 pt-2 text-meta">
               <span className="text-muted-foreground">Sprint</span>
               <span className="truncate font-semibold">{detail.sprint.name}</span>
             </div>
@@ -296,51 +296,51 @@ export function TaskContextSidebar({
 
       {/* Client / project */}
       {loading && !data ? (
-        <Card icon={<Building2 className="size-3.5" />} title="Client & project">
-          <div className="flex items-center gap-2 py-2 text-[11px] text-muted-foreground">
+        <Card icon={<Building2 className="size-4" />} title="Client & project">
+          <div className="flex items-center gap-2 py-2 text-meta text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" /> Loading project context…
           </div>
         </Card>
       ) : err ? (
         <Card
-          icon={<Building2 className="size-3.5" />}
+          icon={<Building2 className="size-4" />}
           title="Client & project"
-          action={<button onClick={load} title="Retry" className="rounded-md p-1 text-muted-foreground hover:bg-muted"><RefreshCw className="size-3" /></button>}
+          action={<button onClick={load} title="Retry" className="rounded-md p-1 text-muted-foreground hover:bg-muted"><RefreshCw className="size-3.5" /></button>}
         >
-          <p className="text-[11px] text-amber-600 dark:text-amber-400">{err}</p>
+          <p className="text-meta text-amber-600 dark:text-amber-400">{err}</p>
         </Card>
       ) : project ? (
         <Card
-          icon={<Building2 className="size-3.5" />}
+          icon={<Building2 className="size-4" />}
           title="Client & project"
           action={
             <button
               onClick={() => onOpenProject?.(project.id)}
               title="Open project workspace"
-              className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-bold text-primary hover:bg-primary/10"
+              className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-micro font-bold text-primary hover:bg-primary/10"
             >
-              Open <ArrowUpRight className="size-3" />
+              Open <ArrowUpRight className="size-3.5" />
             </button>
           }
         >
           <div className="flex flex-col gap-2.5">
             <div>
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Client</p>
-              <p className="truncate text-[13px] font-bold">{project.client?.companyName ?? "Internal"}</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Client</p>
+              <p className="truncate text-body-lg font-bold">{project.client?.companyName ?? "Internal"}</p>
               {primaryContact && (
-                <div className="mt-1 text-[10.5px] text-muted-foreground">
+                <div className="mt-1 text-micro text-muted-foreground">
                   <p className="truncate font-medium text-foreground/80">
                     {primaryContact.name}{primaryContact.roleTitle ? ` · ${primaryContact.roleTitle}` : ""}
                   </p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
                     {primaryContact.email && (
                       <a href={`mailto:${primaryContact.email}`} className="inline-flex min-w-0 items-center gap-1 hover:text-primary">
-                        <Mail className="size-2.5 shrink-0" /><span className="truncate">{primaryContact.email}</span>
+                        <Mail className="size-3.5 shrink-0" /><span className="truncate">{primaryContact.email}</span>
                       </a>
                     )}
                     {primaryContact.phone && (
                       <a href={`tel:${primaryContact.phone}`} className="inline-flex items-center gap-1 hover:text-primary">
-                        <Phone className="size-2.5 shrink-0" />{primaryContact.phone}
+                        <Phone className="size-3.5 shrink-0" />{primaryContact.phone}
                       </a>
                     )}
                   </div>
@@ -348,22 +348,22 @@ export function TaskContextSidebar({
               )}
             </div>
             <div>
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Project</p>
-              <p className="truncate text-[12.5px] font-semibold">{project.name}</p>
+              <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Project</p>
+              <p className="truncate text-body font-semibold">{project.name}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1">
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">{project.status}</span>
-                <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-bold", HEALTH_TONE[project.healthStatus] ?? "bg-muted text-muted-foreground")}>
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-bold text-muted-foreground">{project.status}</span>
+                <span className={cn("rounded-full px-1.5 py-0.5 text-micro font-bold", HEALTH_TONE[project.healthStatus] ?? "bg-muted text-muted-foreground")}>
                   {project.healthStatus.replace(/_/g, " ")}
                 </span>
                 {project.assignedPm && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">
-                    <Users className="size-2.5" /> {project.assignedPm.name}
+                  <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-micro font-bold text-muted-foreground">
+                    <Users className="size-3.5" /> {project.assignedPm.name}
                   </span>
                 )}
               </div>
             </div>
             <div>
-              <div className="flex items-center justify-between text-[10px] font-semibold text-muted-foreground">
+              <div className="flex items-center justify-between text-micro font-semibold text-muted-foreground">
                 <span>Progress</span>
                 <span className="tabular-nums">{project.progress}%</span>
               </div>
@@ -372,21 +372,21 @@ export function TaskContextSidebar({
               </div>
             </div>
             {project.targetEndDate && (
-              <p className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
-                <CalendarDays className="size-3" /> Target {formatDate(project.targetEndDate)}
+              <p className="flex items-center gap-1 text-micro text-muted-foreground">
+                <CalendarDays className="size-3.5" /> Target {formatDate(project.targetEndDate)}
               </p>
             )}
           </div>
         </Card>
       ) : (
-        <Card icon={<Building2 className="size-3.5" />} title="Client & project">
-          <p className="text-[11px] text-muted-foreground">No project attached — set one in Task settings to see the client brief, files and research.</p>
+        <Card icon={<Building2 className="size-4" />} title="Client & project">
+          <p className="text-meta text-muted-foreground">No project attached — set one in Task settings to see the client brief, files and research.</p>
         </Card>
       )}
 
       {/* Project hub links + social accounts */}
       {(briefLinks.length > 0 || socials.length > 0) && (
-        <Card icon={<Link2 className="size-3.5" />} title="Project hub">
+        <Card icon={<Link2 className="size-4" />} title="Project hub">
           {briefLinks.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {briefLinks.map((l) => (
@@ -395,18 +395,18 @@ export function TaskContextSidebar({
                   href={absoluteUrl(l.url)}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-[10.5px] font-semibold transition-colors hover:border-primary/40 hover:text-primary"
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-micro font-semibold transition-colors hover:border-primary/40 hover:text-primary"
                 >
-                  {l.label === "Research" ? <BookOpen className="size-2.5" /> : l.label === "Website" ? <Globe2 className="size-2.5" /> : <Link2 className="size-2.5" />}
+                  {l.label === "Research" ? <BookOpen className="size-3.5" /> : l.label === "Website" ? <Globe2 className="size-3.5" /> : <Link2 className="size-3.5" />}
                   {l.label}
-                  <ExternalLink className="size-2.5 opacity-60" />
+                  <ExternalLink className="size-3.5 opacity-60" />
                 </a>
               ))}
             </div>
           )}
           {socials.length > 0 && (
             <div className={cn(briefLinks.length > 0 && "mt-2.5 border-t border-border/50 pt-2.5")}>
-              <p className="mb-1.5 text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Social accounts</p>
+              <p className="mb-1.5 text-micro font-bold uppercase tracking-wider text-muted-foreground">Social accounts</p>
               <div className="flex flex-wrap gap-1.5">
                 {socials.map(({ key, label, Icon, tone }) => {
                   const href = (project?.socialLinks as any)?.[key] as string;
@@ -432,26 +432,26 @@ export function TaskContextSidebar({
 
       {/* Project files */}
       {files.length > 0 && (
-        <Card icon={<FolderOpen className="size-3.5" />} title={`Project files · ${files.length}`}>
+        <Card icon={<FolderOpen className="size-4" />} title={`Project files · ${files.length}`}>
           <div className="flex flex-col gap-1.5">
             {files.slice(0, 6).map((f) => (
               <LinkRow
                 key={f.id}
                 href={absoluteUrl(f.fileUrl)}
-                icon={<FileText className="size-3.5" />}
+                icon={<FileText className="size-4" />}
                 title={fileName(f.fileUrl)}
                 meta={`v${f.versionNumber}${f.uploadedBy?.name ? ` · ${f.uploadedBy.name}` : ""}`}
                 trailing={
                   f.approvalStatus === "APPROVED" ? (
                     <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
                   ) : f.approvalStatus === "REVISION_REQUESTED" ? (
-                    <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[8.5px] font-bold text-amber-500">revise</span>
+                    <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-micro font-bold text-amber-500">revise</span>
                   ) : null
                 }
               />
             ))}
             {files.length > 6 && (
-              <button onClick={() => onOpenProject?.(project!.id)} className="mt-0.5 text-left text-[10.5px] font-semibold text-primary hover:underline">
+              <button onClick={() => onOpenProject?.(project!.id)} className="mt-0.5 text-left text-micro font-semibold text-primary hover:underline">
                 +{files.length - 6} more in the project
               </button>
             )}
@@ -461,9 +461,9 @@ export function TaskContextSidebar({
 
       {/* Research & references */}
       {data && project && (
-        <Card icon={<BookOpen className="size-3.5" />} title={`Research & references · ${references.length}`}>
+        <Card icon={<BookOpen className="size-4" />} title={`Research & references · ${references.length}`}>
           {references.length === 0 ? (
-            <p className="text-[11px] text-muted-foreground">No research material on this project yet.</p>
+            <p className="text-meta text-muted-foreground">No research material on this project yet.</p>
           ) : (
             <div className="flex flex-col gap-1.5">
               {references.slice(0, 8).map((r) => {
@@ -472,11 +472,11 @@ export function TaskContextSidebar({
                   <LinkRow
                     key={r.id}
                     href={href}
-                    icon={<BookOpen className="size-3.5" />}
+                    icon={<BookOpen className="size-4" />}
                     title={r.title}
                     meta={
                       <span className="flex items-center gap-1">
-                        <span className={cn("rounded px-1 py-px text-[8.5px] font-bold", REF_TONES[r.type] ?? REF_TONES.OTHER)}>{r.type}</span>
+                        <span className={cn("rounded px-1 py-px text-micro font-bold", REF_TONES[r.type] ?? REF_TONES.OTHER)}>{r.type}</span>
                         {href ? hostOf(href) : "no link"}
                         {r.uploadedBy?.name ? ` · ${r.uploadedBy.name}` : ""}
                       </span>
@@ -485,7 +485,7 @@ export function TaskContextSidebar({
                 );
               })}
               {references.length > 8 && (
-                <button onClick={() => onOpenProject?.(project!.id)} className="mt-0.5 text-left text-[10.5px] font-semibold text-primary hover:underline">
+                <button onClick={() => onOpenProject?.(project!.id)} className="mt-0.5 text-left text-micro font-semibold text-primary hover:underline">
                   +{references.length - 8} more references
                 </button>
               )}
@@ -496,13 +496,13 @@ export function TaskContextSidebar({
 
       {/* Task attachments + links */}
       {(attachments.length > 0 || taskLinks.length > 0) && (
-        <Card icon={<Paperclip className="size-3.5" />} title={`Task files & links · ${attachments.length + taskLinks.length}`}>
+        <Card icon={<Paperclip className="size-4" />} title={`Task files & links · ${attachments.length + taskLinks.length}`}>
           <div className="flex flex-col gap-1.5">
             {attachments.map((a) => (
               <LinkRow
                 key={a.id}
                 href={absoluteUrl(a.url)}
-                icon={<FileText className="size-3.5" />}
+                icon={<FileText className="size-4" />}
                 title={a.name}
                 meta={[a.size, a.uploadedByName, a.uploadedAt ? timeAgo(a.uploadedAt) : null].filter(Boolean).join(" · ")}
               />
@@ -511,7 +511,7 @@ export function TaskContextSidebar({
               <LinkRow
                 key={l.id}
                 href={absoluteUrl(l.url)}
-                icon={<Link2 className="size-3.5" />}
+                icon={<Link2 className="size-4" />}
                 title={l.title || hostOf(l.url)}
                 meta={hostOf(l.url)}
               />
@@ -522,13 +522,13 @@ export function TaskContextSidebar({
 
       {/* Deliverables tied to this task */}
       {(data?.deliverables ?? []).length > 0 && (
-        <Card icon={<Target className="size-3.5" />} title="Deliverables">
+        <Card icon={<Target className="size-4" />} title="Deliverables">
           <div className="flex flex-wrap gap-1.5">
             {(data?.deliverables ?? []).map((d) => (
               <span
                 key={d.id}
                 className={cn(
-                  "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                  "rounded-full border px-2 py-0.5 text-micro font-semibold",
                   d.id === (data as any)?.focusedDeliverableId
                     ? "border-primary/40 bg-primary/15 text-primary"
                     : "border-border bg-card text-muted-foreground"
@@ -544,10 +544,10 @@ export function TaskContextSidebar({
       {project && (
         <button
           onClick={() => onOpenProject?.(project.id)}
-          className="flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-[11.5px] font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+          className="flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-meta font-bold text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
         >
           <FolderKanban className="size-3.5" /> Open full project workspace
-          <ArrowUpRight className="size-3" />
+          <ArrowUpRight className="size-3.5" />
         </button>
       )}
     </div>

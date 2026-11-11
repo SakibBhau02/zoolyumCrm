@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bell, Download, FileDown, HandCoins, Mail, MessageCircle, Pencil, Plus, Printer, Wallet } from "lucide-react";
+import { Bell, Download, FileDown, HandCoins, Mail, MessageCircle, Pencil, Plus, Printer, Trash2, Wallet } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatBDT, formatDate } from "@/lib/format";
 import { useBranding } from "@/lib/branding-context";
@@ -47,6 +47,8 @@ export function InvoiceDetailModal({
   const [statusBusy, setStatusBusy] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [receiptBusy, setReceiptBusy] = useState(false);
+  const [payDeleteBusy, setPayDeleteBusy] = useState<string | null>(null);
+  const [payConfirmId, setPayConfirmId] = useState<string | null>(null);
   const [remOpen, setRemOpen] = useState(false);
   const [remBusy, setRemBusy] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
@@ -131,6 +133,26 @@ export function InvoiceDetailModal({
       setShare(await apiFetch<any>(`/capital/invoices/${detail.id}/share`));
       setWaLogs(await apiFetch<any[]>(`/capital/invoices/${detail.id}/whatsapp`));
     } catch {}
+  };
+
+  /** Two-step delete for a single payment (no native confirm dialog). */
+  const deletePaymentEntry = async (p: any) => {
+    if (!detail?.id) return;
+    if (payConfirmId !== p.id) {
+      setPayConfirmId(p.id);
+      return;
+    }
+    setPayConfirmId(null);
+    setPayDeleteBusy(p.id);
+    try {
+      await apiFetch(`/capital/invoices/${detail.id}/payments/${p.id}`, { method: "DELETE" });
+      notify("Payment removed");
+      reload();
+    } catch (e: any) {
+      notify(e.message ?? "Could not delete the payment");
+    } finally {
+      setPayDeleteBusy(null);
+    }
   };
 
   const rotateLink = async () => {
@@ -357,7 +379,7 @@ export function InvoiceDetailModal({
         size="2xl"
         title={
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-heading text-[15px] font-semibold tabular-nums">{detail?.invoiceNumber ?? "Invoice"}</p>
+            <p className="font-heading text-section font-semibold tabular-nums">{detail?.invoiceNumber ?? "Invoice"}</p>
             {detail && <StatusBadge status={detail.status} />}
           </div>
         }
@@ -418,12 +440,12 @@ export function InvoiceDetailModal({
                 </Select>
               </Field>
               <div className="ml-auto text-right">
-                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Grand total</p>
-                <p className="font-heading text-xl font-bold tabular-nums">{formatBDT(grand)}</p>
+                <p className="text-micro font-semibold uppercase tracking-wider text-muted-foreground">Grand total</p>
+                <p className="font-heading text-stat font-bold tabular-nums">{formatBDT(grand)}</p>
                 {balance > 0 ? (
-                  <p className="text-[11px] font-semibold tabular-nums text-amber-500">{formatBDT(balance)} due</p>
+                  <p className="text-meta font-semibold tabular-nums text-amber-500">{formatBDT(balance)} due</p>
                 ) : (
-                  <p className="text-[11px] font-semibold text-emerald-500">Fully paid</p>
+                  <p className="text-meta font-semibold text-emerald-500">Fully paid</p>
                 )}
               </div>
             </div>
@@ -432,24 +454,24 @@ export function InvoiceDetailModal({
               <div className="flex items-center gap-3">
                 <Avatar name={detail.client?.companyName ?? "?"} size="size-10" />
                 <div className="min-w-0">
-                  <p className="text-[13px] font-semibold">{detail.client?.companyName}</p>
-                  <p className="text-[11.5px] text-muted-foreground">{detail.project ? `Project: ${detail.project.name}` : "No project"}</p>
+                  <p className="text-body-lg font-semibold">{detail.client?.companyName}</p>
+                  <p className="text-meta text-muted-foreground">{detail.project ? `Project: ${detail.project.name}` : "No project"}</p>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-3 text-[11.5px]">
+              <div className="mt-3 grid grid-cols-2 gap-3 text-meta">
                 <div>
-                  <p className="text-[10.5px] uppercase tracking-wider text-muted-foreground">Issued</p>
+                  <p className="text-micro uppercase tracking-wider text-muted-foreground">Issued</p>
                   <p className="font-medium">{formatDate(detail.issueDate)}</p>
                 </div>
                 <div>
-                  <p className="text-[10.5px] uppercase tracking-wider text-muted-foreground">Due</p>
+                  <p className="text-micro uppercase tracking-wider text-muted-foreground">Due</p>
                   <p className="font-medium">{formatDate(detail.dueDate)}</p>
                 </div>
               </div>
               {detail.client?.contacts?.length > 0 && (
                 <div className="mt-3 flex flex-col gap-1 border-t border-border/50 pt-3">
                   {detail.client.contacts.map((c: any) => (
-                    <p key={c.id} className="text-[11.5px] text-muted-foreground">
+                    <p key={c.id} className="text-meta text-muted-foreground">
                       {c.name} {c.email && <span className="text-foreground/70">· {c.email}</span>} {c.phone && <span className="text-foreground/70">· {c.phone}</span>}
                     </p>
                   ))}
@@ -460,7 +482,7 @@ export function InvoiceDetailModal({
             {projBalance?.project && !projBalance?.reason && (
               <CardShell className="!p-4 !border-primary/25 !bg-gradient-to-r !from-primary/10 !via-primary/5 !to-transparent">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10.5px] font-bold uppercase tracking-wider text-primary">
+                  <p className="text-micro font-bold uppercase tracking-wider text-primary">
                     Project balance · {projBalance.project.name}
                   </p>
                   {projBalance.due > 0 ? (
@@ -474,36 +496,36 @@ export function InvoiceDetailModal({
                         });
                         onClose();
                       }}
-                      className="rounded-lg bg-brand-gradient px-2.5 py-1.5 text-[11px] font-bold text-white transition-transform hover:scale-[1.02]"
+                      className="rounded-lg bg-brand-gradient px-2.5 py-1.5 text-meta font-bold text-white transition-transform hover:scale-[1.02]"
                     >
                       Invoice remaining {formatBDT(projBalance.due)}
                     </button>
                   ) : (
-                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10.5px] font-bold text-emerald-500">Cleared</span>
+                    <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-micro font-bold text-emerald-500">Cleared</span>
                   )}
                 </div>
                 <div className="mt-2 grid grid-cols-3 gap-2 text-center">
                   <div className="rounded-xl bg-card/70 px-2 py-1.5">
-                    <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Project value</p>
-                    <p className="text-[13px] font-bold tabular-nums">{formatBDT(projBalance.value)}</p>
+                    <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Project value</p>
+                    <p className="text-body-lg font-bold tabular-nums">{formatBDT(projBalance.value)}</p>
                   </div>
                   <div className="rounded-xl bg-card/70 px-2 py-1.5">
-                    <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Paid to date</p>
-                    <p className="text-[13px] font-bold tabular-nums text-emerald-500">{formatBDT(projBalance.paid)}</p>
+                    <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Paid to date</p>
+                    <p className="text-body-lg font-bold tabular-nums text-emerald-500">{formatBDT(projBalance.paid)}</p>
                   </div>
                   <div className="rounded-xl bg-card/70 px-2 py-1.5">
-                    <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Due now</p>
-                    <p className="text-[13px] font-bold tabular-nums text-amber-500">{formatBDT(projBalance.due)}</p>
+                    <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Due now</p>
+                    <p className="text-body-lg font-bold tabular-nums text-amber-500">{formatBDT(projBalance.due)}</p>
                   </div>
                 </div>
                 {projBalance.invoices?.length > 0 && (
                   <div className="mt-2 border-t border-border/50 pt-2">
-                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Project invoices</p>
+                    <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Project invoices</p>
                     {projBalance.invoices.slice(0, 5).map((inv: any) => (
-                      <p key={inv.id} className="flex items-center justify-between gap-2 py-0.5 text-[11.5px]">
+                      <p key={inv.id} className="flex items-center justify-between gap-2 py-0.5 text-meta">
                         <span className="min-w-0 truncate text-muted-foreground">
                           <span className="font-medium tabular-nums text-foreground">{inv.invoiceNumber}</span>
-                          {inv.invoiceType === "ADVANCE" && <span className="ml-1 rounded-full bg-amber-500/15 px-1.5 py-px text-[9.5px] font-bold uppercase text-amber-600 dark:text-amber-400">Adv</span>}
+                          {inv.invoiceType === "ADVANCE" && <span className="ml-1 rounded-full bg-amber-500/15 px-1.5 py-px text-micro font-bold uppercase text-amber-600 dark:text-amber-400">Adv</span>}
                           {inv.title && <span className="block truncate">{inv.title}</span>}
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5">
@@ -513,21 +535,21 @@ export function InvoiceDetailModal({
                       </p>
                     ))}
                     {projBalance.invoices.length > 5 && (
-                      <p className="text-[10.5px] text-muted-foreground">+{projBalance.invoices.length - 5} more</p>
+                      <p className="text-micro text-muted-foreground">+{projBalance.invoices.length - 5} more</p>
                     )}
                   </div>
                 )}
                 {projBalance.payments?.length > 0 && (
                   <div className="mt-2 border-t border-border/50 pt-2">
-                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Payment history</p>
+                    <p className="mb-1 text-micro font-bold uppercase tracking-wider text-muted-foreground">Payment history</p>
                     {projBalance.payments.slice(0, 4).map((p: any) => (
-                      <p key={p.id} className="flex items-center justify-between gap-2 py-0.5 text-[11.5px]">
+                      <p key={p.id} className="flex items-center justify-between gap-2 py-0.5 text-meta">
                         <span className="truncate text-muted-foreground">{p.invoiceNumber} · {formatDate(p.paymentDate)}</span>
                         <span className="shrink-0 font-bold tabular-nums text-emerald-500">{formatBDT(p.amount)}</span>
                       </p>
                     ))}
                     {projBalance.payments.length > 4 && (
-                      <p className="text-[10.5px] text-muted-foreground">+{projBalance.payments.length - 4} more</p>
+                      <p className="text-micro text-muted-foreground">+{projBalance.payments.length - 4} more</p>
                     )}
                   </div>
                 )}
@@ -537,16 +559,16 @@ export function InvoiceDetailModal({
             {detail && (
               <CardShell className="!p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10.5px] font-bold uppercase tracking-wider text-primary">Share & WhatsApp</p>
+                  <p className="text-micro font-bold uppercase tracking-wider text-primary">Share & WhatsApp</p>
                   {waLogs?.[0] && <StatusBadge status={waLogs[0].status} />}
                 </div>
                 {shareLink ? (
                   <div className="mt-2 flex items-center gap-2">
-                    <Input value={shareLink} readOnly className="!font-mono !text-[11px]" />
+                    <Input value={shareLink} readOnly className="!font-mono !text-meta" />
                     <Btn variant="outline" onClick={copyLink} className="shrink-0">{copied ? "Copied ✓" : "Copy"}</Btn>
                   </div>
                 ) : (
-                  <p className="mt-2 text-[11.5px] text-muted-foreground">No public link yet — create one to share this invoice on WhatsApp.</p>
+                  <p className="mt-2 text-meta text-muted-foreground">No public link yet — create one to share this invoice on WhatsApp.</p>
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <Btn variant="outline" onClick={rotateLink}>{share?.token ? "Regenerate link" : "Create link"}</Btn>
@@ -563,7 +585,7 @@ export function InvoiceDetailModal({
                 {(waLogs ?? []).length > 0 && (
                   <div className="mt-2 border-t border-border/50 pt-2">
                     {(waLogs ?? []).slice(0, 3).map((l: any) => (
-                      <p key={l.id} className="flex items-center justify-between gap-2 py-0.5 text-[11px] text-muted-foreground">
+                      <p key={l.id} className="flex items-center justify-between gap-2 py-0.5 text-meta text-muted-foreground">
                         <span className="truncate font-mono">{l.templateName ?? l.messageType} → {l.to}</span>
                         <StatusBadge status={l.status} />
                       </p>
@@ -599,7 +621,7 @@ export function InvoiceDetailModal({
 
             <section>
               <SectionTitle title="Installments" subtitle={(detail.installments ?? []).length ? "payment plan" : undefined} />
-              {(detail.installments ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No payment plan set. Record payments as they arrive.</p>}
+              {(detail.installments ?? []).length === 0 && <p className="text-meta text-muted-foreground">No payment plan set. Record payments as they arrive.</p>}
               {(detail.installments ?? []).length > 0 && (
                 <div className="flex flex-col gap-1.5">
                   {(detail.installments ?? []).map((s: any) => {
@@ -607,15 +629,15 @@ export function InvoiceDetailModal({
                     return (
                       <div key={s.id} className={cn("flex items-center justify-between gap-2 rounded-xl border px-3 py-2", done ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/60")}>
                         <div className="flex items-center gap-2.5">
-                          <span className={cn("flex size-6 items-center justify-center rounded-full text-[10px] font-bold", done ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground")}>{s.sequence}</span>
+                          <span className={cn("flex size-6 items-center justify-center rounded-full text-micro font-bold", done ? "bg-emerald-500 text-white" : "bg-muted text-muted-foreground")}>{s.sequence}</span>
                           <div>
-                            <p className="text-[12px] font-medium">Due {formatDate(s.dueDate)}</p>
-                            <p className="text-[10.5px] text-muted-foreground">
+                            <p className="text-body font-medium">Due {formatDate(s.dueDate)}</p>
+                            <p className="text-micro text-muted-foreground">
                               {s.status} · {formatBDT(s.paidAmount)} paid
                             </p>
                           </div>
                         </div>
-                        <p className="text-[12.5px] font-bold tabular-nums">{formatBDT(s.amount)}</p>
+                        <p className="text-body font-bold tabular-nums">{formatBDT(s.amount)}</p>
                       </div>
                     );
                   })}
@@ -626,23 +648,23 @@ export function InvoiceDetailModal({
             <section>
               <SectionTitle title="Payments" subtitle={`${payments.length} received`} />
               <div className="flex flex-col gap-1.5">
-                {payments.length === 0 && <p className="text-[11.5px] text-muted-foreground">No payments recorded yet.</p>}
+                {payments.length === 0 && <p className="text-meta text-muted-foreground">No payments recorded yet.</p>}
                 {payments.map((p: any, idx: number) => (
                   <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2">
                     <div className="min-w-0">
-                      <p className="text-[12px] font-medium">
+                      <p className="text-body font-medium">
                         {label(p.paymentMethod)}{" "}
-                        <button onClick={() => void downloadReceipt(p, idx)} className="font-mono text-[10.5px] text-primary hover:underline" title="Download receipt PDF">
+                        <button onClick={() => void downloadReceipt(p, idx)} className="font-mono text-micro text-primary hover:underline" title="Download receipt PDF">
                           #{receiptNo(p)}
                         </button>
                       </p>
-                      <p className="text-[10.5px] text-muted-foreground">
+                      <p className="text-micro text-muted-foreground">
                         {formatDate(p.paymentDate)} · {p.recordedBy?.name ?? "system"}
                         {p.installment ? ` · installment #${p.installment.sequence}` : ""}
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-0.5">
-                      <p className="mr-1 text-[12.5px] font-bold tabular-nums text-emerald-500">{formatBDT(p.amount)}</p>
+                      <p className="mr-1 text-body font-bold tabular-nums text-emerald-500">{formatBDT(p.amount)}</p>
                       <button
                         onClick={() => void downloadReceipt(p, idx)}
                         disabled={receiptBusy}
@@ -650,7 +672,7 @@ export function InvoiceDetailModal({
                         className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-50"
                         title="Download receipt PDF"
                       >
-                        <Download className="size-4" />
+                        <Download className="size-3.5" />
                       </button>
                       <button
                         onClick={() => void shareReceipt(p, idx, "email")}
@@ -658,7 +680,7 @@ export function InvoiceDetailModal({
                         className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50"
                         title="Send receipt via Email"
                       >
-                        <Mail className="size-4" />
+                        <Mail className="size-3.5" />
                       </button>
                       <button
                         onClick={() => void shareReceipt(p, idx, "whatsapp")}
@@ -666,7 +688,19 @@ export function InvoiceDetailModal({
                         className="rounded-lg p-2 text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50"
                         title="Send receipt via WhatsApp"
                       >
-                        <MessageCircle className="size-4" />
+                        <MessageCircle className="size-3.5" />
+                      </button>
+                      <button
+                        onClick={() => void deletePaymentEntry(p)}
+                        disabled={payDeleteBusy === p.id}
+                        aria-label={payConfirmId === p.id ? "Confirm delete payment" : "Delete payment"}
+                        className={cn(
+                          "rounded-lg p-2 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-50",
+                          payConfirmId === p.id ? "bg-rose-500/15 text-rose-500 hover:bg-rose-500/25" : "text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500"
+                        )}
+                        title={payConfirmId === p.id ? "Click again to confirm" : "Delete this payment"}
+                      >
+                        <Trash2 className="size-3.5" />
                       </button>
                     </div>
                   </div>
@@ -709,16 +743,16 @@ export function InvoiceDetailModal({
                 </form>
               )}
               <div className="flex flex-col gap-1.5">
-                {(detail.reminders ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No reminders sent for this invoice yet.</p>}
+                {(detail.reminders ?? []).length === 0 && <p className="text-meta text-muted-foreground">No reminders sent for this invoice yet.</p>}
                 {(detail.reminders ?? []).map((r: any) => (
                   <div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2">
                     <div>
-                      <p className="text-[12px] font-medium">{r.subject || label(r.type)}</p>
-                      <p className="text-[10.5px] text-muted-foreground">
+                      <p className="text-body font-medium">{r.subject || label(r.type)}</p>
+                      <p className="text-micro text-muted-foreground">
                         {label(r.type)} · {r.channel} · {r.recipientName ?? r.recipientEmail ?? "—"} · {formatDate(r.sentAt)}
                       </p>
                     </div>
-                    <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[9.5px] font-bold text-sky-500 ring-1 ring-sky-500/20">LOGGED</span>
+                    <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-micro font-bold text-sky-500 ring-1 ring-sky-500/20">LOGGED</span>
                   </div>
                 ))}
               </div>
@@ -726,22 +760,22 @@ export function InvoiceDetailModal({
 
             <section>
               <SectionTitle title="Credit notes" subtitle={(detail.creditNotes ?? []).length ? `${detail.creditNotes.length} issued` : undefined} />
-              {(detail.creditNotes ?? []).length === 0 && <p className="text-[11.5px] text-muted-foreground">No credit notes issued for this invoice.</p>}
+              {(detail.creditNotes ?? []).length === 0 && <p className="text-meta text-muted-foreground">No credit notes issued for this invoice.</p>}
               <div className="flex flex-col gap-1.5">
                 {(detail.creditNotes ?? []).map((cnItem: any) => (
                   <div key={cnItem.id} className="flex items-center justify-between gap-2 rounded-xl border border-border/60 px-3 py-2">
                     <div>
-                      <p className="text-[12px] font-medium">
+                      <p className="text-body font-medium">
                         {cnItem.referenceNumber} · {label(cnItem.type)}
                       </p>
-                      <p className="text-[10.5px] text-muted-foreground">
+                      <p className="text-micro text-muted-foreground">
                         {formatDate(cnItem.date)} · {cnItem.reason || "no reason"}
                         {cnItem.createdBy?.name ? ` · ${cnItem.createdBy.name}` : ""}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={cn("rounded-full px-2 py-0.5 text-[9.5px] font-bold", cnItem.status === "APPLIED" ? "bg-emerald-500/10 text-emerald-500" : cnItem.status === "VOID" ? "bg-rose-500/10 text-rose-500" : "bg-amber-500/10 text-amber-500")}>{cnItem.status}</span>
-                      <p className={cn("text-[12.5px] font-bold tabular-nums", cnItem.type === "REFUND" ? "text-rose-500" : "text-amber-500")}>{formatBDT(cnItem.amount)}</p>
+                      <span className={cn("rounded-full px-2 py-0.5 text-micro font-bold", cnItem.status === "APPLIED" ? "bg-emerald-500/10 text-emerald-500" : cnItem.status === "VOID" ? "bg-rose-500/10 text-rose-500" : "bg-amber-500/10 text-amber-500")}>{cnItem.status}</span>
+                      <p className={cn("text-body font-bold tabular-nums", cnItem.type === "REFUND" ? "text-rose-500" : "text-amber-500")}>{formatBDT(cnItem.amount)}</p>
                     </div>
                   </div>
                 ))}
@@ -749,7 +783,7 @@ export function InvoiceDetailModal({
             </section>
 
             <CardShell className="!p-4">
-              <div className="flex flex-col gap-1.5 text-[12.5px]">
+              <div className="flex flex-col gap-1.5 text-body">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
                   <span className="font-medium tabular-nums">{formatBDT(total)}</span>
@@ -784,19 +818,19 @@ export function InvoiceDetailModal({
                   <span className="font-semibold">Balance</span>
                   <span className={cn("font-bold tabular-nums", balance > 0 ? "text-amber-500" : "text-emerald-500")}>{formatBDT(balance)}</span>
                 </div>
-                <p className="border-t border-border/60 pt-1.5 text-[11px] italic leading-relaxed text-muted-foreground">
+                <p className="border-t border-border/60 pt-1.5 text-meta italic leading-relaxed text-muted-foreground">
                   In words: {numberToWords(grand, detail.currency ?? "BDT")}
                 </p>
               </div>
             </CardShell>
 
             {detail.notes && (
-              <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+              <p className="text-meta leading-relaxed text-muted-foreground">
                 <span className="font-semibold text-foreground">Notes:</span> {detail.notes}
               </p>
             )}
             {detail.terms && (
-              <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+              <p className="text-meta leading-relaxed text-muted-foreground">
                 <span className="font-semibold text-foreground">Terms:</span> {detail.terms}
               </p>
             )}
@@ -808,11 +842,11 @@ export function InvoiceDetailModal({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={branding.signatureImageUrl} alt="signature" className="h-12 object-contain" />
                   ) : (
-                    <p className="font-serif text-[15px] italic text-primary">Authorized Representative</p>
+                    <p className="font-serif text-section italic text-primary">Authorized Representative</p>
                   )}
                   <div className="h-px w-full bg-border" />
-                  <p className="text-[11.5px] font-semibold">{branding.authorizedSignerName}</p>
-                  {branding.authorizedSignerTitle && <p className="text-[10px] text-muted-foreground">{branding.authorizedSignerTitle}</p>}
+                  <p className="text-meta font-semibold">{branding.authorizedSignerName}</p>
+                  {branding.authorizedSignerTitle && <p className="text-micro text-muted-foreground">{branding.authorizedSignerTitle}</p>}
                 </div>
               </div>
             )}
