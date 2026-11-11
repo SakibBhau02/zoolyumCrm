@@ -32,9 +32,12 @@ const proxyTarget = process.env.API_PROXY_TARGET?.trim().replace(/\/$/, "") || "
 
 // Dev only. Next blocks /_next asset requests from any host other than the one
 // it was started on, which breaks the app when it is opened over the LAN or a
-// tunnel (the page loads, every chunk 403s). List those hosts here, comma
-// separated, e.g. ALLOWED_DEV_ORIGINS="127.0.0.1,192.168.0.42".
-const allowedDevOrigins = (process.env.ALLOWED_DEV_ORIGINS ?? "127.0.0.1,169.254.205.49")
+// tunnel (the page loads, every chunk 403s). `*.host` style entries are
+// supported, so a quick Cloudflare tunnel works without knowing its random
+// subdomain. Extend with ALLOWED_DEV_ORIGINS="127.0.0.1,192.168.0.42".
+const allowedDevOrigins = (
+  process.env.ALLOWED_DEV_ORIGINS ?? "127.0.0.1,169.254.205.49,*.trycloudflare.com,*.ngrok-free.app"
+)
   .split(",")
   .map((host) => host.trim())
   .filter(Boolean);
