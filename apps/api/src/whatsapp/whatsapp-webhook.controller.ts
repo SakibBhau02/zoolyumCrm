@@ -23,9 +23,14 @@ export class WhatsappWebhookController {
   async verify(@Query() q: any, @Res() res: Response) {
     const cfg = await this.config.getConfig();
     const mode = q["hub.mode"] ?? q["hub_mode"];
-    const token = q["hub.verify_token"] ?? q["hub_verify_token"];
+    const token = String(q["hub.verify_token"] ?? q["hub_verify_token"] ?? "");
     const challenge = q["hub.challenge"] ?? q["hub_challenge"];
-    if (mode === "subscribe" && cfg.verifyToken && token === cfg.verifyToken) {
+    // Constant-time compare, and an unconfigured token can never match.
+    const expected = String(cfg.verifyToken ?? "");
+    const a = Buffer.from(token);
+    const b = Buffer.from(expected);
+    const tokenOk = expected.length > 0 && a.length === b.length && timingSafeEqual(a, b);
+    if (mode === "subscribe" && tokenOk) {
       return res.status(200).send(String(challenge ?? ""));
     }
     return res.status(403).send("Forbidden");
@@ -34,15 +39,19 @@ export class WhatsappWebhookController {
   @Post("webhook")
   async incoming(@Req() req: any, @Res() res: Response, @Body() body: any) {
     const cfg = await this.config.getConfig();
-    if (cfg.appSecret) {
-      const header = String(req.headers["x-hub-signature-256"] ?? "");
-      const raw: Buffer = req.rawBody ?? Buffer.from(JSON.stringify(body ?? {}));
-      const expected = "sha256=" + createHmac("sha256", cfg.appSecret).update(raw).digest("hex");
-      const a = Buffer.from(header);
-      const b = Buffer.from(expected);
-      if (a.length !== b.length || !timingSafeEqual(a, b)) {
-        return res.status(401).send("Bad signature");
-      }
+    // Fail closed: without an App Secret we cannot tell Meta from an attacker,
+    // and this endpoint can rewrite client WhatsApp opt-in state. Refusing is
+    // the only safe default; the settings page tells the owner what to paste.
+    if (!cfg.appSecret) {
+      return res.status(503).send("Webhook secret is not configured");
+    }
+    const header = String(req.headers["x-hub-signature-256"] ?? "");
+    const raw: Buffer = req.rawBody ?? Buffer.from(JSON.stringify(body ?? {}));
+    const expected = "sha256=" + createHmac("sha256", cfg.appSecret).update(raw).digest("hex");
+    const a = Buffer.from(header);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      return res.status(401).send("Bad signature");
     }
     try {
       await this.process(body);

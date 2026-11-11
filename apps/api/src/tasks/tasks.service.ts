@@ -1046,7 +1046,9 @@ export class TasksService {
     const [tasks, childCounts] = await Promise.all([
       this.prisma.task.findMany({
         where: {
-          ...(query.archived === "true" ? {} : { archivedAt: null }),
+          // Archived view must actually filter to archived rows; the old
+          // condition removed the filter entirely and showed everything.
+          ...(String(query.archived) === "true" ? { archivedAt: { not: null } } : { archivedAt: null }),
           ...(statusFilter ? { status: statusFilter } : {}),
           ...(priorityFilter ? { priority: priorityFilter as Priority } : {}),
           ...(query.taskType ? { taskType: query.taskType } : {}),
@@ -1072,6 +1074,10 @@ export class TasksService {
           reporter: { select: { id: true, name: true } },
           _count: { select: { timeLogs: true, comments: true, checklist: true } },
         },
+        // The audit trail is up to 100 JSON entries per task and is only shown
+        // in the detail drawer. Shipping it on every list page was the reason a
+        // 500-row board response reached ~475 KB.
+        omit: { activityLog: true },
         orderBy,
         // Bounded page; callers can pass ?limit=&offset= for the rest.
         take,

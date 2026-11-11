@@ -11,6 +11,7 @@
     "db:down": "docker compose down",
     "db:migrate": "npm run prisma:migrate --prefix apps/api",
     "db:seed": "npm run prisma:seed --prefix apps/api",
+    "db:bootstrap": "npm run bootstrap --prefix apps/api",
     "db:reset": "npm run prisma:reset --prefix apps/api",
     "dev": "node scripts/dev.mjs",
     "dev:check": "node scripts/dev.mjs --check",

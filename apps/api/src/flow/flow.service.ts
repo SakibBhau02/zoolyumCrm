@@ -147,6 +147,7 @@ export class FlowService {
     managerId?: string;
     page?: string | number;
     pageSize?: string | number;
+    limit?: string | number;
   }) {
     return this.cache.wrapQuery("flow:list", query, 30, async () => {
       const where: any = {
@@ -165,11 +166,13 @@ export class FlowService {
         ...(query.clientId ? { clientId: query.clientId } : {}),
         ...(query.managerId ? { assignedPmId: query.managerId } : {}),
       };
-      // Opt-in pagination: callers that pass `page` get { items, total, ... };
-      // existing callers keep the plain array they already expect.
+      // Paged callers get { items, total, page, pageSize }; legacy callers get
+      // an array (capped). The cap is the difference between an 8 MB response
+      // and a fast board — a caller that needs everything pages through it.
       const wantsPage = query.page !== undefined && query.page !== null && query.page !== "";
       const page = Math.max(1, Number(query.page) || 1);
       const pageSize = Math.min(200, Math.max(1, Number(query.pageSize) || 50));
+      const legacyLimit = Math.min(1000, Math.max(1, Number(query.limit) || 300));
 
       const [projects, total] = await Promise.all([
         this.prisma.project.findMany({
@@ -181,7 +184,7 @@ export class FlowService {
           },
           // Risk first: the board exists to surface projects that need attention.
           orderBy: [{ healthStatus: "desc" }, { createdAt: "desc" }],
-          ...(wantsPage ? { take: pageSize, skip: (page - 1) * pageSize } : {}),
+          ...(wantsPage ? { take: pageSize, skip: (page - 1) * pageSize } : { take: legacyLimit }),
         }),
         wantsPage ? this.prisma.project.count({ where }) : Promise.resolve(0),
       ]);
@@ -848,8 +851,16 @@ export class FlowService {
   }
 
   async exportCsv(query: { q?: string; status?: string; clientId?: string; managerId?: string } = {}) {
-    const result = await this.list(query);
-    const rows = Array.isArray(result) ? result : result.items;
+    // Export must see every row, so page through the (capped) list endpoint
+    // instead of relying on one huge response.
+    const rows: any[] = [];
+    for (let page = 1; page <= 100; page++) {
+      const result = await this.list({ ...query, page, pageSize: 200 });
+      const items = Array.isArray(result) ? result : result.items;
+      rows.push(...items);
+      if (Array.isArray(result) || result.items.length === 0) break;
+      if (rows.length >= result.total) break;
+    }
     const header = [
       "uid", "name", "client", "category", "status", "priority", "progress", "budget", "spent",
       "startDate", "dueDate", "billingType", "recurringInterval", "projectManager", "paymentStatus",

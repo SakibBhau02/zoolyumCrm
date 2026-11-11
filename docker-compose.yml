@@ -61,11 +61,13 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        # Baked into the browser bundle at build time (not a runtime env var).
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL (e.g. https://api.example.com/api)}
     restart: unless-stopped
     depends_on:
       - api
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000/api}
       NODE_ENV: production
     ports:
       - "3000:3000"

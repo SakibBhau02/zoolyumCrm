@@ -6,6 +6,9 @@ import { CacheService } from "../cache/cache.service";
 import { TasksService } from "../tasks/tasks.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { LeadRulesService, normalizeEmail, normalizePhone } from "./lead-rules.service";
+import { signStoredFileUrl, uploadedFilename } from "../common/signed-url";
+import { findUploadedFile } from "../common/file-storage";
+import { existsSync, unlinkSync } from "fs";
 import {
   AddActivityDto,
   BulkUpdateLeadsDto,
@@ -823,7 +826,13 @@ export class PulseService {
       },
     });
     if (!lead) throw new NotFoundException("Lead not found");
-    return lead;
+    // Attachment/proposal links are signed on read, so a leaked response cannot
+    // be replayed as a permanent unauthenticated file URL.
+    return {
+      ...lead,
+      proposals: lead.proposals.map((p) => ({ ...p, fileUrl: signStoredFileUrl(p.fileUrl) })),
+      attachments: lead.attachments.map((a) => ({ ...a, fileUrl: signStoredFileUrl(a.fileUrl) })),
+    };
   }
 
   // ── Activities ──────────────────────────────────────────────────────────
@@ -1675,7 +1684,7 @@ export class PulseService {
       },
     });
     await this.audit("LEAD_ATTACHMENT_ADDED", leadId, { filename: file.originalname });
-    return attachment;
+    return { ...attachment, fileUrl: signStoredFileUrl(attachment.fileUrl) };
   }
 
   async removeAttachment(leadId: string, attachmentId: string) {
@@ -1684,6 +1693,18 @@ export class PulseService {
     });
     if (!attachment) throw new NotFoundException("Attachment not found");
     await this.prisma.leadAttachment.delete({ where: { id: attachmentId } });
+    // Remove the blob too; otherwise deleted attachments stay downloadable
+    // forever and the uploads volume never shrinks.
+    const stored = uploadedFilename(attachment.fileUrl);
+    if (stored) {
+      for (const candidate of [findUploadedFile("pulse", stored), findUploadedFile(stored)]) {
+        try {
+          if (existsSync(candidate)) unlinkSync(candidate);
+        } catch {
+          // A missing/locked blob must not fail the delete.
+        }
+      }
+    }
     return { deleted: true };
   }
 
@@ -1752,7 +1773,7 @@ export class PulseService {
       await this.advanceStageOnSend(id);
       await this.audit("PROPOSAL_SENT", id, { version: proposal.versionNumber });
     }
-    return proposal;
+    return { ...proposal, fileUrl: signStoredFileUrl(proposal.fileUrl) };
   }
 
   async updateProposal(leadId: string, proposalId: string, dto: UpdateProposalDto) {
@@ -1777,7 +1798,7 @@ export class PulseService {
     if (firstSend) {
       await this.audit("PROPOSAL_SENT", leadId, { version: proposal.versionNumber });
     }
-    return updated;
+    return { ...updated, fileUrl: signStoredFileUrl(updated.fileUrl) };
   }
 
   async markProposalViewed(leadId: string, proposalId: string) {

@@ -3,7 +3,7 @@ import { InvoiceStatus, RevenueTag } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { ACTIVE_STATUSES, INVOICE_CREDIT_INCLUDE, buildTrend, invoiceTotals, startOfTodayUtc, toBdt } from "./finance-kernel";
+import { ACTIVE_STATUSES, INVOICE_CREDIT_INCLUDE, RECEIPT_PAYMENT_FILTER, buildTrend, invoiceTotals, startOfTodayUtc, toBdt } from "./finance-kernel";
 
 @Injectable()
 export class ReportingService {
@@ -27,7 +27,10 @@ export class ReportingService {
         select: { amount: true, exchangeRate: true, date: true, category: true, isClientBillable: true, description: true },
       }),
       this.prisma.bankAccount.findMany({ select: { accountName: true, accountType: true, currentBalance: true } }),
-      this.prisma.payment.findMany({ select: { amount: true, exchangeRate: true, type: true, paymentMethod: true } }),
+      this.prisma.payment.findMany({
+        where: { ...RECEIPT_PAYMENT_FILTER },
+        select: { amount: true, exchangeRate: true, type: true, paymentMethod: true },
+      }),
       this.prisma.metricSnapshot.findMany({ orderBy: { recordedAt: "asc" } }),
       // Bank entries nobody has matched yet — the cash figure cannot be trusted
       // until these are cleared, so the overview surfaces them.
@@ -431,7 +434,7 @@ export class ReportingService {
     const [invoices, expenses, payments, projects] = await Promise.all([
       this.prisma.invoice.findMany({ include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE } }),
       this.prisma.expense.findMany({ where: { approvalStatus: "APPROVED" } }),
-      this.prisma.payment.findMany(),
+      this.prisma.payment.findMany({ where: { ...RECEIPT_PAYMENT_FILTER } }),
       this.prisma.project.findMany({ select: { id: true, name: true } }),
     ]);
 
@@ -630,7 +633,7 @@ export class ReportingService {
         orderBy: { issueDate: "desc" },
       }),
       this.prisma.payment.findMany({
-        where: { paymentDate: { gte: from, lte: to } },
+        where: { paymentDate: { gte: from, lte: to }, ...RECEIPT_PAYMENT_FILTER },
         include: { invoice: { select: { invoiceNumber: true, invoiceType: true } } },
         orderBy: { paymentDate: "desc" },
       }),
@@ -918,7 +921,10 @@ export class ReportingService {
 
   private async computeIncomeStats() {
     const [payments, manual, dollarSales] = await Promise.all([
-      this.prisma.payment.findMany({ include: { invoice: { select: { id: true, invoiceType: true, invoiceNumber: true } } } }),
+      this.prisma.payment.findMany({
+        where: { type: "IN" },
+        include: { invoice: { select: { id: true, invoiceType: true, invoiceNumber: true } } },
+      }),
       this.prisma.manualIncome.findMany(),
       this.prisma.dollarSale.findMany({ select: { usdAmount: true, profit: true, marginPct: true, paymentMethod: true } }),
     ]);

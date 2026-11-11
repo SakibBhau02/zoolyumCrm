@@ -124,12 +124,23 @@ export class ApprovalPolicyService {
     return { allowed: true as const, limit, policy };
   }
 
+  /** Read the policy once for a batch of rows (list endpoints). */
+  async policy() {
+    return this.read();
+  }
+
   /**
-   * UI-facing capability map, so the buttons tell the truth before a click.
-   * Returns null when the caller is not a finance approver at all.
+   * Pure capability computation. List endpoints read the policy once and call
+   * this per row; the old `capability()` re-read settings for every expense,
+   * which turned one list request into 500+ queries.
    */
-  async capability(actorRole: string | undefined | null, amount: number, submittedById?: string | null, actorId?: string) {
-    const policy = await this.read();
+  capabilityWith(
+    policy: ApprovalPolicy,
+    actorRole: string | undefined | null,
+    amount: number,
+    submittedById?: string | null,
+    actorId?: string
+  ) {
     if (!policy.enabled) return { canApprove: true, reason: null as string | null, limit: 0 };
     const roleName = String(actorRole ?? "");
     const limit = this.limitFor(policy, roleName);
@@ -141,6 +152,15 @@ export class ApprovalPolicyService {
       return { canApprove: false, reason: `Above your limit of ৳${limit.toLocaleString("en-US")}`, limit };
     }
     return { canApprove: true, reason: null as string | null, limit };
+  }
+
+  /**
+   * UI-facing capability map, so the buttons tell the truth before a click.
+   * Returns null when the caller is not a finance approver at all.
+   */
+  async capability(actorRole: string | undefined | null, amount: number, submittedById?: string | null, actorId?: string) {
+    const policy = await this.read();
+    return this.capabilityWith(policy, actorRole, amount, submittedById, actorId);
   }
 
   validate(body: Partial<ApprovalPolicy>) {

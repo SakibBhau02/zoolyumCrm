@@ -12,6 +12,7 @@ import {
 } from "../decorators/require-permission.decorator";
 import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 import { AuthUser } from "../decorators/current-user.decorator";
+import { modulePermission } from "../module-keys";
 
 /**
  * Enforces the role permission matrix on the API, not just in the sidebar.
@@ -50,7 +51,11 @@ export class PermissionsGuard implements CanActivate {
     const level: PermissionLevel =
       required.level ?? deriveLevel(String(request.method ?? "GET"));
 
-    const matrix = user.permissions?.[required.module];
+    const matrix =
+      modulePermission(user.permissions, required.module) ??
+      // Migration compatibility: tokens minted before the CALENDAR module
+      // existed only carry FLOW, which used to gate the calendar.
+      (required.module === "CALENDAR" ? modulePermission(user.permissions, "FLOW") : undefined);
     if (!matrix) {
       throw new ForbiddenException(`You do not have access to ${required.module}`);
     }

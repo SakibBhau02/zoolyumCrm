@@ -10,6 +10,24 @@ export const RECEIVABLE_STATUSES = [...ACTIVE_STATUSES];
 /** Statuses that can still be collected. */
 export const OPEN_STATUSES = ["SENT", "VIEWED", "PARTIALLY_PAID", "OVERDUE"];
 
+/**
+ * A `Payment` row is shared by two very different flows:
+ *   - money received from a client (invoiceId set, type IN/REFUND)
+ *   - money paid to a vendor/expense (expenseId set, type OUT)
+ *
+ * Any figure that means "income", "collected", "cash in" or "by method" must
+ * scope to these types. Before `OUT` existed the expense payout defaulted to
+ * IN, so the finance reports overstated revenue by the whole payables volume.
+ */
+export const RECEIPT_PAYMENT_TYPES = ["IN", "REFUND"] as const;
+export const RECEIPT_PAYMENT_FILTER = { type: { in: [...RECEIPT_PAYMENT_TYPES] } };
+
+/** True when a payment row is cash received rather than cash paid out. */
+export function isReceiptPayment(p: { type?: string | null; expenseId?: string | null }) {
+  if (p.expenseId) return false;
+  return !p.type || p.type === "IN" || p.type === "REFUND";
+}
+
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 
 /**

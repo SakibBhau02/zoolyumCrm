@@ -291,8 +291,8 @@ export class AccountsService {
     assertEnum("health", query.health, ["GREEN", "YELLOW", "RED"]);
     assertEnum("vertical", query.vertical, VERTICALS);
     assertEnum("category", query.category, CATEGORIES);
-    const clients = await this.cache.wrapQuery("accounts:list", query, 30, () =>
-      this.prisma.client.findMany({
+    const clients = await this.cache.wrapQuery("accounts:list", query, 30, async () => {
+      const rows = await this.prisma.client.findMany({
         where: {
           ...(query.q
             ? {
@@ -322,24 +322,28 @@ export class AccountsService {
         // Hard safety cap: without it a single request materialises the whole
         // client book (plus contacts) and the response grows without bound.
         take: 500,
-      })
-    );
-    const summary = await this.financialSummary(clients.map((c) => c.id));
-    return clients.map((c) => {
-      const fins = summary.get(c.id) ?? {
-        totalInvoiced: 0,
-        totalPaid: 0,
-        totalDue: 0,
-        overdueCount: 0,
-        overdueAmount: 0,
-        openInvoiceCount: 0,
-        draftAmount: 0,
-        draftCount: 0,
-        lastInvoiceDate: null,
-      };
-      const primary = c.contacts.find((x) => x.isPrimary) ?? c.contacts[0] ?? null;
-      return { ...c, primaryContact: primary, ...fins };
+      });
+      // The money summary is part of the cached payload now. It used to run
+      // OUTSIDE wrapQuery, so every request still read every invoice + line
+      // item + payment even when the client list was a cache hit.
+      const summary = await this.financialSummary(rows.map((c) => c.id));
+      return rows.map((c) => {
+        const fins = summary.get(c.id) ?? {
+          totalInvoiced: 0,
+          totalPaid: 0,
+          totalDue: 0,
+          overdueCount: 0,
+          overdueAmount: 0,
+          openInvoiceCount: 0,
+          draftAmount: 0,
+          draftCount: 0,
+          lastInvoiceDate: null,
+        };
+        const primary = c.contacts.find((x) => x.isPrimary) ?? c.contacts[0] ?? null;
+        return { ...c, primaryContact: primary, ...fins };
+      });
     });
+    return clients;
   }
 
   async detail(id: string) {

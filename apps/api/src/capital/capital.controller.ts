@@ -12,6 +12,7 @@ import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { Public } from "../common/decorators/public.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
 import { RequirePermission } from "../common/decorators/require-permission.decorator";
+import { CreateCreditNoteDto, PayExpenseDto, RecordPaymentDto } from "./dto/payment.dto";
 
 const receiptDir = () => uploadsDir("receipts");
 
@@ -147,7 +148,7 @@ export class CapitalController {
   }
 
   @Post("invoices/:id/payment")
-  recordPayment(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+  recordPayment(@Param("id") id: string, @Body() body: RecordPaymentDto, @CurrentUser() user: any) {
     return this.capital.recordPayment(id, body, user?.sub);
   }
 
@@ -232,7 +233,7 @@ export class CapitalController {
   }
 
   @Post("expenses/:id/payment")
-  payExpense(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
+  payExpense(@Param("id") id: string, @Body() body: PayExpenseDto, @CurrentUser() user: any) {
     return this.capital.payExpense(id, body, user?.sub);
   }
 
@@ -423,7 +424,7 @@ export class CapitalController {
   }
 
   @Post("credit-notes")
-  createCreditNote(@Body() body: any, @CurrentUser() user: any) {
+  createCreditNote(@Body() body: CreateCreditNoteDto, @CurrentUser() user: any) {
     return this.capital.createCreditNote(body, user?.sub);
   }
 

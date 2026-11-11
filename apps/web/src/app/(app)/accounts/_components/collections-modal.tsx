@@ -71,12 +71,12 @@ export function CollectionsModal({
     setLoading(true);
     setError(null);
     Promise.all([
-      apiFetch<any[]>("/capital/invoices").catch(() => []),
+      apiFetch<any>("/capital/invoices?page=1&pageSize=100").catch(() => []),
       apiFetch<any[]>("/flow/project-lookup").catch(() => []),
     ])
       .then(([inv, prj]) => {
         if (cancelled) return;
-        setInvoices(Array.isArray(inv) ? inv : []);
+        setInvoices(Array.isArray(inv) ? inv : inv?.items ?? []);
         setProjects(Array.isArray(prj) ? prj : []);
       })
       .catch((e: any) => !cancelled && setError(e?.message ?? "Could not load collections"))

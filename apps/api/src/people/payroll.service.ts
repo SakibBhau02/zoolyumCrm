@@ -72,21 +72,15 @@ export class PayrollService {
 
   /**
    * A posted salary expense must follow the payroll record: reverse + repost the
-   * ledger, update the expense amount, and move the bank balance by the delta.
-   * `recomputePayrollRecord` used to update the expense only, so cash drifted.
+   * ledger and update the expense amount. Cash movement is handled once, inside
+   * `updateExpense` — the old extra bank decrement here debited the account a
+   * second time for the same delta.
    */
   private async syncPostedSalary(rec: any, netPay: number, actorId?: string) {
     const expense = rec?.salaryExpense;
     if (!expense?.id) return;
     const r2 = (n: number) => Math.round(n * 100) / 100;
-    const diff = r2(netPay - Number(rec.netPay ?? 0));
     await this.capital.updateExpense(expense.id, { amount: r2(netPay) }, actorId, { skipPayrollSync: true });
-    if (diff !== 0 && expense.bankAccountId && expense.balanceDeducted) {
-      await this.prisma.bankAccount.update({
-        where: { id: expense.bankAccountId },
-        data: { currentBalance: { decrement: diff } },
-      });
-    }
     await this.capital.invalidateFinance().catch(() => null);
   }
 
@@ -184,14 +178,26 @@ export class PayrollService {
     };
   }
 
-  /** Manual edit of a payroll record (any status) — recomputes net pay, syncs a posted salary expense. */
+  /** Manual edit of a payroll record — recomputes net pay, syncs a posted salary expense. */
   async updatePayrollRecord(id: string, body: any, actorId?: string) {
     const rec = await this.prisma.payrollRecord.findUnique({
       where: { id },
       include: { employee: { select: { name: true } }, salaryExpense: { select: { id: true, amount: true, bankAccountId: true, balanceDeducted: true } } },
     });
     if (!rec) throw new NotFoundException("Payroll record not found");
+    // A disbursed payslip is an accounting fact; changing it months later would
+    // silently rewrite closed payroll and the ledger against it.
+    if (rec.status === "PAID") {
+      throw new BadRequestException("This payroll is already paid — record an adjustment instead of editing it.");
+    }
     const num = (v: any, fallback: any) => (v === undefined || v === null || v === "" ? Number(fallback ?? 0) : Number(v));
+    // Every money field must be a finite, non-negative number.
+    const moneyFields = ["basicSalary", "allowances", "bonus", "lateDeduction", "halfDayDeduction", "absentDeduction", "unpaidLeaveDeduction"] as const;
+    for (const field of moneyFields) {
+      if (body[field] === undefined || body[field] === null || body[field] === "") continue;
+      const n = Number(body[field]);
+      if (!Number.isFinite(n) || n < 0) throw new BadRequestException(`${field} must be zero or greater`);
+    }
     if (body.basicSalary !== undefined && Number.isNaN(Number(body.basicSalary))) throw new BadRequestException("Invalid basic salary");
     const basic = num(body.basicSalary, rec.basicSalary);
     const allowances = num(body.allowances, (rec as any).allowances ?? 0);
@@ -201,6 +207,7 @@ export class PayrollService {
     const absentD = num(body.absentDeduction, rec.absentDeduction);
     const unpaidD = num(body.unpaidLeaveDeduction, rec.unpaidLeaveDeduction);
     const { totalD, netPay } = this.computeNet(basic, allowances, bonus, lateD, halfD, absentD, unpaidD);
+    if (netPay < 0) throw new BadRequestException("Net pay cannot be negative — check the deductions.");
     const r2 = (n: number) => Math.round(n * 100) / 100;
     const updated = await this.prisma.payrollRecord.update({
       where: { id },

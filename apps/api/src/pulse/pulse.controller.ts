@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -14,12 +16,39 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { randomUUID } from "crypto";
+import { basename, join } from "path";
+import { existsSync } from "fs";
 import { PulseService } from "./pulse.service";
 import { CurrentUser, AuthUser } from "../common/decorators/current-user.decorator";
 import { Public } from "../common/decorators/public.decorator";
-import { findUploadedFile, uploadsDir } from "../common/file-storage";
+import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
+import { verifyFileAccess } from "../common/signed-url";
 
-const pulseUploadDir = () => uploadsDir();
+/**
+ * Lead attachments live in their own bucket. They used to share the Flow
+ * uploads directory, which meant the (unauthenticated) pulse route could serve
+ * every signed project deliverable.
+ */
+const pulseUploadDir = () => uploadsDir("pulse");
+
+/**
+ * Upload allowlist. Without it an .html/.svg upload is later served from the
+ * API origin, which turns a file upload into stored XSS.
+ */
+const ALLOWED_UPLOAD_EXT = new Set([
+  "pdf", "png", "jpg", "jpeg", "webp", "gif",
+  "doc", "docx", "xls", "xlsx", "csv", "txt", "zip",
+]);
+const ALLOWED_UPLOAD_MIME =
+  /^(image\/(png|jpe?g|webp|gif)|application\/(pdf|zip|x-zip-compressed|msword|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation))|text\/(plain|csv))$/i;
+
+function pulseFileFilter(_req: any, file: Express.Multer.File, cb: (e: Error | null, ok: boolean) => void) {
+  const ext = (file.originalname.split(".").pop() ?? "").toLowerCase();
+  if (!ALLOWED_UPLOAD_EXT.has(ext) || !ALLOWED_UPLOAD_MIME.test(file.mimetype)) {
+    return cb(new BadRequestException(`Unsupported file type: ${ext || file.mimetype}`), false);
+  }
+  cb(null, true);
+}
 import {
   AddActivityDto,
   BulkUpdateLeadsDto,
@@ -39,11 +68,15 @@ import {
   UpdateProposalDto,
 } from "./dto/lead.dto";
 import { RequirePermission } from "../common/decorators/require-permission.decorator";
+import { PulseTargetsService } from "./pulse-targets.service";
 
 @RequirePermission("PULSE")
 @Controller("pulse")
 export class PulseController {
-  constructor(private readonly pulse: PulseService) {}
+  constructor(
+    private readonly pulse: PulseService,
+    private readonly targets: PulseTargetsService
+  ) {}
 
   @Get("summary")
   summary() {
@@ -281,6 +314,7 @@ export class PulseController {
           cb(null, `${randomUUID()}--${safe}`);
         },
       }),
+      fileFilter: pulseFileFilter,
       limits: { fileSize: 15 * 1024 * 1024 },
     })
   )
@@ -325,6 +359,7 @@ export class PulseController {
           cb(null, `${randomUUID()}--${safe}`);
         },
       }),
+      fileFilter: pulseFileFilter,
       limits: { fileSize: 15 * 1024 * 1024 },
     })
   )
@@ -333,10 +368,59 @@ export class PulseController {
     return { fileUrl: `/api/pulse/uploads/${file.filename}`, originalName: file.originalname, size: file.size };
   }
 
-  @Get("uploads/:filename")
+  /**
+   * Signed-URL file server. The route stays `@Public` because browsers load it
+   * as a plain <img>/download (no Authorization header), but the URL itself
+   * must carry a valid, unexpired HMAC over bucket + filename.
+   */
   @Public()
-  serveUpload(@Param("filename") filename: string, @Res() res: any) {
-    const safe = filename.replace(/[^a-zA-Z0-9.\-_]/g, "");
-    return res.sendFile(findUploadedFile(safe));
+  @Get("uploads/:filename")
+  serveUpload(
+    @Param("filename") filename: string,
+    @Query("exp") exp: string,
+    @Query("sig") sig: string,
+    @Res() res: any
+  ) {
+    if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      throw new BadRequestException("Invalid filename");
+    }
+    const safe = basename(sanitizeFilename(filename));
+    if (!verifyFileAccess(safe, exp, sig, "pulse")) {
+      throw new ForbiddenException("This file link is invalid or has expired");
+    }
+    // New uploads live in uploads/pulse; files from older builds are still in
+    // the shared uploads root, so fall back once before 404ing.
+    const scoped = findUploadedFile(join("pulse", safe));
+    const filePath = existsSync(scoped) ? scoped : findUploadedFile(safe);
+    const isImage = /\.(png|jpe?g|webp|gif)$/i.test(safe);
+    res.setHeader("Content-Disposition", `${isImage ? "inline" : "attachment"}; filename="${safe}"`);
+    res.setHeader("Cache-Control", "private, max-age=60");
+    return res.sendFile(filePath);
+  }
+
+  // ── Period targets (moved from the Calendar module) ──────────────────
+  @Get("targets")
+  listTargets(@Query() query: any) {
+    return this.targets.list(query);
+  }
+
+  @Get("targets/summary")
+  targetSummary(@Query("period") period?: string) {
+    return this.targets.summary(period);
+  }
+
+  @Post("targets")
+  createTarget(@Body() dto: any) {
+    return this.targets.create(dto);
+  }
+
+  @Patch("targets/:id")
+  updateTarget(@Param("id") id: string, @Body() dto: any) {
+    return this.targets.update(id, dto);
+  }
+
+  @Delete("targets/:id")
+  deleteTarget(@Param("id") id: string) {
+    return this.targets.remove(id);
   }
 }

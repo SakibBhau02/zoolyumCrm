@@ -10,18 +10,11 @@ import { invalidateAdminPolicyCache } from "../common/guards/admin-policy.guard"
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { DEFAULT_LEAD_RULES, mergeLeadRules } from "../pulse/lead-rules.service";
+import { CONTROL_MODULES, migrateModuleMatrix } from "../common/module-keys";
 
-/** Modules that can be granted per-role permissions. Mirrors the sidebar. */
-export const CONTROL_MODULES = [
-  "CLIENTS",
-  "LEADS",
-  "PROJECTS",
-  "TASKS",
-  "FINANCE",
-  "PEOPLE",
-  "INSIGHTS",
-  "CONTROL",
-];
+/** Modules that can be granted per-role permissions. These are the exact keys
+ *  the API guards enforce (see common/module-keys.ts). */
+export { CONTROL_MODULES };
 
 const INTEGRATION_TYPES = ["ADS", "PAYMENT", "BANKING", "FX_RATE", "MESSAGING"] as const;
 
@@ -324,16 +317,27 @@ export class ControlService {
   // ── Roles ────────────────────────────────────────────────────────────
 
   async roles() {
-    return this.prisma.role.findMany({
+    const rows = await this.prisma.role.findMany({
       include: { _count: { select: { users: true } } },
       orderBy: { createdAt: "asc" },
     });
+    // Present the canonical matrix even for roles that have not been re-saved
+    // since the module-key rename.
+    return rows.map((r) => ({
+      ...r,
+      modulePermissions: migrateModuleMatrix(r.modulePermissions as any),
+    }));
   }
 
-  private normalizePermissions(input: any) {
-    const out: Record<string, { view: boolean; edit: boolean; approve: boolean }> = {};
+  private normalizePermissions(input: any, existing?: any) {
+    // Migrate legacy labels (CLIENTS→ACCOUNTS, LEADS→PULSE, PROJECTS→FLOW,
+    // FINANCE→CAPITAL, INSIGHTS→INSIGHT) and keep every canonical key the
+    // editor does not send. Rebuilding from the visible list alone used to
+    // wipe grants for modules the UI did not know about.
+    const out: Record<string, { view: boolean; edit: boolean; approve: boolean }> = migrateModuleMatrix(existing);
     for (const m of CONTROL_MODULES) {
-      const p = input?.[m] ?? {};
+      const p = input?.[m];
+      if (p === undefined) continue;
       const edit = !!p.edit;
       const approve = !!p.approve;
       // Edit/approve imply view: a matrix with "edit" but no "view" would be
@@ -379,7 +383,7 @@ export class ControlService {
         ...(body.name !== undefined ? { name: String(body.name).trim() } : {}),
         ...(body.description !== undefined ? { description: body.description || null } : {}),
         ...(body.modulePermissions !== undefined
-          ? { modulePermissions: this.normalizePermissions(body.modulePermissions) }
+          ? { modulePermissions: this.normalizePermissions(body.modulePermissions, role.modulePermissions) }
           : {}),
       },
       include: { _count: { select: { users: true } } },

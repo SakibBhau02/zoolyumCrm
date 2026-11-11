@@ -1,9 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
+import { Cron } from "@nestjs/schedule";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { ScoringService } from "../scoring/scoring.service";
 import { dateStrDhaka } from "../people/people-utils";
-import { invoiceTotals } from "../capital/finance-kernel";
+import { RECEIPT_PAYMENT_FILTER, invoiceTotals } from "../capital/finance-kernel";
 
 /** UTC-midnight labelled with today's Dhaka date — matches `attendance.date`. */
 const dhakaTodayColumn = () => new Date(`${dateStrDhaka(new Date())}T00:00:00.000Z`);
@@ -25,6 +26,11 @@ const ACTIVE_INVOICE_STATUSES = [
 
 @Injectable()
 export class DashboardService {
+  private readonly logger = new Logger(DashboardService.name);
+  /** Last successfully computed snapshot (process-local, survives cache flushes). */
+  private lastSnapshot: any = null;
+  private inflight: Promise<any> | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService,
@@ -32,7 +38,53 @@ export class DashboardService {
   ) {}
 
   async overview() {
-    return this.cache.wrap("dashboard:overview", 30, () => this.computeOverview());
+    // Stale-while-revalidate: after a write invalidates the cached snapshot we
+    // keep serving the previous one and refresh in the background. Users never
+    // wait for the ~65-query aggregation; only a cold boot pays for it.
+    const cached = await this.cache.get<any>("dashboard:overview");
+    if (cached) {
+      this.lastSnapshot = cached;
+      return cached;
+    }
+    if (this.lastSnapshot) {
+      void this.refreshSnapshot().catch(() => null);
+      return this.lastSnapshot;
+    }
+    return this.refreshSnapshot();
+  }
+
+  private async refreshSnapshot(): Promise<any> {
+    if (this.inflight) return this.inflight;
+    const run = this.computeOverview()
+      .then(async (value) => {
+        this.lastSnapshot = value;
+        await this.cache.set("dashboard:overview", value, 120);
+        return value;
+      })
+      .finally(() => {
+        this.inflight = null;
+      });
+    this.inflight = run;
+    return run;
+  }
+
+  /**
+   * Keep the company snapshot warm.
+   *
+   * The overview is the most expensive read in the product (~65 queries and a
+   * large JS aggregation). Running it on a timer moves that work off the
+   * request path entirely.
+   */
+  @Cron("0 * * * * *")
+  async warmOverview() {
+    try {
+      const started = Date.now();
+      await this.refreshSnapshot();
+      const ms = Date.now() - started;
+      if (ms > 1500) this.logger.warn(`Dashboard warm-up took ${ms} ms`);
+    } catch (e: any) {
+      this.logger.warn(`Dashboard warm-up failed: ${e?.message ?? e}`);
+    }
   }
 
   /** Personal glimpse: my tasks, my leads + follow-ups, today events, my attendance. */
@@ -156,17 +208,18 @@ export class DashboardService {
       this.prisma.lead.findMany({ select: { id: true, stage: true, estimatedDealSize: true, name: true, company: true, leadScore: true, assignedToId: true, convertedClientId: true, createdAt: true, nextFollowUpAt: true } }),
       this.prisma.pipelineStage.findMany({ orderBy: { order: "asc" } }),
       this.prisma.client.findMany({ select: { id: true, companyName: true, healthScore: true, healthLevel: true, renewalDate: true, industryVertical: true } }),
-      this.prisma.project.findMany({ select: { id: true, name: true, status: true, healthStatus: true, riskScore: true, budgetAmount: true, targetEndDate: true, clientId: true, billingType: true, monthlyRate: true } }),
-      this.prisma.task.findMany({ select: { id: true, status: true, dueDate: true, priority: true, title: true, projectId: true, estimatedHours: true, completedAt: true, assignedTo: { select: { id: true, name: true } }, project: { select: { name: true } } } }),
+      this.prisma.project.findMany({ select: { id: true, name: true, status: true, healthStatus: true, riskScore: true, riskDriver: true, budgetAmount: true, targetEndDate: true, clientId: true, billingType: true, monthlyRate: true } }),
+      this.prisma.task.findMany({ select: { id: true, status: true, dueDate: true, priority: true, title: true, projectId: true, assignedToId: true, estimatedHours: true, completedAt: true } }),
       this.prisma.employee.findMany({ select: { id: true, name: true, roleTitle: true, employmentStatus: true, joinDate: true, department: true } }),
       this.prisma.invoice.findMany({
         select: {
           id: true, invoiceNumber: true, status: true, clientId: true, issueDate: true, dueDate: true,
+          // Only the money fields: the dashboard never renders an invoice line.
           lineItems: { select: { amount: true, revenueTag: true } },
-          payments: { select: { amount: true } },
+          payments: { select: { amount: true, type: true } },
         },
       }),
-      this.prisma.payment.findMany({ select: { id: true, amount: true, paymentMethod: true, paymentDate: true } }),
+      this.prisma.payment.findMany({ where: { ...RECEIPT_PAYMENT_FILTER }, select: { id: true, amount: true, paymentMethod: true, paymentDate: true } }),
       this.prisma.expense.findMany({
         where: { approvalStatus: { in: ["APPROVED", "PENDING"] } },
         select: { id: true, amount: true, date: true, category: true, description: true, approvalStatus: true, isClientBillable: true, clientId: true, isPayable: true, paidAmount: true, dueDate: true },
@@ -277,12 +330,11 @@ export class DashboardService {
       riskDriver: null as string | null,
       clientId: p.clientId,
     }));
-    const projectRiskDrivers = await this.prisma.project.findMany({
-      where: { id: { in: atRisk.map((p) => p.id) } },
-      select: { id: true, riskDriver: true },
-    });
+    // Risk drivers already came with the project select — the follow-up query
+    // here was a second round-trip for data we had.
     for (const p of atRisk) {
-      p.riskDriver = projectRiskDrivers.find((r) => r.id === p.id)?.riskDriver ?? null;
+      const row = projects.find((r) => r.id === p.id);
+      p.riskDriver = row?.riskDriver ?? null;
     }
 
     // ── Tasks ──────────────────────────────────────────────────────────
@@ -303,12 +355,15 @@ export class DashboardService {
     const onLeaveToday = approvedLeaves.filter(
       (l) => l.startDate <= today && l.endDate >= today
     ).length;
-    const latestUtilLogs = await this.prisma.utilizationLog.findMany({
-      where: {
-        OR: utilLogs.map((u) => ({ employeeId: u.employeeId, weekStartDate: u._max.weekStartDate! })),
-      },
-      select: { utilizationRate: true, employeeId: true },
-    });
+    // Latest utilization per employee in ONE statement. The old OR-list grew
+    // with the headcount and ran on every dashboard build.
+    const latestUtilLogs = utilLogs.length
+      ? await this.prisma.$queryRaw<{ employeeId: string; utilizationRate: number }[]>`
+          SELECT DISTINCT ON ("employeeId") "employeeId", "utilizationRate"
+          FROM "UtilizationLog"
+          ORDER BY "employeeId", "weekStartDate" DESC
+        `
+      : [];
     const avgUtilization = latestUtilLogs.length
       ? Math.round((latestUtilLogs.reduce((s, l) => s + l.utilizationRate, 0) / latestUtilLogs.length) * 100)
       : 0;
@@ -713,35 +768,45 @@ export class DashboardService {
     }
 
     const priorityRank: Record<string, number> = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-    const todayTasks = openTasks
+    const todayTaskRows = openTasks
       .filter((t) => t.dueDate && t.dueDate >= today && t.dueDate < new Date(today.getTime() + 86400000))
       .sort(
         (a, b) =>
           (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9) ||
           (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0)
       )
-      .slice(0, 6)
-      .map((t) => ({
-        id: t.id,
-        title: t.title,
-        priority: t.priority,
-        status: t.status,
-        dueDate: t.dueDate,
-        assignee: t.assignedTo?.name ?? null,
-        projectName: t.project?.name ?? null,
-      }));
-    const overdueTasks = openTasks
+      .slice(0, 6);
+    const overdueTaskRows = openTasks
       .filter((t) => t.dueDate && t.dueDate < today)
       .sort((a, b) => (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0))
-      .slice(0, 5)
-      .map((t) => ({
-        id: t.id,
-        title: t.title,
-        priority: t.priority,
-        dueDate: t.dueDate,
-        assignee: t.assignedTo?.name ?? null,
-        projectName: t.project?.name ?? null,
-      }));
+      .slice(0, 5);
+    // Only the rows we actually render need names; the list query no longer
+    // joins every task to its assignee/project.
+    const shownTaskIds = [...new Set([...todayTaskRows, ...overdueTaskRows].map((t) => t.id))];
+    const shownMeta = shownTaskIds.length
+      ? await this.prisma.task.findMany({
+          where: { id: { in: shownTaskIds } },
+          select: { id: true, assignedTo: { select: { name: true } }, project: { select: { name: true } } },
+        })
+      : [];
+    const metaById = new Map(shownMeta.map((m) => [m.id, m]));
+    const todayTasks = todayTaskRows.map((t) => ({
+      id: t.id,
+      title: t.title,
+      priority: t.priority,
+      status: t.status,
+      dueDate: t.dueDate,
+      assignee: metaById.get(t.id)?.assignedTo?.name ?? null,
+      projectName: metaById.get(t.id)?.project?.name ?? null,
+    }));
+    const overdueTasks = overdueTaskRows.map((t) => ({
+      id: t.id,
+      title: t.title,
+      priority: t.priority,
+      dueDate: t.dueDate,
+      assignee: metaById.get(t.id)?.assignedTo?.name ?? null,
+      projectName: metaById.get(t.id)?.project?.name ?? null,
+    }));
     const followUps = activeLeads
       .filter((l) => l.nextFollowUpAt && new Date(l.nextFollowUpAt).getTime() <= now.getTime())
       .sort((a, b) => new Date(a.nextFollowUpAt!).getTime() - new Date(b.nextFollowUpAt!).getTime())
@@ -995,11 +1060,13 @@ export class DashboardService {
     const day = (weekStart.getDay() + 6) % 7; // Monday
     weekStart.setDate(weekStart.getDate() - day);
     weekStart.setHours(0, 0, 0, 0);
-    const logs = await this.prisma.timeLog.findMany({
+    // Sum in Postgres: the old findMany pulled every time log of the week into
+    // Node just to add them up.
+    const agg = await this.prisma.timeLog.aggregate({
       where: { date: { gte: weekStart } },
-      select: { hours: true },
+      _sum: { hours: true },
     });
-    return Math.round(logs.reduce((s, l) => s + Number(l.hours), 0) * 10) / 10;
+    return Math.round(Number(agg._sum.hours ?? 0) * 10) / 10;
   }
 
   private groupByMethod(payments: { amount: any; paymentMethod: string }[]) {

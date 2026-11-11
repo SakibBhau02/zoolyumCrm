@@ -116,14 +116,16 @@ export function CapitalProvider({ children }: { children: React.ReactNode }) {
     setExpensesErr(null);
     setIncome(null);
     setIncomeErr(null);
-    apiFetch<any[]>("/capital/invoices")
-      .then((d) => !cancelled && setInvoices(d))
+    // Paged envelope: the legacy array path would ship the whole invoice book.
+    // The tabs that need a full list page through /capital/invoices themselves.
+    apiFetch<any>("/capital/invoices?pageSize=100")
+      .then((d) => !cancelled && setInvoices(Array.isArray(d) ? d : d?.items ?? []))
       .catch((e) => !cancelled && setInvoicesErr(e.message ?? "Failed to load invoices"));
-    apiFetch<any[]>("/capital/expenses")
-      .then((d) => !cancelled && setExpenses(d))
+    apiFetch<any>("/capital/expenses?limit=200")
+      .then((d) => !cancelled && setExpenses(Array.isArray(d) ? d : d?.items ?? []))
       .catch((e) => !cancelled && setExpensesErr(e.message ?? "Failed to load expenses"));
-    apiFetch<any[]>("/capital/income")
-      .then((d) => !cancelled && setIncome(d))
+    apiFetch<any>("/capital/income?limit=200")
+      .then((d) => !cancelled && setIncome(Array.isArray(d) ? d : d?.items ?? []))
       .catch((e) => !cancelled && setIncomeErr(e.message ?? "Failed to load income"));
     return () => {
       cancelled = true;

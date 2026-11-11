@@ -68,7 +68,13 @@ export class AdminPolicyGuard implements CanActivate {
       ? policy.security.ipAllowlist
       : [];
     if (allowlist.length) {
-      const forwarded = String(request.headers["x-forwarded-for"] ?? "").split(",")[0].trim();
+      // Same rule as the rate limiter: X-Forwarded-For is attacker-controlled
+      // unless the app is explicitly behind a trusted proxy. Reading it
+      // unconditionally let anyone bypass the allowlist by spoofing the header.
+      const trustProxy = process.env.TRUST_PROXY === "1" || process.env.TRUST_PROXY === "true";
+      const forwarded = trustProxy
+        ? String(request.headers["x-forwarded-for"] ?? "").split(",")[0].trim()
+        : "";
       const ip = (forwarded || request.ip || request.socket?.remoteAddress || "").replace(/^::ffff:/, "");
       if (!allowlist.includes(ip)) {
         throw new ForbiddenException(`Your IP address (${ip || "unknown"}) is not allowed by the workspace policy`);

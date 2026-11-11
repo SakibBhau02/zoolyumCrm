@@ -4,6 +4,7 @@ import compression from "compression";
 import express from "express";
 import { AppModule } from "./app.module";
 import { PrismaExceptionFilter } from "./common/filters/prisma-exception.filter";
+import { assertEnv } from "./common/env";
 
 /** Wrap a plain middleware so Nest's DI-created app can use it. */
 function securityHeaders() {
@@ -24,6 +25,8 @@ function securityHeaders() {
 }
 
 async function bootstrap() {
+  // Fail fast on a missing/weak JWT secret before any module is constructed.
+  assertEnv();
   // rawBody gives webhook handlers the exact bytes Meta signed (HMAC check).
   const app = await NestFactory.create(AppModule, { rawBody: true });
   app.setGlobalPrefix("api");

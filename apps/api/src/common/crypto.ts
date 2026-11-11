@@ -7,7 +7,8 @@ import crypto from "crypto";
  * JWT_SECRET invalidates stored blobs (re-enter credentials after rotation).
  */
 function key(): Buffer {
-  const secret = process.env.JWT_SECRET ?? "zoolyum-os-dev-secret-change-in-prod";
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error("JWT_SECRET is required to encrypt integration credentials");
   return crypto.createHash("sha256").update(secret).digest();
 }
 

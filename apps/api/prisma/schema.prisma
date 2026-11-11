@@ -53,6 +53,10 @@ model User {
   webauthnCredentials          WebAuthnCredential[]
   payments                     Payment[]
   performanceReviews           PerformanceReview[]
+  approvedPosts                ContentPost[]            @relation("PostApprovedBy")
+  calendarComments             CalendarComment[]        @relation("CalendarCommentAuthor")
+  dailyLogs                    DailyLog[]               @relation("DailyLogAuthor")
+  savedCalendarViews           SavedCalendarView[]      @relation("SavedCalendarViewOwner")
   portalUsers                  PortalUser?              @relation("PortalUserAccount")
   projects                     Project[]
   projectFiles                 ProjectFile[]
@@ -567,10 +571,23 @@ model Client {
   paymentDueDays            Int?               @default(15)
   nextRetainerDate          DateTime?          @db.Date
   retainerInterval          String?            @default("MONTHLY")
+  /// Brand colour used for this client's chips across the Calendar.
+  calendarColor             String?
+  /// Monthly posting target per platform, e.g. { "INSTAGRAM": 16 }.
+  postingTargets            Json?
   adAccounts                AdAccount[]
   adInsights                AdInsight[]
   alertRules                AlertRule[]
   calendarEvents            CalendarEvent[]
+  contentPosts              ContentPost[]
+  platformAccounts          ClientPlatformAccount[]
+  campaigns                 Campaign[]
+  adFlights                 AdFlight[]
+  pillars                   ContentPillar[]
+  plans                     CalendarPlan[]
+  dayLogs                   DailyLog[]
+  shareLinks                CalendarShareLink[]
+  periodTargets             DailyTarget[]
   churnFlags                ChurnRiskFlag[]
   accountOwner              User?              @relation(fields: [accountOwnerId], references: [id])
   contacts                  ClientContact[]
@@ -590,6 +607,11 @@ model Client {
 
   @@index([accountOwnerId])
   @@index([category])
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([healthScore])
+  @@index([healthLevel])
+  @@index([industryVertical])
 }
 
 model ClientContact {
@@ -605,6 +627,9 @@ model ClientContact {
   whatsappOptIn       Boolean     @default(true)
   client              Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
   portalUser          PortalUser?
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([clientId])
 }
 
 model ClientDocument {
@@ -638,6 +663,9 @@ model ChurnRiskFlag {
   matchedPattern String?
   flaggedAt      DateTime  @default(now())
   client         Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([flaggedAt, clientId])
 }
 
 model ProjectTemplate {
@@ -717,11 +745,18 @@ model Project {
   riskLogs          ProjectRiskLog[]
   sprints           Sprint[]
   tasks             Task[]
+  campaigns         Campaign[]
+  adFlights         AdFlight[]
+  plans             CalendarPlan[]
   vendorEngagements VendorEngagement[]
   manualIncome      ManualIncome[]
 
   @@index([clientId])
   @@index([assignedPmId])
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([status, healthStatus, createdAt])
+  @@index([reportMode, nextReportDate])
 }
 
 model ProjectReference {
@@ -782,6 +817,11 @@ model ProjectDeliverable {
   description String?
   sortOrder   Int               @default(0)
   status      DeliverableStatus @default(PENDING)
+  /// Dates power the Calendar's deliverable lane.
+  startDate   DateTime?         @db.Date
+  dueDate     DateTime?         @db.Date
+  clientVisible Boolean         @default(false)
+  ownerId     String?
   completedAt DateTime?
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
@@ -789,6 +829,7 @@ model ProjectDeliverable {
   tasks       Task[]
 
   @@index([projectId])
+  @@index([dueDate])
 }
 
 model ProjectReport {
@@ -820,6 +861,9 @@ model ProjectRiskLog {
   breakdown     Json?
   calculatedAt  DateTime @default(now())
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([projectId, calculatedAt])
 }
 
 model Task {
@@ -874,6 +918,12 @@ model Task {
   @@index([status])
   @@index([projectId])
   @@index([sprintId])
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([archivedAt, parentTaskId, dueDate])
+  @@index([assignedToId, status, dueDate])
+  @@index([parentTaskId])
+  @@index([completedAt])
 }
 
 model TaskChecklistItem {
@@ -965,6 +1015,9 @@ model TaskDependency {
   task            Task   @relation("taskDependsOn", fields: [taskId], references: [id], onDelete: Cascade)
 
   @@unique([taskId, dependsOnTaskId])
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([dependsOnTaskId])
 }
 
 model TimeLog {
@@ -997,6 +1050,10 @@ model TaskComment {
   parent           TaskComment?  @relation("commentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies          TaskComment[] @relation("commentReplies")
   task             Task          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([taskId, createdAt])
+  @@index([parentId])
 }
 
 model EstimateAccuracyLog {
@@ -1009,6 +1066,9 @@ model EstimateAccuracyLog {
   taskId         String?
   createdAt      DateTime  @default(now())
   employee       Employee? @relation(fields: [employeeId], references: [id])
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([taskId])
 }
 
 model Employee {
@@ -1058,6 +1118,8 @@ model Employee {
   assignedTasks            Task[]                 @relation("taskAssigner")
   tasks                    Task[]
   reportedTasks            Task[]                 @relation("taskReporter")
+  postAssignments          ContentPost[]          @relation("PostAssignee")
+  postReviews              ContentPost[]          @relation("PostReviewer")
   checklistItems           TaskChecklistItem[]
   timers                   TaskTimer[]
   timeLogs                 TimeLog[]
@@ -1067,6 +1129,10 @@ model Employee {
   telegramLink             TelegramLink?
   user                     User?
   utilizationLogs          UtilizationLog[]
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([employmentStatus])
+  @@index([reportingManagerId])
 }
 
 model Attendance {
@@ -1106,6 +1172,10 @@ model LeaveRequest {
   workingDays   Int?
   approvedBy    User?       @relation("LeaveApproval", fields: [approvedById], references: [id])
   employee      Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([employeeId, status, startDate])
+  @@index([status, startDate, endDate])
 }
 
 model LeaveBalance {
@@ -1523,6 +1593,11 @@ model Expense {
   @@index([date])
   @@index([clientId])
   @@index([projectId])
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([isPayable, approvalStatus, dueDate])
+  @@index([bankAccountId])
+  @@index([vendorId])
 }
 
 model ExpenseCategoryDef {
@@ -1602,6 +1677,9 @@ model InvoiceLineItem {
   milestoneId     String?
   invoice         Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   linkedExpense   Expense?   @relation(fields: [linkedExpenseId], references: [id])
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([invoiceId])
 }
 
 model Payment {
@@ -1633,6 +1711,10 @@ model Payment {
   @@index([invoiceId])
   @@index([expenseId])
   @@index([bankAccountId])
+
+  // Hot-path indexes (production audit 2026-11)
+  @@index([type, paymentDate])
+  @@index([installmentId])
 }
 
 model Installment {
@@ -1798,50 +1880,321 @@ model FinanceAuditLog {
 }
 
 model ContentPost {
-  id            String            @id @default(cuid())
-  title         String
-  content       String            @default("")
-  platforms     Json              @default("[]")
-  scheduledDate String
-  scheduledTime String            @default("10:00")
-  status        ContentPostStatus @default(DRAFT)
-  projectId     String?
-  hasImage      Boolean           @default(false)
-  hasVideo      Boolean           @default(false)
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-  project       Project?          @relation(fields: [projectId], references: [id])
+  id                String            @id @default(cuid())
+  title             String
+  content           String            @default("")
+  platforms         Json              @default("[]")
+  /// Deprecated string mirror kept for older readers. Always written together
+  /// with `scheduledAt` (which is the queryable source of truth).
+  scheduledDate     String            @default("")
+  scheduledTime     String            @default("10:00")
+  scheduledAt       DateTime?
+  timeZone          String            @default("Asia/Dhaka")
+  status            ContentPostStatus @default(DRAFT)
+  publishStatus     PublishStatus     @default(DRAFT)
+  approvalStatus    ContentApprovalStatus @default(NONE)
+  clientId          String?
+  projectId         String?
+  campaignId        String?
+  pillarId          String?
+  assigneeId        String?
+  reviewerId        String?
+  approvedById      String?
+  approvedAt        DateTime?
+  rejectionReason   String?
+  publishedAt       DateTime?
+  externalUrl       String?
+  externalPostId    String?
+  format            ContentFormat     @default(STATIC)
+  contentType       String?
+  accountIds        String[]          @default([])
+  hashtags          String[]          @default([])
+  linkUrl           String?
+  firstComment      String?
+  altText           String?
+  notesInternal     String?
+  assetUrls         Json              @default("[]")
+  hasImage          Boolean           @default(false)
+  hasVideo          Boolean           @default(false)
+  isRecurring       Boolean           @default(false)
+  recurrenceRule    String?
+  archivedAt        DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  client            Client?           @relation(fields: [clientId], references: [id])
+  project           Project?          @relation(fields: [projectId], references: [id])
+  campaign          Campaign?         @relation(fields: [campaignId], references: [id])
+  pillar            ContentPillar?    @relation(fields: [pillarId], references: [id])
+  assignee          Employee?         @relation("PostAssignee", fields: [assigneeId], references: [id])
+  reviewer          Employee?         @relation("PostReviewer", fields: [reviewerId], references: [id])
+  approvedBy        User?             @relation("PostApprovedBy", fields: [approvedById], references: [id])
+  metrics           ContentMetric?
 
   @@index([status])
   @@index([scheduledDate])
+  @@index([scheduledAt])
+  @@index([clientId, scheduledAt])
+  @@index([projectId, scheduledAt])
+  @@index([campaignId])
+  @@index([approvalStatus])
 }
 
 model CalendarEvent {
-  id        String            @id @default(cuid())
-  title     String
-  type      CalendarEventType @default(MEETING)
-  date      String
-  clientId  String?
-  createdAt DateTime          @default(now())
-  projectId String?
-  client    Client?           @relation(fields: [clientId], references: [id])
-  project   Project?          @relation(fields: [projectId], references: [id])
+  id              String            @id @default(cuid())
+  title           String
+  type            CalendarEventType @default(MEETING)
+  /// Day key (YYYY-MM-DD, Asia/Dhaka). Kept as a string because the whole
+  /// app already speaks in day keys and dashboard queries compare strings.
+  date            String
+  endDate         String?
+  startTime       String?
+  endTime         String?
+  allDay          Boolean           @default(false)
+  timeZone        String            @default("Asia/Dhaka")
+  location        String?
+  meetingUrl      String?
+  notes           String?
+  attendeeIds     String[]          @default([])
+  clientContactIds String[]         @default([])
+  reminderMinutes Int[]             @default([1440, 60])
+  outcome         EventOutcome      @default(PENDING)
+  visibility      EventVisibility   @default(INTERNAL)
+  createdById     String?
+  clientId        String?
+  projectId       String?
+  campaignId      String?
+  taskId          String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  client          Client?           @relation(fields: [clientId], references: [id])
+  project         Project?          @relation(fields: [projectId], references: [id])
+  campaign        Campaign?         @relation(fields: [campaignId], references: [id])
 
   @@index([date])
+  @@index([clientId, date])
   @@index([projectId])
 }
 
 model DailyTarget {
-  id        String   @id @default(cuid())
-  title     String
-  target    Float    @default(1)
-  current   Float    @default(0)
-  unit      String   @default("")
-  category  String   @default("sales")
-  period    String
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  title      String
+  target     Float    @default(1)
+  current    Float    @default(0)
+  unit       String   @default("")
+  category   String   @default("sales")
+  period     String
+  periodType String   @default("MONTH")
+  clientId   String?
+  createdAt  DateTime @default(now())
+  client     Client?  @relation(fields: [clientId], references: [id])
 
   @@index([period])
+  @@index([clientId])
+}
+
+// ── Calendar: campaigns & ad planning ─────────────────────────────────
+model Campaign {
+  id          String         @id @default(cuid())
+  clientId    String
+  projectId   String?
+  name        String
+  objective   String?
+  status      CampaignStatus @default(PLAN)
+  startDate   DateTime       @db.Date
+  endDate     DateTime       @db.Date
+  totalBudget Decimal?       @db.Decimal(14, 2)
+  currency    String         @default("BDT")
+  briefLink   String?
+  ownerId     String?
+  color       String?
+  platforms   Platform[]     @default([])
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  client      Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project     Project?       @relation(fields: [projectId], references: [id])
+  posts       ContentPost[]
+  flights     AdFlight[]
+  events      CalendarEvent[]
+
+  @@index([clientId, startDate])
+  @@index([status])
+}
+
+model AdFlight {
+  id                 String         @id @default(cuid())
+  clientId           String
+  campaignId         String?
+  projectId          String?
+  name               String
+  platform           Platform
+  objective          String?
+  startDate          DateTime       @db.Date
+  endDate            DateTime       @db.Date
+  dailyBudget        Decimal?       @db.Decimal(12, 2)
+  totalBudget        Decimal?       @db.Decimal(14, 2)
+  currency           String         @default("BDT")
+  status             AdFlightStatus @default(PLANNED)
+  creativeNote       String?
+  adAccountId        String?
+  externalCampaignId String?
+  ownerId            String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  client             Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  campaign           Campaign?      @relation(fields: [campaignId], references: [id])
+  project            Project?       @relation(fields: [projectId], references: [id])
+
+  @@index([clientId, startDate])
+  @@index([campaignId])
+  @@index([status])
+}
+
+model ClientPlatformAccount {
+  id          String    @id @default(cuid())
+  clientId    String
+  platform    Platform
+  handle      String
+  profileUrl  String?
+  isActive    Boolean   @default(true)
+  isPrimary   Boolean   @default(false)
+  followers   Int?
+  followersAt DateTime?
+  timeZone    String    @default("Asia/Dhaka")
+  createdAt   DateTime  @default(now())
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, platform, handle])
+  @@index([clientId])
+}
+
+model ContentPillar {
+  id        String        @id @default(cuid())
+  clientId  String
+  name      String
+  color     String        @default("#7C3AED")
+  targetPct Int           @default(0)
+  createdAt DateTime      @default(now())
+  client    Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  posts     ContentPost[]
+
+  @@unique([clientId, name])
+  @@index([clientId])
+}
+
+model ContentMetric {
+  id          String      @id @default(cuid())
+  postId      String      @unique
+  reach       Int         @default(0)
+  impressions Int         @default(0)
+  likes       Int         @default(0)
+  comments    Int         @default(0)
+  shares      Int         @default(0)
+  saves       Int         @default(0)
+  clicks      Int         @default(0)
+  source      String      @default("MANUAL")
+  capturedAt  DateTime    @default(now())
+  post        ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+// ── Calendar: plans, collaboration, audit ─────────────────────────────
+model CalendarPlan {
+  id          String     @id @default(cuid())
+  clientId    String?
+  projectId   String?
+  scope       PlanScope  @default(MONTH)
+  periodStart DateTime   @db.Date
+  periodEnd   DateTime   @db.Date
+  title       String
+  status      PlanStatus @default(DRAFT)
+  version     Int        @default(1)
+  payload     Json       @default("{}")
+  totals      Json       @default("{}")
+  notes       String?
+  language    String     @default("EN")
+  createdById String?
+  lockedAt    DateTime?
+  publishedAt DateTime?
+  shareToken  String?    @unique
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  client      Client?    @relation(fields: [clientId], references: [id])
+  project     Project?   @relation(fields: [projectId], references: [id])
+
+  @@index([clientId, periodStart])
+  @@index([status])
+}
+
+model CalendarComment {
+  id         String   @id @default(cuid())
+  source     String
+  sourceId   String
+  authorId   String?
+  content    String
+  isInternal Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  author     User?    @relation("CalendarCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([source, sourceId])
+}
+
+model CalendarAuditLog {
+  id        String   @id @default(cuid())
+  source    String
+  sourceId  String
+  action    String
+  before    Json?
+  after     Json?
+  actorId   String?
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([sourceId])
+  @@index([createdAt])
+}
+
+model DailyLog {
+  id        String   @id @default(cuid())
+  date      String
+  clientId  String?
+  authorId  String?
+  summary   String
+  misses    Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  client    Client?  @relation(fields: [clientId], references: [id])
+  author    User?    @relation("DailyLogAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+  @@index([clientId, date])
+}
+
+model SavedCalendarView {
+  id        String   @id @default(cuid())
+  ownerId   String?
+  name      String
+  filters   Json     @default("{}")
+  view      String   @default("month")
+  isShared  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  owner     User?    @relation("SavedCalendarViewOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+model CalendarShareLink {
+  id          String   @id @default(cuid())
+  clientId    String?
+  planId      String?
+  token       String   @unique
+  scope       String   @default("PLAN")
+  expiresAt   DateTime?
+  createdById String?
+  createdAt   DateTime @default(now())
+  client      Client?  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
 }
 
 model TaskTemplate {
@@ -2251,6 +2604,7 @@ enum Module {
   INSIGHT
   PORTAL
   CONTROL
+  CALENDAR
 }
 
 enum AccessLevel {
@@ -2519,6 +2873,9 @@ enum RevenueTag {
 enum PaymentType {
   IN
   REFUND
+  /// Money paid OUT of the business (vendor/expense settlement). Before this
+  /// existed, vendor payouts defaulted to IN and were counted as client income.
+  OUT
 }
 
 enum PaymentMethod {
@@ -2566,6 +2923,88 @@ enum CalendarEventType {
   MEETING
   DEADLINE
   MILESTONE
+  SHOOT
+  REPORT
+}
+
+enum Platform {
+  FACEBOOK
+  INSTAGRAM
+  LINKEDIN
+  TIKTOK
+  X
+  YOUTUBE
+  GOOGLE_BUSINESS
+  PINTEREST
+  THREADS
+}
+
+enum ContentFormat {
+  STATIC
+  CAROUSEL
+  REEL
+  STORY
+  VIDEO
+  TEXT
+  ARTICLE
+}
+
+enum ContentApprovalStatus {
+  NONE
+  INTERNAL_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum PublishStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  MISSED
+}
+
+enum EventOutcome {
+  PENDING
+  DONE
+  NO_SHOW
+  CANCELLED
+  RESCHEDULED
+}
+
+enum EventVisibility {
+  INTERNAL
+  CLIENT
+}
+
+enum PlanScope {
+  WEEK
+  MONTH
+  CUSTOM
+}
+
+enum PlanStatus {
+  DRAFT
+  IN_REVIEW
+  LOCKED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AdFlightStatus {
+  PLANNED
+  LIVE
+  PAUSED
+  ENDED
+  CANCELLED
+}
+
+enum CampaignStatus {
+  PLAN
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
 }
 
 enum PortalScope {

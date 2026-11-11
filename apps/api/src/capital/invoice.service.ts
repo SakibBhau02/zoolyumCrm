@@ -6,7 +6,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { LedgerService, CapitalDb } from "./ledger.service";
 import { ReportingService } from "./reporting.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
-import { ACTIVE_STATUSES, INVOICE_CREDIT_INCLUDE, POSTABLE_STATUSES, invoiceTotals, invalidateFinance, logAudit, notifyRole, startOfTodayUtc, toBdt } from "./finance-kernel";
+import { ACTIVE_STATUSES, INVOICE_CREDIT_INCLUDE, POSTABLE_STATUSES, RECEIPT_PAYMENT_FILTER, invoiceTotals, invalidateFinance, logAudit, notifyRole, startOfTodayUtc, toBdt } from "./finance-kernel";
 import { AccountsService } from "../accounts/accounts.service";
 
 @Injectable()
@@ -110,9 +110,10 @@ export class InvoiceService {
   // ── Bank account ledger ──────────────────────────────────────────────
 
 
-  async invoices(query: { status?: string; clientId?: string; q?: string }) {
+  async invoices(query: { status?: string; clientId?: string; q?: string; limit?: string }) {
     // Keep OVERDUE badges honest before reading the list (throttled to 1/min).
     await this.syncOverdueStatuses().catch(() => {});
+    const take = Math.min(500, Math.max(1, Number(query.limit) || 200));
     return this.prisma.invoice.findMany({
       where: {
         ...(query.status ? { status: query.status as InvoiceStatus } : {}),
@@ -122,14 +123,16 @@ export class InvoiceService {
       include: {
         client: { select: { id: true, companyName: true } },
         project: { select: { id: true, name: true } },
-        lineItems: true,
+        // The list only needs the money, never the line descriptions; detail
+        // comes from /capital/invoices/:id.
+        lineItems: { select: { amount: true, revenueTag: true } },
         // `type` is required: refunds must subtract from the paid amount.
         payments: { select: { id: true, amount: true, type: true, paymentMethod: true, paymentDate: true } },
         ...INVOICE_CREDIT_INCLUDE,
       },
       orderBy: { issueDate: "desc" },
       // Safety cap: the invoice table is the heaviest list in the product.
-      take: 500,
+      take,
     });
   }
 
@@ -375,20 +378,71 @@ export class InvoiceService {
     return { clientId: project.clientId, projectId: project.id };
   }
 
+  /**
+   * One canonical line validator for create AND update.
+   *
+   * Update used to write `unitPrice` straight through with no checks, so a
+   * negative rate produced negative revenue that was then posted to the GL.
+   * `amount` and `unitPrice` were also interpreted differently by create vs
+   * update: a caller sending `{amount, quantity}` created N× the intended
+   * total. Everything now funnels through this method.
+   */
+  private normalizeLines(raw: any[]) {
+    if (!Array.isArray(raw) || raw.length === 0) {
+      throw new BadRequestException("An invoice needs at least one line item");
+    }
+    return raw.map((l, index) => {
+      const description = String(l?.description ?? "").trim();
+      if (!description) throw new BadRequestException(`Line ${index + 1} needs a description`);
+      const quantity = Number(l?.quantity ?? 1);
+      // `amount` from older clients is a line total; treat it as such.
+      const unitPrice = Number(
+        l?.unitPrice ?? (l?.amount != null ? Number(l.amount) / (quantity || 1) : NaN)
+      );
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new BadRequestException(`Line ${index + 1}: rate cannot be negative`);
+      }
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new BadRequestException(`Line ${index + 1}: quantity must be greater than zero`);
+      }
+      return {
+        description,
+        quantity,
+        unitPrice,
+        amount: Math.round(unitPrice * quantity * 100) / 100,
+        revenueTag: (l?.revenueTag as RevenueTag) ?? "AGENCY_REVENUE",
+      };
+    });
+  }
+
+  /** Rates that feed tax/discount math must be finite and within 0–100 %. */
+  private assertRates(body: any) {
+    for (const key of ["taxRate", "discountRate"] as const) {
+      const raw = body?.[key];
+      if (raw === undefined || raw === null || raw === "") continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        throw new BadRequestException(`${key} must be between 0 and 100`);
+      }
+    }
+    for (const key of ["shippingFee", "discountAmount"] as const) {
+      const raw = body?.[key];
+      if (raw === undefined || raw === null || raw === "") continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) throw new BadRequestException(`${key} cannot be negative`);
+    }
+    if (body?.exchangeRate !== undefined && body?.exchangeRate !== null && body?.exchangeRate !== "") {
+      const n = Number(body.exchangeRate);
+      if (!Number.isFinite(n) || n <= 0) throw new BadRequestException("exchangeRate must be greater than zero");
+    }
+  }
+
   async createInvoice(body: any, createdById?: string) {
     // Money validation before anything touches the ledger: a negative rate or an
     // empty line list would create an invoice whose totals are meaningless.
+    this.assertRates(body);
     const rawLines = body.lines ?? body.lineItems;
-    if (!Array.isArray(rawLines) || rawLines.length === 0) {
-      throw new BadRequestException("An invoice needs at least one line item");
-    }
-    for (const [index, l] of rawLines.entries()) {
-      if (!String(l?.description ?? "").trim()) throw new BadRequestException(`Line ${index + 1} needs a description`);
-      const unitPrice = Number(l.unitPrice ?? (l.amount != null ? l.amount / Number(l.quantity ?? 1) : NaN));
-      const quantity = Number(l.quantity ?? 1);
-      if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new BadRequestException(`Line ${index + 1}: rate cannot be negative`);
-      if (!Number.isFinite(quantity) || quantity <= 0) throw new BadRequestException(`Line ${index + 1}: quantity must be greater than zero`);
-    }
+    const lines = this.normalizeLines(rawLines);
     const currency = body.currency ?? "BDT";
     const exchangeRate = Number(body.exchangeRate ?? 1);
     if (currency !== "BDT" && (!Number.isFinite(exchangeRate) || exchangeRate <= 0)) {
@@ -430,17 +484,7 @@ export class InvoiceService {
           notes: body.notes,
           createdById,
           lineItems: {
-            create: (body.lines ?? body.lineItems ?? []).map((l: any) => {
-              const quantity = l.quantity ?? 1;
-              const unitPrice = l.unitPrice ?? (l.amount ? l.amount / quantity : 0);
-              return {
-                description: l.description,
-                quantity,
-                unitPrice,
-                amount: (l.amount ?? unitPrice) * quantity,
-                revenueTag: (l.revenueTag as RevenueTag) ?? "AGENCY_REVENUE",
-              };
-            }),
+            create: lines,
           },
         },
         include: { client: { select: { id: true, companyName: true } }, lineItems: true },
@@ -499,6 +543,9 @@ export class InvoiceService {
   async updateInvoice(id: string, body: any, actorId?: string) {
     const existing = await this.prisma.invoice.findUnique({ where: { id }, include: { lineItems: true } });
     if (!existing) throw new NotFoundException("Invoice not found");
+    this.assertRates(body);
+    const nextLines = body.lines ?? body.lineItems;
+    const lines = nextLines !== undefined ? this.normalizeLines(nextLines) : null;
     if (body.projectId !== undefined || body.clientId !== undefined) {
       const target = await this.resolveBillingTarget(
         body.clientId ?? existing.clientId,
@@ -519,7 +566,7 @@ export class InvoiceService {
     // terms, due date, payment details or installments must NOT reverse and
     // re-post the journal (that used to double-book revenue on a notes edit).
     const ledgerFieldsChanged =
-      body.lines !== undefined ||
+      lines !== null ||
       body.status !== undefined ||
       body.taxApplicable !== undefined ||
       body.taxRate !== undefined ||
@@ -529,17 +576,9 @@ export class InvoiceService {
       body.currency !== undefined ||
       body.exchangeRate !== undefined;
     const updated = await this.prisma.$transaction(async (tx) => {
-      if (body.lines) {
+      if (lines) {
         await tx.invoiceLineItem.deleteMany({ where: { invoiceId: id } });
-        data.lineItems = {
-          create: body.lines.map((l: any) => ({
-            description: l.description,
-            quantity: l.quantity ?? 1,
-            unitPrice: l.unitPrice,
-            amount: (l.quantity ?? 1) * l.unitPrice,
-            revenueTag: (l.revenueTag as RevenueTag) ?? "AGENCY_REVENUE",
-          })),
-        };
+        data.lineItems = { create: lines };
       }
       if (body.installments) {
         await tx.installment.deleteMany({ where: { invoiceId: id } });
@@ -949,16 +988,23 @@ export class InvoiceService {
   // ── Expenses ─────────────────────────────────────────────────────────
 
 
-  async income(query: { q?: string }) {
+  async income(query: { q?: string; limit?: string }) {
+    const take = Math.min(800, Math.max(1, Number(query.limit) || 300));
     const [payments, manual, dollarSales, matched] = await Promise.all([
       this.prisma.payment.findMany({
-        where: query.q ? { invoice: { client: { companyName: { contains: query.q, mode: "insensitive" } } } } : undefined,
+        // Income only: vendor payouts live in the same table with type OUT and
+        // used to appear here as if customers had paid us.
+        where: {
+          ...RECEIPT_PAYMENT_FILTER,
+          ...(query.q ? { invoice: { client: { companyName: { contains: query.q, mode: "insensitive" as const } } } } : {}),
+        },
         include: {
           invoice: { select: { id: true, invoiceNumber: true, invoiceType: true, client: { select: { companyName: true } }, project: { select: { name: true } } } },
           recordedBy: { select: { name: true } },
           bankAccount: { select: { id: true, accountName: true } },
         },
         orderBy: { paymentDate: "desc" },
+        take,
       }),
       this.prisma.manualIncome.findMany({
         where: query.q
@@ -978,6 +1024,7 @@ export class InvoiceService {
           project: { select: { id: true, name: true } },
         },
         orderBy: { date: "desc" },
+        take,
       }),
       // Dollar sales contribute their FX spread (profit), not the gross BDT —
       // the principal is a balance-sheet conversion, only the gain is income.
@@ -992,6 +1039,7 @@ export class InvoiceService {
           : undefined,
         include: { client: { select: { companyName: true } } },
         orderBy: { date: "desc" },
+        take,
       }),
       // A payment is "reconciled" when a bank statement line was matched to it.
       this.prisma.reconciliationRecord.findMany({
@@ -1004,7 +1052,8 @@ export class InvoiceService {
       id: p.id,
       source: "invoice",
       date: p.paymentDate,
-      amount: toBdt(Number(p.amount), p),
+      // A refund is money going back to the client, so it must reduce income.
+      amount: p.type === "REFUND" ? -toBdt(Number(p.amount), p) : toBdt(Number(p.amount), p),
       currency: p.currency,
       method: p.paymentMethod,
       reference: p.referenceId,
@@ -1190,8 +1239,7 @@ export class InvoiceService {
       throw new BadRequestException("Credit / refund amount must be greater than zero");
     }
     let invoice: any = null;
-    if (body.invoiceId) {
-      invoice = await this.prisma.invoice.findUnique({
+    if (body.invoiceId) {      invoice = await this.prisma.invoice.findUnique({
         where: { id: body.invoiceId },
         include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE },
       });
@@ -1205,6 +1253,17 @@ export class InvoiceService {
       body = { ...body, clientId: invoice.clientId };
     }
     const type = body.type ?? "CREDIT_NOTE";
+    if (!["CREDIT_NOTE", "REFUND", "WRITE_OFF"].includes(type)) {
+      throw new BadRequestException("type must be CREDIT_NOTE, REFUND or WRITE_OFF");
+    }
+    // A refund is money going back out against a receipt. Without an invoice
+    // the old code skipped every cap and could debit the bank for any amount.
+    if (type === "REFUND" && !body.invoiceId) {
+      throw new BadRequestException("A refund must reference the invoice it refunds.");
+    }
+    if (!body.clientId) {
+      throw new BadRequestException("clientId is required");
+    }
     // Guardrails that stop a typo from inventing money: you can never refund
     // more than was collected, and a credit note can never push an invoice
     // below zero (which would turn a receivable into a phantom negative debt).

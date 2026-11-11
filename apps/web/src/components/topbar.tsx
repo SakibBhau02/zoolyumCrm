@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  CalendarDays,
   ChevronDown,
   FileText,
   FolderKanban,
   ListTodo,
   Loader2,
   LogOut,
+  Megaphone,
   Menu,
   Moon,
   Search,
@@ -25,7 +27,7 @@ import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
 
 interface SearchHit {
-  type: "lead" | "client" | "project" | "invoice" | "task";
+  type: "lead" | "client" | "project" | "invoice" | "task" | "post" | "event";
   id: string;
   title: string;
   subtitle?: string;
@@ -38,6 +40,8 @@ const TYPE_META: Record<SearchHit["type"], { label: string; icon: typeof Zap }> 
   project: { label: "Project", icon: FolderKanban },
   invoice: { label: "Invoice", icon: FileText },
   task: { label: "Task", icon: ListTodo },
+  post: { label: "Post", icon: Megaphone },
+  event: { label: "Event", icon: CalendarDays },
 };
 
 export function Topbar() {

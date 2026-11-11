@@ -13,11 +13,11 @@ import { WebAuthnController } from "./webauthn.controller";
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const secret = config.get<string>("JWT_SECRET");
-        if (!secret && process.env.NODE_ENV === "production") {
-          throw new Error("JWT_SECRET is required in production");
+        if (!secret || secret.trim().length < 32) {
+          throw new Error("JWT_SECRET is required and must be at least 32 characters");
         }
         return {
-          secret: secret ?? "dev-secret",
+          secret,
           signOptions: {
             expiresIn: (config.get<string>("JWT_EXPIRES_IN") ?? "7d") as `${number}d`,
           },

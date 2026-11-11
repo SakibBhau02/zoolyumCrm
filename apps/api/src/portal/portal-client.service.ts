@@ -1580,4 +1580,107 @@ export class PortalClientService {
   telegramUnlink(scope: PortalScope) {
     return this.telegram.unlink(scope.portalUserId);
   }
+
+  /**
+   * Client-facing calendar: only committed work — approved posts that are
+   * scheduled or published, plus meetings explicitly marked CLIENT-visible.
+   * Drafts and internal notes never cross this boundary.
+   */
+  async calendar(scope: PortalScope, month?: string) {
+    const now = new Date();
+    const m = /^\d{4}-\d{2}$/.test(String(month ?? ""))
+      ? String(month)
+      : `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const [y, mm] = m.split("-").map(Number);
+    const from = `${m}-01`;
+    const to = `${m}-${String(new Date(Date.UTC(y, mm, 0)).getUTCDate()).padStart(2, "0")}`;
+    const rangeStart = new Date(`${from}T00:00:00+06:00`);
+    const rangeEnd = new Date(`${to}T23:59:59+06:00`);
+
+    const [posts, events, milestones] = await Promise.all([
+      this.prisma.contentPost.findMany({
+        where: {
+          clientId: scope.clientId,
+          archivedAt: null,
+          approvalStatus: "APPROVED",
+          publishStatus: { in: ["SCHEDULED", "PUBLISHED"] },
+          scheduledAt: { gte: rangeStart, lte: rangeEnd },
+        },
+        orderBy: { scheduledAt: "asc" },
+        select: {
+          id: true,
+          title: true,
+          content: true,
+          platforms: true,
+          scheduledAt: true,
+          publishStatus: true,
+          externalUrl: true,
+          format: true,
+          projectId: true,
+        },
+      }),
+      this.prisma.calendarEvent.findMany({
+        where: {
+          clientId: scope.clientId,
+          visibility: "CLIENT",
+          OR: [{ date: { gte: from, lte: to } }, { endDate: { gte: from, lte: to } }],
+        },
+        orderBy: { date: "asc" },
+        select: { id: true, title: true, type: true, date: true, endDate: true, startTime: true, endTime: true, allDay: true, location: true },
+      }),
+      this.prisma.milestone.findMany({
+        where: {
+          clientVisible: true,
+          project: { clientId: scope.clientId, ...this.access.projectWhere(scope) },
+          dueDate: { gte: rangeStart, lte: rangeEnd },
+        },
+        orderBy: { dueDate: "asc" },
+        select: { id: true, name: true, dueDate: true, status: true, projectId: true },
+      }),
+    ]);
+
+    const dayKey = (d: Date) => new Date(d.getTime() + 6 * 3600_000).toISOString().slice(0, 10);
+    const timeKey = (d: Date) => new Date(d.getTime() + 6 * 3600_000).toISOString().slice(11, 16);
+
+    return {
+      month: m,
+      items: [
+        ...posts.map((p) => ({
+          key: `post:${p.id}`,
+          source: "POST",
+          id: p.id,
+          title: p.title,
+          caption: p.content,
+          date: dayKey(p.scheduledAt!),
+          time: timeKey(p.scheduledAt!),
+          platforms: (p.platforms as string[]) ?? [],
+          status: p.publishStatus,
+          url: p.externalUrl,
+          projectId: p.projectId,
+        })),
+        ...events.map((e) => ({
+          key: `event:${e.id}`,
+          source: "EVENT",
+          id: e.id,
+          title: e.title,
+          date: e.date,
+          endDate: e.endDate,
+          time: e.allDay ? null : e.startTime,
+          endTime: e.allDay ? null : e.endTime,
+          allDay: e.allDay,
+          location: e.location,
+          type: e.type,
+        })),
+        ...milestones.map((m2) => ({
+          key: `milestone:${m2.id}`,
+          source: "MILESTONE",
+          id: m2.id,
+          title: m2.name,
+          date: m2.dueDate ? dayKey(m2.dueDate) : null,
+          status: m2.status,
+          projectId: m2.projectId,
+        })),
+      ].sort((a, b) => String(a.date).localeCompare(String(b.date))),
+    };
+  }
 }

@@ -81,12 +81,8 @@ function InvoicesContent() {
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }, [router, pathname, searchParams]);
 
-  // Auto-close the centered popup if its invoice disappears (e.g. after delete).
-  useEffect(() => {
-    if (selectedId && c.invoices !== null && !c.invoices.some((i) => i.id === selectedId)) {
-      closeInvoice();
-    }
-  }, [selectedId, c.invoices, closeInvoice]);
+  // The detail modal fetches by id and closes itself on 404, so we no longer
+  // depend on the (capped) list containing the selected row.
 
   return (
     <>

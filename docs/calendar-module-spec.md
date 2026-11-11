@@ -1,7 +1,7 @@
 # Calendar Module — Feature & Functionality Spec
 
 **Module:** `/calendar` (Zoolyum OS — Agency Operating System)
-**Status:** Planning / pre-implementation
+**Status:** Implemented — see `docs/calendar-module-implementation.md` for what shipped
 **Date:** ১১ নভেম্বর ২০২৬
 **Owner:** Product (Owner) · PM · Social Media Team
 **Scope:** Content calendar, campaign/ad planning, unified agency work timeline, client-wise calendar, plan → report generation

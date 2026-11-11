@@ -108,8 +108,22 @@ export class MastersService {
       this.prisma.manualIncome.findMany({ where: { bankAccountId }, orderBy: { date: "desc" } }),
       this.prisma.reconciliationRecord.findMany({ where: { bankAccountId }, orderBy: { statementDate: "desc" } }),
     ]);
+    const paymentDirection = (p: { type: string; expenseId?: string | null }) =>
+      p.type === "REFUND" || p.type === "OUT" || p.expenseId ? "OUT" : "IN";
     const txns = [
-      ...payments.map((p) => ({ id: p.id, date: p.paymentDate, ref: p.invoice?.invoiceNumber ?? p.referenceId ?? p.id, type: p.type, amount: p.type === "REFUND" ? -toBdt(Number(p.amount), p) : toBdt(Number(p.amount), p), kind: p.type === "REFUND" ? "REFUND" : "PAYMENT", client: p.invoice?.client.companyName ?? null, note: p.notes })),
+      ...payments.map((p) => {
+        const dir = paymentDirection(p);
+        return {
+          id: p.id,
+          date: p.paymentDate,
+          ref: p.invoice?.invoiceNumber ?? p.referenceId ?? p.id,
+          type: dir,
+          amount: dir === "OUT" ? -toBdt(Number(p.amount), p) : toBdt(Number(p.amount), p),
+          kind: dir === "OUT" ? "PAYMENT_OUT" : "PAYMENT",
+          client: p.invoice?.client.companyName ?? null,
+          note: p.notes,
+        };
+      }),
       ...expenses.map((e) => ({ id: e.id, date: e.date, ref: e.description, type: "OUT" as const, amount: -toBdt(Number(e.amount), e), kind: "EXPENSE", client: null, note: e.subcategory ?? null })),
       ...manualIncome.map((m) => ({ id: m.id, date: m.date, ref: m.description, type: "IN" as const, amount: toBdt(Number(m.amount), m), kind: "MANUAL_INCOME", client: null, note: m.notes })),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

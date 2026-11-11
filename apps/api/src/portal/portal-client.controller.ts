@@ -105,6 +105,11 @@ export class PortalClientController {
     return this.portal.updates(scope);
   }
 
+  @Get("calendar")
+  calendar(@PortalCtx() scope: PortalScope, @Query("month") month?: string) {
+    return this.portal.calendar(scope, month);
+  }
+
   @Get("updates/:id")
   reportDetail(@PortalCtx() scope: PortalScope, @Param("id") id: string) {
     return this.portal.reportDetail(scope, id);

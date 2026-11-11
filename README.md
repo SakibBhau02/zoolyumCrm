@@ -69,19 +69,44 @@ npm run dev
 - **People** — attendance, leave approvals, 4-week utilization logs, payroll with cost rates.
 - **Capital** — invoices (retainer/project/pass-through), line items, payments with aging, expenses (billable/absorbed, approval), bank accounts, profitability (vs project budgets).
 - **Insight** — metric snapshots (8-month trend), correlation insights (dismissible), weekly digests, reports.
+- **Calendar** — unified agency timeline: tasks, content posts, meetings, milestones, deliverables, ad flights and invoices in one feed; client-wise views, drag-drop rescheduling, internal approval, monthly/weekly plan lock, plan→PDF/CSV/share-link reports, iCal export.
 - **Portal** — client portal users, comments with sentiment, deliverable approvals, activity.
 - **Control** — RBAC roles with module permission matrices, integrations (Slack/Dropbox), branding, audit logs.
 
 ## Useful commands
 
 ```bash
-npm run db:reset    # migrate reset + re-seed (destructive)
+npm run db:reset    # migrate reset + re-seed (destructive, demo data)
+npm run db:bootstrap # production bootstrap: roles + GL + owner ONLY (no demo data)
 npm run build       # build api + web
 npm run typecheck   # tsc --noEmit for api + web
 npm run test:smoke  # live API smoke + authorization gate (needs API + seeded DB)
 npm run test:e2e    # Playwright suite (starts API + web automatically)
 npm run check       # typecheck + smoke
 ```
+
+## Production deployment
+
+1. **Environment** — the API refuses to start without a strong `JWT_SECRET`
+   (≥32 chars). In production it also requires `CORS_ORIGINS`; set
+   `TRUST_PROXY=1` when running behind nginx/ALB and `FILE_URL_SECRET` to
+   decouple file-link signing from the JWT key.
+2. **Database** — `npx prisma migrate deploy --schema apps/api/prisma/schema.prisma`.
+3. **First login** — run the bootstrap, never the demo seed:
+   ```bash
+   BOOTSTRAP_OWNER_EMAIL=you@company.com \
+   BOOTSTRAP_OWNER_PASSWORD='a-long-random-password' \
+   npm run db:bootstrap
+   ```
+   `npm run db:seed` refuses to run with `NODE_ENV=production`.
+4. **Web build** — `NEXT_PUBLIC_API_URL` is compiled into the browser bundle and
+   is mandatory for a production build:
+   ```bash
+   docker compose --profile app build \
+     --build-arg NEXT_PUBLIC_API_URL=https://api.example.com/api
+   ```
+5. **Health checks** — use `GET /api/health/ready` (verifies PostgreSQL and
+   Redis) for load balancers; `GET /api/health` is a cheap liveness probe.
 
 ## Design system
 

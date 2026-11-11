@@ -3,7 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import type { AuthUser } from "../common/decorators/current-user.decorator";
 
 export interface SearchHit {
-  type: "lead" | "client" | "project" | "invoice" | "task";
+  type: "lead" | "client" | "project" | "invoice" | "task" | "post" | "event";
   id: string;
   title: string;
   subtitle?: string;
@@ -30,7 +30,7 @@ export class SearchService {
     if (q.length < 2) return [];
     const contains = { contains: q, mode: "insensitive" as const };
 
-    const [leads, clients, projects, invoices, tasks] = await Promise.all([
+    const [leads, clients, projects, invoices, tasks, posts, events] = await Promise.all([
       this.can(user, "PULSE")
         ? this.prisma.lead.findMany({
             where: { OR: [{ name: contains }, { company: contains }, { uid: contains }] },
@@ -71,6 +71,28 @@ export class SearchService {
             orderBy: { createdAt: "desc" },
           })
         : [],
+      this.can(user, "CALENDAR")
+        ? this.prisma.contentPost.findMany({
+            where: { archivedAt: null, OR: [{ title: contains }, { content: contains }] },
+            select: {
+              id: true,
+              title: true,
+              scheduledDate: true,
+              publishStatus: true,
+              client: { select: { companyName: true } },
+            },
+            take: 5,
+            orderBy: { scheduledAt: "desc" },
+          })
+        : [],
+      this.can(user, "CALENDAR")
+        ? this.prisma.calendarEvent.findMany({
+            where: { title: contains },
+            select: { id: true, title: true, date: true, type: true, client: { select: { companyName: true } } },
+            take: 5,
+            orderBy: { date: "desc" },
+          })
+        : [],
     ]);
 
     return [
@@ -108,6 +130,20 @@ export class SearchService {
         title: t.title,
         subtitle: t.status,
         href: `/tasks?task=${t.id}`,
+      })),
+      ...posts.map((p) => ({
+        type: "post" as const,
+        id: p.id,
+        title: p.title,
+        subtitle: [p.client?.companyName, p.scheduledDate, p.publishStatus].filter(Boolean).join(" · "),
+        href: `/calendar?view=day&date=${p.scheduledDate}&post=${p.id}`,
+      })),
+      ...events.map((e) => ({
+        type: "event" as const,
+        id: e.id,
+        title: e.title,
+        subtitle: [e.client?.companyName, e.date, e.type].filter(Boolean).join(" · "),
+        href: `/calendar?view=day&date=${e.date}&event=${e.id}`,
       })),
     ];
   }

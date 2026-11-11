@@ -41,11 +41,12 @@ import { buildInvoicePdfAsync, buildReceiptPdf, resolveBrandingImages } from "@/
 import { buildPortalReportPdf } from "@/lib/portal-report-pdf";
 import { invoiceTotals, numberToWords, paymentSerial } from "@/lib/invoice-utils";
 import { AdsTrendChart } from "@/components/portal-charts";
+import { monthGrid, monthLabel, shiftMonth } from "@/lib/calendar-date";
 import { Btn, TableShell, Td, Th, THead, Tr } from "@/components/table";
 import { Avatar, CardShell, cn, EmptyState, PageHeader, SkeletonBlock, StatCard, StatusBadge } from "@/components/shared";
 import { Field, Input, Modal } from "@/components/ui";
 
-type Tab = "dashboard" | "work" | "performance" | "projects" | "files" | "updates" | "invoices" | "messages";
+type Tab = "dashboard" | "work" | "performance" | "projects" | "files" | "updates" | "calendar" | "invoices" | "messages";
 type Me = {
   id: string;
   name: string;
@@ -476,6 +477,7 @@ const TABS: { value: Tab; label: string; icon: React.ReactNode }[] = [
   { value: "projects", label: "Projects", icon: <FolderOpen className="size-4" /> },
   { value: "files", label: "Files", icon: <Files className="size-4" /> },
   { value: "updates", label: "Updates", icon: <History className="size-4" /> },
+  { value: "calendar", label: "Calendar", icon: <CalendarClock className="size-4" /> },
   { value: "invoices", label: "Invoices", icon: <ReceiptText className="size-4" /> },
   { value: "messages", label: "Messages", icon: <MessageSquare className="size-4" /> },
 ];
@@ -542,6 +544,9 @@ function PortalClientWorkspace() {
   const [updates, setUpdates] = useState<PortalReport[] | null>(null);
   const [updatesLoading, setUpdatesLoading] = useState(false);
   const [updatesError, setUpdatesError] = useState<string | null>(null);
+  const [calendarData, setCalendarData] = useState<any | null>(null);
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date().toISOString().slice(0, 7));
 
   const [workQuery, setWorkQuery] = useState("");
   const [workDue, setWorkDue] = useState<"all" | "week" | "overdue">("all");
@@ -577,6 +582,11 @@ function PortalClientWorkspace() {
   const [activeThread, setActiveThread] = useState<string>("general");
   // Notification deep link from the agency inbox: /portal-client?thread=<key>
   const searchParams = useSearchParams();
+  // Deep links from notifications land on the right tab (`?tab=calendar`).
+  useEffect(() => {
+    const t = searchParams.get("tab");
+    if (t && TABS.some((x) => x.value === t)) setTab(t as Tab);
+  }, [searchParams]);
   const threadParam = searchParams.get("thread");
   useEffect(() => {
     if (!threadParam || !me) return;
@@ -724,6 +734,17 @@ function PortalClientWorkspace() {
       setUpdatesError(err?.message ?? "Failed to load updates");
     } finally {
       setUpdatesLoading(false);
+    }
+  }, []);
+
+  const loadCalendar = useCallback(async (month: string) => {
+    setCalendarLoading(true);
+    try {
+      setCalendarData(await pfetch(`/portal-client/calendar?month=${month}`));
+    } catch {
+      setCalendarData({ month, items: [] });
+    } finally {
+      setCalendarLoading(false);
     }
   }, []);
 
@@ -962,6 +983,7 @@ function PortalClientWorkspace() {
     if (tab === "performance" && ads === null) loadAds(adsRange);
     if (tab === "files" && files === null) loadFiles();
     if (tab === "updates" && updates === null) loadUpdates();
+    if (tab === "calendar" && calendarData === null) loadCalendar(calendarMonth);
     if (tab === "invoices" && invoices === null) loadInvoices();
     if (tab === "messages" && messages === null) {
       loadThreads();
@@ -2392,6 +2414,102 @@ function PortalClientWorkspace() {
               </div>
             )}
             {reportError && <p className="mt-2 text-[11.5px] text-rose-500">{reportError}</p>}
+          </div>
+        )}
+
+        {tab === "calendar" && (
+          <div>
+            <PageHeader title="Calendar" subtitle="What we are publishing and when — approved work only." />
+            <CardShell>
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <Btn
+                    variant="ghost"
+                    className="!px-2"
+                    onClick={() => {
+                      const m = shiftMonth(`${calendarMonth}-01`, -1).slice(0, 7);
+                      setCalendarMonth(m);
+                      loadCalendar(m);
+                    }}
+                  >
+                    <ArrowRightCircle className="size-4 rotate-180" />
+                  </Btn>
+                  <span className="min-w-[140px] text-center text-[13px] font-semibold">{monthLabel(`${calendarMonth}-01`)}</span>
+                  <Btn
+                    variant="ghost"
+                    className="!px-2"
+                    onClick={() => {
+                      const m = shiftMonth(`${calendarMonth}-01`, 1).slice(0, 7);
+                      setCalendarMonth(m);
+                      loadCalendar(m);
+                    }}
+                  >
+                    <ArrowRightCircle className="size-4" />
+                  </Btn>
+                </div>
+                <Btn
+                  variant="outline"
+                  className="px-2.5 py-1.5 text-[11px]"
+                  onClick={() => {
+                    const m = new Date().toISOString().slice(0, 7);
+                    setCalendarMonth(m);
+                    loadCalendar(m);
+                  }}
+                >
+                  This month
+                </Btn>
+              </div>
+
+              {calendarLoading ? (
+                <SkeletonBlock className="h-72" />
+              ) : (
+                <div className="overflow-x-auto">
+                  <div className="min-w-[680px]">
+                    <div className="grid grid-cols-7 border-b border-border/60">
+                      {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((w) => (
+                        <div key={w} className="py-1.5 text-center text-[9.5px] font-bold uppercase tracking-wide text-muted-foreground">
+                          {w}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7">
+                      {monthGrid(`${calendarMonth}-01`).map(({ date, inMonth }) => {
+                        const rows = (calendarData?.items ?? []).filter((i: any) => String(i.date).slice(0, 10) === date);
+                        return (
+                          <div
+                            key={date}
+                            className={cn(
+                              "min-h-[86px] border-b border-r border-border/40 p-1",
+                              !inMonth && "bg-muted/20",
+                              date === new Date().toISOString().slice(0, 10) && "bg-primary/5"
+                            )}
+                          >
+                            <span className={cn("text-[10px] font-bold tabular-nums", inMonth ? "text-foreground" : "text-muted-foreground/40")}>
+                              {Number(date.slice(8))}
+                            </span>
+                            <div className="mt-0.5 flex flex-col gap-0.5">
+                              {rows.slice(0, 3).map((r: any) => (
+                                <div key={r.key} className="rounded bg-primary/10 px-1 py-0.5" title={r.title}>
+                                  <p className="truncate text-[9px] font-semibold leading-tight">{r.title}</p>
+                                  <p className="truncate text-[8px] text-muted-foreground">
+                                    {r.time ? `${r.time} · ` : ""}
+                                    {(r.platforms ?? []).join(", ") || (r.source === "MILESTONE" ? "Milestone" : "")}
+                                  </p>
+                                </div>
+                              ))}
+                              {rows.length > 3 && <span className="px-1 text-[8px] text-muted-foreground">+{rows.length - 3} more</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                Only approved posts and client-visible meetings are shown. Drafts stay with the agency until they are ready.
+              </p>
+            </CardShell>
           </div>
         )}
 

@@ -92,7 +92,7 @@ const LOGO_POSITIONS = [
   { value: "top", label: "Top" },
 ];
 
-const MODULES = ["CLIENTS", "LEADS", "PROJECTS", "TASKS", "FINANCE", "PEOPLE", "INSIGHTS", "CONTROL"];
+const MODULES = ["PULSE", "ACCOUNTS", "FLOW", "TASKS", "PEOPLE", "CAPITAL", "INSIGHT", "CALENDAR", "PORTAL", "CONTROL"];
 
 const label = (v: string) => v.replace(/_/g, " ").toLowerCase();
 const uid = () => Math.random().toString(36).slice(2, 10);

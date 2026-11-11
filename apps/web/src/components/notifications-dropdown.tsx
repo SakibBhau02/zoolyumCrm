@@ -22,7 +22,7 @@ import {
   Workflow,
   Zap,
 } from "lucide-react";
-import { apiFetch, getToken } from "@/lib/api";
+import { API_URL, apiFetch, getToken } from "@/lib/api";
 import { cn } from "./shared";
 import { timeAgo } from "@/lib/format";
 
@@ -163,7 +163,7 @@ export function NotificationsDropdown() {
       .then((res) => {
         if (cancelled) return;
         sse = new EventSource(
-          `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api"}/notifications/sse?token=${encodeURIComponent(res.token)}`
+          `${API_URL}/notifications/sse?token=${encodeURIComponent(res.token)}`
         );
         sse.onmessage = (ev) => {
           try {

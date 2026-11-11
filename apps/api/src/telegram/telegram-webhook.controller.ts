@@ -1,4 +1,5 @@
-import { Body, Controller, Headers, HttpCode, Logger, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Headers, HttpCode, Logger, Post, ServiceUnavailableException, UnauthorizedException } from "@nestjs/common";
+import { timingSafeEqual } from "crypto";
 import { Public } from "../common/decorators/public.decorator";
 import { TelegramConfigService } from "./telegram-config.service";
 import { TelegramCommandService } from "./telegram-command.service";
@@ -28,7 +29,15 @@ export class TelegramWebhookController {
   async webhook(@Body() update: any, @Headers("x-telegram-bot-api-secret-token") secret?: string) {
     const cfg = await this.config.getConfig();
     if (!cfg.enabled) return { ok: false, skipped: "disabled" };
-    if (cfg.webhookSecret && secret !== cfg.webhookSecret) {
+    // Fail closed: an unset secret used to accept every request, which let
+    // anyone forge an update and punch attendance or approve leave for a chat
+    // that was already linked.
+    if (!cfg.webhookSecret) {
+      throw new ServiceUnavailableException("Telegram webhook secret is not configured");
+    }
+    const provided = Buffer.from(String(secret ?? ""));
+    const expected = Buffer.from(String(cfg.webhookSecret));
+    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
       // Do not leak whether the secret is configured.
       throw new UnauthorizedException();
     }

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -21,7 +21,8 @@ export class ExpenseService {
   ) {}
 
 
-  async expenses(query: { status?: string; clientId?: string; q?: string; category?: string }, actorId?: string) {
+  async expenses(query: { status?: string; clientId?: string; q?: string; category?: string; limit?: string }, actorId?: string) {
+    const take = Math.min(500, Math.max(1, Number(query.limit) || 300));
     const rows = await this.prisma.expense.findMany({
       where: {
         ...(query.status ? { approvalStatus: query.status as any } : {}),
@@ -38,28 +39,22 @@ export class ExpenseService {
       },
       orderBy: { date: "desc" },
       // Safety cap so an export-sized table can never arrive in one response.
-      take: 500,
+      take,
     });
     if (!rows.length) return rows;
 
     // Attach the caller's approval capability so the UI cannot offer a button
-    // the server will refuse. Computed once per role+amount pair.
+    // the server will refuse. The policy is read ONCE and evaluated in memory;
+    // the previous per-amount cache meant 500 distinct amounts = 500 queries.
     const actor = actorId
       ? await this.prisma.user.findUnique({ where: { id: actorId }, select: { id: true, role: { select: { name: true } } } }).catch(() => null)
       : null;
     const roleName = String((actor as any)?.role?.name ?? "");
-    const cache = new Map<string, { canApprove: boolean; reason: string | null; limit: number | null }>();
-    return Promise.all(
-      rows.map(async (r) => {
-        const key = `${r.amount}|${r.submittedById ?? ""}`;
-        let cap = cache.get(key);
-        if (!cap) {
-          cap = await this.approvalPolicy.capability(roleName, Number(r.amount), r.submittedById, actorId);
-          cache.set(key, cap);
-        }
-        return { ...r, approval: cap };
-      })
-    );
+    const policy = await this.approvalPolicy.policy();
+    return rows.map((r) => ({
+      ...r,
+      approval: this.approvalPolicy.capabilityWith(policy, roleName, Number(r.amount), r.submittedById, actorId),
+    }));
   }
 
 
@@ -89,6 +84,14 @@ export class ExpenseService {
     const amount = Number(body.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException("Expense amount must be greater than zero");
+    }
+    if (body.exchangeRate !== undefined && body.exchangeRate !== null && body.exchangeRate !== "") {
+      const rate = Number(body.exchangeRate);
+      if (!Number.isFinite(rate) || rate <= 0) throw new BadRequestException("exchangeRate must be greater than zero");
+    }
+    if (body.markupPct !== undefined && body.markupPct !== null && body.markupPct !== "") {
+      const pct = Number(body.markupPct);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 1000) throw new BadRequestException("markupPct must be between 0 and 1000");
     }
     const target = await this.resolveExpenseTarget(body.clientId, body.projectId);
     body = { ...body, clientId: target.clientId, projectId: target.projectId };
@@ -235,6 +238,14 @@ export class ExpenseService {
     if (body.amount !== undefined) {
       const amount = Number(body.amount);
       if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException("Expense amount must be greater than zero");
+    }
+    if (body.exchangeRate !== undefined && body.exchangeRate !== null && body.exchangeRate !== "") {
+      const rate = Number(body.exchangeRate);
+      if (!Number.isFinite(rate) || rate <= 0) throw new BadRequestException("exchangeRate must be greater than zero");
+    }
+    if (body.markupPct !== undefined && body.markupPct !== null && body.markupPct !== "") {
+      const pct = Number(body.markupPct);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 1000) throw new BadRequestException("markupPct must be between 0 and 1000");
     }
     const wasApproved = existing.approvalStatus === "APPROVED";
     const willBeApproved = body.approvalStatus !== undefined ? body.approvalStatus === "APPROVED" : wasApproved;
@@ -399,6 +410,10 @@ export class ExpenseService {
       const created = await tx.payment.create({
       data: {
         expenseId: id,
+        // Direction is explicit: this row is cash leaving the business. Without
+        // it the default IN made every vendor payout look like client income
+        // in the income, cash-flow and bank-statement reports.
+        type: "OUT",
         amount,
         currency: expense.currency,
         exchangeRate: expense.exchangeRate ?? 1,
@@ -436,7 +451,16 @@ export class ExpenseService {
       tx
     );
     const newPaid = Number(expense.paidAmount ?? 0) + amount;
-    await tx.expense.update({ where: { id }, data: { paidAmount: newPaid, balanceDeducted: newPaid >= Number(expense.amount) } });
+    // Optimistic concurrency guard: two "Pay" clicks (or a retried request)
+    // used to both read the same paidAmount and both debit the bank. Comparing
+    // the previous value makes the second writer fail and roll back instead.
+    const claimed = await tx.expense.updateMany({
+      where: { id, paidAmount: expense.paidAmount ?? 0 },
+      data: { paidAmount: newPaid, balanceDeducted: newPaid >= Number(expense.amount) },
+    });
+    if (claimed.count === 0) {
+      throw new ConflictException("This expense was paid by another request. Refresh and try again.");
+    }
     await logAudit(tx, "Expense", id, "payment_recorded", { amount, taxWithheld, net, remaining: Math.max(Number(expense.amount) - newPaid, 0) }, actorId);
     return created;
     }, { timeout: 15000 });

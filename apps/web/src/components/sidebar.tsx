@@ -42,7 +42,7 @@ const NAV: {
       { href: "/people", label: "People", icon: Users, badge: "HRM", perm: "PEOPLE" },
       { href: "/capital", label: "Capital", icon: Wallet, badge: "Finance", perm: "CAPITAL" },
       { href: "/insight", label: "Insight", icon: BarChart3, badge: "Reports", perm: "INSIGHT" },
-      { href: "/calendar", label: "Calendar", icon: CalendarDays, perm: "FLOW" },
+      { href: "/calendar", label: "Calendar", icon: CalendarDays, perm: "CALENDAR" },
       { href: "/portal", label: "Portal", icon: Globe2, badge: "Client", perm: "PORTAL" },
     ],
   },

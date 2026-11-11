@@ -11,6 +11,7 @@ apps/api/uploads/
 qa-evidence/
 .playwright-mcp/
 *.png
+qa/*.json
 # one-off QA / probe scripts
 qa-*.js
 probe-*.js

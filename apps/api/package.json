@@ -12,6 +12,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:reset": "prisma migrate reset --force",
     "prisma:seed": "tsx prisma/seed.ts",
+    "bootstrap": "tsx prisma/bootstrap.ts",
     "typecheck": "tsc --noEmit"
   },
   "prisma": {

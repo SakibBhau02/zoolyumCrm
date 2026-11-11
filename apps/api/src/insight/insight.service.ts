@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
-import { invoiceTotals } from "../capital/finance-kernel";
+import { RECEIPT_PAYMENT_FILTER, invoiceTotals } from "../capital/finance-kernel";
 
 const ACTIVE_INVOICE_STATUSES = ["SENT", "VIEWED", "PARTIALLY_PAID", "PAID", "OVERDUE"];
 const TAX_RATE = 0.22;
@@ -116,7 +116,7 @@ export class InsightService {
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const [invoices, payments, expenses, leads, clients, projects] = await Promise.all([
       this.prisma.invoice.findMany({ include: { lineItems: true, payments: true, client: { select: { companyName: true } } } }),
-      this.prisma.payment.findMany(),
+      this.prisma.payment.findMany({ where: { ...RECEIPT_PAYMENT_FILTER } }),
       this.prisma.expense.findMany({ where: { approvalStatus: { in: ["APPROVED", "PENDING"] } } }),
       this.prisma.lead.findMany(),
       this.prisma.client.findMany(),

@@ -578,6 +578,7 @@ export function Drawer({
               <div className="min-w-0">{title}</div>
               <button
                 onClick={onClose}
+                aria-label="Close panel"
                 className="flex size-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
                 <X className="size-4" />
