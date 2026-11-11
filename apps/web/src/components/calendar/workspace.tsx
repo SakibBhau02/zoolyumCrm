@@ -87,6 +87,15 @@ export function CalendarWorkspace({ fixedClientId }: { fixedClientId?: string })
   const canApprove = user?.role === "Owner" || calPerm?.approve === true;
   const [view, setView] = useState<CalendarView>("month");
   const [anchor, setAnchor] = useState(todayISO());
+
+  // Phones open on the agenda (day) view: the 7-column month grid is only
+  // usable with horizontal panning, which hides half the week.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(max-width: 639px)").matches) {
+      setView((v) => (v === "month" ? "day" : v));
+    }
+  }, []);
   const [filters, setFilters] = useState<CalendarFilters>({
     ...DEFAULT_FILTERS,
     ...(fixedClientId ? { clientId: fixedClientId } : {}),

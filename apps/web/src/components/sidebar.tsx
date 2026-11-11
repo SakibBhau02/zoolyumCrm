@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -54,6 +54,7 @@ export function Sidebar() {
   const { user, logout } = useAuth();
   const perms = user?.permissions;
   const [mobileOpen, setMobileOpen] = useState(false);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
 
   // Close the mobile drawer on navigation
   useEffect(() => {
@@ -69,12 +70,20 @@ export function Sidebar() {
     return () => window.removeEventListener("zoolyum:open-nav", open);
   }, []);
 
-  // Lock body scroll while the drawer is open
+  // Lock body scroll while the drawer is open, close on Escape and put focus
+  // inside the panel so keyboard/screen-reader users are not left behind it.
   useEffect(() => {
     if (!mobileOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    const t = window.setTimeout(() => closeRef.current?.focus({ preventScroll: true }), 60);
     return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
   }, [mobileOpen]);
@@ -180,19 +189,21 @@ export function Sidebar() {
               onClick={(e) => e.stopPropagation()}
               className="flex h-full w-72 max-w-[85vw] flex-col bg-sidebar text-white shadow-2xl"
               role="dialog"
+              aria-modal="true"
               aria-label="Navigation menu"
             >
               <div className="flex items-center justify-between py-3 pl-5 pr-3">
                 <BrandLogo variant="light" />
                 <button
+                  ref={closeRef}
                   onClick={() => setMobileOpen(false)}
                   aria-label="Close navigation menu"
-                  className="flex size-9 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+                  className="flex size-10 items-center justify-center rounded-xl text-white/70 transition-colors hover:bg-white/10 hover:text-white"
                 >
-                  <X className="size-3.5" />
+                  <X className="size-4" />
                 </button>
               </div>
-              <div className="flex min-h-0 flex-1 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
                 {nav}
               </div>
             </motion.aside>

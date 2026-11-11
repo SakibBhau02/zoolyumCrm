@@ -218,7 +218,7 @@ export function OverviewTab({ overview, invoices, expenses, aging, installmentsD
       )}
 
       {/* ── Headline numbers ────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard label="Total Invoiced" value={formatBDT(invoiced)} sub={`${receivable.length} live invoices`} tone="primary" icon={<Wallet className="size-4" />} index={0} />
         <StatCard label="Collected" value={formatBDT(collected)} sub={`${collectionRate}% collection rate`} tone="emerald" icon={<HandCoins className="size-4" />} index={1} />
         <StatCard label="Outstanding" value={formatBDT(outstanding)} sub={overdueValue > 0 ? `${formatBDT(overdueValue)} overdue (${overduePct}%)` : "nothing overdue"} tone="amber" icon={<Banknote className="size-4" />} index={2} />
@@ -2110,7 +2110,7 @@ export function ProfitabilityTab({ data }: { data: any }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard label="Total Revenue" value={formatBDT(summary.totalRevenue)} sub="recognized" tone="sky" icon={<CircleDollarSign className="size-4" />} />
         <StatCard label="Total Expenses" value={formatBDT(summary.totalExpenses)} sub="incl. pass-through" tone="rose" icon={<Banknote className="size-4" />} />
         <StatCard label="Net Profit" value={formatBDT(summary.netProfit)} sub={summary.margin != null ? `${Math.round(summary.margin)}% margin` : "—"} tone="emerald" icon={<HandCoins className="size-4" />} />

@@ -287,7 +287,7 @@ function FragmentRow({ t, i, expanded, hasChildren, childrenList, onToggleExpand
             )}
           </div>
         </Td>
-        <Td>
+        <Td className="max-w-[190px] whitespace-normal">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-1.5">
               <p className="max-w-44 truncate font-semibold leading-none">{t.title}</p>
@@ -306,20 +306,20 @@ function FragmentRow({ t, i, expanded, hasChildren, childrenList, onToggleExpand
             </div>
           </div>
         </Td>
-        <Td>{t.taskType ? <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-bold capitalize", TYPE_TONES[t.taskType] ?? TYPE_TONES.general)}><span className="size-1.5 rounded-full bg-current opacity-60" />{t.taskType}</span> : <span className="text-muted-foreground/50">—</span>}</Td>
+        <Td className="hidden md:table-cell">{t.taskType ? <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-bold capitalize", TYPE_TONES[t.taskType] ?? TYPE_TONES.general)}><span className="size-1.5 rounded-full bg-current opacity-60" />{t.taskType}</span> : <span className="text-muted-foreground/50">—</span>}</Td>
         <Td><StatusBadge status={t.status} /></Td>
-        <Td>
+        <Td className="hidden sm:table-cell">
           <Select aria-label={`Priority for ${t.title}`} value={t.priority} onChange={(e) => { e.stopPropagation(); apiFetch(`/tasks/${t.id}`, { method: "PATCH", body: JSON.stringify({ priority: e.target.value }) }).then(() => onChanged()).catch(() => {}); }} className="!w-28 !py-1" onClick={(e) => e.stopPropagation()}>
             {PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}
           </Select>
         </Td>
-        <Td className={cn("font-medium tabular-nums text-body", overdue ? "text-rose-500" : "text-muted-foreground")}>{dueLabel}</Td>
-        <Td>
+        <Td className={cn("hidden font-medium tabular-nums text-body sm:table-cell", overdue ? "text-rose-500" : "text-muted-foreground")}>{dueLabel}</Td>
+        <Td className="hidden sm:table-cell">
           <div className="flex items-center gap-2">
             {t.assignedTo?.name ? <><Avatar name={t.assignedTo.name} size="size-6" /><span className="max-w-20 truncate text-body font-medium">{t.assignedTo.name}</span></> : <span className="flex items-center gap-1.5 text-muted-foreground"><span className="flex size-6 items-center justify-center rounded-full border border-dashed border-border"><UserRound className="size-3.5" /></span>Unassigned</span>}
           </div>
         </Td>
-        <Td>
+        <Td className="hidden lg:table-cell">
           {t.project?.name ? <span className="inline-flex max-w-20 items-center gap-1.5 truncate rounded-full border border-border/60 bg-card px-2.5 py-1 text-meta font-semibold"><FolderKanban className="size-4 shrink-0 text-muted-foreground" />{t.project.name}</span> : <span className="text-muted-foreground">—</span>}
         </Td>
       </Tr>
@@ -971,12 +971,12 @@ function TasksPageInner() {
         <span className="text-meta font-semibold text-muted-foreground">{shownTasks.length} tasks</span>
       </div>
       {swimlane === "none" ? (
-        <div className="-mx-4 overflow-x-auto px-4 pb-2 lg:mx-0 lg:overflow-visible lg:px-0">
+        <div className="-mx-3 snap-x snap-mandatory overflow-x-auto px-3 pb-2 sm:-mx-0 sm:px-0 lg:overflow-visible">
           <div className="flex min-w-max gap-3 lg:grid lg:min-w-0 lg:grid-cols-5">
             {BOARD_COLUMNS.map((col) => {
               const items = tasksIn(col.key, "all");
               return (
-                <div key={col.key} className="flex w-[280px] shrink-0 flex-col lg:w-auto lg:min-w-0" onDragOver={(e) => e.preventDefault()} onDrop={() => dropTask(col.key, "all")}>
+                <div key={col.key} className="flex w-[85vw] max-w-[300px] shrink-0 snap-start flex-col sm:w-[280px] lg:w-auto lg:max-w-none lg:min-w-0" onDragOver={(e) => e.preventDefault()} onDrop={() => dropTask(col.key, "all")}>
                   <div className={cn("mb-2 flex items-center justify-between rounded-xl border border-border/60 bg-card px-3 py-2", dragId && "border-dashed")}>
                     <span className="flex items-center gap-2 text-meta font-bold"><span className={cn("size-2 rounded-full", col.dot)} />{col.label}</span>
                     <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-semibold tabular-nums text-muted-foreground">{items.length}</span>
@@ -1068,7 +1068,7 @@ function TasksPageInner() {
         <table className="w-full">
           <THead>
             <Th><span className="flex size-6 items-center justify-center"><input type="checkbox" aria-label="Select all tasks" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? (shownTasks ?? []).filter((t) => !t.parentTaskId).map((t) => t.id) : [])} className="size-4 accent-primary" /></span></Th>
-            <Th>Title</Th><Th>Type</Th><Th>Status</Th><Th>Priority</Th><Th>Due</Th><Th>Assignee</Th><Th>Project</Th>
+            <Th className="max-w-[190px] whitespace-normal">Title</Th><Th className="hidden md:table-cell">Type</Th><Th>Status</Th><Th className="hidden sm:table-cell">Priority</Th><Th className="hidden sm:table-cell">Due</Th><Th className="hidden sm:table-cell">Assignee</Th><Th className="hidden lg:table-cell">Project</Th>
           </THead>
           <tbody>
             {shownTasks.length === 0 && (
@@ -1100,19 +1100,19 @@ function TasksPageInner() {
                 renderChild={(c, ci) => (
                   <Tr key={c.id} index={ci} onClick={() => setSelectedId(c.id)} className="cursor-pointer">
                     <Td />
-                    <Td>
+                    <Td className="max-w-[160px] whitespace-normal">
                       <div className="flex items-center gap-1.5 pl-6">
                         <GitBranch className="size-3.5 shrink-0 text-muted-foreground/60" />
                         <p className="max-w-52 truncate font-medium">{c.title}</p>
                         {c.isBlocked && <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-micro font-bold text-rose-400">BLOCKED</span>}
                       </div>
                     </Td>
-                    <Td>{c.taskType ? <span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold capitalize", TYPE_TONES[c.taskType] ?? TYPE_TONES.general)}>{c.taskType}</span> : <span className="text-muted-foreground/50">—</span>}</Td>
+                    <Td className="hidden md:table-cell">{c.taskType ? <span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold capitalize", TYPE_TONES[c.taskType] ?? TYPE_TONES.general)}>{c.taskType}</span> : <span className="text-muted-foreground/50">-</span>}</Td>
                     <Td><StatusBadge status={c.status} /></Td>
-                    <Td><span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold", PRIORITY_TONES[c.priority] ?? PRIORITY_TONES.MEDIUM)}>{c.priority}</span></Td>
-                    <Td className="tabular-nums text-muted-foreground">{formatDay(c.dueDate)}</Td>
-                    <Td className="text-muted-foreground">{c.assignedTo?.name ?? "Unassigned"}</Td>
-                    <Td className="text-muted-foreground">{c.project?.name ?? "—"}</Td>
+                    <Td className="hidden sm:table-cell"><span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold", PRIORITY_TONES[c.priority] ?? PRIORITY_TONES.MEDIUM)}>{c.priority}</span></Td>
+                    <Td className="hidden tabular-nums text-muted-foreground sm:table-cell">{formatDay(c.dueDate)}</Td>
+                    <Td className="hidden text-muted-foreground sm:table-cell">{c.assignedTo?.name ?? "Unassigned"}</Td>
+                    <Td className="hidden text-muted-foreground lg:table-cell">{c.project?.name ?? "-"}</Td>
                   </Tr>
                 )} />
             ))}

@@ -909,6 +909,14 @@ export default function AccountsPage() {
   const [view, setView] = useState<"table" | "grid" | "kanban">(
     (searchParams.get("view") as any) ?? "table"
   );
+  // The client table is 1020px wide; a phone should open on the card layout
+  // instead of a horizontally panned table (the table is still one tap away).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (searchParams.get("view")) return;
+    if (window.matchMedia("(max-width: 639px)").matches) setView("grid");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [focusOpen, setFocusOpen] = useState(true);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -1524,7 +1532,7 @@ export default function AccountsPage() {
       </section>
 
       {/* ── KPI row ───────────────────────────────────────────────────── */}
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
         <div onClick={resetFilters} className="cursor-pointer" role="presentation">
           <StatCard
             index={0}
@@ -1578,7 +1586,7 @@ export default function AccountsPage() {
 
       {/* ── Presets + toolbar ─────────────────────────────────────────── */}
       <div className="mt-5 rounded-2xl border border-border/60 bg-card shadow-sm">
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
+        <div className="scroll-x scroll-x-hint items-center gap-1.5 border-b border-border/60 px-3 py-2 sm:flex-wrap sm:overflow-visible">
           {(
             [
               ["all", "All", counts.all],
@@ -1614,8 +1622,8 @@ export default function AccountsPage() {
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
-          <div className="relative min-w-[200px] max-w-sm flex-1">
+        <div className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="relative w-full sm:min-w-[200px] sm:max-w-sm sm:flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
               ref={searchRef}
@@ -1661,7 +1669,7 @@ export default function AccountsPage() {
             )}
           </button>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="scroll-x scroll-x-hint items-center gap-2 sm:ml-auto sm:overflow-visible">
             <Select
               value={sortValue}
               onChange={(e) => {

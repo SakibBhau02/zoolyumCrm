@@ -297,7 +297,7 @@ export default function ReportsPage() {
       {tab === "overview" && (
         <div>
           {ovLoading && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
               {Array.from({ length: 7 }).map((_, i) => (
                 <SkeletonBlock key={i} className="h-28" />
               ))}
@@ -306,7 +306,7 @@ export default function ReportsPage() {
           {ovErr && <ErrorCard msg={ovErr} onRetry={ovReload.retry} />}
           {!ovLoading && !ovErr && ov && (
             <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard label="Revenue This Month" value={formatBDT(ov.summary.revenueThisMonth)} sub="invoiced" icon={<TrendingUp className="size-4" />} index={0} />
                 <StatCard label="Collected" value={formatBDT(ov.summary.collectedThisMonth)} sub="this month" icon={<Wallet className="size-4" />} index={1} />
                 <StatCard label="Expenses" value={formatBDT(ov.summary.expensesThisMonth)} sub="this month" icon={<Receipt className="size-4" />} index={2} />
@@ -556,7 +556,7 @@ export default function ReportsPage() {
       {tab === "performance" && (
         <div>
           {perfLoading && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2">
               <SkeletonBlock className="h-28" />
               <SkeletonBlock className="h-28" />
             </div>
@@ -564,7 +564,7 @@ export default function ReportsPage() {
           {perfErr && <ErrorCard msg={perfErr} onRetry={perfReload.retry} />}
           {!perfLoading && !perfErr && perf && (
             <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard label="Avg Deal Value" value={formatBDT(perf.avgDealValue)} sub="won deals" icon={<Briefcase className="size-4" />} index={0} />
                 <StatCard label="Team Size" value={perf.teamSize} sub="employees" icon={<Users className="size-4" />} index={1} />
               </div>
@@ -628,7 +628,7 @@ export default function ReportsPage() {
           )}
           {!metricsErr && !corrErr && !digestsErr && (
             <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <StatCard label="Active Insights" value={corr?.length ?? "—"} sub="correlation engine" icon={<Lightbulb className="size-4" />} index={0} />
                 <StatCard label="Digests Delivered" value={digests?.length ?? "—"} sub="executive summaries" icon={<FileText className="size-4" />} index={1} />
               </div>

@@ -352,3 +352,105 @@
 ::-webkit-scrollbar-thumb:hover {
   background: oklch(0.5 0.05 285 / 50%);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Responsive / touch layer (phone + tablet first)
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-nav-h: 62px;
+}
+
+/* A stray absolutely-positioned node (sr-only labels inside wide tables) used to
+   make <html> scroll sideways on phones. `clip` stops that without creating a
+   scroll container, so `position: sticky` keeps working. */
+html {
+  overflow-x: clip;
+}
+@supports not (overflow: clip) {
+  html { overflow-x: hidden; }
+}
+
+/* A horizontal scroller must be the containing block for absolutely positioned
+   descendants; otherwise they escape the scroller and widen the document. */
+.overflow-x-auto { position: relative; }
+
+/* iOS Safari zooms the whole page when a focused control is below 16px. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Touch devices get feedback, not sticky desktop hover states. */
+@media (hover: none) {
+  .card-lift:hover { transform: none; box-shadow: none; }
+  button,
+  a,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+}
+
+/* Chip / tab strips: one horizontal row, snap, no visible scrollbar. */
+.scroll-x {
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-x::-webkit-scrollbar { display: none; }
+.scroll-x > * { scroll-snap-align: start; flex: 0 0 auto; }
+
+/* Fade the right edge so it is obvious a strip continues off-screen. */
+.scroll-x-hint {
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+
+/* Clear the fixed mobile nav. */
+@media (max-width: 1023px) {
+  .app-main {
+    padding-bottom: calc(var(--mobile-nav-h) + var(--safe-bottom) + 1.25rem);
+  }
+}
+
+.mobile-nav {
+  padding-bottom: var(--safe-bottom);
+}
+
+/* Full-height sheets on phones (100dvh handles the browser chrome). */
+.sheet-mobile {
+  height: 100dvh;
+  max-height: 100dvh;
+}
+@supports not (height: 100dvh) {
+  .sheet-mobile { height: 100vh; max-height: 100vh; }
+}
+
+.sheet-footer-safe {
+  padding-bottom: calc(0.75rem + var(--safe-bottom));
+}
+
+/* Sticky footer inside a scrolling sheet keeps the primary action reachable. */
+.sheet-scroll {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

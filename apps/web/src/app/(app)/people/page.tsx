@@ -43,15 +43,15 @@ export default function OverviewPage() {
               <div className="overflow-hidden rounded-xl border border-border/50">
                 <table className="w-full">
                   <THead>
-                    <Th>Employee</Th><Th>Role</Th><Th>Today</Th><Th>Utilization</Th><Th>Status</Th>
+                    <Th>Employee</Th><Th className="hidden sm:table-cell">Role</Th><Th>Today</Th><Th className="hidden md:table-cell">Utilization</Th><Th className="hidden sm:table-cell">Status</Th>
                   </THead>
                   <tbody>
                     {rows.paged.map((e, i) => (
                       <Tr key={e.id} index={i}>
                         <Td><div className="flex items-center gap-2"><Avatar name={e.name} size="size-6" /><Link href={`/people/directory/${e.id}`} className="text-body font-medium hover:text-primary hover:underline">{e.name}</Link></div></Td>
-                        <Td className="text-meta text-muted-foreground">{e.roleTitle}</Td>
+                        <Td className="hidden text-meta text-muted-foreground sm:table-cell">{e.roleTitle}</Td>
                         <Td><StatusBadge status={e.todayStatus ?? "NOT_LOGGED"} /></Td>
-                        <Td>
+                        <Td className="hidden md:table-cell">
                           <div className="flex items-center gap-2">
                             <div className="h-1.5 w-14 overflow-hidden rounded-full bg-muted">
                               <div className={`h-full rounded-full ${(e.utilizationRate ?? 0) >= 1.05 ? "bg-rose-500" : (e.utilizationRate ?? 0) >= 0.95 ? "bg-amber-400" : "bg-emerald-500"}`} style={{ width: `${Math.min((e.utilizationRate ?? 0) * 100, 100)}%` }} />
@@ -59,7 +59,7 @@ export default function OverviewPage() {
                             <span className="text-meta font-bold tabular-nums text-muted-foreground">{e.utilizationRate != null ? `${Math.round(e.utilizationRate * 100)}%` : "—"}</span>
                           </div>
                         </Td>
-                        <Td><StatusBadge status={e.employmentStatus} /></Td>
+                        <Td className="hidden sm:table-cell"><StatusBadge status={e.employmentStatus} /></Td>
                       </Tr>
                     ))}
                   </tbody>

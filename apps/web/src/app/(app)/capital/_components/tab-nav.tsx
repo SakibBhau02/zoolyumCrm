@@ -17,7 +17,7 @@ export default function CapitalTabNav() {
   const activeKey = active?.key ?? "overview";
 
   return (
-    <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1">
+    <div className="scroll-x scroll-x-hint gap-1 rounded-xl border border-border bg-card p-1 sm:flex-wrap sm:overflow-visible">
       {TABS.map((t) => (
         <Link
           key={t.key}

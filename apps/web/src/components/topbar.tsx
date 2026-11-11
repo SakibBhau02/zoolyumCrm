@@ -12,13 +12,13 @@ import {
   Loader2,
   LogOut,
   Megaphone,
-  Menu,
   Moon,
   Search,
   Settings,
   Sun,
   User,
   Users,
+  X,
   Zap,
 } from "lucide-react";
 import { Avatar } from "./shared";
@@ -55,6 +55,7 @@ export function Topbar() {
   const [searching, setSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileSearch, setMobileSearch] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -136,20 +137,20 @@ export function Topbar() {
     <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-border/70 bg-background/70 px-4 backdrop-blur-xl sm:px-6">
       <button
         type="button"
-        onClick={() => window.dispatchEvent(new Event("zoolyum:open-nav"))}
-        aria-label="Open navigation menu"
-        className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card/60 text-muted-foreground transition-colors hover:text-foreground lg:hidden"
+        onClick={() => setMobileSearch(true)}
+        aria-label="Search"
+        className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-card/60 text-muted-foreground md:hidden"
       >
-        <Menu className="size-4" />
+        <Search className="size-4" />
       </button>
 
-      <div className="hidden items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 md:flex">
+      <div className="hidden items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 lg:flex">
         <span className="text-meta text-muted-foreground">{dateLabel}</span>
         <span className="h-3 w-px bg-border" />
         <span className="text-meta font-medium text-foreground">{fiscalLabel}</span>
       </div>
 
-      <div ref={searchRef} className="relative w-full max-w-xs sm:w-72">
+      <div ref={searchRef} className="relative hidden w-full max-w-xs md:block lg:w-72">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           value={query}
@@ -209,10 +210,10 @@ export function Topbar() {
         )}
       </div>
 
-      <div className="ml-auto flex items-center gap-2.5">
+      <div className="ml-auto flex items-center gap-1.5 sm:gap-2.5">
         <button
           onClick={toggleTheme}
-          className="flex size-9 items-center justify-center rounded-xl border border-border bg-card/60 text-muted-foreground transition-colors hover:text-foreground"
+          className="flex size-10 items-center justify-center rounded-xl border border-border bg-card/60 text-muted-foreground transition-colors hover:text-foreground sm:size-9"
           aria-label="Toggle dark mode"
         >
           {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
@@ -279,6 +280,77 @@ export function Topbar() {
           )}
         </div>
       </div>
+
+      {/* Phone search: a full-screen sheet keeps the header uncluttered and the
+          input at a 16px size, so iOS never zooms the page on focus. */}
+      {mobileSearch && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-background md:hidden">
+          <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3">
+            <Search className="size-4 shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search leads, clients, invoices…"
+              aria-label="Search"
+              className="h-10 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setMobileSearch(false);
+                setQuery("");
+                setHits([]);
+              }}
+              aria-label="Close search"
+              className="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3">
+            {query.trim().length < 2 ? (
+              <p className="px-2 py-8 text-center text-body text-muted-foreground">
+                Type at least 2 characters.
+              </p>
+            ) : hits.length === 0 && !searching ? (
+              <p className="px-2 py-8 text-center text-body text-muted-foreground">
+                No matches for “{query.trim()}”.
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {hits.map((hit) => {
+                  const meta = TYPE_META[hit.type];
+                  const Icon = meta.icon;
+                  return (
+                    <li key={`${hit.type}:${hit.id}`}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileSearch(false);
+                          go(hit);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-2 py-3 text-left active:bg-muted/60"
+                      >
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                          <Icon className="size-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-body-lg font-semibold">{hit.title}</span>
+                          <span className="block truncate text-meta text-muted-foreground">
+                            {meta.label}
+                            {hit.subtitle ? ` · ${hit.subtitle}` : ""}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </header>
   );
 }

@@ -452,18 +452,23 @@ export function Modal({
         bare
           ? "h-[calc(100dvh-9.5rem)] min-h-[520px] rounded-2xl shadow-sm"
           : "shadow-2xl shadow-primary/10",
-        !bare && (isFull ? "h-full max-w-[1500px] rounded-none sm:rounded-2xl" : "max-h-[92vh] rounded-2xl"),
-        !bare && size === "md" && "max-w-md",
-        !bare && size === "lg" && "max-w-2xl",
-        !bare && size === "xl" && "max-w-4xl",
-        !bare && size === "2xl" && "max-w-5xl",
-        !bare && size === "3xl" && "max-w-6xl"
+        // Phones: a true full-screen sheet (100dvh, no rounded corners) so
+        // forms have the whole viewport; desktop keeps the centred dialog.
+        !bare &&
+          (isFull
+            ? "h-full max-w-[1500px] rounded-none sm:rounded-2xl"
+            : "sheet-mobile w-full max-w-none rounded-none border-0 sm:h-auto sm:max-h-[92vh] sm:rounded-2xl sm:border"),
+        !bare && size === "md" && "sm:max-w-md",
+        !bare && size === "lg" && "sm:max-w-2xl",
+        !bare && size === "xl" && "sm:max-w-4xl",
+        !bare && size === "2xl" && "sm:max-w-5xl",
+        !bare && size === "3xl" && "sm:max-w-6xl"
       )}
     >
       <div
         className={cn(
           "flex shrink-0 items-start justify-between gap-3",
-          isFull || bare ? "px-5 py-3.5 sm:px-7" : "px-6 pt-5",
+          isFull || bare ? "px-5 py-3.5 sm:px-7" : "px-5 pt-4 sm:px-6 sm:pt-5",
           // A sticky footer frames the sheet — the header needs the matching
           // hairline so scrolled content does not run into the title.
           !!footer && !isFull && !bare && "border-b border-border/60 pb-4"
@@ -492,7 +497,7 @@ export function Modal({
           aria-label={bare ? "Back" : "Close dialog"}
           title={bare ? "Back to projects" : "Close"}
           className={cn(
-            "flex size-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50",
+            "flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50 sm:size-8",
             bare && "border border-border"
           )}
         >
@@ -501,15 +506,22 @@ export function Modal({
       </div>
       <div
         className={cn(
-          "min-h-0 flex-1",
-          isFull || bare ? "flex flex-col overflow-hidden sm:px-7" : "overflow-y-auto px-6 py-5",
+          "sheet-scroll min-h-0 flex-1",
+          isFull || bare ? "flex flex-col overflow-hidden sm:px-7" : "overflow-y-auto px-4 py-4 sm:px-6 sm:py-5",
           bodyClassName
         )}
       >
         {children}
       </div>
       {footer && (
-        <div className={cn("shrink-0 border-t border-border/60 bg-card", isFull || bare ? "px-5 py-3 sm:px-7" : "px-6 py-4")}>{footer}</div>
+        <div
+          className={cn(
+            "sheet-footer-safe shrink-0 border-t border-border/60 bg-card",
+            isFull || bare ? "px-5 py-3 sm:px-7" : "px-4 py-3 sm:px-6 sm:py-4"
+          )}
+        >
+          {footer}
+        </div>
       )}
     </motion.div>
   );
@@ -524,8 +536,8 @@ export function Modal({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className={cn(
-            "fixed inset-0 z-50 flex justify-center bg-black/50 backdrop-blur-sm",
-            isFull ? "items-stretch p-0 sm:p-4 lg:p-6" : "items-center p-4"
+            "fixed inset-0 z-50 flex bg-black/50 backdrop-blur-sm",
+            isFull ? "items-stretch p-0 sm:p-4 lg:p-6" : "items-stretch p-0 sm:items-center sm:p-4"
           )}
           onClick={() => closeOnBackdrop && onClose()}
         >
@@ -574,19 +586,19 @@ export function Drawer({
             onClick={(e) => e.stopPropagation()}
             className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col border-l border-border/60 bg-card shadow-2xl"
           >
-            <div className="flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
+            <div className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-6 sm:py-4">
               <div className="min-w-0">{title}</div>
               <button
                 onClick={onClose}
                 aria-label="Close panel"
-                className="flex size-8 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:size-8"
               >
                 <X className="size-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+            <div className="sheet-scroll flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">{children}</div>
             {footer && (
-              <div className="border-t border-border/60 px-6 py-4">{footer}</div>
+              <div className="sheet-footer-safe border-t border-border/60 px-4 py-3 sm:px-6 sm:py-4">{footer}</div>
             )}
           </motion.aside>
         </motion.div>
@@ -605,7 +617,7 @@ export function Segmented<T extends string>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="inline-flex rounded-xl border border-border bg-card p-1">
+    <div className="inline-flex w-full max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto">
       {options.map((o) => (
         <button
           key={o.value}

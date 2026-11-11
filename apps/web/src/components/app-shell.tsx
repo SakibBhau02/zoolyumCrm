@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
+import { MobileNav } from "@/components/mobile-nav";
 import { useAuth } from "@/lib/auth";
 import { getToken } from "@/lib/api";
 // BrandingProvider wraps AppShell in (app)/layout.tsx — CSS vars injected via branding-context
@@ -93,12 +94,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar />
-        <main className="flex-1 overflow-y-auto bg-mesh">
-          <div className="mx-auto max-w-7xl p-4 pb-24 sm:p-6 lg:p-8 lg:pb-8">{children}</div>
+        <main className="app-main flex-1 overflow-y-auto bg-mesh">
+          <div className="mx-auto max-w-7xl px-3 py-4 sm:p-6 lg:p-8 lg:pb-8">{children}</div>
         </main>
       </div>
+      <MobileNav />
     </div>
   );
 }

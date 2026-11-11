@@ -1732,17 +1732,17 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   </TableShell>
                 )}
                 {view === "kanban" && (
-                  <div className="flex gap-3 overflow-x-auto pb-2">
+                  <div className="-mx-3 flex snap-x snap-mandatory gap-3 overflow-x-auto px-3 pb-2 sm:mx-0 sm:px-0">
                     {byStatus.map((col) => (
                       <div
                         key={col.status}
+                        className={cn("w-[85vw] max-w-[300px] shrink-0 snap-start rounded-2xl border bg-muted/30 p-2.5 sm:w-64 sm:max-w-none", dragId && "border-dashed")}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={() => {
                           const p = projects?.find((x) => x.id === dragId);
                           if (p && p.status !== col.status) patchStatus(p, col.status);
                           setDragId(null);
                         }}
-                        className={cn("w-64 shrink-0 rounded-2xl border bg-muted/30 p-2.5", dragId && "border-dashed")}
                       >
                         <div className="mb-2.5 flex items-center justify-between px-1">
                           <span className="flex items-center gap-1.5 text-meta font-bold tracking-wide text-muted-foreground uppercase">
