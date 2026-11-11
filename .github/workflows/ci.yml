@@ -66,6 +66,8 @@ jobs:
         run: npx wait-on http://localhost:4000/api/auth/me --timeout 120000 || true
       - name: Smoke + authorization gate
         run: npm run test:smoke
+      - name: Portal regression
+        run: npm run test:portal
       - name: Install Playwright
         run: npx playwright install --with-deps chromium
         working-directory: apps/web
