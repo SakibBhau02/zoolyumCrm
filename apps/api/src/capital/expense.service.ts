@@ -198,12 +198,22 @@ export class ExpenseService {
   /** Public entry for other modules (e.g. payroll finalize) to journal an approved expense. */
 
 
-  async postExpenseLedger(expenseId: string, actorId?: string) {
-    const expense = await this.prisma.expense.findUnique({ where: { id: expenseId } });
+  async postExpenseLedger(expenseId: string, actorId?: string) {    const expense = await this.prisma.expense.findUnique({ where: { id: expenseId } });
     if (!expense) throw new NotFoundException("Expense not found");
     await this.prisma.$transaction(async (tx) => {
       await this.postExpenseGL(expense, actorId, tx);
     }, { timeout: 15000 });
+  }
+
+  /**
+   * Journal an expense inside a caller-owned transaction.
+   *
+   * Payroll finalize creates the salary expense, posts the journal, moves the
+   * bank and flags the expense. Doing that in separate transactions left
+   * partial states (expense without journal, or cash moved with the flag off).
+   */
+  async postExpenseLedgerWithin(tx: CapitalDb, expense: any, actorId?: string) {
+    await this.postExpenseGL(expense, actorId, tx);
   }
 
   /** Public entry to reverse a posted journal (e.g. payroll reopen). */
@@ -475,18 +485,28 @@ export class ExpenseService {
 
 
   private async computeApAging() {
-    const expenses = await this.prisma.expense.findMany({
-      where: { isPayable: true, approvalStatus: "APPROVED" },
-      include: { vendor: true, payments: { select: { amount: true, paymentDate: true } } },
-      orderBy: { dueDate: "asc" },
-    });
+    const [expenses, paidRows] = await Promise.all([
+      this.prisma.expense.findMany({
+        where: { isPayable: true, approvalStatus: "APPROVED" },
+        select: { id: true, amount: true, date: true, dueDate: true, vendorId: true, vendor: { select: { name: true } } },
+        orderBy: { dueDate: "asc" },
+        take: 5000,
+      }),
+      // Sum payments once per expense instead of shipping every payment row.
+      this.prisma.payment.groupBy({
+        by: ["expenseId"],
+        where: { expenseId: { not: null } },
+        _sum: { amount: true },
+      }),
+    ]);
+    const paidById = new Map(paidRows.map((r) => [r.expenseId as string, Number(r._sum.amount ?? 0)]));
     const now = new Date();
     now.setHours(0, 0, 0, 0);
     const buckets: Record<string, number> = { CURRENT: 0, "1-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
     const byVendor = new Map<string, { vendorId: string | null; vendorName: string; total: number; paid: number; due: number }>();
     let totalPayable = 0;
     for (const e of expenses) {
-      const paid = e.payments.reduce((s, p) => s + Number(p.amount), 0);
+      const paid = paidById.get(e.id) ?? 0;
       const bal = Math.max(Number(e.amount) - paid, 0);
       if (bal <= 0) continue;
       totalPayable += bal;

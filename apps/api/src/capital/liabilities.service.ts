@@ -36,6 +36,10 @@ export class LiabilitiesService {
   } = {}) {
     const [engagements, expensePayable] = await Promise.all([
       this.prisma.vendorEngagement.findMany({
+        where: {
+          ...(query.vendorId ? { vendorId: query.vendorId } : {}),
+          ...(query.projectId ? { projectId: query.projectId } : {}),
+        },
         include: {
           vendor: { select: { id: true, name: true, category: true } },
           project: { select: { id: true, name: true } },
@@ -43,6 +47,9 @@ export class LiabilitiesService {
           payments: { orderBy: { paymentDate: "asc" } },
         },
         orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+        // Safety cap: a mature workspace has thousands of historical
+        // commitments and the list view never renders them all.
+        take: 500,
       }),
       this.expensePayables(),
     ]);
@@ -260,33 +267,37 @@ export class LiabilitiesService {
     const amount = Math.round(Number(body.amount) * 100) / 100;
     if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException("Payment amount must be greater than zero");
 
-    const engagement = await this.prisma.vendorEngagement.findUnique({
-      where: { id },
-      include: { payments: true },
-    });
-    if (!engagement) throw new NotFoundException("Engagement not found");
-    if (engagement.status === "CANCELLED") throw new BadRequestException("Cancelled engagements cannot receive payments");
-
-    const paid = this.paidOf(engagement.payments);
-    const balance = Math.round((Number(engagement.totalAmount) - paid) * 100) / 100;
-    const type = (body.type ?? (paid === 0 ? "ADVANCE" : balance <= amount ? "FINAL" : "PARTIAL")) as
-      | "ADVANCE" | "PARTIAL" | "FINAL" | "REFUND";
-
-    if (type === "REFUND") {
-      if (amount > paid + 0.01) throw new BadRequestException("Refund cannot exceed the amount already paid");
-    } else if (amount > balance + 0.01) {
-      throw new BadRequestException(
-        `Only ৳${balance.toLocaleString("en-US")} is left on this engagement. Reduce the amount or record the extra as a separate expense.`
-      );
-    }
-
     const taxWithheld = Math.max(0, Number(body.taxWithheld ?? 0));
-    if (taxWithheld > amount) throw new BadRequestException("Tax withheld cannot exceed the payment amount");
     const net = Math.round((amount - taxWithheld) * 100) / 100;
     const paymentDate = body.paymentDate ? new Date(body.paymentDate) : new Date();
     const bankId = body.bankAccountId ?? (await this.ledger.defaultBankAccount());
 
     const payment = await this.prisma.$transaction(async (tx) => {
+      // Lock the engagement row, then recompute the balance from the payments
+      // visible inside this transaction. Two concurrent "record payment" calls
+      // used to read the same stale balance and both pass the cap check.
+      await tx.$queryRaw`SELECT id FROM "VendorEngagement" WHERE id = ${id} FOR UPDATE`;
+      const engagement = await tx.vendorEngagement.findUnique({
+        where: { id },
+        include: { payments: true },
+      });
+      if (!engagement) throw new NotFoundException("Engagement not found");
+      if (engagement.status === "CANCELLED") throw new BadRequestException("Cancelled engagements cannot receive payments");
+
+      const paid = this.paidOf(engagement.payments);
+      const balance = Math.round((Number(engagement.totalAmount) - paid) * 100) / 100;
+      const type = (body.type ?? (paid === 0 ? "ADVANCE" : balance <= amount ? "FINAL" : "PARTIAL")) as
+        | "ADVANCE" | "PARTIAL" | "FINAL" | "REFUND";
+
+      if (type === "REFUND") {
+        if (amount > paid + 0.01) throw new BadRequestException("Refund cannot exceed the amount already paid");
+      } else if (amount > balance + 0.01) {
+        throw new BadRequestException(
+          `Only ৳${balance.toLocaleString("en-US")} is left on this engagement. Reduce the amount or record the extra as a separate expense.`
+        );
+      }
+      if (taxWithheld > amount) throw new BadRequestException("Tax withheld cannot exceed the payment amount");
+
       const row = await tx.vendorPayment.create({
         data: {
           engagementId: id,

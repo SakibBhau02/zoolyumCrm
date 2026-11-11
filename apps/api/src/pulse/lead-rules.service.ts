@@ -1,5 +1,5 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
-import { Lead, LeadStage, LeadTemperature } from "@prisma/client";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { Lead, LeadStage, LeadTemperature, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 
@@ -195,6 +195,8 @@ export interface DuplicateHit {
 
 @Injectable()
 export class LeadRulesService implements OnModuleInit {
+  private readonly logger = new Logger(LeadRulesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cache: CacheService
@@ -204,21 +206,40 @@ export class LeadRulesService implements OnModuleInit {
    * One-time normalisation for leads that existed before the rule engine.
    * Without it, a new lead could be saved as a duplicate of an old record whose
    * phone was never normalised.
+   *
+   * Runs AFTER boot, in one batched statement per 500 rows. It used to run
+   * inside onModuleInit and issue one UPDATE per lead, so a database with 5,000
+   * imported leads delayed the API start by minutes.
    */
-  async onModuleInit() {
+  onModuleInit() {
+    setTimeout(() => {
+      void this.backfillPhoneNormalization().catch(() => null);
+    }, 5_000).unref?.();
+  }
+
+  private async backfillPhoneNormalization() {
     try {
       const rows = await this.prisma.lead.findMany({
         where: { phoneNormalized: null, contactPhone: { not: null } },
         select: { id: true, contactPhone: true },
+        take: 10_000,
       });
-      for (const row of rows) {
-        const phoneNormalized = normalizePhone(row.contactPhone);
-        if (phoneNormalized) {
-          await this.prisma.lead.update({ where: { id: row.id }, data: { phoneNormalized } });
-        }
+      const pairs = rows
+        .map((r) => ({ id: r.id, norm: normalizePhone(r.contactPhone) }))
+        .filter((p): p is { id: string; norm: string } => !!p.norm);
+      if (!pairs.length) return;
+      for (let i = 0; i < pairs.length; i += 500) {
+        const chunk = pairs.slice(i, i + 500);
+        await this.prisma.$executeRaw`
+          UPDATE "Lead" AS l
+          SET "phoneNormalized" = v.norm
+          FROM (VALUES ${Prisma.join(chunk.map((p) => Prisma.sql`(${p.id}, ${p.norm})`))}) AS v(id, norm)
+          WHERE l.id = v.id AND l."phoneNormalized" IS NULL
+        `;
       }
-    } catch {
-      /* the audit endpoint can backfill later */
+      this.logger.log(`Backfilled phoneNormalized for ${pairs.length} leads`);
+    } catch (e: any) {
+      this.logger.warn(`phoneNormalized backfill skipped: ${e?.message ?? e}`);
     }
   }
 
@@ -387,15 +408,25 @@ export class LeadRulesService implements OnModuleInit {
       if (exists) return exists.id;
     }
 
-    const pool = await this.prisma.user.findMany({
-      where: {
-        isActive: true,
-        ...(rules.routing.roundRobinRoles?.length ? { role: { name: { in: rules.routing.roundRobinRoles } } } : {}),
-      },
-      select: { id: true, leads: { select: { id: true }, where: { stage: { in: ACTIVE_STAGES } } } },
-    });
+    // Count active leads per rep in ONE grouped query. Loading every active
+    // lead id for every user made each new lead cost O(leads) rows.
+    const [pool, counts] = await Promise.all([
+      this.prisma.user.findMany({
+        where: {
+          isActive: true,
+          ...(rules.routing.roundRobinRoles?.length ? { role: { name: { in: rules.routing.roundRobinRoles } } } : {}),
+        },
+        select: { id: true },
+      }),
+      this.prisma.lead.groupBy({
+        by: ["assignedToId"],
+        where: { stage: { in: ACTIVE_STAGES }, assignedToId: { not: null } },
+        _count: { _all: true },
+      }),
+    ]);
     if (pool.length) {
-      pool.sort((a, b) => a.leads.length - b.leads.length || a.id.localeCompare(b.id));
+      const loadByUser = new Map(counts.map((c) => [c.assignedToId as string, c._count._all]));
+      pool.sort((a, b) => (loadByUser.get(a.id) ?? 0) - (loadByUser.get(b.id) ?? 0) || a.id.localeCompare(b.id));
       return pool[0].id;
     }
     if (rules.routing.fallbackUserId) {
@@ -504,7 +535,9 @@ export class LeadRulesService implements OnModuleInit {
         id: true, name: true, company: true, contactPhone: true, contactEmail: true, phoneNormalized: true,
         assignedToId: true, createdAt: true, lastContactedAt: true, firstResponseAt: true, priority: true,
         stage: true, source: true, vertical: true, estimatedDealSize: true, leadScore: true,
-        activities: { select: { id: true } },
+        // Count only: loading every activity id (50+ per lead) just to know the
+        // number was the largest allocation in this job.
+        _count: { select: { activities: true } },
       },
     });
 
@@ -519,6 +552,7 @@ export class LeadRulesService implements OnModuleInit {
     }
 
     let flagged = 0, duplicates = 0, slaBreach = 0, stale = 0, unassigned = 0, rescored = 0;
+    const pending: { where: { id: string }; data: any }[] = [];
     for (const l of leads) {
       const phoneNormalized = normalizePhone(l.contactPhone);
       const p = phoneNormalized ?? l.phoneNormalized;
@@ -528,7 +562,7 @@ export class LeadRulesService implements OnModuleInit {
         (rules.duplicates.byEmail.enabled && !!e && (byEmail.get(e)?.length ?? 0) > 1);
 
       const flags = this.flagsFor({ ...l, phoneNormalized } as any, { duplicate: isDup }, rules);
-      const scoreValue = this.score({ ...l, activityCount: l.activities.length }, rules);
+      const scoreValue = this.score({ ...l, activityCount: l._count.activities }, rules);
       const temperature = this.temperatureFor(scoreValue, rules);
       if (scoreValue !== (l.leadScore ?? 0)) rescored++;
 
@@ -538,10 +572,14 @@ export class LeadRulesService implements OnModuleInit {
       if (flags.includes("STALE")) stale++;
       if (flags.includes("UNASSIGNED")) unassigned++;
 
-      await this.prisma.lead.update({
+      pending.push({
         where: { id: l.id },
         data: { phoneNormalized, qualityFlags: flags, leadScore: scoreValue, ...(temperature && l.stage !== "WON" ? { temperature } : {}) },
       });
+    }
+    // Batched writes: one round trip per 200 leads instead of one per lead.
+    for (let i = 0; i < pending.length; i += 200) {
+      await this.prisma.$transaction(pending.slice(i, i + 200).map((p) => this.prisma.lead.update(p)));
     }
     await this.cache.del("pulse:summary");
     return { scanned: leads.length, flagged, duplicates, slaBreach, stale, unassigned, rescored };

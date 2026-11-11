@@ -55,24 +55,30 @@ export class DirectoryService {
 
   async overview() {    return this.cache.wrap("people:overview", 30, async () => {
       const today = todayColumn();
-      const [employees, attendance, leaves, utilLogs] = await Promise.all([
+      const [employees, attendanceByStatus, onLeave, latestLogs] = await Promise.all([
         this.prisma.employee.findMany({
           select: { id: true, name: true, roleTitle: true, employmentStatus: true, department: true },
         }),
-        this.prisma.attendance.findMany({ where: { date: today } }),
-        this.prisma.leaveRequest.findMany({ where: { status: "APPROVED" } }),
-        this.prisma.utilizationLog.groupBy({ by: ["employeeId"], _max: { weekStartDate: true } }),
+        this.prisma.attendance.groupBy({ by: ["status"], where: { date: today }, _count: { _all: true } }),
+        // Count today's approved leave in SQL. Loading every approved leave ever
+        // recorded just to filter by date made this grow with company history.
+        this.prisma.leaveRequest.count({
+          where: { status: "APPROVED", startDate: { lte: today }, endDate: { gte: today } },
+        }),
+        this.prisma.$queryRaw<{ utilizationRate: number }[]>`
+          SELECT DISTINCT ON ("employeeId") "utilizationRate"
+          FROM "UtilizationLog"
+          ORDER BY "employeeId", "weekStartDate" DESC
+        `,
       ]);
-      const latestLogs = await this.prisma.utilizationLog.findMany({
-        where: { OR: utilLogs.map((u) => ({ employeeId: u.employeeId, weekStartDate: u._max.weekStartDate! })) },
-        select: { utilizationRate: true },
-      });
-      const present = attendance.filter((a) => a.status !== "ABSENT").length;
-      const onLeave = leaves.filter((l) => l.startDate <= today && l.endDate >= today).length;
+      const present = attendanceByStatus
+        .filter((a) => a.status !== "ABSENT")
+        .reduce((s, a) => s + a._count._all, 0);
+      const absent = attendanceByStatus.find((a) => a.status === "ABSENT")?._count._all ?? 0;
       const avgUtil = latestLogs.length
-        ? Math.round((latestLogs.reduce((s, l) => s + l.utilizationRate, 0) / latestLogs.length) * 100)
+        ? Math.round((latestLogs.reduce((s, l) => s + Number(l.utilizationRate), 0) / latestLogs.length) * 100)
         : 0;
-      const overloaded = latestLogs.filter((l) => l.utilizationRate >= 1.05).length;
+      const overloaded = latestLogs.filter((l) => Number(l.utilizationRate) >= 1.05).length;
       return {
         totalEmployees: employees.length,
         activeEmployees: employees.filter((e) => e.employmentStatus === "ACTIVE").length,
@@ -80,7 +86,7 @@ export class DirectoryService {
         onLeaveToday: onLeave,
         avgUtilization: avgUtil,
         overloaded,
-        absentToday: attendance.filter((a) => a.status === "ABSENT").length,
+        absentToday: absent,
       };
     });
   }
@@ -92,11 +98,13 @@ export class DirectoryService {
     const full = canViewPeople(user);
     const key = !full ? "people:employees:minimal" : canSeePay(user) ? "people:employees" : "people:employees:masked";
     return this.cache.wrap(key, 30, async () => {
-      const utilLogs = await this.prisma.utilizationLog.groupBy({ by: ["employeeId"], _max: { weekStartDate: true } });
-      const latestLogs = await this.prisma.utilizationLog.findMany({
-        where: { OR: utilLogs.map((u) => ({ employeeId: u.employeeId, weekStartDate: u._max.weekStartDate! })) },
-        select: { employeeId: true, utilizationRate: true, billableHours: true },
-      });
+      const latestLogs = await this.prisma.$queryRaw<
+        { employeeId: string; utilizationRate: number; billableHours: number }[]
+      >`
+        SELECT DISTINCT ON ("employeeId") "employeeId", "utilizationRate", "billableHours"
+        FROM "UtilizationLog"
+        ORDER BY "employeeId", "weekStartDate" DESC
+      `;
       const today = todayColumn();
       const attendance = await this.prisma.attendance.findMany({ where: { date: today } });
       const employees = await this.prisma.employee.findMany({

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   AlertTriangle, ArrowUpRight, Banknote, Calendar, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, ClipboardList, Download, Eye, Facebook, FileArchive,
   FileSpreadsheet, FileText, Globe, HandCoins, History, Image, Instagram, LayoutGrid, Linkedin, Link2, List, Music2, Pencil, Plus, ReceiptText, RefreshCw,
@@ -17,7 +18,12 @@ import { ProgressRing } from "@/components/charts";
 import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
 import { TaskFormModal } from "@/components/tasks/task-form-modal";
 import { useAuth } from "@/lib/auth";
-import { InvoiceDetailModal } from "@/app/(app)/capital/_components/invoice-detail-modal";
+// The invoice modal pulls jsPDF + qrcode (~170 KB gz). Project management does
+// not need a PDF engine until someone actually opens an invoice.
+const InvoiceDetailModal = dynamic(
+  () => import("@/app/(app)/capital/_components/invoice-detail-modal").then((m) => m.InvoiceDetailModal),
+  { ssr: false }
+);
 import { ProjectModal } from "./project-wizard";
 
 const PROJECT_STATUSES = ["PLANNING", "ACTIVE", "PAUSED", "COMPLETED", "ARCHIVED"];

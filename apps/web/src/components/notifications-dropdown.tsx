@@ -148,8 +148,21 @@ export function NotificationsDropdown() {
 
   useEffect(() => {
     refresh();
-    const poll = setInterval(refresh, 45_000);
-    return () => clearInterval(poll);
+    // Polling is a safety net for environments without SSE; the stream is the
+    // primary path. Poll every 2 minutes and never while the tab is hidden —
+    // two independent 45s loops used to double the bell traffic on /dashboard.
+    const poll = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      refresh();
+    }, 120_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   useEffect(() => {

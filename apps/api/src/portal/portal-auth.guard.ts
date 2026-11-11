@@ -35,7 +35,7 @@ export class PortalAuthGuard implements CanActivate {
 
     let payload: any;
     try {
-      payload = this.jwt.verify(token);
+      payload = this.jwt.verify(token, { algorithms: ["HS256"] });
     } catch {
       throw new UnauthorizedException("Invalid or expired portal token");
     }

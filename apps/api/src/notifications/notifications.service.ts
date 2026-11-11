@@ -79,7 +79,7 @@ export class NotificationsService {
   ) {}
 
   verifyToken(token: string) {
-    return this.jwt.verify<{ sub: string }>(token);
+    return this.jwt.verify<{ sub: string; scope?: string }>(token, { algorithms: ["HS256"] });
   }
 
   /**
@@ -93,7 +93,7 @@ export class NotificationsService {
   }
 
   verifySseToken(token: string) {
-    const payload = this.jwt.verify<{ sub: string; scope?: string }>(token);
+    const payload = this.jwt.verify<{ sub: string; scope?: string }>(token, { algorithms: ["HS256"] });
     if (payload.scope !== "sse") throw new Error("Not an SSE token");
     return payload;
   }

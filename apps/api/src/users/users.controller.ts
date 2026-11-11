@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { UsersService } from "./users.service";
 import { Roles } from "../common/decorators/roles.decorator";
+import { CurrentUser } from "../common/decorators/current-user.decorator";
 
 @Controller("users")
 export class UsersController {
@@ -19,13 +20,13 @@ export class UsersController {
 
   @Patch(":id/role")
   @Roles("Owner")
-  updateRole(@Param("id") id: string, @Body() body: { roleId: string }) {
-    return this.users.updateRole(id, body.roleId);
+  updateRole(@Param("id") id: string, @Body() body: { roleId: string }, @CurrentUser("sub") actorId: string) {
+    return this.users.updateRole(id, body.roleId, actorId);
   }
 
   @Patch(":id/active")
   @Roles("Owner")
-  toggleActive(@Param("id") id: string, @Body() body: { isActive: boolean }) {
-    return this.users.toggleActive(id, body.isActive);
+  toggleActive(@Param("id") id: string, @Body() body: { isActive: boolean }, @CurrentUser("sub") actorId: string) {
+    return this.users.toggleActive(id, body.isActive, actorId);
   }
 }

@@ -3,7 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { CapitalService } from "../capital/capital.service";
 import { AttendanceService } from "./attendance.service";
-import { assertPeriod, dhakaDayRange, dhakaDaysInMonth, leaveDays } from "./people-utils";
+import { assertPeriod, dateStrDhaka, dhakaDayRange, dhakaDaysInMonth } from "./people-utils";
 
 @Injectable()
 export class PayrollService {
@@ -122,14 +122,25 @@ export class PayrollService {
       where: {
         leaveType: "UNPAID",
         status: "APPROVED",
-        // @db.Date columns compare at day precision — pad the upper bound
-        // so leaves starting on the month's last day are included
-        startDate: { gte: mStart, lt: new Date(mEnd.getTime() + 86400000) },
+        // Overlap test, not "starts this month": a leave that began last month
+        // still consumes working days in this payroll period.
+        startDate: { lte: mEnd },
+        endDate: { gte: mStart },
       },
       select: { employeeId: true, startDate: true, endDate: true },
     });
     const unpaidMap: Record<string, number> = {};
-    for (const l of unpaidLeaves) unpaidMap[l.employeeId] = (unpaidMap[l.employeeId] ?? 0) + leaveDays(l.startDate, l.endDate);
+    for (const l of unpaidLeaves) {
+      // Clip to the payroll window and charge WORKING days only — the old
+      // calendar-day count deducted weekends (Fri/Sat) as unpaid leave.
+      const start = l.startDate > mStart ? l.startDate : mStart;
+      const end = l.endDate < mEnd ? l.endDate : mEnd;
+      if (end < start) continue;
+      const working = await this.attendance
+        .countWorkingDays(l.employeeId, dateStrDhaka(start), dateStrDhaka(end))
+        .catch(() => ({ working: 0, total: 0 }));
+      unpaidMap[l.employeeId] = (unpaidMap[l.employeeId] ?? 0) + working.working;
+    }
 
     const rows: any[] = [];
     for (const e of employees) {
@@ -333,26 +344,30 @@ export class PayrollService {
         (bankAccountId ? await this.prisma.bankAccount.findUnique({ where: { id: bankAccountId } }) : null) ??
         (lastSalary?.bankAccountId ? await this.prisma.bankAccount.findUnique({ where: { id: lastSalary.bankAccountId } }) : null) ??
         (await this.prisma.bankAccount.findFirst({ orderBy: { accountName: "asc" } }));
-      const expense = await this.prisma.expense.create({
-        data: {
-          description: `Salary — ${rec.employee.name} (${rec.period})`,
-          amount: rec.netPay,
-          category: "SALARY",
-          date: new Date(),
-          approvalStatus: "APPROVED",
-          submittedById: null,
-          payrollRecordId: rec.id,
-          bankAccountId: bankAccount?.id ?? null,
-          balanceDeducted: false,
-        },
-      });
-      // Post the double-entry journal (same as any approved expense) so the
-      // general ledger stays in sync with the salary expense.
-      await this.capital.postExpenseLedger(expense.id, actorId);
-      if (bankAccount) {
-        await this.prisma.bankAccount.update({ where: { id: bankAccount.id }, data: { currentBalance: { decrement: rec.netPay } } });
-        await this.prisma.expense.update({ where: { id: expense.id }, data: { balanceDeducted: true } });
-      }
+      const expense = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.expense.create({
+          data: {
+            description: `Salary — ${rec.employee.name} (${rec.period})`,
+            amount: rec.netPay,
+            category: "SALARY",
+            date: new Date(),
+            approvalStatus: "APPROVED",
+            submittedById: null,
+            payrollRecordId: rec.id,
+            bankAccountId: bankAccount?.id ?? null,
+            balanceDeducted: false,
+          },
+        });
+        // Journal + cash + flag in ONE transaction: a failure between them used
+        // to leave an expense with no GL entry, or cash debited with the flag
+        // still false (so a retry would debit it again).
+        await this.capital.postExpenseLedgerWithin(tx, created, actorId);
+        if (bankAccount) {
+          await tx.bankAccount.update({ where: { id: bankAccount.id }, data: { currentBalance: { decrement: rec.netPay } } });
+          await tx.expense.update({ where: { id: created.id }, data: { balanceDeducted: true } });
+        }
+        return created;
+      }, { timeout: 15000 });
       try {
         await this.capital.notifyRole(
           "Finance",

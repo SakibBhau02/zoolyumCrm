@@ -10,6 +10,7 @@ import {
   Plus, Pencil, RefreshCw, Search, Save, Settings2, ShieldAlert, SlidersHorizontal, Smile, Timer, Trash2, Upload, UserRound, X, Zap,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useApi } from "@/lib/use-api";
 import { formatDay, formatDate, timeAgo } from "@/lib/format";
 import { Avatar, CardShell, EmptyState, FadeIn, PageHeader, SkeletonBlock, StatCard, StatusBadge, cn } from "@/components/shared";
@@ -365,10 +366,19 @@ function TasksPageInner() {
   const { data: myDay } = useApi<any[]>(`/tasks/my-day?v=${aux}`);
   const { data: sprints } = useApi<Sprint[]>(`/tasks/sprints?v=${aux}`);
   const { data: savedViews } = useApi<SavedView[]>(`/tasks/views?v=${aux}`);
-  const { data: me } = useApi<{ id?: string; roleName?: string }>(`/auth/me`);
+  // The signed-in user already comes from the shell (`/auth/me`); asking again
+  // added a round trip to every Tasks visit.
+  const { user: me } = useAuth();
   // Mirrors the backend isPM() rule: sprint/template/automation authoring
   // reshapes everyone's plan, so only planners see those controls.
   const canPlan = !!me && ["Owner", "Admin", "HR/Admin", "Project Manager"].includes(me.roleName ?? "");
+
+  // Search is debounced: typing "invoice" used to fire seven full list queries.
+  const [dq, setDq] = useState(q);
+  useEffect(() => {
+    const t = setTimeout(() => setDq(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
   const activeSprint = (sprints ?? []).find((s) => s.id === fSprint) ?? null;
   /** How many advanced filters are on — drives the "Filters (n)" badge and chips. */
   const activeFilterCount = [fStatus, fPriority, fType, fProject, fAssignee].filter(Boolean).length;
@@ -408,7 +418,7 @@ function TasksPageInner() {
   }, []);
   const query = useMemo(() => {
     const p = new URLSearchParams();
-    if (q) p.set("q", q);
+    if (dq) p.set("q", dq);
     if (fStatus) p.set("status", fStatus);
     if (fPriority) p.set("priority", fPriority);
     if (fType) p.set("taskType", fType);
@@ -418,7 +428,7 @@ function TasksPageInner() {
     if (mine) p.set("mine", "true");
     p.set("sort", sort);
     return p.toString();
-  }, [q, fStatus, fPriority, fType, fProject, fAssignee, fSprint, mine, sort]);
+  }, [dq, fStatus, fPriority, fType, fProject, fAssignee, fSprint, mine, sort]);
   useEffect(() => {
     let cancelled = false;
     setTasksErr(null);

@@ -100,25 +100,41 @@ export class LeaveService {
     }
     let created = 0;
     let updated = 0;
+    // One read, one bulk insert, chunked updates. This used to run a findUnique
+    // plus an insert/update per employee × leave type (800 queries for 200 staff).
+    const existingRows = await this.prisma.leaveBalance.findMany({
+      where: { period: year, ...(employeeId ? { employeeId } : {}) },
+      select: { id: true, employeeId: true, leaveType: true, balanceDays: true },
+    });
+    const byKey = new Map(existingRows.map((b) => [`${b.employeeId}|${b.leaveType}`, b]));
+    const creates: { employeeId: string; leaveType: string; balanceDays: number; period: string }[] = [];
+    const updates: { id: string; balanceDays: number }[] = [];
     for (const emp of employees) {
       for (const p of policies) {
-        const existing = await this.prisma.leaveBalance.findUnique({
-          where: { employeeId_leaveType_period: { employeeId: emp.id, leaveType: p.leaveType, period: year } },
-        });
-        if (!existing) {
-          await this.prisma.leaveBalance.create({
-            data: { employeeId: emp.id, leaveType: p.leaveType, balanceDays: p.annualDays!, period: year },
-          });
-          created++;
+        const key = `${emp.id}|${p.leaveType}`;
+        const row = byKey.get(key);
+        if (!row) {
+          creates.push({ employeeId: emp.id, leaveType: p.leaveType, balanceDays: Number(p.annualDays), period: year });
         } else if (resync) {
-          const target = Math.max(0, Number(p.annualDays) - (used.get(`${emp.id}|${p.leaveType}`) ?? 0));
-          if (Math.abs(Number(existing.balanceDays) - target) > 0.001) {
-            await this.prisma.leaveBalance.update({ where: { id: existing.id }, data: { balanceDays: target } });
-            updated++;
+          const target = Math.max(0, Number(p.annualDays) - (used.get(key) ?? 0));
+          if (Math.abs(Number(row.balanceDays) - target) > 0.001) {
+            updates.push({ id: row.id, balanceDays: target });
           }
         }
       }
     }
+    if (creates.length) {
+      const inserted = await this.prisma.leaveBalance.createMany({ data: creates as any, skipDuplicates: true });
+      created = inserted.count;
+    }
+    for (let i = 0; i < updates.length; i += 200) {
+      await this.prisma.$transaction(
+        updates.slice(i, i + 200).map((u) =>
+          this.prisma.leaveBalance.update({ where: { id: u.id }, data: { balanceDays: u.balanceDays } })
+        )
+      );
+    }
+    updated = updates.length;
     return { period: year, created, updated, employees: employees.length, types: policies.length };
   }
 

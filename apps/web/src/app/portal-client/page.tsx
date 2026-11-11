@@ -37,8 +37,24 @@ import {
 } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { formatBDT, formatDate, formatNumber, timeAgo } from "@/lib/format";
-import { buildInvoicePdfAsync, buildReceiptPdf, resolveBrandingImages } from "@/lib/invoice-pdf";
-import { buildPortalReportPdf } from "@/lib/portal-report-pdf";
+// PDF tooling (jsPDF ≈143 KB gz) is client-heavy and only needed when the user
+// actually downloads something, so every helper is resolved on demand.
+const resolveBrandingImages = async (...args: any[]) => {
+  const mod = await import("@/lib/invoice-pdf");
+  return (mod.resolveBrandingImages as any)(...args);
+};
+const buildInvoicePdfAsync = async (...args: any[]) => {
+  const mod = await import("@/lib/invoice-pdf");
+  return (mod.buildInvoicePdfAsync as any)(...args);
+};
+const buildReceiptPdf = async (...args: any[]) => {
+  const mod = await import("@/lib/invoice-pdf");
+  return (mod.buildReceiptPdf as any)(...args);
+};
+const buildPortalReportPdf = async (...args: any[]) => {
+  const mod = await import("@/lib/portal-report-pdf");
+  return (mod.buildPortalReportPdf as any)(...args);
+};
 import { invoiceTotals, numberToWords, paymentSerial } from "@/lib/invoice-utils";
 import { AdsTrendChart } from "@/components/portal-charts";
 import { monthGrid, monthLabel, shiftMonth } from "@/lib/calendar-date";
@@ -1198,7 +1214,7 @@ function PortalClientWorkspace() {
         lineItems: openInvoice.lines,
         payments: openInvoice.payments,
       };
-      const doc = buildReceiptPdf(payload, { ...p, index: (p.serial ?? paymentSerial(openInvoice.payments, p.id) ?? 1) - 1 }, pdfBranding);
+      const doc = await buildReceiptPdf(payload, { ...p, index: (p.serial ?? paymentSerial(openInvoice.payments, p.id) ?? 1) - 1 }, pdfBranding);
       doc.save(`${p.receiptNo}.pdf`);
     } catch {
       setPdfError("Could not generate the receipt. Please try again.");

@@ -15,10 +15,16 @@ import { daysLate, invoiceTotals } from "@/lib/invoice-utils";
 import { useBranding } from "@/lib/branding-context";
 import { ACCOUNT_CATEGORIES, CAT_TONES, ENTITY_TONES, EXPENSE_STATUSES, INVOICE_STATUSES, exportInvoicesCsv, fmtJSON, label } from "./constants";
 import { AddIncomeModal, BudgetModal, CategoriesModal, EditExpenseModal, PayExpenseModal, ReconcileModal } from "./modals";
-import { downloadInvoicePdf } from "./invoice-download";
-import { buildBusinessReportPdf, buildStatementPdf, monthBounds, sixMonthBounds, statementLabel, type StatementType } from "@/lib/reports-pdf";
+import type { StatementType } from "@/lib/reports-pdf";
 import { Pager, usePaged } from "./table-pager";
 import { ApprovalPolicyModal } from "./approval-policy";
+
+// jsPDF (~143 KB gz) is loaded on demand: someone reading the overview must not
+// download a PDF engine. Every PDF helper below resolves its module at click time.
+const downloadInvoicePdf = async (...args: any[]) => {
+  const mod = await import("./invoice-download");
+  return (mod.downloadInvoicePdf as any)(...args);
+};
 
 export function ErrorRetry({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
@@ -1474,6 +1480,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
     if (reportBusy) return;
     setReportBusy(kind);
     try {
+      const { buildBusinessReportPdf, monthBounds, sixMonthBounds } = await import("@/lib/reports-pdf");
       const bounds = kind === "monthly" ? monthBounds(monthValue) : sixMonthBounds(monthValue);
       const data = await apiFetch<any>(
         `/capital/reports/period?from=${bounds.from}&to=${bounds.to}`
@@ -1526,6 +1533,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         ]);
         stmts = { trialBalance: tb, profitLoss: pl, balanceSheet: bs, cashFlow: cf };
       }
+      const { buildBusinessReportPdf } = await import("@/lib/reports-pdf");
       const doc = await buildBusinessReportPdf(
         {
           kind: "full",
@@ -1593,6 +1601,7 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
       } catch {
         /* fall back to the already-loaded data */
       }
+      const { buildStatementPdf, statementLabel } = await import("@/lib/reports-pdf");
       const doc = await buildStatementPdf(kind, data, branding ?? undefined);
       doc.save(`${kind}.pdf`);
       notify(`${statementLabel(kind)} downloaded`);

@@ -139,11 +139,17 @@ function InboxCard() {
   const items = itemsData ?? [];
 
   useEffect(() => {
-    const t = setInterval(() => {
-      mutate();
-      mutateSummary();
-    }, 60_000);
-    return () => clearInterval(t);
+    // The shell's bell already streams/polls notifications. This card refreshes
+    // on mount and when the tab becomes visible instead of running a second
+    // 60-second loop against the same two endpoints.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        mutate();
+        mutateSummary();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [mutate, mutateSummary]);
 
   const markAll = async () => {

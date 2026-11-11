@@ -887,7 +887,6 @@ function QuickIcon({
 export default function AccountsPage() {
   const { data: overview, mutate: refreshOverview } = useApi<AccountsOverview>("/accounts/overview");
   const { data: users } = useApi<UserLite[]>("/users");
-  const { data: settings } = useApi<any>("/control/settings");
   const { user } = useAuth();
   // Write actions require the ACCOUNTS `edit` level from the role matrix.
   // Finance is view-only, so its UI must not offer buttons the API rejects.
@@ -1210,7 +1209,7 @@ export default function AccountsPage() {
 
   // ── derived data ────────────────────────────────────────────────────────
   const all = clients ?? [];
-  const clientTiers: { name: string; minValue: number; color: string }[] | undefined = settings?.clientTiers;
+  const clientTiers: { name: string; minValue: number; color: string }[] | undefined = (overview as any)?.clientTiers;
 
   const enriched = useMemo(
     () =>

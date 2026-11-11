@@ -242,13 +242,39 @@ export class ReportingService {
   }
 
 
+  /**
+   * One grouped read for every financial statement.
+   *
+   * The three statements used to `findMany` the entire journal line table with
+   * the account joined, then aggregate in JS. `groupBy` pushes that to Postgres
+   * and returns one row per account (≈20 rows instead of hundreds of thousands).
+   */
+  private async accountTotals() {
+    const [totals, accounts] = await Promise.all([
+      this.prisma.journalEntryLine.groupBy({
+        by: ["accountId"],
+        _sum: { debit: true, credit: true },
+      }),
+      this.prisma.account.findMany({ select: { id: true, code: true, name: true, category: true } }),
+    ]);
+    const byId = new Map(accounts.map((a) => [a.id, a]));
+    return totals
+      .map((t) => {
+        const account = byId.get(t.accountId);
+        return account
+          ? { accountId: t.accountId, account, debit: Number(t._sum.debit ?? 0), credit: Number(t._sum.credit ?? 0) }
+          : null;
+      })
+      .filter((x): x is { accountId: string; account: (typeof accounts)[number]; debit: number; credit: number } => !!x);
+  }
+
   private async computeTrialBalance() {
-    const lines = await this.prisma.journalEntryLine.findMany({ include: { account: true } });
+    const lines = await this.accountTotals();
     const rows = new Map<string, { accountId: string; code: string; name: string; category: string; debit: number; credit: number }>();
     for (const l of lines) {
       const r = rows.get(l.accountId) ?? { accountId: l.accountId, code: l.account.code ?? "", name: l.account.name, category: l.account.category, debit: 0, credit: 0 };
-      r.debit += Number(l.debit);
-      r.credit += Number(l.credit);
+      r.debit += l.debit;
+      r.credit += l.credit;
       rows.set(l.accountId, r);
     }
     const list = Array.from(rows.values())
@@ -264,12 +290,12 @@ export class ReportingService {
 
 
   private async computeProfitLoss() {
-    const lines = await this.prisma.journalEntryLine.findMany({ include: { account: true } });
+    const lines = await this.accountTotals();
     const revenue = new Map<string, { name: string; code: string; amount: number }>();
     const expense = new Map<string, { name: string; code: string; amount: number }>();
     let totalRevenue = 0, totalExpense = 0, totalDirectCost = 0;
     for (const l of lines) {
-      const amount = Number(l.credit) - Number(l.debit);
+      const amount = l.credit - l.debit;
       if (l.account.category === "REVENUE") {
         const r = revenue.get(l.accountId) ?? { name: l.account.name, code: l.account.code ?? "", amount: 0 };
         r.amount += amount;
@@ -306,7 +332,7 @@ export class ReportingService {
 
 
   private async computeBalanceSheet() {
-    const lines = await this.prisma.journalEntryLine.findMany({ include: { account: true } });
+    const lines = await this.accountTotals();
     const assets = new Map<string, { name: string; code: string; amount: number }>();
     const liabilities = new Map<string, { name: string; code: string; amount: number }>();
     const equityAccounts = new Map<string, { name: string; code: string; amount: number }>();
@@ -314,8 +340,8 @@ export class ReportingService {
     let totalDebit = 0;
     let totalCredit = 0;
     for (const l of lines) {
-      const debit = Number(l.debit);
-      const credit = Number(l.credit);
+      const debit = l.debit;
+      const credit = l.credit;
       totalDebit += debit;
       totalCredit += credit;
       const bal = debit - credit;
@@ -830,20 +856,71 @@ export class ReportingService {
 
 
   private async computeProfitability() {
-    const projects = await this.prisma.project.findMany({
-      include: {
-        invoices: { include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE } },
-        expenses: true,
-        tasks: { include: { timeLogs: true } },
-      },
-    });
+    // Every figure is aggregated in Postgres. The previous version hydrated the
+    // whole company (projects → invoices → line items → payments, expenses,
+    // tasks → time logs) into one nested payload per request.
+    const [projects, revenueRows, collectedRows, costRows, hourRows, monthlyRevenue, monthlyExpense] = await Promise.all([
+      this.prisma.project.findMany({ select: { id: true, name: true, budgetAmount: true } }),
+      this.prisma.$queryRaw<{ id: string; revenue: number }[]>`
+        SELECT i."projectId" AS id,
+               COALESCE(SUM(li.amount * COALESCE(i."exchangeRate", 1)), 0)::float8 AS revenue
+        FROM "Invoice" i
+        JOIN "InvoiceLineItem" li ON li."invoiceId" = i.id
+        WHERE i.status IN ('SENT','VIEWED','PARTIALLY_PAID','PAID','OVERDUE')
+          AND li."revenueTag" <> 'PASS_THROUGH'
+          AND i."projectId" IS NOT NULL
+        GROUP BY i."projectId"
+      `,
+      this.prisma.$queryRaw<{ id: string; collected: number }[]>`
+        SELECT i."projectId" AS id,
+               COALESCE(SUM((CASE WHEN p.type = 'REFUND' THEN -p.amount ELSE p.amount END) * COALESCE(i."exchangeRate", 1)), 0)::float8 AS collected
+        FROM "Payment" p
+        JOIN "Invoice" i ON i.id = p."invoiceId"
+        WHERE i."projectId" IS NOT NULL AND p.type IN ('IN','REFUND')
+        GROUP BY i."projectId"
+      `,
+      this.prisma.$queryRaw<{ id: string; cost: number }[]>`
+        SELECT e."projectId" AS id,
+               COALESCE(SUM(e.amount * COALESCE(e."exchangeRate", 1)), 0)::float8 AS cost
+        FROM "Expense" e
+        WHERE e."approvalStatus" = 'APPROVED' AND e."projectId" IS NOT NULL
+        GROUP BY e."projectId"
+      `,
+      this.prisma.$queryRaw<{ id: string; hours: number }[]>`
+        SELECT t."projectId" AS id, COALESCE(SUM(l.hours), 0)::float8 AS hours
+        FROM "TimeLog" l
+        JOIN "Task" t ON t.id = l."taskId"
+        WHERE t."projectId" IS NOT NULL
+        GROUP BY t."projectId"
+      `,
+      this.prisma.$queryRaw<{ month: string; revenue: number }[]>`
+        SELECT to_char(i."issueDate", 'YYYY-MM') AS month,
+               COALESCE(SUM(li.amount * COALESCE(i."exchangeRate", 1)), 0)::float8 AS revenue
+        FROM "Invoice" i
+        JOIN "InvoiceLineItem" li ON li."invoiceId" = i.id
+        WHERE i.status IN ('SENT','VIEWED','PARTIALLY_PAID','PAID','OVERDUE')
+          AND li."revenueTag" <> 'PASS_THROUGH'
+        GROUP BY 1
+      `,
+      this.prisma.$queryRaw<{ month: string; expenses: number }[]>`
+        SELECT to_char(e.date, 'YYYY-MM') AS month,
+               COALESCE(SUM(e.amount * COALESCE(e."exchangeRate", 1)), 0)::float8 AS expenses
+        FROM "Expense" e
+        WHERE e."approvalStatus" = 'APPROVED'
+        GROUP BY 1
+      `,
+    ]);
+
+    const revenueById = new Map(revenueRows.map((r) => [r.id, Number(r.revenue)]));
+    const collectedById = new Map(collectedRows.map((r) => [r.id, Number(r.collected)]));
+    const costById = new Map(costRows.map((r) => [r.id, Number(r.cost)]));
+    const hoursById = new Map(hourRows.map((r) => [r.id, Number(r.hours)]));
+
     const rows = projects.map((p) => {
-      const revenue = p.invoices
-        .filter((i) => ACTIVE_STATUSES.includes(i.status))
-        .reduce((s, i) => s + i.lineItems.filter((l) => l.revenueTag !== "PASS_THROUGH").reduce((x, l) => x + toBdt(Number(l.amount), i), 0), 0);
-      const cost = p.expenses.filter((e) => e.approvalStatus === "APPROVED").reduce((s, e) => s + toBdt(Number(e.amount), e), 0);
-      const collected = p.invoices.reduce((s, i) => s + invoiceTotals(i).paidBdt, 0);
-      const hours = p.tasks.reduce((s, t) => s + t.timeLogs.reduce((x, l) => x + Number(l.hours), 0), 0);
+      const revenue = revenueById.get(p.id) ?? 0;
+      const cost = costById.get(p.id) ?? 0;
+      const collected = collectedById.get(p.id) ?? 0;
+      const hours = hoursById.get(p.id) ?? 0;
       return {
         id: p.id,
         name: p.name,
@@ -856,32 +933,19 @@ export class ReportingService {
         collected: Math.round(collected * 100) / 100,
       };
     });
-    const months = new Map<string, { month: string; revenue: number; expenses: number; profit: number; margin: number | null }>();
-    for (const p of projects) {
-      const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const monthlyRevenue = new Map<string, number>();
-      const monthlyExpense = new Map<string, number>();
-      for (const i of p.invoices) {
-        if (!ACTIVE_STATUSES.includes(i.status)) continue;
-        const rev = i.lineItems.filter((l) => l.revenueTag !== "PASS_THROUGH").reduce((x, l) => x + toBdt(Number(l.amount), i), 0);
-        if (rev > 0) monthlyRevenue.set(monthKey(i.issueDate), (monthlyRevenue.get(monthKey(i.issueDate)) ?? 0) + rev);
-      }
-      for (const e of p.expenses) {
-        if (e.approvalStatus !== "APPROVED") continue;
-        monthlyExpense.set(monthKey(e.date), (monthlyExpense.get(monthKey(e.date)) ?? 0) + toBdt(Number(e.amount), e));
-      }
-      for (const [m, rev] of monthlyRevenue) {
-        const entry = months.get(m) ?? { month: m, revenue: 0, expenses: 0, profit: 0, margin: null as number | null };
-        entry.revenue += rev;
-        months.set(m, entry);
-      }
-      for (const [m, exp] of monthlyExpense) {
-        const entry = months.get(m) ?? { month: m, revenue: 0, expenses: 0, profit: 0, margin: null as number | null };
-        entry.expenses += exp;
-        months.set(m, entry);
-      }
+
+    const monthMap = new Map<string, { month: string; revenue: number; expenses: number; profit: number; margin: number | null }>();
+    for (const r of monthlyRevenue) {
+      const entry = monthMap.get(r.month) ?? { month: r.month, revenue: 0, expenses: 0, profit: 0, margin: null };
+      entry.revenue += Number(r.revenue);
+      monthMap.set(r.month, entry);
     }
-    const monthly = Array.from(months.values())
+    for (const e of monthlyExpense) {
+      const entry = monthMap.get(e.month) ?? { month: e.month, revenue: 0, expenses: 0, profit: 0, margin: null };
+      entry.expenses += Number(e.expenses);
+      monthMap.set(e.month, entry);
+    }
+    const monthly = Array.from(monthMap.values())
       .map((m) => ({ ...m, profit: Math.round((m.revenue - m.expenses) * 100) / 100, margin: m.revenue ? Math.round(((m.revenue - m.expenses) / m.revenue) * 100) : 0 }))
       .sort((a, b) => a.month.localeCompare(b.month));
     const totalRevenue = rows.reduce((s, r) => s + r.revenue, 0);

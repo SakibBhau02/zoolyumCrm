@@ -170,6 +170,11 @@ export class CapitalService {
     return this.expenseService.postExpenseLedger(expenseId, actorId);
   }
 
+  /** Journal an expense inside a caller-owned transaction (payroll finalize). */
+  async postExpenseLedgerWithin(tx: any, expense: any, actorId?: string) {
+    return this.expenseService.postExpenseLedgerWithin(tx, expense, actorId);
+  }
+
 
   async reverseLedger(sourceId: string, actorId?: string) {
     return this.expenseService.reverseLedger(sourceId, actorId);

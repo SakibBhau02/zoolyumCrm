@@ -157,10 +157,25 @@ export class MastersService {
 
 
   async budgets() {
-    const [budgets, expenses] = await Promise.all([
-      this.prisma.budget.findMany({ include: { project: { select: { id: true, name: true } } }, orderBy: { periodStart: "asc" } }),
-      this.prisma.expense.findMany({ where: { approvalStatus: "APPROVED" }, select: { category: true, projectId: true, amount: true, date: true } }),
-    ]);
+    const budgets = await this.prisma.budget.findMany({
+      include: { project: { select: { id: true, name: true } } },
+      orderBy: { periodStart: "asc" },
+    });
+    // Only read expenses inside the budgets' own window instead of every
+    // approved expense the workspace has ever recorded.
+    const starts = budgets.map((b) => b.periodStart).filter((d): d is Date => !!d);
+    const ends = budgets.map((b) => b.periodEnd).filter((d): d is Date => !!d);
+    const from = starts.length ? new Date(Math.min(...starts.map((d) => d.getTime()))) : null;
+    const to = ends.length ? new Date(Math.max(...ends.map((d) => d.getTime()))) : null;
+    const expenses = await this.prisma.expense.findMany({
+      where: {
+        approvalStatus: "APPROVED",
+        ...(from || to
+          ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } }
+          : {}),
+      },
+      select: { category: true, projectId: true, amount: true, date: true },
+    });
     return budgets.map((b) => {
       const spent = expenses
         .filter((e) => (b.scopeType === "PROJECT" ? e.projectId === b.projectId : !b.category || e.category === b.category))

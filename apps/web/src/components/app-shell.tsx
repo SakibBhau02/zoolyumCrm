@@ -8,6 +8,47 @@ import { useAuth } from "@/lib/auth";
 import { getToken } from "@/lib/api";
 // BrandingProvider wraps AppShell in (app)/layout.tsx — CSS vars injected via branding-context
 
+/**
+ * Immediate chrome while `/auth/me` resolves.
+ *
+ * The old version rendered a full-screen spinner, so every route painted
+ * nothing until JS downloaded, hydrated and the API answered. Rendering the
+ * layout skeleton first makes the app feel instant and removes a layout shift
+ * when the real shell mounts.
+ */
+function ShellSkeleton() {
+  return (
+    <div className="flex h-screen overflow-hidden" aria-busy="true" aria-label="Loading workspace">
+      <div className="hidden w-64 shrink-0 border-r border-border bg-card/60 p-4 lg:block">
+        <div className="h-9 w-32 animate-pulse rounded-lg bg-muted" />
+        <div className="mt-8 space-y-2">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-9 animate-pulse rounded-lg bg-muted/70" />
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex h-14 items-center gap-3 border-b border-border px-4">
+          <div className="h-8 w-8 animate-pulse rounded-lg bg-muted" />
+          <div className="h-8 w-48 animate-pulse rounded-lg bg-muted" />
+          <div className="ml-auto h-8 w-8 animate-pulse rounded-full bg-muted" />
+        </div>
+        <main className="flex-1 overflow-y-auto bg-mesh">
+          <div className="mx-auto max-w-7xl space-y-4 p-4 sm:p-6 lg:p-8">
+            <div className="h-8 w-56 animate-pulse rounded-lg bg-muted" />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-24 animate-pulse rounded-2xl bg-muted/70" />
+              ))}
+            </div>
+            <div className="h-72 animate-pulse rounded-2xl bg-muted/60" />
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, loadError, retry } = useAuth();
   const router = useRouter();
@@ -19,13 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!loading && !user && !getToken()) router.replace("/login");
   }, [loading, user, router]);
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-mesh">
-        <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
+  if (loading) return <ShellSkeleton />;
 
   if (!user) {
     // Token exists but /auth/me could not be reached → offer a retry instead

@@ -223,9 +223,91 @@ part of the repository, so a clean checkout can run `prisma migrate deploy`.
 
 ```
 qa/verify-fixes.mjs        16/16 checks passed
+qa/verify-high.mjs          9/9 checks passed
 npm run test:smoke         28/28 checks passed
 npm run test:portal        16/16 checks passed
 npm run typecheck          api + web clean
 npm run build              api + web clean (web requires NEXT_PUBLIC_API_URL)
 npx prisma migrate deploy  all migrations applied
 ```
+
+---
+
+# Part 2 — HIGH severity fixes
+
+Everything the audit rated HIGH (below the 13 blockers) that could be fixed
+without a redesign. Same verification rules: production build, real HTTP calls,
+`qa/verify-high.mjs`.
+
+## Security / access control
+
+| Area | Change |
+|---|---|
+| Role & status changes (`/users/:id/role`, `/:id/active`) | Bump `tokenVersion` (old sessions die immediately), refuse demoting/deactivating the last active Owner, write a `SystemAuditLog` entry |
+| Staff directory `/users` | Explicit projection — `passwordHash`, `lastLoginIp`, `tokenVersion` and WebAuthn handles no longer reach any signed-in role |
+| JWT verification | Pin `HS256` in the staff, portal and SSE verifiers |
+| Scoped tokens | Any `scope` (`sse`, `portal`, future) is rejected on staff routes; a 2-minute SSE token can no longer call `/auth/me` or `/search` |
+| Secret comparison | Telegram/WhatsApp webhook secrets compared in constant time |
+
+## Money correctness
+
+| Area | Change |
+|---|---|
+| Payroll unpaid leave | Clip the leave to the payroll window and charge **working days** (weekly offs/holidays excluded) via `countWorkingDays`, instead of calendar days |
+| Payroll finalize | Expense + GL journal + bank movement + `balanceDeducted` now run in **one transaction** (`postExpenseLedgerWithin`) |
+| Payroll edits | A `PAID` record is immutable; every money field must be ≥ 0; net pay cannot go negative |
+| Vendor payments | Row lock (`SELECT … FOR UPDATE`) + balance recomputed inside the transaction, so concurrent payments cannot overpay |
+| Credit notes | Refund requires an invoice; type whitelist; client required |
+
+## Performance (backend)
+
+| Area | Before | After |
+|---|---|---|
+| `tasks/stats` | every task + every time log into Node | 6 bounded aggregate queries |
+| Task list subtask counts | `groupBy` over the whole table | scoped to the page's ids |
+| Trial balance / P&L / balance sheet | full journal-line scan + JS | one `groupBy` per statement (~20 rows) |
+| Profitability | projects → invoices → lines → payments → tasks → time logs | 6 SQL aggregates |
+| Lead nightly audit | `activities` list per lead + one UPDATE per lead | `_count` + one transaction per 200 leads |
+| Lead phone backfill | one UPDATE per lead **during boot** | deferred 5s, batched SQL |
+| Round-robin assignment | every active lead id per user | one `groupBy` count |
+| Expense list approval | one settings read per distinct amount | policy read once per request |
+| AP aging | all payments included | `groupBy` sum per expense |
+| Budgets | every approved expense ever | bounded to the budgets' date window |
+| People overview | every approved leave ever + OR-list utilization | `count` + `DISTINCT ON` |
+| Leave balances | 800 findUnique/insert/update | one read + `createMany` + chunked updates |
+| Vendor engagement list | unbounded | filtered + capped at 500 |
+| Lead list export | entire lead book, all columns | 5,000 cap, explicit projection |
+| Lead convert | 5 independent writes | one transaction with an atomic claim |
+| Lead create | 7 independent writes | one transaction for follow-up/score/flags/activity/note |
+| Task status (board) | project progress never recomputed | rescore on status change and after bulk status moves |
+
+## Performance (frontend)
+
+| Area | Change |
+|---|---|
+| App shell | Renders the real layout skeleton immediately instead of a full-screen spinner, so first paint no longer waits for `/auth/me` |
+| jsPDF | Capital tabs, portal-client and Flow's invoice modal load the PDF stack on demand (`dynamic()` / `import()`), removing ~170 KB gz from those routes |
+| Tasks search | 300 ms debounce (7 requests per word → 1) |
+| Tasks page | Uses the shell's `/auth/me` instead of a duplicate request |
+| Accounts page | Reads `clientTiers` from `/accounts/overview` instead of downloading the whole admin settings document |
+| Notifications | One 120s poll, paused while the tab is hidden, plus refresh on focus; the dashboard's second 60s loop is gone |
+| Fonts | Noto Sans Bengali is self-hosted via `next/font` — no render-blocking third-party stylesheet/preconnect |
+
+## Deliberately not done (documented, not forgotten)
+
+- **Attendance recompute batching** (`recomputeMonth`, nightly cron, iclock burst):
+  the correct fix is a single-pass batch writer. It touches the most
+  safety-critical code in the product (attendance → payroll), so it needs its
+  own regression suite before changing.
+- **Frontend mega-components** (Pulse 3,470 lines / 84 state hooks, Flow 2,480,
+  Accounts 2,400, Control 110 hooks): splitting them is a product-level
+  refactor, not a safe mechanical edit.
+- **Capital context request fan-out** (25 calls per `/capital/*` route): needs
+  the tabs to own their data, which is the same refactor as above.
+- **CSV import batching** (leads/projects): correct fix is a queued job with
+  progress reporting; the current path is correct but slow for very large files.
+- **framer-motion removal** from `ui.tsx` / `sidebar.tsx`: still ~44 KB gz; the
+  rewrite is pure UI animation work with visual-regression risk.
+
+Each is tracked as a follow-up, not a deployment blocker.
+

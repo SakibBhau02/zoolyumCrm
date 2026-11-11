@@ -42,12 +42,14 @@ export class JwtAuthGuard implements CanActivate {
 
     let payload: any;
     try {
-      payload = this.jwt.verify(auth.slice(7));
+      payload = this.jwt.verify(auth.slice(7), { algorithms: ["HS256"] });
     } catch {
       throw new UnauthorizedException("Invalid or expired token");
     }
-    if (payload.scope === "portal") {
-      throw new UnauthorizedException("Portal tokens are not valid on staff routes");
+    // Staff tokens are unscoped. Anything else (portal, short-lived SSE) is a
+    // different audience and must never be accepted on the general API.
+    if (payload.scope) {
+      throw new UnauthorizedException("This token is not valid on staff routes");
     }
 
     // Logout revokes the exact session by jti, so a copied token stops working

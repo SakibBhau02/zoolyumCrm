@@ -132,7 +132,7 @@ export class AccountsService {
   // ── Overview / stats ────────────────────────────────────────────────────
   async overview() {
     return this.cache.wrap("accounts:overview", 30, async () => {
-      const [clients, flags] = await Promise.all([
+      const [clients, flags, settings] = await Promise.all([
         this.prisma.client.findMany({
           include: {
             accountOwner: { select: { id: true, name: true } },
@@ -144,6 +144,9 @@ export class AccountsService {
           distinct: ["clientId"],
           select: { clientId: true },
         }),
+        // Returned with the overview so the Accounts page does not fetch the
+        // entire admin settings document just to read the tier thresholds.
+        this.prisma.settings.findUnique({ where: { id: "default" }, select: { clientTiers: true } }),
       ]);
 
       // Archived clients keep their history but are not part of the active book:
@@ -200,6 +203,7 @@ export class AccountsService {
         noContact,
         noOwner,
         dataGaps: retainerMissingAmount + noContact + noOwner,
+        clientTiers: (settings?.clientTiers as any) ?? [],
       };
     });
   }

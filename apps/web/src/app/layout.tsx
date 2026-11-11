@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { GeistMono } from "geist/font/mono";
-import { Inter, Outfit } from "next/font/google";
+import { Inter, Noto_Sans_Bengali, Outfit } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { QueryProvider } from "@/lib/query-provider";
@@ -18,6 +18,18 @@ const outfit = Outfit({
   display: "swap",
 });
 
+/**
+ * Self-hosted via next/font instead of a render-blocking <link> to
+ * fonts.googleapis.com: no third-party DNS/TLS before first paint, no layout
+ * shift, and the app still looks right offline.
+ */
+const bengali = Noto_Sans_Bengali({
+  subsets: ["bengali"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-bengali",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Zoolyum OS — Agency Operating System",
   description:
@@ -30,10 +42,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap"
-        />
         <script
           suppressHydrationWarning
           dangerouslySetInnerHTML={{
@@ -42,7 +50,7 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${inter.variable} ${GeistMono.variable} ${outfit.variable} font-sans`}
+        className={`${inter.variable} ${GeistMono.variable} ${outfit.variable} ${bengali.variable} font-sans`}
       >
         <QueryProvider>
           <BrandingProvider>

@@ -464,26 +464,45 @@ export class PulseService {
     }
     const score = await this.recomputeScore(lead);
     const temperature = this.rules.temperatureFor(score, rules) ?? undefined;
-    const updated = await this.prisma.lead.update({
-      where: { id: lead.id },
-      data: { leadScore: score, ...(temperature ? { temperature } : {}) },
-    });
     const qualityFlags = this.rules.flagsFor(
-      { ...updated, phoneNormalized: intake.phoneNormalized } as Lead,
+      { ...lead, leadScore: score, ...(temperature ? { temperature } : {}), phoneNormalized: intake.phoneNormalized } as Lead,
       { duplicate: dup.soft.length > 0 },
       rules
     );
-    if (qualityFlags.length) {
-      await this.prisma.lead.update({ where: { id: lead.id }, data: { qualityFlags } });
-    }
-    await this.prisma.leadActivity.create({
-      data: { leadId: lead.id, type: "CREATED", content: "Lead created", loggedById: userId },
-    });
-    if (withDefaults.notes) {
-      await this.prisma.leadNote.create({
-        data: { leadId: lead.id, content: withDefaults.notes, createdById: userId },
-      });
-    }
+    // The follow-up, score, flags, activity and note are one unit: a failure
+    // half-way used to leave a lead with no CREATED activity and no score.
+    await this.prisma.$transaction([
+      ...(nextFollowUpAt
+        ? [
+            this.prisma.leadFollowUp.create({
+              data: {
+                leadId: lead.id,
+                date: nextFollowUpAt,
+                notes: withDefaults.nextFollowUpAt ? "Initial follow-up" : "Auto: first contact (SLA)",
+              },
+            }),
+          ]
+        : []),
+      this.prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          leadScore: score,
+          ...(temperature ? { temperature } : {}),
+          ...(qualityFlags.length ? { qualityFlags } : {}),
+        },
+      }),
+      this.prisma.leadActivity.create({
+        data: { leadId: lead.id, type: "CREATED", content: "Lead created", loggedById: userId },
+      }),
+      ...(withDefaults.notes
+        ? [
+            this.prisma.leadNote.create({
+              data: { leadId: lead.id, content: withDefaults.notes, createdById: userId },
+            }),
+          ]
+        : []),
+    ]);
+    const updated = { ...lead, leadScore: score, ...(temperature ? { temperature } : {}), qualityFlags };
     await this.audit("LEAD_CREATED", lead.id);
 
     // Every decision the engine took, so the form can explain itself.
@@ -693,54 +712,74 @@ export class PulseService {
     if (!lead) throw new NotFoundException("Lead not found");
     if (lead.convertedClientId) throw new ConflictException("Lead already converted");
 
-    const latestProposal = await this.prisma.proposal.findFirst({
+    // Prefer the accepted proposal, then the newest version. The old ordering
+    // used the enum ordinal, which put REJECTED first and linked the project to
+    // a rejected proposal (and sourceProposalId is unique, so it could never be
+    // corrected later).
+    const proposals = await this.prisma.proposal.findMany({
       where: { leadId: id },
-      orderBy: [{ status: "desc" }, { versionNumber: "desc" }],
+      orderBy: [{ versionNumber: "desc" }],
+      select: { id: true, status: true, versionNumber: true },
     });
+    const latestProposal =
+      proposals.find((p) => p.status === "ACCEPTED") ?? proposals[0] ?? null;
 
-    const client = await this.prisma.client.create({
-      data: {
-        companyName: dto.companyName || lead.company || lead.name,
-        industryVertical: dto.vertical ?? lead.vertical,
-        accountOwnerId: dto.accountOwnerId ?? lead.assignedToId,
-        healthScore: dto.healthScore ?? 80,
-        healthLevel: "GREEN",
-        contractStartDate: new Date(),
-      },
-    });
+    // One transaction: a failure after client.create used to leave an orphan
+    // client/project, and two concurrent clicks created two of everything.
+    const result = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.lead.updateMany({
+        where: { id, convertedClientId: null },
+        data: { stage: "WON", leadScore: 100, nextFollowUpAt: null },
+      });
+      if (claimed.count === 0) throw new ConflictException("Lead already converted");
 
-    if (dto.contactName || lead.contactEmail || lead.contactPhone) {
-      await this.prisma.clientContact.create({
+      const client = await tx.client.create({
         data: {
-          clientId: client.id,
-          name: dto.contactName ?? lead.name,
-          email: dto.contactEmail ?? lead.contactEmail,
-          phone: dto.contactPhone ?? lead.contactPhone,
-          isPrimary: true,
+          companyName: dto.companyName || lead.company || lead.name,
+          industryVertical: dto.vertical ?? lead.vertical,
+          accountOwnerId: dto.accountOwnerId ?? lead.assignedToId,
+          healthScore: dto.healthScore ?? 80,
+          healthLevel: "GREEN",
+          contractStartDate: new Date(),
         },
       });
-    }
 
-    const project = await this.prisma.project.create({
-      data: {
-        clientId: client.id,
-        name: dto.projectName || `${client.companyName} — Onboarding`,
-        type: "FIXED",
-        status: "PLANNING",
-        startDate: new Date(),
-        assignedPmId: dto.accountOwnerId ?? lead.assignedToId,
-        budgetAmount: lead.estimatedDealSize ?? undefined,
-        sourceLeadId: id,
-        sourceProposalId: latestProposal?.id,
-      },
-    });
+      if (dto.contactName || lead.contactEmail || lead.contactPhone) {
+        await tx.clientContact.create({
+          data: {
+            clientId: client.id,
+            name: dto.contactName ?? lead.name,
+            email: dto.contactEmail ?? lead.contactEmail,
+            phone: dto.contactPhone ?? lead.contactPhone,
+            isPrimary: true,
+          },
+        });
+      }
 
-    await this.prisma.lead.update({
-      where: { id },
-      data: { stage: "WON", convertedClientId: client.id, leadScore: 100, nextFollowUpAt: null },
-    });
-    await this.closeAgenda(id, "WON");
+      const project = await tx.project.create({
+        data: {
+          clientId: client.id,
+          name: dto.projectName || `${client.companyName} — Onboarding`,
+          type: "FIXED",
+          status: "PLANNING",
+          startDate: new Date(),
+          assignedPmId: dto.accountOwnerId ?? lead.assignedToId,
+          budgetAmount: lead.estimatedDealSize ?? undefined,
+          sourceLeadId: id,
+          sourceProposalId: latestProposal?.id,
+        },
+      });
 
+      await tx.lead.update({
+        where: { id },
+        data: { convertedClientId: client.id },
+      });
+
+      return { client, project };
+    }, { timeout: 15000 });
+
+    const { client, project } = result;
+    await this.closeAgenda(id, "WON").catch(() => null);
     await this.audit("LEAD_CONVERTED", id, { clientId: client.id, projectId: project.id });
     await this.invalidateSummary();
     await this.cache.del("accounts:overview");
@@ -1823,8 +1862,17 @@ export class PulseService {
         ...(query.stage ? { stage: query.stage as any } : {}),
         ...(query.assignedToId ? { assignedToId: query.assignedToId } : {}),
       },
-      include: { assignedTo: { select: { name: true, email: true } }, leadCategory: true },
+      select: {
+        id: true, name: true, company: true, contactEmail: true, contactPhone: true,
+        source: true, vertical: true, stage: true, priority: true, temperature: true,
+        leadScore: true, estimatedDealSize: true, currency: true, nextFollowUpAt: true,
+        probability: true, tags: true, description: true, notes: true, createdAt: true,
+        assignedTo: { select: { name: true, email: true } }, leadCategory: { select: { name: true } },
+      },
       orderBy: { createdAt: "desc" },
+      // Hard cap: the export used to materialise the entire lead book (with two
+      // relations) into one in-memory CSV. Filter first, or page the rest.
+      take: 5000,
     });
     const esc = (v: any) => {
       const s = v == null ? "" : String(v);

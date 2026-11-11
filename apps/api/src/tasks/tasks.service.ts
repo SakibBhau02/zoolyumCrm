@@ -211,56 +211,62 @@ export class TasksService {
     return false;
   }
   /** Content edits (title/description/project/assignee/dates/links). */
-  private async canEditFull(task: any, user?: { sub?: string; role?: string }): Promise<boolean> {
+  private async canEditFull(task: any, user?: { sub?: string; role?: string }, empId?: string | null): Promise<boolean> {
     if (!user?.sub) return false;
     if (this.isAdmin(user.role) || this.isPM(user.role)) return true;
-    const empId = await this.getEmployeeIdByUserId(user.sub);
-    if (!empId) return false;
+    const id = empId !== undefined ? empId : await this.getEmployeeIdByUserId(user.sub);
+    if (!id) return false;
     // the person who raised it, and the person who assigned it, own the brief
-    return task.reporterId === empId || task.assignedById === empId;
+    return task.reporterId === id || task.assignedById === id;
   }
   /**
    * Assignee-side actions. An assignee may drive their own work forward
    * (status, checklist, timer, time logs) but may not rewrite the brief.
    */
-  private async canWorkOnTask(task: any, user?: { sub?: string; role?: string }): Promise<boolean> {
-    if (await this.canEditFull(task, user)) return true;
+  private async canWorkOnTask(task: any, user?: { sub?: string; role?: string }, empId?: string | null): Promise<boolean> {
+    if (await this.canEditFull(task, user, empId)) return true;
     if (!user?.sub) return false;
-    const empId = await this.getEmployeeIdByUserId(user.sub);
-    return this.isAssignee(task, empId);
+    const id = empId !== undefined ? empId : await this.getEmployeeIdByUserId(user.sub);
+    return this.isAssignee(task, id);
   }
   /** @deprecated alias — kept so existing call sites read clearly as "progress" */
-  private canEditProgress(task: any, user?: { sub?: string; role?: string }) {
-    return this.canWorkOnTask(task, user);
+  private canEditProgress(task: any, user?: { sub?: string; role?: string }, empId?: string | null) {
+    return this.canWorkOnTask(task, user, empId);
   }
 
   async stats() {
     return this.cache.wrap("tasks:stats", 30, async () => {
-      const [tasks, timeLogs] = await Promise.all([
-        this.prisma.task.findMany({ select: { id: true, status: true, dueDate: true, priority: true, archivedAt: true, parentTaskId: true } }),
-        this.prisma.timeLog.findMany({ select: { hours: true, date: true } }),
-      ]);
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      // Count only what the board/list actually shows: top-level, non-archived
-      // tasks. Archived work and subtasks used to inflate the header badges
-      // while being invisible everywhere else.
-      const visible = tasks.filter((t) => !t.archivedAt && !t.parentTaskId);
-      const open = visible.filter((t) => t.status !== "DONE");
+      const tomorrow = new Date(today.getTime() + 86400000);
       const weekStart = new Date(today);
       weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
-      const hoursThisWeek = timeLogs.filter((l) => l.date >= weekStart).reduce((s, l) => s + Number(l.hours), 0);
+      // Count only what the board/list actually shows: top-level, non-archived
+      // tasks. All of these run in Postgres — the old version pulled every task
+      // and every time log ever written into Node to count them.
+      const base = { archivedAt: null, parentTaskId: null };
+      const openWhere = { ...base, status: { not: "DONE" as const } };
+      const [total, byStatus, highPriority, dueToday, overdue, hoursAgg] = await Promise.all([
+        this.prisma.task.count({ where: base }),
+        this.prisma.task.groupBy({ by: ["status"], where: base, _count: { _all: true } }),
+        this.prisma.task.count({ where: { ...base, priority: { in: ["URGENT", "HIGH"] } } }),
+        this.prisma.task.count({ where: { ...openWhere, dueDate: { gte: today, lt: tomorrow } } }),
+        this.prisma.task.count({ where: { ...openWhere, dueDate: { lt: today } } }),
+        this.prisma.timeLog.aggregate({ where: { date: { gte: weekStart } }, _sum: { hours: true } }),
+      ]);
+      const statusCount = (status: string) => byStatus.find((s) => s.status === status)?._count._all ?? 0;
+      const done = statusCount("DONE");
       return {
-        total: visible.length,
-        open: open.length,
-        dueToday: open.filter((t) => t.dueDate && t.dueDate >= today && t.dueDate < new Date(today.getTime() + 86400000)).length,
-        overdue: open.filter((t) => t.dueDate && t.dueDate < today).length,
-        blocked: visible.filter((t) => t.status === "BLOCKED").length,
-        inProgress: visible.filter((t) => t.status === "IN_PROGRESS").length,
-        review: visible.filter((t) => t.status === "REVIEW").length,
-        done: visible.filter((t) => t.status === "DONE").length,
-        highPriority: visible.filter((t) => t.priority === "URGENT" || t.priority === "HIGH").length,
-        hoursThisWeek: Math.round(hoursThisWeek * 10) / 10,
+        total,
+        open: total - done,
+        dueToday,
+        overdue,
+        blocked: statusCount("BLOCKED"),
+        inProgress: statusCount("IN_PROGRESS"),
+        review: statusCount("REVIEW"),
+        done,
+        highPriority,
+        hoursThisWeek: Math.round(Number(hoursAgg._sum.hours ?? 0) * 10) / 10,
       };
     });
   }
@@ -434,11 +440,14 @@ export class TasksService {
     const tasks = await this.prisma.task.findMany({ where: { id: { in: body.ids } } });
     if (!tasks.length) throw new NotFoundException("No matching tasks");
 
-    // permission: full-edit for structural ops, progress for status
+    // permission: full-edit for structural ops, progress for status.
+    // Resolve the caller's employee id ONCE — resolving it per task turned a
+    // 200-task bulk action into 200-400 identical user lookups.
     const needFull = ["assign", "priority", "dueDate", "archive", "unarchive", "delete"].includes(body.op);
+    const actorEmpId = user?.sub ? await this.getEmployeeIdByUserId(user.sub) : null;
     const allowed: string[] = [];
     for (const t of tasks) {
-      const ok = needFull ? await this.canEditFull(t, user) : await this.canEditProgress(t, user);
+      const ok = needFull ? await this.canEditFull(t, user, actorEmpId) : await this.canEditProgress(t, user, actorEmpId);
       if (ok) allowed.push(t.id);
     }
     if (!allowed.length) throw new ForbiddenException("You don't have permission to modify these tasks");
@@ -472,6 +481,10 @@ export class TasksService {
           count++;
         }
         for (const id of idsToSpawn) await this.spawnRecurrence(id).catch(() => {});
+        // One rescore per affected project (the old path left progress stale
+        // after a bulk move, so a 40-card "Done" showed 0%).
+        const affectedProjects = [...new Set(allowed.map((id) => tasks.find((t) => t.id === id)?.projectId).filter(Boolean))] as string[];
+        await Promise.all(affectedProjects.map((pid) => this.rescoreProject(pid)));
         break;
       }
       case "assign": {
@@ -1043,7 +1056,7 @@ export class TasksService {
     }
     const take = Math.min(1000, Math.max(1, Number(query.limit) || 500));
     const skip = Math.max(0, Number(query.offset) || 0);
-    const [tasks, childCounts] = await Promise.all([
+    const [tasks] = await Promise.all([
       this.prisma.task.findMany({
         where: {
           // Archived view must actually filter to archived rows; the old
@@ -1083,8 +1096,14 @@ export class TasksService {
         take,
         skip,
       }),
-      this.prisma.task.groupBy({ by: ["parentTaskId"], where: { parentTaskId: { not: null } }, _count: { _all: true } }),
     ]);
+    // Only count subtasks for the rows on this page; the previous groupBy
+    // scanned the whole Task table on every board load.
+    const childCounts = await this.prisma.task.groupBy({
+      by: ["parentTaskId"],
+      where: { parentTaskId: { in: tasks.map((t) => t.id) } },
+      _count: { _all: true },
+    });
     const counts = new Map(childCounts.map((c) => [c.parentTaskId!, c._count._all]));
     const scoped = privileged
       ? tasks
@@ -1377,7 +1396,7 @@ export class TasksService {
     await this.applyAutomation({
       type: "assignee", taskId: id, title: updated.title, prev: existing.assignedToId, next: updated.assignedToId, actorName,
     });
-    if (body.status === "DONE" && existing.status !== "DONE") {
+    if (updated.status === "DONE" && existing.status !== "DONE") {
       void this.wa.notifyTaskClientUpdate(id).catch(() => {});
       await this.recordEstimateAccuracy(updated).catch(() => {});
       await this.spawnRecurrence(id).catch(() => {});
@@ -1468,6 +1487,11 @@ export class TasksService {
       await this.recordEstimateAccuracy(t).catch(() => {});
       await this.spawnRecurrence(id).catch(() => {});
     }
+    // Dragging a card is the primary way work completes; without this the
+    // project progress/health (and the client health score) stayed stale until
+    // the nightly reconcile.
+    await this.rescoreProject(existing.projectId);
+    if (t.projectId !== existing.projectId) await this.rescoreProject(t.projectId);
     await this.invalidateTasks();
     return t;
   }
