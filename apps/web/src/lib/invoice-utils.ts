@@ -15,10 +15,34 @@ export type InvoiceTotals = {
   grand: number;
   paid: number;
   refunded: number;
+  credits: number;
   balance: number;
+  exchangeRate: number;
+  grandBdt: number;
+  paidBdt: number;
+  balanceBdt: number;
 };
 
 const num = (v: any) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+/** Start of the local calendar day expressed as UTC midnight (matches the API). */
+export function startOfTodayUtc(): Date {
+  const n = new Date();
+  return new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()));
+}
+
+/**
+ * Whole days past a DATE-only value. Returns 0 for today/future.
+ * Comparing local midnight with a UTC-midnight date column made every invoice
+ * look one day younger than it was.
+ */
+export function daysLate(dueDate?: string | Date | null): number {
+  if (!dueDate) return 0;
+  const d = new Date(dueDate);
+  if (Number.isNaN(d.getTime())) return 0;
+  const due = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  return Math.max(0, Math.round((startOfTodayUtc().getTime() - due) / 86400000));
+}
 
 /**
  * Chronological receipt serial: earliest payment = 1.
@@ -66,7 +90,10 @@ export function invoiceTotals(inv: {
   taxRate?: any;
   discountRate?: any;
   shippingFee?: any;
+  exchangeRate?: any;
+  currency?: string | null;
   payments?: { amount?: any; type?: string | null }[] | null;
+  creditNotes?: { amount?: any; type?: string | null; status?: string | null }[] | null;
 }): InvoiceTotals {
   const subtotal = (inv.lineItems ?? []).reduce((s, l) => s + num(l.amount), 0);
   const tax = inv.taxApplicable && num(inv.taxRate) ? (subtotal * num(inv.taxRate)) / 100 : 0;
@@ -77,8 +104,28 @@ export function invoiceTotals(inv: {
   // Refunds hand money back — they subtract from collected, matching the API.
   const paid = payments.reduce((s, p) => s + (p.type === "REFUND" ? -num(p.amount) : num(p.amount)), 0);
   const refunded = payments.filter((p) => p.type === "REFUND").reduce((s, p) => s + num(p.amount), 0);
+  // Credit notes / write-offs reduce the receivable (API parity).
+  const credits = (inv.creditNotes ?? [])
+    .filter((c) => c && (!c.status || c.status === "ISSUED") && (c.type === "CREDIT_NOTE" || c.type === "WRITE_OFF"))
+    .reduce((s, c) => s + num(c.amount), 0);
+  const rate = num(inv.exchangeRate) || 1;
   const r2 = (n: number) => Math.round(n * 100) / 100;
-  return { subtotal: r2(subtotal), tax: r2(tax), discount: r2(discount), shipping: r2(shipping), grand: r2(grand), paid: r2(paid), refunded: r2(refunded), balance: r2(Math.max(grand - paid, 0)) };
+  const balance = Math.max(grand - paid - credits, 0);
+  return {
+    subtotal: r2(subtotal),
+    tax: r2(tax),
+    discount: r2(discount),
+    shipping: r2(shipping),
+    grand: r2(grand),
+    paid: r2(paid),
+    refunded: r2(refunded),
+    credits: r2(credits),
+    balance: r2(balance),
+    exchangeRate: rate,
+    grandBdt: r2(grand * rate),
+    paidBdt: r2(paid * rate),
+    balanceBdt: r2(balance * rate),
+  };
 }
 
 export const INVOICE_TEMPLATES = [

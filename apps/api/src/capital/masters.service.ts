@@ -1,8 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { invalidateFinance, logAudit } from "./finance-kernel";
+import { invalidateFinance, logAudit, toBdt } from "./finance-kernel";
 
 @Injectable()
 export class MastersService {
@@ -109,17 +109,28 @@ export class MastersService {
       this.prisma.reconciliationRecord.findMany({ where: { bankAccountId }, orderBy: { statementDate: "desc" } }),
     ]);
     const txns = [
-      ...payments.map((p) => ({ id: p.id, date: p.paymentDate, ref: p.invoice?.invoiceNumber ?? p.referenceId ?? p.id, type: p.type, amount: p.type === "REFUND" ? -Number(p.amount) : Number(p.amount), kind: p.type === "REFUND" ? "REFUND" : "PAYMENT", client: p.invoice?.client.companyName ?? null, note: p.notes })),
-      ...expenses.map((e) => ({ id: e.id, date: e.date, ref: e.description, type: "OUT" as const, amount: -Number(e.amount), kind: "EXPENSE", client: null, note: e.subcategory ?? null })),
-      ...manualIncome.map((m) => ({ id: m.id, date: m.date, ref: m.description, type: "IN" as const, amount: Number(m.amount), kind: "MANUAL_INCOME", client: null, note: m.notes })),
+      ...payments.map((p) => ({ id: p.id, date: p.paymentDate, ref: p.invoice?.invoiceNumber ?? p.referenceId ?? p.id, type: p.type, amount: p.type === "REFUND" ? -toBdt(Number(p.amount), p) : toBdt(Number(p.amount), p), kind: p.type === "REFUND" ? "REFUND" : "PAYMENT", client: p.invoice?.client.companyName ?? null, note: p.notes })),
+      ...expenses.map((e) => ({ id: e.id, date: e.date, ref: e.description, type: "OUT" as const, amount: -toBdt(Number(e.amount), e), kind: "EXPENSE", client: null, note: e.subcategory ?? null })),
+      ...manualIncome.map((m) => ({ id: m.id, date: m.date, ref: m.description, type: "IN" as const, amount: toBdt(Number(m.amount), m), kind: "MANUAL_INCOME", client: null, note: m.notes })),
     ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return { transactions: txns, records, bank: await this.prisma.bankAccount.findUnique({ where: { id: bankAccountId } }) };
   }
 
 
   async reconcile(body: { bankAccountId: string; statementDate: string; statementAmount: number; statementReference?: string; matchedPaymentId?: string; matchStatus?: string }) {
+    if (!body.bankAccountId) throw new BadRequestException("Pick the bank account this statement line belongs to");
+    const amount = Number(body.statementAmount);
+    if (!Number.isFinite(amount)) throw new BadRequestException("Statement amount must be a number");
+    if (!body.statementDate || Number.isNaN(new Date(body.statementDate).getTime())) {
+      throw new BadRequestException("A valid statement date is required");
+    }
+    const bank = await this.prisma.bankAccount.findUnique({ where: { id: body.bankAccountId }, select: { id: true } });
+    if (!bank) throw new NotFoundException("Bank account not found");
     return this.prisma.reconciliationRecord.create({
-      data: { bankAccountId: body.bankAccountId, statementDate: new Date(body.statementDate), statementAmount: body.statementAmount, statementReference: body.statementReference ?? null, matchedPaymentId: body.matchedPaymentId ?? null, matchStatus: (body.matchStatus as any) ?? "UNMATCHED" },
+      data: { bankAccountId: body.bankAccountId, statementDate: new Date(body.statementDate), statementAmount: amount, statementReference: body.statementReference ?? null, matchedPaymentId: body.matchedPaymentId ?? null, matchStatus: (body.matchStatus as any) ?? "UNMATCHED" },
+    }).then(async (record) => {
+      await invalidateFinance(this.cache);
+      return record;
     });
   }
 

@@ -53,7 +53,11 @@ export class ApprovalPolicyService {
   }
 
   async get() {
-    return this.read();
+    const policy = await this.read();
+    // The matrix must only offer roles that actually exist; the old modal
+    // hard-coded "Manager"/"Admin"/"CONTROL", none of which is a real role.
+    const roles = await this.prisma.role.findMany({ select: { name: true }, orderBy: { name: "asc" } }).catch(() => []);
+    return { ...policy, availableRoles: roles.map((r) => r.name) };
   }
 
   async update(body: Partial<ApprovalPolicy>) {
@@ -63,6 +67,12 @@ export class ApprovalPolicyService {
           .filter((r) => r?.role && String(r.role).trim())
           .map((r) => ({ role: String(r.role).trim(), limit: Math.max(0, Number(r.limit) || 0) }))
       : current.rules;
+    const seen = new Set<string>();
+    for (const rule of rules) {
+      const key = rule.role.toLowerCase();
+      if (seen.has(key)) throw new BadRequestException(`"${rule.role}" appears more than once in the approval matrix`);
+      seen.add(key);
+    }
     const next: ApprovalPolicy = {
       enabled: body.enabled ?? current.enabled,
       rules,
@@ -136,8 +146,13 @@ export class ApprovalPolicyService {
   validate(body: Partial<ApprovalPolicy>) {
     if (body.rules) {
       for (const r of body.rules) {
-        if (!r?.role) throw new BadRequestException("Each rule needs a role");
-        if (Number.isNaN(Number(r.limit))) throw new BadRequestException("Limit must be a number (0 = unlimited)");
+        if (!r?.role || !String(r.role).trim()) throw new BadRequestException("Each rule needs a role");
+        const limit = Number(r.limit);
+        // A negative limit used to be clamped to 0, which means "unlimited" —
+        // a single typo silently removed the ceiling. Reject it instead.
+        if (!Number.isFinite(limit) || limit < 0) {
+          throw new BadRequestException("Limit must be 0 (unlimited) or a positive number");
+        }
       }
     }
     return true;

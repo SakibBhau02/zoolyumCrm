@@ -1,14 +1,16 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { CacheService } from "../cache/cache.service";
-import { dateStrDhaka, eachDayStr, invalidatePeopleCache, leaveDays } from "./people-utils";
+import { assertDay, dateStrDhaka, eachDayStr, invalidatePeopleCache, leaveDays } from "./people-utils";
 import { AttendanceService } from "./attendance.service";
 
 const APPROVER_ROLES = ["Owner", "HR/Admin", "Admin", "Project Manager"];
 
 @Injectable()
 export class LeaveService {
+  private readonly logger = new Logger("Leave");
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
@@ -54,16 +56,19 @@ export class LeaveService {
         })
       );
     }
+    // A changed quota must reach the people who already have a balance row.
+    // Without this, raising casual leave 10 → 15 days did nothing that year.
+    await this.ensureBalances(undefined, undefined, false, true);
     return out;
   }
 
   /**
-   * (Re)create balance rows for a year from the quota table. Existing rows
-   * are left untouched unless `reset` — January reset deletes the period
-   * first, so last year's leftovers never leak forward (no carryover policy).
+   * (Re)create balance rows for a year from the quota table. Existing rows are
+   * left untouched unless `reset` (delete + recreate) or `resync` (set balance
+   * = annualDays − approved days already taken) is requested.
    */
-  async ensureBalances(period?: string, employeeId?: string, reset = false) {
-    const year = period && /^\d{4}$/.test(period) ? period : `${new Date().getFullYear()}`;
+  async ensureBalances(period?: string, employeeId?: string, reset = false, resync = false) {
+    const year = period && /^\d{4}$/.test(period) ? period : dateStrDhaka(new Date()).slice(0, 4);
     const [policies, employees] = await Promise.all([
       this.prisma.leavePolicy.findMany({ where: { annualDays: { not: null } } }),
       this.prisma.employee.findMany({
@@ -74,7 +79,27 @@ export class LeaveService {
     if (reset) {
       await this.prisma.leaveBalance.deleteMany({ where: { period: year, ...(employeeId ? { employeeId } : {}) } });
     }
+    // Approved days already consumed this year, so a resync starts from facts
+    // instead of assuming nothing was taken.
+    const used = new Map<string, number>();
+    if (resync) {
+      const yearStart = new Date(`${year}-01-01T00:00:00.000Z`);
+      const yearEnd = new Date(`${Number(year) + 1}-01-01T00:00:00.000Z`);
+      const approved = await this.prisma.leaveRequest.findMany({
+        where: {
+          status: "APPROVED",
+          startDate: { gte: yearStart, lt: yearEnd },
+          ...(employeeId ? { employeeId } : {}),
+        },
+        select: { employeeId: true, leaveType: true, deductedDays: true },
+      });
+      for (const l of approved) {
+        const key = `${l.employeeId}|${l.leaveType}`;
+        used.set(key, (used.get(key) ?? 0) + Number(l.deductedDays ?? 0));
+      }
+    }
     let created = 0;
+    let updated = 0;
     for (const emp of employees) {
       for (const p of policies) {
         const existing = await this.prisma.leaveBalance.findUnique({
@@ -85,14 +110,21 @@ export class LeaveService {
             data: { employeeId: emp.id, leaveType: p.leaveType, balanceDays: p.annualDays!, period: year },
           });
           created++;
+        } else if (resync) {
+          const target = Math.max(0, Number(p.annualDays) - (used.get(`${emp.id}|${p.leaveType}`) ?? 0));
+          if (Math.abs(Number(existing.balanceDays) - target) > 0.001) {
+            await this.prisma.leaveBalance.update({ where: { id: existing.id }, data: { balanceDays: target } });
+            updated++;
+          }
         }
       }
     }
-    return { period: year, created, employees: employees.length, types: policies.length };
+    return { period: year, created, updated, employees: employees.length, types: policies.length };
   }
 
-  async leaveRequests() {
+  async leaveRequests(scopeEmployeeId?: string | null) {
     return this.prisma.leaveRequest.findMany({
+      where: scopeEmployeeId ? { employeeId: scopeEmployeeId } : undefined,
       include: {
         employee: { select: { id: true, name: true, roleTitle: true } },
         approvedBy: { select: { id: true, name: true } },
@@ -121,7 +153,7 @@ export class LeaveService {
     const working = await this.attendance.countWorkingDays(r.employeeId, from, to);
     let balance: any = null;
     if (r.leaveType !== "UNPAID") {
-      const period = `${r.startDate.getFullYear()}`;
+      const period = dateStrDhaka(r.startDate).slice(0, 4);
       balance = await this.prisma.leaveBalance.findUnique({
         where: { employeeId_leaveType_period: { employeeId: r.employeeId, leaveType: r.leaveType, period } },
       });
@@ -144,21 +176,25 @@ export class LeaveService {
   }
 
   async applyLeave(body: { employeeId: string; leaveType: string; startDate: string; endDate: string }, user?: any) {
-    // Staff without HR rights may only apply for themselves — the form lists
-    // every employee, so without this any user could book leave for a colleague.
+    if (!body?.employeeId) throw new BadRequestException("employeeId is required");
+    // Staff without HR rights may only apply for themselves. This used to fall
+    // back to the client-supplied employeeId when the account had no linked
+    // employee row — an authorization check that degraded to "allow".
     const role = user?.role ?? "";
     const isHr = /owner|hr|admin/i.test(role);
-    if (user?.sub && !isHr) {
+    if (!isHr) {
+      if (!user?.sub) throw new ForbiddenException("Login required");
       const self = await this.prisma.employee.findFirst({ where: { user: { id: user.sub } }, select: { id: true } });
-      if (self?.id) body = { ...body, employeeId: self.id };
+      if (!self) throw new ForbiddenException("No employee record is linked to your account — ask HR to link it in Directory.");
+      body = { ...body, employeeId: self.id };
     }
     const emp = await this.prisma.employee.findUnique({ where: { id: body.employeeId }, select: { id: true, name: true } });
     if (!emp) throw new NotFoundException("Employee not found");
     const valid = ["CASUAL", "SICK", "EARNED", "UNPAID"];
     if (!valid.includes(body.leaveType)) throw new BadRequestException(`Unknown leave type: ${body.leaveType}`);
-    const start = new Date(body.startDate);
-    const end = new Date(body.endDate);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    const start = new Date(`${assertDay(body.startDate, "startDate")}T00:00:00.000Z`);
+    const end = new Date(`${assertDay(body.endDate, "endDate")}T00:00:00.000Z`);
+    if (end < start) {
       throw new BadRequestException("Invalid date range");
     }
     // No double-booking: overlap with an undecided or approved request.
@@ -215,68 +251,87 @@ export class LeaveService {
     if (approved) {
       // Working-day deduction (weekends/holidays/closed days never consume quota).
       const working = await this.attendance.countWorkingDays(leave.employeeId, from, dateStrDhaka(leave.endDate));
-      const period = `${leave.startDate.getFullYear()}`;
-      let balanceBefore: number | null = null;
-      let deducted = 0;
-      if (leave.leaveType !== "UNPAID") {
-        await this.ensureBalances(period, leave.employeeId);
-        const balance = await this.prisma.leaveBalance.findUnique({
-          where: { employeeId_leaveType_period: { employeeId: leave.employeeId, leaveType: leave.leaveType, period } },
-        });
-        balanceBefore = balance ? Number(balance.balanceDays) : 0;
-        if (balanceBefore < working.working) {
-          throw new BadRequestException(
-            `Insufficient ${leave.leaveType} balance (${balanceBefore} day(s) left, needs ${working.working})`
-          );
-        }
-        deducted = working.working;
-        if (balance && deducted > 0) {
-          await this.prisma.leaveBalance.update({
-            where: { id: balance.id },
-            data: { balanceDays: Math.max(0, balanceBefore - deducted) },
+      const period = dateStrDhaka(leave.startDate).slice(0, 4);
+      await this.ensureBalances(period, leave.employeeId);
+      // Balance check + decrement + status flip happen in one transaction and
+      // the decrement is conditional (balanceDays >= needed). Two approvers
+      // clicking at once used to both pass the read and both deduct.
+      const updated = await this.prisma.$transaction(async (tx) => {
+        let balanceBefore: number | null = null;
+        let deducted = 0;
+        if (leave.leaveType !== "UNPAID") {
+          const balance = await tx.leaveBalance.findUnique({
+            where: { employeeId_leaveType_period: { employeeId: leave.employeeId, leaveType: leave.leaveType, period } },
           });
+          balanceBefore = balance ? Number(balance.balanceDays) : 0;
+          if (balanceBefore < working.working) {
+            throw new BadRequestException(
+              `Insufficient ${leave.leaveType} balance (${balanceBefore} day(s) left, needs ${working.working})`
+            );
+          }
+          deducted = working.working;
+          if (balance && deducted > 0) {
+            const dec = await tx.leaveBalance.updateMany({
+              where: { id: balance.id, balanceDays: { gte: deducted } },
+              data: { balanceDays: { decrement: deducted } },
+            });
+            if (dec.count === 0) throw new BadRequestException("Balance changed while approving — refresh and retry");
+          }
         }
-      }
-      const updated = await this.prisma.leaveRequest.update({
-        where: { id },
-        data: {
-          status: "APPROVED",
-          approvedById: approver.id,
-          workingDays: working.working,
-          deductedDays: deducted,
-          balanceBefore,
-          balanceAfter: balanceBefore != null ? Math.max(0, balanceBefore - deducted) : null,
-          decidedAt: now,
-          decisionNote: note ?? null,
-        },
+        const moved = await tx.leaveRequest.updateMany({
+          where: { id, status: "PENDING" },
+          data: {
+            status: "APPROVED",
+            approvedById: approver.id,
+            workingDays: working.working,
+            deductedDays: deducted,
+            balanceBefore,
+            balanceAfter: balanceBefore != null ? Math.max(0, balanceBefore - deducted) : null,
+            decidedAt: now,
+            decisionNote: note ?? null,
+          },
+        });
+        if (moved.count === 0) throw new BadRequestException("Request was already decided — refresh and retry");
+        return tx.leaveRequest.findUnique({ where: { id } });
       });
       await this.afterDecision(leave);
       await this.notifyLeaveStatus(leave, true);
       return updated;
     }
 
-    // Reject — and if it was approved before, put the days back.
-    if (leave.status === "APPROVED" && leave.leaveType !== "UNPAID" && Number(leave.deductedDays ?? 0) > 0) {
-      const period = `${leave.startDate.getFullYear()}`;
-      const balance = await this.prisma.leaveBalance.findUnique({
-        where: { employeeId_leaveType_period: { employeeId: leave.employeeId, leaveType: leave.leaveType, period } },
-      });
-      if (balance) {
-        await this.prisma.leaveBalance.update({
-          where: { id: balance.id },
-          data: { balanceDays: Number(balance.balanceDays) + Number(leave.deductedDays) },
-        });
+    // Reject — and if it was approved before, put the days back (never above
+    // the yearly entitlement, otherwise a reject after a reset inflates it).
+    const period = dateStrDhaka(leave.startDate).slice(0, 4);
+    const refund = leave.status === "APPROVED" && leave.leaveType !== "UNPAID" ? Number(leave.deductedDays ?? 0) : 0;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (refund > 0) {
+        const [balance, policy] = await Promise.all([
+          tx.leaveBalance.findUnique({
+            where: { employeeId_leaveType_period: { employeeId: leave.employeeId, leaveType: leave.leaveType, period } },
+          }),
+          tx.leavePolicy.findUnique({ where: { leaveType: leave.leaveType } }),
+        ]);
+        if (balance) {
+          const cap = policy?.annualDays != null ? Number(policy.annualDays) : null;
+          const next = Number(balance.balanceDays) + refund;
+          await tx.leaveBalance.update({
+            where: { id: balance.id },
+            data: { balanceDays: cap != null ? Math.min(cap, next) : next },
+          });
+        }
       }
-    }
-    const updated = await this.prisma.leaveRequest.update({
-      where: { id },
-      data: {
-        status: "REJECTED",
-        approvedById: approver.id,
-        deductedDays: 0,
-        decidedAt: now,
-        decisionNote: note ?? null,
-      },
+      const moved = await tx.leaveRequest.updateMany({
+        where: { id, status: { in: ["PENDING", "APPROVED"] } },
+        data: {
+          status: "REJECTED",
+          approvedById: approver.id,
+          deductedDays: 0,
+          decidedAt: now,
+          decisionNote: note ?? null,
+        },
+      });
+      if (moved.count === 0) throw new BadRequestException("Request was already decided — refresh and retry");
+      return tx.leaveRequest.findUnique({ where: { id } });
     });
     await this.afterDecision(leave);
     await this.notifyLeaveStatus(leave, false);
@@ -288,7 +343,10 @@ export class LeaveService {
     const from = dateStrDhaka(leave.startDate);
     const to = dateStrDhaka(leave.endDate);
     for (const d of eachDayStr(from, to)) {
-      await this.attendance.recomputeDay(leave.employeeId, d).catch(() => {});
+      // A failed refresh must not leave a silently stale attendance row.
+      await this.attendance.recomputeDay(leave.employeeId, d).catch((err) => {
+        this.logger.warn(`attendance refresh failed for ${leave.employeeId} ${d}: ${err?.message ?? err}`);
+      });
     }
     await invalidatePeopleCache(this.cache);
   }
@@ -308,11 +366,26 @@ export class LeaveService {
     } catch {}
   }
 
-  async leaveBalances(employeeId?: string) {
+  async leaveBalances(employeeId?: string, scopeEmployeeId?: string | null) {
+    const where = scopeEmployeeId ? { employeeId: scopeEmployeeId } : employeeId ? { employeeId } : undefined;
     return this.prisma.leaveBalance.findMany({
-      where: employeeId ? { employeeId } : undefined,
+      where,
       include: { employee: { select: { id: true, name: true } } },
       orderBy: [{ employee: { name: "asc" } }, { period: "desc" }],
     });
+  }
+
+  /**
+   * Which employee's leave data may this caller read?
+   * `null` = company-wide (HR / approvers / PEOPLE editors), otherwise the
+   * caller's own employee id, so a Team Member cannot enumerate the team's
+   * sick-leave consumption through `?employeeId=`.
+   */
+  async scopeEmployeeId(user: any): Promise<string | null> {
+    const role = String(user?.role ?? "");
+    const canSeeAll = APPROVER_ROLES.includes(role) || user?.permissions?.PEOPLE?.edit === true;
+    if (canSeeAll) return null;
+    const self = await this.prisma.employee.findFirst({ where: { user: { id: user?.sub } }, select: { id: true } });
+    return self?.id ?? "__none__";
   }
 }

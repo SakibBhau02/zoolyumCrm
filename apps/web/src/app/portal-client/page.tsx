@@ -1,28 +1,33 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Activity,
   ArrowRightCircle,
   BadgeCheck,
+  Bell,
   CalendarClock,
   CheckCircle2,
   Circle,
+  CircleDollarSign,
   ClipboardList,
   Download,
   FileDown,
   FileText,
+  Files,
   FolderOpen,
+  History,
   Inbox,
   Layers,
   LayoutDashboard,
+  Lock,
   LogOut,
   Mail,
   MessageSquare,
   Phone,
   ReceiptText,
   RefreshCw,
+  Search,
   Send,
   Sparkles,
   Target,
@@ -32,7 +37,7 @@ import {
 } from "lucide-react";
 import { API_URL } from "@/lib/api";
 import { formatBDT, formatDate, formatNumber, timeAgo } from "@/lib/format";
-import { buildInvoicePdf, buildInvoicePdfAsync, buildReceiptPdf, resolveBrandingImages } from "@/lib/invoice-pdf";
+import { buildInvoicePdfAsync, buildReceiptPdf, resolveBrandingImages } from "@/lib/invoice-pdf";
 import { buildPortalReportPdf } from "@/lib/portal-report-pdf";
 import { invoiceTotals, numberToWords, paymentSerial } from "@/lib/invoice-utils";
 import { AdsTrendChart } from "@/components/portal-charts";
@@ -40,10 +45,28 @@ import { Btn, TableShell, Td, Th, THead, Tr } from "@/components/table";
 import { Avatar, CardShell, cn, EmptyState, PageHeader, SkeletonBlock, StatCard, StatusBadge } from "@/components/shared";
 import { Field, Input, Modal } from "@/components/ui";
 
-type Tab = "dashboard" | "work" | "performance" | "projects" | "invoices" | "messages";
-type Me = { id: string; name: string; email: string; clientId: string; clientName: string; modules?: string[] };
+type Tab = "dashboard" | "work" | "performance" | "projects" | "files" | "updates" | "invoices" | "messages";
+type Me = {
+  id: string;
+  name: string;
+  email: string;
+  clientId: string;
+  clientName: string;
+  modules?: string[];
+  canSeeAdSpend?: boolean;
+  permissions?: { work: boolean; performance: boolean; messages: boolean; files: boolean; billing: boolean };
+};
 type Milestone = { id: string; name: string; dueDate: string; status: string };
-type FileItem = { id: string; name: string; fileName: string; fileUrl: string; uploadedAt: string; approvalStatus: string };
+type FileItem = { id: string; projectId?: string; fileName: string; size?: number | null; mimeType?: string | null; versionNumber?: number; uploadedAt: string; approvalStatus: string };
+type PortalFile = FileItem & { project?: { id: string; name: string } | null };
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  link: string | null;
+  isRead: boolean;
+  createdAt: string;
+};
 type TeamMember = { id: string; name: string; email: string | null; phone: string | null; role: string };
 type DashProject = {
   id: string;
@@ -101,11 +124,13 @@ type DashboardAds =
 type Dashboard = {
   clientName: string;
   contactName?: string;
+  permissions?: { work: boolean; billing: boolean; ads: boolean; files: boolean };
   activeProjectCount: number;
   projectCount?: number;
   pendingInvoiceCount: number;
   pendingInvoiceValue: number;
   billingSummary: { totalInvoiced: number; totalCollected: number; totalOutstanding: number; overdueAmount?: number; totalMonthlyDue?: number; byProject?: ProjectBilling[] };
+  dollarPurchases?: { count: number; totalUsd: number; totalBdt: number; averageRate: number | null; lastPurchaseDate: string | null };
   taskStats: { total: number; done: number; inProgress: number; todo: number; review?: number; blocked?: number };
   team: TeamMember[];
   nextMilestone: { name: string; dueDate: string; projectName: string } | null;
@@ -150,8 +175,7 @@ type AdsMetrics = {
 };
 type AdsSummary =
   | { available: false; reason?: string }
-  | {
-      available: true;
+  | {      available: true;
       hasData: boolean;
       range: { from: string; to: string };
       lastSyncedAt: string | null;
@@ -203,6 +227,7 @@ type PortalTask = { id: string; title: string; status: string; priority: string;
 type PortalReport = {
   id: string;
   title: string;
+  project?: { id: string; name: string } | null;
   periodStart: string;
   periodEnd: string;
   completed: any[];
@@ -232,7 +257,7 @@ type Project = {
   _count: { tasks: number; comments: number };
 };
 type InvoiceLine = { id: string; description: string; quantity: number; unitPrice: number; amount: number };
-type InvoicePayment = { id: string; amount: number; paymentMethod: string; referenceId: string | null; receiptNo: string; serial?: number; paymentDate: string };
+type InvoicePayment = { id: string; amount: number; paymentMethod: string; referenceId: string | null; receiptNo: string; serial?: number; paymentDate: string; type?: "IN" | "REFUND" };
 type InvoiceInstallment = { sequence: number; amount: number; paidAmount: number; dueDate: string; status: string };
 type Invoice = {
   id: string;
@@ -258,6 +283,11 @@ type Invoice = {
   installments: InvoiceInstallment[];
 };
 type InvoiceSummary = { totalInvoiced: number; totalCollected: number; totalOutstanding: number; overdueAmount?: number; totalMonthlyDue?: number };
+type DollarPurchase = { id: string; reference: string; date: string; usdAmount: number; bdtAmount: number; rate: number; paymentMethod: string };
+type DollarPurchases = {
+  summary: { count: number; totalUsd: number; totalBdt: number; averageRate: number | null; lastPurchaseDate: string | null };
+  purchases: DollarPurchase[];
+};
 type ActivityItem = { id: string; action: string; relatedEntityType: string | null; relatedEntityId: string | null; timestamp: string };
 type Message = {
   id: string;
@@ -418,14 +448,9 @@ const money = (n: number | null | undefined) => {
   return Math.abs(n) >= 1000 ? formatBDT(n) : `৳${n.toFixed(2)}`;
 };
 
-/** Unit costs (CPC/CPM/CPA) need decimals; larger sums keep the lakh style. */
-const formatMoney = (n: number | null | undefined) => {
-  if (n == null || Number.isNaN(n)) return "—";
-  return Math.abs(n) >= 1000 ? formatBDT(n) : `৳${n.toFixed(2)}`;
-};
-
 /** Compact secondary metric tile used on the Performance tab. */
-function MiniMetric({ label, value, delta }: { label: string; value: string; delta?: number | null }) {
+function MiniMetric({ label, value, delta, invert }: { label: string; value: string; delta?: number | null; invert?: boolean }) {
+  const good = delta == null ? null : invert ? delta < 0 : delta > 0;
   return (
     <div className="rounded-xl border border-border/60 bg-card px-3.5 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
@@ -434,13 +459,7 @@ function MiniMetric({ label, value, delta }: { label: string; value: string; del
         <p
           className={cn(
             "mt-0.5 text-[10.5px] font-semibold tabular-nums",
-            delta == null
-              ? "text-muted-foreground"
-              : delta > 0
-                ? "text-emerald-600 dark:text-emerald-400"
-                : delta < 0
-                  ? "text-rose-600 dark:text-rose-400"
-                  : "text-muted-foreground"
+            good == null ? "text-muted-foreground" : good ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
           )}
         >
           {deltaText(delta)} vs prev.
@@ -455,6 +474,8 @@ const TABS: { value: Tab; label: string; icon: React.ReactNode }[] = [
   { value: "work", label: "Work", icon: <ClipboardList className="size-4" /> },
   { value: "performance", label: "Performance", icon: <TrendingUp className="size-4" /> },
   { value: "projects", label: "Projects", icon: <FolderOpen className="size-4" /> },
+  { value: "files", label: "Files", icon: <Files className="size-4" /> },
+  { value: "updates", label: "Updates", icon: <History className="size-4" /> },
   { value: "invoices", label: "Invoices", icon: <ReceiptText className="size-4" /> },
   { value: "messages", label: "Messages", icon: <MessageSquare className="size-4" /> },
 ];
@@ -507,10 +528,39 @@ function PortalClientWorkspace() {
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
   const [invoiceSummary, setInvoiceSummary] = useState<InvoiceSummary | null>(null);
   const [invoiceByProject, setInvoiceByProject] = useState<ProjectBilling[]>([]);
+  const [dollarPurchases, setDollarPurchases] = useState<DollarPurchases | null>(null);
   const [invoicesLoading, setInvoicesLoading] = useState(false);
   const [invoicesError, setInvoicesError] = useState<string | null>(null);
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
+
+  const [files, setFiles] = useState<PortalFile[] | null>(null);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesError, setFilesError] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const [updates, setUpdates] = useState<PortalReport[] | null>(null);
+  const [updatesLoading, setUpdatesLoading] = useState(false);
+  const [updatesError, setUpdatesError] = useState<string | null>(null);
+
+  const [workQuery, setWorkQuery] = useState("");
+  const [workDue, setWorkDue] = useState<"all" | "week" | "overdue">("all");
+  const [workPage, setWorkPage] = useState(1);
+  const [workHasMore, setWorkHasMore] = useState(false);
+
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
+
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwDone, setPwDone] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const msgEndRef = useRef<HTMLDivElement | null>(null);
 
   const [openProject, setOpenProject] = useState<Project | null>(null);
   const [openInvoice, setOpenInvoice] = useState<Invoice | null>(null);
@@ -560,6 +610,7 @@ function PortalClientWorkspace() {
       setDash({
         clientName: o.clientName,
         contactName: o.contactName,
+        permissions: o.permissions,
         activeProjectCount: o.activeProjectCount ?? 0,
         projectCount: o.projectCount ?? 0,
         pendingInvoiceCount: o.billing?.pendingInvoiceCount ?? 0,
@@ -580,6 +631,7 @@ function PortalClientWorkspace() {
         thisWeek: o.thisWeek,
         latestUpdate: o.latestUpdate ?? null,
         ads: o.ads,
+        dollarPurchases: o.dollarPurchases ?? undefined,
       });
     } catch (err: any) {
       setDashError(err?.message ?? "Failed to load dashboard");
@@ -588,19 +640,33 @@ function PortalClientWorkspace() {
     }
   }, []);
 
-  const loadWork = useCallback(async (status?: string) => {
-    setWorkLoading(true);
-    setWorkError(null);
-    try {
-      const qs = new URLSearchParams({ pageSize: "100" });
-      if (status && status !== "ALL") qs.set("status", status);
-      setWork(await pfetch(`/portal-client/tasks?${qs.toString()}`));
-    } catch (err: any) {
-      setWorkError(err?.message ?? "Failed to load tasks");
-    } finally {
-      setWorkLoading(false);
-    }
-  }, []);
+  const loadWork = useCallback(
+    async (opts?: { status?: string; q?: string; due?: "all" | "week" | "overdue"; page?: number; append?: boolean }) => {
+      const status = opts?.status ?? workStatus;
+      const q = opts?.q ?? workQuery;
+      const due = opts?.due ?? workDue;
+      const page = opts?.page ?? 1;
+      setWorkLoading(!opts?.append);
+      setWorkError(null);
+      try {
+        const qs = new URLSearchParams({ pageSize: "50", page: String(page) });
+        if (status && status !== "ALL") qs.set("status", status);
+        if (q.trim()) qs.set("q", q.trim());
+        if (due && due !== "all") qs.set("due", due);
+        const data = await pfetch(`/portal-client/tasks?${qs.toString()}`);
+        setWork((prev) =>
+          opts?.append && prev ? { ...data, items: [...prev.items, ...data.items] } : data
+        );
+        setWorkPage(page);
+        setWorkHasMore(page * Number(data.pageSize || 50) < Number(data.total || 0));
+      } catch (err: any) {
+        setWorkError(err?.message ?? "Failed to load tasks");
+      } finally {
+        setWorkLoading(false);
+      }
+    },
+    [workStatus, workQuery, workDue]
+  );
 
   const loadAds = useCallback(async (days: number) => {
     setAdsLoading(true);
@@ -637,6 +703,30 @@ function PortalClientWorkspace() {
     }
   }, []);
 
+  const loadFiles = useCallback(async () => {
+    setFilesLoading(true);
+    setFilesError(null);
+    try {
+      setFiles(await pfetch("/portal-client/files"));
+    } catch (err: any) {
+      setFilesError(err?.message ?? "Failed to load files");
+    } finally {
+      setFilesLoading(false);
+    }
+  }, []);
+
+  const loadUpdates = useCallback(async () => {
+    setUpdatesLoading(true);
+    setUpdatesError(null);
+    try {
+      setUpdates(await pfetch("/portal-client/updates"));
+    } catch (err: any) {
+      setUpdatesError(err?.message ?? "Failed to load updates");
+    } finally {
+      setUpdatesLoading(false);
+    }
+  }, []);
+
   const loadInvoices = useCallback(async () => {
     setInvoicesLoading(true);
     setInvoicesError(null);
@@ -645,6 +735,7 @@ function PortalClientWorkspace() {
       setInvoices(data.invoices);
       setInvoiceSummary(data.summary);
       setInvoiceByProject(data.byProject ?? []);
+      setDollarPurchases(data.dollarPurchases ?? null);
     } catch (err: any) {
       setInvoicesError(err?.message ?? "Failed to load invoices");
     } finally {
@@ -660,23 +751,43 @@ function PortalClientWorkspace() {
     }
   }, []);
 
-  const loadMessages = useCallback(async (threadKey?: string) => {
-    const key = threadKey ?? "general";
-    setMessagesLoading(true);
-    setMessagesError(null);
-    try {
-      setMessages(await pfetch(`/portal-client/threads/${encodeURIComponent(key)}/messages`));
-      // Opening a thread clears its unread badge.
-      await pfetch(`/portal-client/threads/${encodeURIComponent(key)}/read`, { method: "POST" }).catch(() => null);
-      await pfetch("/portal-client/notifications/read", { method: "POST" }).catch(() => null);
-      setUnread(0);
-      setThreads((prev) => prev?.map((t) => (t.threadKey === key ? { ...t, unread: false } : t)) ?? prev);
-    } catch (err: any) {
-      setMessagesError(err?.message ?? "Failed to load messages");
-    } finally {
-      setMessagesLoading(false);
-    }
-  }, []);
+  const loadMessages = useCallback(
+    async (threadKey?: string, opts?: { before?: string; silent?: boolean }) => {
+      const key = threadKey ?? "general";
+      if (!opts?.silent) setMessagesLoading(true);
+      setMessagesError(null);
+      try {
+        const qs = new URLSearchParams({ limit: "50" });
+        if (opts?.before) qs.set("before", opts.before);
+        const rows: Message[] = await pfetch(
+          `/portal-client/threads/${encodeURIComponent(key)}/messages?${qs.toString()}`
+        );
+        setMessages((prev) => {
+          if (opts?.before && prev) return [...rows, ...prev];
+          if (opts?.silent && prev) {
+            // Keep any older pages the user loaded; merge the newest page in.
+            const seen = new Set(rows.map((r) => r.id));
+            const older = prev.filter((m) => !seen.has(m.id));
+            return [...older, ...rows].sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt));
+          }
+          return rows;
+        });
+        if (!opts?.before && !opts?.silent) {
+          // Opening a thread clears its unread marker and the notification badge.
+          await pfetch(`/portal-client/threads/${encodeURIComponent(key)}/read`, { method: "POST" }).catch(() => null);
+          await pfetch("/portal-client/notifications/read", { method: "POST" }).catch(() => null);
+          setUnread(0);
+          setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+          setThreads((prev) => prev?.map((t) => (t.threadKey === key ? { ...t, unread: false } : t)) ?? prev);
+        }
+      } catch (err: any) {
+        setMessagesError(err?.message ?? "Failed to load messages");
+      } finally {
+        if (!opts?.silent) setMessagesLoading(false);
+      }
+    },
+    []
+  );
 
   const loadThreads = useCallback(async () => {
     try {
@@ -690,6 +801,7 @@ function PortalClientWorkspace() {
   }, []);
 
   /** Cheap poll for the unread badge on the Messages tab. */
+  /** Cheap poll for the unread badge on the Messages tab. */
   const loadUnread = useCallback(async () => {
     try {
       const res = await pfetch("/portal-client/notifications?limit=1");
@@ -698,6 +810,72 @@ function PortalClientWorkspace() {
       /* badge is non-critical */
     }
   }, []);
+
+  const loadNotifications = useCallback(async () => {
+    setNotifLoading(true);
+    try {
+      const res = await pfetch("/portal-client/notifications?limit=50");
+      setNotifications((res?.items ?? []) as NotificationItem[]);
+      setUnread(Number(res?.unread ?? 0));
+    } catch {
+      /* badge is non-critical */
+    } finally {
+      setNotifLoading(false);
+    }
+  }, []);
+
+  const openNotifications = async () => {
+    const next = !notifOpen;
+    setNotifOpen(next);
+    if (!next) return;
+    await loadNotifications();
+    await pfetch("/portal-client/notifications/read", { method: "POST" }).catch(() => null);
+    setUnread(0);
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  };
+
+  const openNotification = (n: NotificationItem) => {
+    setNotifOpen(false);
+    if (!n.link) return;
+    try {
+      const url = new URL(n.link, window.location.origin);
+      const thread = url.searchParams.get("thread");
+      if (thread) {
+        setActiveThread(thread);
+        setMessages(null);
+        setTab("messages");
+      }
+    } catch {
+      /* ignore malformed links */
+    }
+  };
+
+  // Close the notification popover on Escape / outside click.
+  useEffect(() => {
+    if (!notifOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNotifOpen(false);
+    };
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as Element | null)?.closest?.("[data-notif]")) setNotifOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [notifOpen]);
+
+  const loadOlder = async () => {
+    if (!messages?.length || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      await loadMessages(activeThread, { before: messages[0].createdAt });
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
 
   const loadTelegram = useCallback(async () => {
     try {
@@ -761,40 +939,98 @@ function PortalClientWorkspace() {
     return () => clearInterval(id);
   }, [ready, loadUnread]);
 
+  // While the Messages tab is open, pull new replies in the background.
+  useEffect(() => {
+    if (!ready || tab !== "messages") return;
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      loadMessages(activeThread, { silent: true });
+      loadThreads();
+    }, 30000);
+    return () => clearInterval(id);
+  }, [ready, tab, activeThread, loadMessages, loadThreads]);
+
+  // Keep the conversation pinned to the newest message.
+  useEffect(() => {
+    if (tab !== "messages") return;
+    msgEndRef.current?.scrollIntoView({ block: "end" });
+  }, [tab, activeThread, messages?.length]);
+
   useEffect(() => {
     if (tab === "projects" && projects === null) loadProjects();
-    if (tab === "work" && work === null) loadWork(workStatus);
+    if (tab === "work" && work === null) loadWork({ page: 1 });
     if (tab === "performance" && ads === null) loadAds(adsRange);
+    if (tab === "files" && files === null) loadFiles();
+    if (tab === "updates" && updates === null) loadUpdates();
     if (tab === "invoices" && invoices === null) loadInvoices();
     if (tab === "messages" && messages === null) {
       loadThreads();
       loadMessages(activeThread);
     }
-  }, [tab, projects, work, ads, invoices, messages, threads, workStatus, adsRange, activeThread, loadProjects, loadWork, loadAds, loadInvoices, loadMessages, loadThreads]);
+  }, [tab, projects, work, ads, invoices, messages, threads, workStatus, adsRange, activeThread, files, updates, loadProjects, loadWork, loadAds, loadInvoices, loadFiles, loadUpdates, loadMessages, loadThreads]);
 
   // (The old effect that copied the list row over `openProject` was removed:
   // the list payload has no reports/files and was wiping the freshly fetched
   // detail — which is exactly where the downloadable reports come from.)
 
   const signOut = () => {
+    void pfetch("/portal-client/logout", { method: "POST" }).catch(() => null);
     setPortalToken(null);
     router.push("/portal-login");
+  };
+
+  const submitPassword = async () => {
+    if (pwBusy) return;
+    setPwError(null);
+    setPwDone(false);
+    if (pwNew.length < 8) {
+      setPwError("New password must be at least 8 characters.");
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      setPwError("The two new passwords do not match.");
+      return;
+    }
+    setPwBusy(true);
+    try {
+      const res = await pfetch("/portal-client/password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNew }),
+      });
+      if (res?.portalToken) setPortalToken(res.portalToken);
+      setPwDone(true);
+      setPwCurrent("");
+      setPwNew("");
+      setPwConfirm("");
+      window.setTimeout(() => setPwOpen(false), 1200);
+    } catch (err: any) {
+      setPwError(err?.message ?? "Could not change the password");
+    } finally {
+      setPwBusy(false);
+    }
   };
 
   // A contact may be restricted to a subset of tabs (PortalContactAccess.modules).
   const visibleTabs = useMemo(() => {
     const modules = me?.modules;
-    if (!modules || modules.length === 0) return TABS;
+    if (!modules) return TABS;
+    if (modules.length === 0) return TABS.filter((t) => t.value === "dashboard");
     const allowed = new Set(modules);
     return TABS.filter((t) => {
       if (t.value === "dashboard") return true;
-      if (t.value === "work" || t.value === "projects") return allowed.has("WORK");
+      if (t.value === "work" || t.value === "projects" || t.value === "updates") return allowed.has("WORK");
       if (t.value === "performance") return allowed.has("PERFORMANCE");
+      if (t.value === "files") return allowed.has("FILES");
       if (t.value === "invoices") return allowed.has("BILLING");
       if (t.value === "messages") return allowed.has("MESSAGES");
       return true;
     });
   }, [me]);
+
+  // A permission change mid-session may remove the current tab.
+  useEffect(() => {
+    if (me && !visibleTabs.some((t) => t.value === tab)) setTab("dashboard");
+  }, [me, visibleTabs, tab]);
 
   const sendReply = async () => {
     const text = replyText.trim();
@@ -818,6 +1054,10 @@ function PortalClientWorkspace() {
 
   const submitApproval = async () => {
     if (!approvalFile || approving) return;
+    if (decision === "REVISION_REQUESTED" && !revisionNotes.trim()) {
+      setApprovalError("Please describe what should be revised.");
+      return;
+    }
     setApproving(true);
     setApprovalError(null);
     try {
@@ -825,15 +1065,20 @@ function PortalClientWorkspace() {
         method: "POST",
         body: JSON.stringify({
           decision,
-          ...(decision === "REVISION_REQUESTED" && revisionNotes.trim()
-            ? { revisionNotes: revisionNotes.trim() }
-            : {}),
+          ...(decision === "REVISION_REQUESTED" ? { revisionNotes: revisionNotes.trim() } : {}),
         }),
       });
       setApprovalFile(null);
       setRevisionNotes("");
       setDecision("APPROVED");
       await loadProjects();
+      // The approval status lives on the project detail too; refresh the open
+      // sheet so the badge does not keep showing the old decision.
+      if (openProject) {
+        const detail = await pfetch(`/portal-client/projects/${openProject.id}`).catch(() => null);
+        if (detail) setOpenProject(detail);
+      }
+      if (files) setFiles(files.map((f) => (f.id === approvalFile.id ? { ...f, approvalStatus: decision } : f)));
     } catch (err: any) {
       setApprovalError(err?.message ?? "Approval failed");
     } finally {
@@ -987,6 +1232,7 @@ function PortalClientWorkspace() {
    */
   const downloadPortalFile = async (fileId: string, filename: string) => {
     const token = getPortalToken();
+    setFileError(null);
     try {
       const res = await fetch(`${API_URL}/portal-client/files/${fileId}/download`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1000,9 +1246,10 @@ function PortalClientWorkspace() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Revoking immediately can cancel the download in some browsers.
+      window.setTimeout(() => URL.revokeObjectURL(url), 4000);
     } catch {
-      setPdfError("Could not download the file. Please try again.");
+      setFileError("Could not download the file. Please try again.");
     }
   };
 
@@ -1013,6 +1260,7 @@ function PortalClientWorkspace() {
         setInvoices(data.invoices);
         setInvoiceSummary(data.summary);
         setInvoiceByProject(data.byProject ?? []);
+        setDollarPurchases(data.dollarPurchases ?? null);
         full = data.invoices.find((x: Invoice) => x.id === id) ?? null;
       }
       if (full) setOpenInvoice(full);
@@ -1035,14 +1283,24 @@ function PortalClientWorkspace() {
   // Messages arrive already ordered oldest→newest for the active thread.
   const threadMessages = messages ?? [];
 
-  const retry = (kind: "dashboard" | "projects" | "invoices" | "messages") => {
+  const retry = (kind: "dashboard" | "work" | "projects" | "files" | "updates" | "invoices" | "messages" | "performance") => {
     if (kind === "dashboard") loadDashboard();
+    if (kind === "work") loadWork({ page: 1 });
     if (kind === "projects") loadProjects();
+    if (kind === "files") loadFiles();
+    if (kind === "updates") loadUpdates();
     if (kind === "invoices") loadInvoices();
-    if (kind === "messages") loadMessages();
+    if (kind === "messages") loadMessages(activeThread);
+    if (kind === "performance") loadAds(adsRange);
   };
 
-  const ErrorCard = ({ message, kind }: { message: string; kind: "dashboard" | "projects" | "invoices" | "messages" }) => (
+  const ErrorCard = ({
+    message,
+    kind,
+  }: {
+    message: string;
+    kind: "dashboard" | "work" | "projects" | "files" | "updates" | "invoices" | "messages" | "performance";
+  }) => (
     <CardShell className="text-center">
       <p className="text-sm font-medium text-muted-foreground">{message}</p>
       <Btn variant="outline" className="mt-4" onClick={() => retry(kind)}>
@@ -1078,8 +1336,62 @@ function PortalClientWorkspace() {
               <p className="truncate text-[11px] leading-tight text-muted-foreground">{me?.clientName ?? "Loading…"}</p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2">
             {me && <Avatar name={me.name} size="size-8" />}
+            <div className="relative" data-notif>
+              <button
+                type="button"
+                onClick={openNotifications}
+                aria-label="Notifications"
+                title="Notifications"
+                className="relative inline-flex size-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Bell className="size-4" />
+                {unread > 0 && (
+                  <span className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold leading-4 text-white">
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                )}
+              </button>
+              {notifOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-border bg-card shadow-xl">
+                  <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                    <p className="text-[12px] font-semibold">Notifications</p>
+                    <button onClick={() => setNotifOpen(false)} className="text-[10.5px] text-muted-foreground hover:text-foreground">
+                      Close
+                    </button>
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifLoading ? (
+                      <p className="px-3 py-4 text-[11.5px] text-muted-foreground">Loading…</p>
+                    ) : notifications.length === 0 ? (
+                      <p className="px-3 py-4 text-[11.5px] text-muted-foreground">No notifications yet.</p>
+                    ) : (
+                      notifications.map((n) => (
+                        <button
+                          key={n.id}
+                          onClick={() => openNotification(n)}
+                          className="block w-full border-b border-border/40 px-3 py-2.5 text-left transition-colors hover:bg-muted/50"
+                        >
+                          <p className="text-[11.5px] font-semibold">{n.title}</p>
+                          <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{n.message}</p>
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">{timeAgo(n.createdAt)}</p>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => { setPwOpen(true); setPwError(null); setPwDone(false); }}
+              aria-label="Change password"
+              title="Change password"
+              className="inline-flex size-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Lock className="size-4" />
+            </button>
             <Btn variant="outline" onClick={signOut} className="px-3 py-1.5 text-[12px]">
               <LogOut className="size-4" />
               Sign out
@@ -1089,13 +1401,15 @@ function PortalClientWorkspace() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-6 py-6">
-        <div className="mb-6 inline-flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1">
+        <div className="mb-6 inline-flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1" role="tablist" aria-label="Portal sections">
           {visibleTabs.map((t) => (
             <button
               key={t.value}
+              role="tab"
+              aria-selected={tab === t.value}
               onClick={() => setTab(t.value)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11.5px] font-semibold transition-all",
+                "inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-2 text-[11.5px] font-semibold transition-all sm:min-h-9",
                 tab === t.value
                   ? "bg-brand-gradient text-white"
                   : "text-muted-foreground hover:text-foreground"
@@ -1134,7 +1448,7 @@ function PortalClientWorkspace() {
                     </p>
                   </div>
 
-                  {(() => {
+                  {dash.permissions?.billing !== false && (() => {
                     const b = dash.billingSummary;
                     const paidPct = b.totalInvoiced > 0 ? Math.min(100, Math.round((b.totalCollected / b.totalInvoiced) * 100)) : 0;
                     const recurring = (b.byProject ?? []).filter((p) => p.billingType === "RECURRING");
@@ -1200,12 +1514,27 @@ function PortalClientWorkspace() {
                               </span>
                             ))}
                           </div>
+                          {(dash.dollarPurchases?.count ?? 0) > 0 && (
+                            <button
+                              onClick={() => setTab("invoices")}
+                              className="mt-3 flex w-full items-center justify-between gap-2 rounded-xl border border-border/60 px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
+                              title="View your USD purchases"
+                            >
+                              <span className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">
+                                <CircleDollarSign className="size-3.5 text-primary" /> USD bought
+                              </span>
+                              <span className="text-[11.5px] font-bold tabular-nums">
+                                ${formatNumber(dash.dollarPurchases!.totalUsd)}
+                                <span className="ml-1 font-medium text-muted-foreground">{formatBDT(dash.dollarPurchases!.totalBdt)}</span>
+                              </span>
+                            </button>
+                          )}
                         </CardShell>
                       </div>
                     );
                   })()}
 
-                  {(dash.billingSummary.byProject?.length ?? 0) > 0 && (
+                  {dash.permissions?.billing !== false && (dash.billingSummary.byProject?.length ?? 0) > 0 && (
                     <div className="mb-6">
                       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                         <div>
@@ -1219,72 +1548,39 @@ function PortalClientWorkspace() {
                         </button>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {(dash.billingSummary.byProject ?? []).map((row) => {
-                          const recurring = row.billingType === "RECURRING";
-                          const base = recurring ? row.monthlyRate : row.contractValue || row.totalInvoiced;
-                          const paidPct = base > 0 ? Math.min(100, Math.round((row.totalPaid / base) * 100)) : 0;
-                          return (
-                            <CardShell key={row.projectId} className="flex flex-col gap-2.5">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="truncate text-[13px] font-semibold">{row.projectName}</p>
-                                  <div className="mt-1"><BillingBadge billingType={row.billingType} /></div>
-                                </div>
-                                <StatusBadge status={row.status} />
-                              </div>
-                              {recurring ? (
-                                <>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <div className="rounded-xl bg-muted/40 px-2.5 py-2">
-                                      <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Monthly fee</p>
-                                      <p className="mt-0.5 text-[13px] font-heading font-bold tabular-nums">{formatBDT(row.monthlyRate)}</p>
-                                    </div>
-                                    <div className="rounded-xl bg-primary/5 px-2.5 py-2">
-                                      <p className="text-[9px] font-bold uppercase tracking-wider text-primary">Due this month</p>
-                                      <p className="mt-0.5 text-[13px] font-heading font-bold tabular-nums text-primary">{formatBDT(row.monthlyDue)}</p>
-                                    </div>
-                                  </div>
-                                  <p className="text-[10.5px] text-muted-foreground">
-                                    {row.nextBillingDate ? `Next billing ${formatDate(row.nextBillingDate)}` : "Monthly retainer"}
-                                  </p>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                                    <span>Paid</span>
-                                    <span className="font-semibold text-foreground">{formatBDT(row.totalPaid)} / {formatBDT(base)}</span>
-                                  </div>
-                                  <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                                    <div className="h-full rounded-full bg-emerald-500" style={{ width: `${paidPct}%` }} />
-                                  </div>
-                                  <div className="flex items-center justify-between text-[11px]">
-                                    <span className="text-muted-foreground">Balance due</span>
-                                    <span className={cn("font-bold tabular-nums", row.outstanding > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400")}>
-                                      {formatBDT(row.outstanding)}
-                                    </span>
-                                  </div>
-                                </>
-                              )}
-                            </CardShell>
-                          );
-                        })}
+                        {(dash.billingSummary.byProject ?? []).map((row) => (
+                          <BillingProjectCard key={row.projectId} row={row} />
+                        ))}
                       </div>
                     </div>
                   )}
 
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <StatCard label="Active Projects" value={dash.activeProjectCount} icon={<FolderOpen className="size-5" />} index={0} />
-                    <StatCard label="Pending Invoices" value={dash.pendingInvoiceCount} icon={<Inbox className="size-5" />} index={1} />
-                    <StatCard label="Paid to date" value={formatBDT(dash.billingSummary.totalCollected)} icon={<Wallet className="size-5" />} index={2} />
-                    <StatCard
-                      label="Next Milestone"
-                      value={dash.nextMilestone ? formatDate(dash.nextMilestone.dueDate) : "—"}
-                      sub={dash.nextMilestone ? `${dash.nextMilestone.name} · ${dash.nextMilestone.projectName}` : "No upcoming milestones"}
-                      icon={<CalendarClock className="size-5" />}
-                      index={3}
-                    />
+                    {dash.permissions?.work !== false && (
+                      <StatCard label="Active Projects" value={dash.activeProjectCount} icon={<FolderOpen className="size-5" />} index={0} />
+                    )}
+                    {dash.permissions?.billing !== false && (
+                      <>
+                        <StatCard label="Pending Invoices" value={dash.pendingInvoiceCount} icon={<Inbox className="size-5" />} index={1} />
+                        <StatCard label="Paid to date" value={formatBDT(dash.billingSummary.totalCollected)} icon={<Wallet className="size-5" />} index={2} />
+                      </>
+                    )}
+                    {dash.permissions?.work !== false && (
+                      <StatCard
+                        label="Next Milestone"
+                        value={dash.nextMilestone ? formatDate(dash.nextMilestone.dueDate) : "—"}
+                        sub={
+                          dash.nextMilestone
+                            ? `${new Date(dash.nextMilestone.dueDate) < new Date() ? "Overdue · " : ""}${dash.nextMilestone.name} · ${dash.nextMilestone.projectName}`
+                            : "No upcoming milestones"
+                        }
+                        icon={<CalendarClock className="size-5" />}
+                        index={3}
+                      />
+                    )}
                   </div>
 
+                  {dash.permissions?.work !== false && (
                   <div className="mt-6 grid gap-4 lg:grid-cols-3">
                     <CardShell className="lg:col-span-2">
                       <div className="flex items-center justify-between gap-2">
@@ -1346,6 +1642,7 @@ function PortalClientWorkspace() {
                       )}
                     </CardShell>
                   </div>
+                  )}
 
                   {dash.ads?.available && (
                     <div className="mt-4">
@@ -1448,6 +1745,7 @@ function PortalClientWorkspace() {
                     )}
                   </div>
 
+                  {dash.permissions?.work !== false && (
                   <div className="mt-8">
                     <PageHeader
                       title="Projects"
@@ -1490,7 +1788,14 @@ function PortalClientWorkspace() {
                               )}
                               <p className="mt-2 text-[11.5px] text-muted-foreground">
                                 Next milestone:{" "}
-                                {p.nextMilestone ? `${p.nextMilestone.name} · ${formatDate(p.nextMilestone.dueDate)}` : "—"}
+                                {p.nextMilestone ? (
+                                  <span className={new Date(p.nextMilestone.dueDate) < new Date() ? "font-semibold text-rose-500" : ""}>
+                                    {new Date(p.nextMilestone.dueDate) < new Date() ? "Overdue · " : ""}
+                                    {p.nextMilestone.name} · {formatDate(p.nextMilestone.dueDate)}
+                                  </span>
+                                ) : (
+                                  "—"
+                                )}
                               </p>
                               </CardShell>
                             </div>
@@ -1499,7 +1804,9 @@ function PortalClientWorkspace() {
                       </div>
                     )}
                   </div>
+                  )}
 
+                  {dash.permissions?.billing !== false && (
                   <div className="mt-8">
                     <PageHeader
                       title="Recent invoices"
@@ -1545,6 +1852,7 @@ function PortalClientWorkspace() {
                       </TableShell>
                     )}
                   </div>
+                  )}
                 </>
               )
             )}
@@ -1564,6 +1872,54 @@ function PortalClientWorkspace() {
               }
             />
 
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setWorkPage(1);
+                  loadWork({ q: workQuery, page: 1 });
+                }}
+                className="flex items-center gap-2"
+              >
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={workQuery}
+                    onChange={(e) => setWorkQuery(e.target.value)}
+                    placeholder="Search shared tasks…"
+                    className="w-56 py-2 pl-8"
+                  />
+                </div>
+                <Btn type="submit" variant="outline" className="px-3 py-2 text-[11.5px]">
+                  Search
+                </Btn>
+              </form>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { key: "all" as const, label: "Any due date" },
+                  { key: "week" as const, label: "Due this week" },
+                  { key: "overdue" as const, label: "Overdue" },
+                ].map((d) => (
+                  <button
+                    key={d.key}
+                    onClick={() => {
+                      setWorkDue(d.key);
+                      setWorkPage(1);
+                      loadWork({ due: d.key, page: 1 });
+                    }}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-[11.5px] font-medium transition-colors",
+                      workDue === d.key
+                        ? "border-primary/40 bg-primary/10 text-primary dark:text-primary"
+                        : "border-border bg-card text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="mb-4 flex flex-wrap gap-1.5">
               {[
                 { key: "ALL", label: "All", count: work?.total ?? 0 },
@@ -1577,8 +1933,8 @@ function PortalClientWorkspace() {
                   key={f.key}
                   onClick={() => {
                     setWorkStatus(f.key);
-                    setWork(null);
-                    loadWork(f.key);
+                    setWorkPage(1);
+                    loadWork({ status: f.key, page: 1 });
                   }}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11.5px] font-medium transition-colors",
@@ -1596,42 +1952,51 @@ function PortalClientWorkspace() {
             {workLoading ? (
               <div className="space-y-2">{[0, 1, 2, 3, 4].map((i) => <SkeletonBlock key={i} className="h-14" />)}</div>
             ) : workError ? (
-              <ErrorCard message={workError} kind="projects" />
+              <ErrorCard message={workError} kind="work" />
             ) : !work || work.items.length === 0 ? (
               <EmptyState
                 title="No tasks shared yet"
                 hint="Your agency controls what appears here. Ask your project manager to share task progress with you."
               />
             ) : (
-              <TableShell>
-                <table className="w-full">
-                  <THead>
-                    <Th>Task</Th>
-                    <Th>Project</Th>
-                    <Th>Status</Th>
-                    <Th>Due</Th>
-                    <Th>Owner</Th>
-                  </THead>
-                  <tbody>
-                    {work.items.map((t, i) => (
-                      <Tr key={t.id} index={i}>
-                        <Td>
-                          <p className="font-medium">{t.title}</p>
-                          {t.deliverable && (
-                            <p className="text-[11px] text-muted-foreground">Deliverable: {t.deliverable.title}</p>
-                          )}
-                        </Td>
-                        <Td className="text-muted-foreground">{t.project?.name ?? "—"}</Td>
-                        <Td>
-                          <StatusBadge status={t.status} />
-                        </Td>
-                        <Td className="tabular-nums">{t.dueDate ? formatDate(t.dueDate) : "—"}</Td>
-                        <Td className="text-muted-foreground">{t.assignee?.name ?? "—"}</Td>
-                      </Tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableShell>
+              <>
+                <TableShell>
+                  <table className="w-full">
+                    <THead>
+                      <Th>Task</Th>
+                      <Th>Project</Th>
+                      <Th>Status</Th>
+                      <Th>Due</Th>
+                      <Th>Owner</Th>
+                    </THead>
+                    <tbody>
+                      {work.items.map((t, i) => (
+                        <Tr key={t.id} index={i}>
+                          <Td>
+                            <p className="font-medium">{t.title}</p>
+                            {t.deliverable && (
+                              <p className="text-[11px] text-muted-foreground">Deliverable: {t.deliverable.title}</p>
+                            )}
+                          </Td>
+                          <Td className="text-muted-foreground">{t.project?.name ?? "—"}</Td>
+                          <Td>
+                            <StatusBadge status={t.status} />
+                          </Td>
+                          <Td className="tabular-nums">{t.dueDate ? formatDate(t.dueDate) : "—"}</Td>
+                          <Td className="text-muted-foreground">{t.assignee?.name ?? "—"}</Td>
+                        </Tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TableShell>
+                {workHasMore && (
+                  <div className="mt-3 flex justify-center">
+                    <Btn variant="outline" onClick={() => loadWork({ page: workPage + 1, append: true })} disabled={workLoading}>
+                      {workLoading ? "Loading…" : `Load more (${work.items.length} of ${work.total})`}
+                    </Btn>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1673,11 +2038,15 @@ function PortalClientWorkspace() {
                 </div>
               </div>
             ) : adsError ? (
-              <ErrorCard message={adsError} kind="projects" />
+              <ErrorCard message={adsError} kind="performance" />
             ) : !ads || !ads.available ? (
               <EmptyState
-                title="No advertising data yet"
-                hint="Once your ad accounts are connected, spend and results will appear here automatically."
+                title={ads?.reason === "DISABLED" ? "Advertising is not shared with you" : "No advertising data yet"}
+                hint={
+                  ads?.reason === "DISABLED"
+                    ? "Your agency has not enabled ad performance for this account. Ask your account manager to share it."
+                    : "Once your agency connects an ad account, spend and results will appear here automatically."
+                }
               />
             ) : !ads.hasData ? (
               <EmptyState
@@ -1729,9 +2098,9 @@ function PortalClientWorkspace() {
                   <MiniMetric label="Impressions" value={formatNumber(ads.metrics.impressions)} delta={ads.deltas.impressions} />
                   <MiniMetric label="Clicks" value={formatNumber(ads.metrics.clicks)} delta={ads.deltas.clicks} />
                   <MiniMetric label="CTR" value={`${ads.metrics.ctr.toFixed(2)}%`} delta={ads.deltas.ctr} />
-                  <MiniMetric label="CPC" value={money(ads.metrics.cpc)} delta={ads.deltas.cpc} />
-                  <MiniMetric label="CPM" value={money(ads.metrics.cpm)} delta={ads.deltas.cpm} />
-                  <MiniMetric label="Cost per conversion" value={money(ads.metrics.cpa)} delta={ads.deltas.cpa} />
+                  <MiniMetric label="CPC" value={money(ads.metrics.cpc)} delta={ads.deltas.cpc} invert />
+                  <MiniMetric label="CPM" value={money(ads.metrics.cpm)} delta={ads.deltas.cpm} invert />
+                  <MiniMetric label="Cost per conversion" value={money(ads.metrics.cpa)} delta={ads.deltas.cpa} invert />
                   <MiniMetric label="Campaigns running" value={String(ads.campaignsRunning)} />
                   <MiniMetric label="Data synced" value={ads.lastSyncedAt ? timeAgo(ads.lastSyncedAt) : "—"} />
                 </div>
@@ -1910,6 +2279,122 @@ function PortalClientWorkspace() {
           </div>
         )}
 
+        {tab === "files" && (
+          <div>
+            <PageHeader title="Files" subtitle="Deliverables shared with you, newest first." />
+            {fileError && (
+              <p className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-600 dark:text-rose-300">
+                {fileError}
+              </p>
+            )}
+            {filesLoading ? (
+              <div className="space-y-2">{[0, 1, 2, 3].map((i) => <SkeletonBlock key={i} className="h-14" />)}</div>
+            ) : filesError ? (
+              <ErrorCard message={filesError} kind="files" />
+            ) : !files || files.length === 0 ? (
+              <EmptyState title="No files yet" hint="Files your agency shares will appear here." />
+            ) : (
+              <TableShell>
+                <table className="w-full">
+                  <THead>
+                    <Th>File</Th>
+                    <Th>Project</Th>
+                    <Th>Uploaded</Th>
+                    <Th>Status</Th>
+                    <Th>Action</Th>
+                  </THead>
+                  <tbody>
+                    {files.map((f, i) => (
+                      <Tr key={f.id} index={i}>
+                        <Td>
+                          <p className="font-medium">{f.fileName}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            v{f.versionNumber ?? 1}
+                            {f.size ? ` · ${Math.max(1, Math.round(f.size / 1024))} KB` : ""}
+                          </p>
+                        </Td>
+                        <Td className="text-muted-foreground">{f.project?.name ?? "—"}</Td>
+                        <Td className="tabular-nums">{formatDate(f.uploadedAt)}</Td>
+                        <Td><StatusBadge status={f.approvalStatus} /></Td>
+                        <Td>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <button
+                              onClick={() => downloadPortalFile(f.id, f.fileName)}
+                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-semibold text-primary hover:bg-primary/10"
+                            >
+                              Download <Download className="size-3.5" />
+                            </button>
+                            {f.approvalStatus !== "APPROVED" && (
+                              <>
+                                <button
+                                  onClick={() => { setApprovalFile(f); setDecision("APPROVED"); setRevisionNotes(""); setApprovalError(null); }}
+                                  className="rounded-lg bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-300"
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => { setApprovalFile(f); setDecision("REVISION_REQUESTED"); setRevisionNotes(""); setApprovalError(null); }}
+                                  className="rounded-lg bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-600 hover:bg-amber-500/20 dark:text-amber-300"
+                                >
+                                  Request revision
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableShell>
+            )}
+          </div>
+        )}
+
+        {tab === "updates" && (
+          <div>
+            <PageHeader title="Updates" subtitle="Every progress report your agency has shared, as a branded PDF." />
+            {updatesLoading ? (
+              <div className="space-y-2">{[0, 1, 2].map((i) => <SkeletonBlock key={i} className="h-20" />)}</div>
+            ) : updatesError ? (
+              <ErrorCard message={updatesError} kind="updates" />
+            ) : !updates || updates.length === 0 ? (
+              <EmptyState title="No updates yet" hint="Your project manager will share progress reports here." />
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {updates.map((r) => (
+                  <CardShell key={r.id} className="flex flex-col justify-between gap-3">
+                    <div>
+                      <p className="text-[13px] font-semibold">{r.title}</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {r.project?.name ? `${r.project.name} · ` : ""}
+                        {formatDate(r.periodStart)} → {formatDate(r.periodEnd)}
+                      </p>
+                      {r.note && <p className="mt-2 line-clamp-3 text-[11.5px] text-muted-foreground">{r.note}</p>}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10.5px] text-muted-foreground">
+                        {Array.isArray(r.completed) ? r.completed.length : 0} completed ·{" "}
+                        {Array.isArray(r.pending) ? r.pending.length : 0} pending
+                      </span>
+                      <Btn
+                        variant="outline"
+                        className="px-2.5 py-1.5 text-[11px]"
+                        onClick={() => downloadReport(r, r.project?.name)}
+                        disabled={reportBusy === r.id}
+                      >
+                        <FileDown className="size-3.5" />
+                        {reportBusy === r.id ? "Preparing…" : "PDF"}
+                      </Btn>
+                    </div>
+                  </CardShell>
+                ))}
+              </div>
+            )}
+            {reportError && <p className="mt-2 text-[11.5px] text-rose-500">{reportError}</p>}
+          </div>
+        )}
+
         {tab === "invoices" && (
           <div>
             <PageHeader title="Invoices" subtitle="All invoices issued to you — click a row for line items and payments." />
@@ -1984,7 +2469,7 @@ function PortalClientWorkspace() {
                           <Td>{formatDate(inv.dueDate)}</Td>
                           <Td className="text-right tabular-nums">{formatBDT(inv.amount)}</Td>
                           <Td className="text-right tabular-nums text-emerald-500">{formatBDT(inv.paid)}</Td>
-                          <Td className="text-right tabular-nums">{formatBDT(inv.amount - inv.paid)}</Td>
+                          <Td className="text-right tabular-nums">{formatBDT(inv.balance)}</Td>
                           <Td>
                             <StatusBadge status={inv.status} />
                           </Td>
@@ -1994,6 +2479,72 @@ function PortalClientWorkspace() {
                   </table>
                 </TableShell>
               </>
+            )}
+
+            {dollarPurchases && dollarPurchases.summary.count > 0 && (
+              <div className="mt-6 rounded-2xl border border-border/60 bg-card p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="flex items-center gap-1.5 font-heading text-[14px] font-semibold">
+                      <CircleDollarSign className="size-4 text-primary" /> USD purchases
+                    </p>
+                    <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                      Dollars you bought from us — the rate applied and the BDT you paid.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="rounded-xl border border-border/60 px-3 py-2">
+                      <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">USD bought</p>
+                      <p className="mt-0.5 text-[13px] font-heading font-bold tabular-nums">
+                        ${formatNumber(dollarPurchases.summary.totalUsd)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 px-3 py-2">
+                      <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">BDT paid</p>
+                      <p className="mt-0.5 text-[13px] font-heading font-bold tabular-nums">{formatBDT(dollarPurchases.summary.totalBdt)}</p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 px-3 py-2">
+                      <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Avg rate</p>
+                      <p className="mt-0.5 text-[13px] font-heading font-bold tabular-nums">
+                        {dollarPurchases.summary.averageRate ? `৳${dollarPurchases.summary.averageRate.toFixed(2)} / $` : "—"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-border/60 px-3 py-2">
+                      <p className="text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">Purchases</p>
+                      <p className="mt-0.5 text-[13px] font-heading font-bold tabular-nums">{dollarPurchases.summary.count}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3">
+                  <TableShell>
+                    <table className="w-full">
+                      <THead>
+                        <Th>Date</Th>
+                        <Th>Reference</Th>
+                        <Th className="text-right">USD</Th>
+                        <Th className="text-right">Rate</Th>
+                        <Th className="text-right">BDT paid</Th>
+                        <Th className="hidden sm:table-cell">Method</Th>
+                      </THead>
+                      <tbody>
+                        {dollarPurchases.purchases.map((p, i) => (
+                          <Tr key={p.id} index={i}>
+                            <Td>{formatDate(p.date)}</Td>
+                            <Td className="font-mono text-[11px] text-muted-foreground">{p.reference}</Td>
+                            <Td className="text-right tabular-nums">${formatNumber(p.usdAmount)}</Td>
+                            <Td className="text-right tabular-nums">৳{p.rate.toFixed(2)}</Td>
+                            <Td className="text-right font-semibold tabular-nums">{formatBDT(p.bdtAmount)}</Td>
+                            <Td className="hidden text-muted-foreground sm:table-cell">
+                              {p.paymentMethod ? p.paymentMethod.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : "—"}
+                            </Td>
+                          </Tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableShell>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -2072,6 +2623,13 @@ function PortalClientWorkspace() {
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3">
+                      {threadMessages.length >= 50 && (
+                        <div className="flex justify-center">
+                          <Btn variant="outline" className="px-3 py-1 text-[11px]" onClick={loadOlder} disabled={loadingOlder}>
+                            {loadingOlder ? "Loading…" : "Load older messages"}
+                          </Btn>
+                        </div>
+                      )}
                       {threadMessages.map((m) => {
                         const isClient = m.authorType === "client";
                         return (
@@ -2091,10 +2649,21 @@ function PortalClientWorkspace() {
                                 {isClient ? "You" : m.authorName || "Agency"} · {timeAgo(m.createdAt)}
                               </p>
                               <p className="mt-0.5 whitespace-pre-wrap text-[13px]">{m.content}</p>
+                              {m.attachmentUrl && (
+                                <a
+                                  href={m.attachmentUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="mt-1 inline-flex items-center gap-1 text-[11px] underline"
+                                >
+                                  <Download className="size-3" /> Attachment
+                                </a>
+                              )}
                             </div>
                           </div>
                         );
                       })}
+                      <div ref={msgEndRef} />
                     </div>
                   )}
                 </div>
@@ -2351,6 +2920,7 @@ function PortalClientWorkspace() {
 
             <div>
               <p className="mb-2 text-[12.5px] font-semibold">Files ({openProject.files.length})</p>
+              {fileError && <p className="mb-1.5 text-[11px] text-rose-500">{fileError}</p>}
               {openProject.files.length === 0 ? (
                 <p className="text-[12px] text-muted-foreground">No files uploaded yet.</p>
               ) : (
@@ -2408,7 +2978,7 @@ function PortalClientWorkspace() {
       <Modal open={!!openInvoice} onClose={() => setOpenInvoice(null)} title={openInvoice?.invoiceNumber ?? ""} size="lg">
         {openInvoice && (
           <div className="flex flex-col gap-5">
-            {openInvoice.status === "PAID" && (
+            {openInvoice.status === "PAID" && openInvoice.balance <= 0 && (
               <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5">
                 <BadgeCheck className="size-4 shrink-0 text-emerald-500" />
                 <p className="text-[12.5px] font-bold text-emerald-600 dark:text-emerald-300">PAID IN FULL — thank you! Receipts for every payment are listed below.</p>
@@ -2432,26 +3002,41 @@ function PortalClientWorkspace() {
 
             <div>
               <p className="mb-2 text-[12.5px] font-semibold">Line items</p>
-              <TableShell>
-                <table className="w-full">
-                  <THead>
-                    <Th>Description</Th>
-                    <Th className="text-right">Qty</Th>
-                    <Th className="text-right">Rate</Th>
-                    <Th className="text-right">Amount</Th>
-                  </THead>
-                  <tbody>
-                    {openInvoice.lines.map((l, i) => (
-                      <Tr key={l.id} index={i}>
-                        <Td className="text-[12.5px]">{l.description}</Td>
-                        <Td className="text-right text-[12.5px] tabular-nums">{l.quantity}</Td>
-                        <Td className="text-right text-[12.5px] tabular-nums">{formatBDT(l.unitPrice)}</Td>
-                        <Td className="text-right text-[12.5px] font-semibold tabular-nums">{formatBDT(l.amount)}</Td>
-                      </Tr>
-                    ))}
-                  </tbody>
-                </table>
-              </TableShell>
+              <div className="hidden sm:block">
+                <TableShell>
+                  <table className="w-full">
+                    <THead>
+                      <Th>Description</Th>
+                      <Th className="text-right">Qty</Th>
+                      <Th className="text-right">Rate</Th>
+                      <Th className="text-right">Amount</Th>
+                    </THead>
+                    <tbody>
+                      {openInvoice.lines.map((l, i) => (
+                        <Tr key={l.id} index={i}>
+                          <Td className="text-[12.5px]">{l.description}</Td>
+                          <Td className="text-right text-[12.5px] tabular-nums">{l.quantity}</Td>
+                          <Td className="text-right text-[12.5px] tabular-nums">{formatBDT(l.unitPrice)}</Td>
+                          <Td className="text-right text-[12.5px] font-semibold tabular-nums">{formatBDT(l.amount)}</Td>
+                        </Tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </TableShell>
+              </div>
+              <div className="flex flex-col gap-2 sm:hidden">
+                {openInvoice.lines.map((l) => (
+                  <div key={l.id} className="rounded-xl border border-border/60 px-3 py-2">
+                    <p className="text-[12.5px] font-medium">{l.description}</p>
+                    <div className="mt-1 flex items-center justify-between text-[11.5px] text-muted-foreground">
+                      <span className="tabular-nums">
+                        {l.quantity} × {formatBDT(l.unitPrice)}
+                      </span>
+                      <span className="font-semibold tabular-nums text-foreground">{formatBDT(l.amount)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div>
@@ -2460,25 +3045,33 @@ function PortalClientWorkspace() {
                 <p className="text-[12px] text-muted-foreground">No payments received yet.</p>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {openInvoice.payments.map((p, idx) => (
+                  {openInvoice.payments.map((p, idx) => {
+                    const isRefund = p.type === "REFUND";
+                    return (
                     <div key={p.id} className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/30 px-3 py-2">
-                      <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
+                      <CheckCircle2 className={cn("size-4 shrink-0", isRefund ? "text-amber-500" : "text-emerald-500")} />
                       <div className="min-w-0 flex-1">
                         <p className="text-[12.5px] font-medium tabular-nums">
-                          {formatBDT(p.amount)} <span className="font-mono text-[10.5px] font-normal text-muted-foreground">#{p.receiptNo}</span>
+                          {isRefund ? "− " : ""}{formatBDT(p.amount)}{" "}
+                          <span className="font-mono text-[10.5px] font-normal text-muted-foreground">#{p.receiptNo}</span>
                         </p>
-                        <p className="text-[11px] text-muted-foreground">{label(p.paymentMethod)} · {formatDate(p.paymentDate)}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {isRefund ? "Refund" : label(p.paymentMethod)} · {formatDate(p.paymentDate)}
+                        </p>
                       </div>
-                      <button
-                        onClick={() => void doReceiptPdf(p, idx)}
-                        disabled={pdfBusy}
-                        className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-bold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
-                        title="Download payment receipt"
-                      >
-                        <Download className="size-3.5" /> Receipt
-                      </button>
+                      {!isRefund && (
+                        <button
+                          onClick={() => void doReceiptPdf(p, idx)}
+                          disabled={pdfBusy}
+                          className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-bold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+                          title="Download payment receipt"
+                        >
+                          <Download className="size-3.5" /> Receipt
+                        </button>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -2582,12 +3175,55 @@ function PortalClientWorkspace() {
               <Btn variant="ghost" onClick={() => setApprovalFile(null)}>
                 Cancel
               </Btn>
-              <Btn variant="primary" onClick={submitApproval} className={cn(approving && "pointer-events-none opacity-60")}>
+              <Btn
+                variant="primary"
+                onClick={submitApproval}
+                disabled={approving || (decision === "REVISION_REQUESTED" && !revisionNotes.trim())}
+                className={cn(approving && "pointer-events-none opacity-60")}
+              >
                 {approving ? "Saving…" : decision === "APPROVED" ? "Approve" : "Request revision"}
               </Btn>
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal open={pwOpen} onClose={() => { setPwOpen(false); setPwError(null); setPwDone(false); }} title="Change password">
+        <div className="flex flex-col gap-3">
+          <p className="text-[11.5px] text-muted-foreground">
+            Changing your password signs out every other device. This browser stays signed in.
+          </p>
+          <Field label="Current password">
+            <Input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} />
+          </Field>
+          <Field label="New password">
+            <Input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} placeholder="At least 8 characters" />
+          </Field>
+          <Field label="Confirm new password">
+            <Input type="password" value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)} />
+          </Field>
+          {pwError && (
+            <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-600 dark:text-rose-300">
+              {pwError}
+            </p>
+          )}
+          {pwDone && (
+            <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-[12px] text-emerald-600 dark:text-emerald-300">
+              Password updated.
+            </p>
+          )}
+          <div className="mt-1 flex justify-end gap-2">
+            <Btn variant="ghost" onClick={() => setPwOpen(false)}>Cancel</Btn>
+            <Btn
+              variant="primary"
+              onClick={submitPassword}
+              disabled={pwBusy || !pwCurrent || !pwNew || !pwConfirm}
+              className={cn(pwBusy && "pointer-events-none opacity-60")}
+            >
+              {pwBusy ? "Saving…" : "Update password"}
+            </Btn>
+          </div>
+        </div>
       </Modal>
     </div>
   );

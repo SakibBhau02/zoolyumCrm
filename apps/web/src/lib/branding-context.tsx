@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "./api";
+import { apiFetch, getToken } from "./api";
 
 export type Branding = {
   id?: string;
@@ -51,8 +51,11 @@ function withAlpha(hex: string, alphaHex: string): string {
 export function BrandingProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery<Branding>({
-    queryKey: ["branding"],
-    queryFn: () => apiFetch<Branding>("/control/branding"),
+    queryKey: ["branding", typeof window !== "undefined" && !!getToken()],
+    // Staff pages read the full company profile; anonymous/portal pages use the
+    // public display-only endpoint so they never fire a 401 on load.
+    queryFn: () =>
+      apiFetch<Branding>(getToken() ? "/control/branding" : "/control/branding/public"),
     staleTime: 30_000,
     retry: false,
   });

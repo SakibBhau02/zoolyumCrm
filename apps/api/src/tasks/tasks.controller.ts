@@ -2,7 +2,6 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from "@
 import { TasksService } from "./tasks.service";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { BulkTaskDto, ChecklistItemDto, SavedViewDto, SprintDto, UpdateChecklistItemDto } from "./dto/task-ops.dto";
-import { normalizeTaskStatus } from "./task-status";
 import { RequirePermission, SkipPermission } from "../common/decorators/require-permission.decorator";
 
 @RequirePermission("TASKS")
@@ -153,6 +152,7 @@ export class TasksController {
 
   // ── Bulk ─────────────────────────────────────────────────────────────
   @Post("bulk")
+  @SkipPermission()
   bulk(@Body() body: BulkTaskDto, @CurrentUser() user: any) {
     return this.tasks.bulk(body, user);
   }
@@ -170,6 +170,7 @@ export class TasksController {
   }
 
   @Patch(":id")
+  @SkipPermission()
   update(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     return this.tasks.update(id, body, user);
   }
@@ -185,10 +186,11 @@ export class TasksController {
   }
 
   @Patch(":id/status")
+  @SkipPermission()
   updateStatus(@Param("id") id: string, @Body() body: { status: string }, @CurrentUser() user: any) {
     // Legacy clients still send IN_REVIEW / BACKLOG — fold them onto the enum
     // instead of letting Prisma throw a validation error at the user.
-    return this.tasks.updateStatus(id, normalizeTaskStatus(body.status) as any, user);
+    return this.tasks.updateStatus(id, body?.status as any, user);
   }
 
   // ── Checklist ────────────────────────────────────────────────────────
@@ -204,32 +206,38 @@ export class TasksController {
   }
 
   @Post(":id/checklist")
+  @SkipPermission()
   addChecklistItem(@Param("id") id: string, @Body() body: ChecklistItemDto, @CurrentUser() user: any) {
     return this.tasks.addChecklistItem(id, body, user);
   }
 
   @Put(":id/checklist/reorder")
+  @SkipPermission()
   reorderChecklist(@Param("id") id: string, @Body() body: { ids: string[] }, @CurrentUser() user: any) {
     return this.tasks.reorderChecklist(id, body.ids ?? [], user);
   }
 
   @Patch(":id/checklist/:itemId")
+  @SkipPermission()
   updateChecklistItem(@Param("id") id: string, @Param("itemId") itemId: string, @Body() body: UpdateChecklistItemDto, @CurrentUser() user: any) {
     return this.tasks.updateChecklistItem(id, itemId, body, user);
   }
 
   @Delete(":id/checklist/:itemId")
+  @SkipPermission()
   removeChecklistItem(@Param("id") id: string, @Param("itemId") itemId: string, @CurrentUser() user: any) {
     return this.tasks.removeChecklistItem(id, itemId, user);
   }
 
   // ── Timer ────────────────────────────────────────────────────────────
   @Post(":id/timer/start")
+  @SkipPermission()
   startTimer(@Param("id") id: string, @Body() body: { notes?: string }, @CurrentUser() user: any) {
     return this.tasks.startTimer(id, body ?? {}, user);
   }
 
   @Post(":id/timer/stop")
+  @SkipPermission()
   stopTimer(@Param("id") id: string, @CurrentUser() user: any) {
     return this.tasks.stopTimer(id, user);
   }
@@ -241,46 +249,55 @@ export class TasksController {
   }
 
   @Post(":id/comments")
+  @SkipPermission()
   addComment(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     return this.tasks.addComment(id, { ...body, authorId: user?.sub }, user);
   }
 
   @Patch(":id/comments/:commentId/reactions")
-  toggleReaction(@Param("id") id: string, @Param("commentId") commentId: string, @Body() body: { emoji: string; userId: string }, @CurrentUser() user: any) {
+  @SkipPermission()
+  toggleReaction(@Param("id") id: string, @Param("commentId") commentId: string, @Body() body: { emoji: string }, @CurrentUser() user: any) {
     return this.tasks.toggleReaction(id, commentId, body, user);
   }
 
   @Delete(":id/comments/:commentId")
+  @SkipPermission()
   deleteComment(@Param("id") id: string, @Param("commentId") commentId: string, @CurrentUser() user: any) {
     return this.tasks.deleteComment(id, commentId, user);
   }
 
   @Post(":id/dependencies")
+  @SkipPermission()
   addDependency(@Param("id") id: string, @Body() body: { dependsOnTaskId: string; type?: string }, @CurrentUser() user: any) {
     return this.tasks.addDependency(id, body.dependsOnTaskId, body.type, user);
   }
 
   @Delete(":id/dependencies/:depId")
+  @SkipPermission()
   removeDependency(@Param("id") id: string, @Param("depId") depId: string, @CurrentUser() user: any) {
     return this.tasks.removeDependency(id, depId, user);
   }
 
   @Post(":id/time-logs")
+  @SkipPermission()
   logTime(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     return this.tasks.logTime(id, body, user);
   }
 
   @Delete(":id/time-logs/:logId")
+  @SkipPermission()
   removeTimeLog(@Param("id") id: string, @Param("logId") logId: string, @CurrentUser() user: any) {
     return this.tasks.removeTimeLog(id, logId, user);
   }
 
   @Post(":id/time-log")
+  @SkipPermission()
   logTimeLegacy(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     return this.tasks.logTime(id, body, user);
   }
 
   @Delete(":id/time-log/:logId")
+  @SkipPermission()
   removeTimeLogLegacy(@Param("id") id: string, @Param("logId") logId: string, @CurrentUser() user: any) {
     return this.tasks.removeTimeLog(id, logId, user);
   }

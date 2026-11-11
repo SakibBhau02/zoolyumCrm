@@ -1,8 +1,9 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { diskStorage } from "multer";
 import { randomUUID } from "crypto";
 import { basename } from "path";
+import { existsSync } from "fs";
 import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
 import { CapitalService } from "./capital.service";
 import { LiabilitiesService } from "./liabilities.service";
@@ -150,6 +151,13 @@ export class CapitalController {
     return this.capital.recordPayment(id, body, user?.sub);
   }
 
+  /** Undo a single payment (wrong amount / duplicate entry). */
+  @Delete("invoices/:id/payments/:paymentId")
+  @Roles("Owner", "Finance", "CONTROL")
+  deletePayment(@Param("id") id: string, @Param("paymentId") paymentId: string, @CurrentUser() user: any) {
+    return this.capital.deletePayment(id, paymentId, user?.sub);
+  }
+
   @Get("invoices/:id/reminders")
   listReminders(@Param("id") id: string) {
     return this.capital.listReminders(id);
@@ -218,6 +226,7 @@ export class CapitalController {
   }
 
   @Delete("expenses/:id")
+  @Roles("Owner", "Finance", "CONTROL")
   deleteExpense(@Param("id") id: string) {
     return this.capital.deleteExpense(id);
   }
@@ -249,7 +258,16 @@ export class CapitalController {
   async uploadReceipt(@Param("id") id: string, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException("No file uploaded");
     const url = `/api/capital/receipts/${file.filename}`;
-    await this.capital.updateExpense(id, { receiptUrl: url });
+    try {
+      await this.capital.updateExpense(id, { receiptUrl: url });
+    } catch (error) {
+      // The interceptor writes the file before the handler runs; if the expense
+      // does not exist (or the update fails) remove it instead of leaving an
+      // orphan receipt on disk.
+      const { unlink } = await import("fs/promises");
+      await unlink(file.path).catch(() => null);
+      throw error;
+    }
     return { url, name: file.originalname };
   }
 
@@ -260,7 +278,9 @@ export class CapitalController {
       throw new BadRequestException("Invalid filename");
     }
     const safe = basename(sanitizeFilename(filename));
-    return res.sendFile(findUploadedFile("receipts", safe));
+    const file = findUploadedFile("receipts", safe);
+    if (!existsSync(file)) throw new NotFoundException("Receipt not found");
+    return res.sendFile(file);
   }
 
   @Get("vendors")
@@ -384,6 +404,12 @@ export class CapitalController {
   @Post("income")
   createIncome(@Body() body: any, @CurrentUser() user: any) {
     return this.capital.createIncome(body, user?.sub);
+  }
+
+  @Delete("income/:id")
+  @Roles("Owner", "Finance", "CONTROL")
+  deleteIncome(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.capital.deleteIncome(id, user?.sub);
   }
 
   @Get("income/stats")

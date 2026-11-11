@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
 /** 0–10 stored score → 1 decimal 0–5 star rating (null when ungraded). */
@@ -68,38 +68,48 @@ export class PerformanceService {
   }
 
   async createOkr(body: any) {
+    if (!body?.employeeId || !body?.title?.trim()) throw new BadRequestException("employeeId and title are required");
+    const emp = await this.prisma.employee.findUnique({ where: { id: body.employeeId }, select: { id: true } });
+    if (!emp) throw new NotFoundException("Employee not found");
     const okr = await this.prisma.okr.create({
       data: {
         employeeId: body.employeeId,
-        title: body.title,
-        quarter: body.quarter,
-        keyResults: body.keyResults ?? [],
+        title: body.title.trim(),
+        quarter: body.quarter ?? `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth() / 3) + 1}`,
+        keyResults: Array.isArray(body.keyResults) ? body.keyResults : [],
         status: body.status ?? "on-track",
       },
     });
-    return this.recomputeOkr(okr.id);
+    return this.recomputeOkr(okr.id, body.status !== undefined);
   }
 
   async updateOkr(id: string, body: any) {
     const data: any = {};
-    for (const f of ["title", "quarter", "status"]) {
+    for (const f of ["title", "quarter"]) {
       if (body[f] !== undefined) data[f] = body[f];
     }
-    if (body.keyResults !== undefined) data.keyResults = body.keyResults;
-    await this.prisma.okr.update({ where: { id }, data }).catch(() => {
-      throw new NotFoundException("OKR not found");
+    if (body.status !== undefined) data.status = body.status;
+    if (body.keyResults !== undefined) {
+      if (!Array.isArray(body.keyResults)) throw new BadRequestException("keyResults must be an array");
+      data.keyResults = body.keyResults;
+    }
+    await this.prisma.okr.update({ where: { id }, data }).catch((err) => {
+      if (err?.code === "P2025") throw new NotFoundException("OKR not found");
+      throw err;
     });
-    return this.recomputeOkr(id);
+    // A manually chosen status ("on-hold") must not be overwritten by progress.
+    return this.recomputeOkr(id, body.status !== undefined);
   }
 
   async deleteOkr(id: string) {
-    await this.prisma.okr.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException("OKR not found");
+    await this.prisma.okr.delete({ where: { id } }).catch((err) => {
+      if (err?.code === "P2025") throw new NotFoundException("OKR not found");
+      throw err;
     });
     return { ok: true };
   }
 
-  private async recomputeOkr(id: string) {
+  private async recomputeOkr(id: string, keepStatus = false) {
     const okr = await this.prisma.okr.findUnique({ where: { id } });
     if (!okr) return null;
     const krs = (okr.keyResults as any[]) ?? [];
@@ -107,6 +117,6 @@ export class PerformanceService {
       ? Math.round((krs.reduce((s, k) => s + Math.min(1, (k.current ?? 0) / Math.max(k.target ?? 1, 0.001)), 0) / krs.length) * 100)
       : 0;
     const status = progress >= 100 ? "completed" : progress < 40 ? "behind" : progress < 70 ? "at-risk" : "on-track";
-    return this.prisma.okr.update({ where: { id }, data: { overallProgress: progress, status } });
+    return this.prisma.okr.update({ where: { id }, data: { overallProgress: progress, ...(keepStatus ? {} : { status }) } });
   }
 }

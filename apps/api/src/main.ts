@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import compression from "compression";
 import express from "express";
 import { AppModule } from "./app.module";
+import { PrismaExceptionFilter } from "./common/filters/prisma-exception.filter";
 
 /** Wrap a plain middleware so Nest's DI-created app can use it. */
 function securityHeaders() {
@@ -70,6 +71,7 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     })
   );
+  app.useGlobalFilters(new PrismaExceptionFilter());
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port);
   console.log(`Zoolyum OS API running on http://localhost:${port}/api`);

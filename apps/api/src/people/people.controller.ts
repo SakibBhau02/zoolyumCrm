@@ -162,8 +162,8 @@ export class PeopleController {
 
   @Post("attendance/recompute")
   @Roles(...HR_ROLES)
-  recomputeAttendance(@Body() body: { month: string }) {
-    return this.attendance.recomputeMonth(body.month);
+  recomputeAttendance(@Body() body: { month: string; force?: boolean }) {
+    return this.attendance.recomputeMonth(body?.month, { force: body?.force === true });
   }
 
   @Patch("attendance/:id/correct")
@@ -238,8 +238,15 @@ export class PeopleController {
   }
 
   @Get("punches")
-  punches(@Query("month") month: string, @Query("unmatched") unmatched: string) {
-    return this.attendance.punches(month, unmatched === "true");
+  punches(
+    @Query("month") month?: string,
+    @Query("days") days?: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("unmatched") unmatched?: string,
+    @Query("limit") limit?: string
+  ) {
+    return this.attendance.punches({ month, days, from, to }, unmatched === "true", limit ? Number(limit) : undefined);
   }
 
   @Post("punches/import")
@@ -261,8 +268,8 @@ export class PeopleController {
   }
 
   @Get("leave-requests")
-  leaveRequests() {
-    return this.leave.leaveRequests();
+  async leaveRequests(@CurrentUser() user: any) {
+    return this.leave.leaveRequests(await this.leave.scopeEmployeeId(user));
   }
 
   @Get("leave-requests/:id")
@@ -282,8 +289,8 @@ export class PeopleController {
 
   @SkipPermission()
   @Get("leave-balances")
-  leaveBalances(@Query("employeeId") employeeId?: string) {
-    return this.leave.leaveBalances(employeeId);
+  async leaveBalances(@Query("employeeId") employeeId: string | undefined, @CurrentUser() user: any) {
+    return this.leave.leaveBalances(employeeId, await this.leave.scopeEmployeeId(user));
   }
 
   @Post("leave-balances/ensure")
@@ -329,6 +336,7 @@ export class PeopleController {
 
   /** Compact header badge: latest period that actually has records. */
   @Get("payroll/status")
+  @Roles(...HR_ROLES)
   payrollStatus() {
     return this.payrollService.status();
   }
@@ -342,8 +350,8 @@ export class PeopleController {
   @Patch("payroll/:id")
   @Roles(...HR_ROLES)
   updatePayroll(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
-    if (body.status !== undefined && Object.keys(body).every((k) => k === "status")) {
-      return this.payrollService.updatePayrollStatus(id, body.status as any, user?.sub);
+    if (body.status !== undefined && Object.keys(body).every((k) => k === "status" || k === "bankAccountId")) {
+      return this.payrollService.updatePayrollStatus(id, body.status as any, user?.sub, body.bankAccountId);
     }
     return this.payrollService.updatePayrollRecord(id, body, user?.sub);
   }
@@ -587,11 +595,12 @@ export class PeopleController {
   @Get("team/:id")
   employee360(
     @Param("id") id: string,
+    @CurrentUser() user: any,
     @Query("month") month?: string,
     @Query("days") days?: string
   ) {
     const m = month && /^\d{4}-\d{2}$/.test(month) ? month : undefined;
-    return this.team.employee360(id, { month: m, days });
+    return this.team.employee360(id, { month: m, days }, user);
   }
 
   @SkipPermission()

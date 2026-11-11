@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { API_URL } from "@/lib/api";
+import { useBranding } from "@/lib/branding-context";
 import { Btn } from "@/components/table";
 import { CardShell, cn } from "@/components/shared";
 import { Field, Input } from "@/components/ui";
@@ -15,6 +16,7 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 
 export default function PortalLoginPage() {
   const router = useRouter();
+  const { branding } = useBranding();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -105,6 +107,8 @@ export default function PortalLoginPage() {
                 />
                 <button
                   type="button"
+                  aria-label={showPw ? "Hide password" : "Show password"}
+                  title={showPw ? "Hide password" : "Show password"}
                   onClick={() => setShowPw(!showPw)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 >
@@ -131,6 +135,17 @@ export default function PortalLoginPage() {
               <ArrowRight className="size-4" />
             </Btn>
           </form>
+
+          <p className="mt-4 text-center text-[11.5px] text-muted-foreground">
+            Forgot your password?{" "}
+            <a
+              href={`mailto:${branding?.email ?? "support@zoolyum.com"}?subject=Portal%20password%20reset`}
+              className="font-semibold text-primary hover:underline"
+            >
+              Contact your agency
+            </a>{" "}
+            — they can reset it for you.
+          </p>
 
           <Link
             href="/"

@@ -13,6 +13,8 @@ export type PortalModule = (typeof PORTAL_MODULES)[number];
  */
 export type PortalScope = {
   portalUserId: string;
+  /** Token version the account had when the request was made. */
+  tokenVersion: number;
   clientContactId: string;
   clientId: string;
   clientName: string;
@@ -51,9 +53,14 @@ export class PortalAccessService {
     if (!pu || !pu.isActive) throw new UnauthorizedException("Portal account is not active");
 
     const access = pu.contactAccess;
-    const modules = (access?.modules?.length ? access.modules : [...PORTAL_MODULES]) as PortalModule[];
+    // Absent row = full access (legacy). An explicit row with an empty module
+    // list denies every module — unchecking everything must never grant access.
+    const modules = (access ? access.modules : [...PORTAL_MODULES]).filter((m): m is PortalModule =>
+      (PORTAL_MODULES as readonly string[]).includes(m)
+    );
     const scope: PortalScope = {
       portalUserId,
+      tokenVersion: pu.tokenVersion,
       clientContactId: pu.clientContactId,
       clientId: pu.clientContact.clientId,
       clientName: pu.clientContact.client.companyName,
@@ -61,7 +68,9 @@ export class PortalAccessService {
       contactEmail: pu.clientContact.email,
       modules,
       projectIds: access?.scope === "CUSTOM" ? access.projectIds : null,
-      canSeeAdSpend: access?.canSeeAdSpend ?? true,
+      // Advertising spend is opt-in for contacts with an explicit access row;
+      // legacy contacts (no row = full access) keep their existing visibility.
+      canSeeAdSpend: access ? access.canSeeAdSpend : true,
     };
 
     await this.cache.set(this.key(portalUserId), scope, 60);

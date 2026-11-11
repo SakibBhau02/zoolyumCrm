@@ -55,8 +55,8 @@ type CapitalContextValue = {
   setAccountEdit: (v: any | null) => void;
   editInv: any | null;
   setEditInv: (v: any | null) => void;
-  toDelete: { kind: "invoice" | "expense"; id: string; name: string } | null;
-  setToDelete: (v: { kind: "invoice" | "expense"; id: string; name: string } | null) => void;
+  toDelete: { kind: "invoice" | "expense"; id: string; name: string; status?: string } | null;
+  setToDelete: (v: { kind: "invoice" | "expense"; id: string; name: string; status?: string } | null) => void;
   deleting: boolean;
   toDeleteVendor: any | null;
   setToDeleteVendor: (v: any | null) => void;
@@ -172,7 +172,7 @@ export function CapitalProvider({ children }: { children: React.ReactNode }) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [accountEdit, setAccountEdit] = useState<any | null>(null);
   const [editInv, setEditInv] = useState<any | null>(null);
-  const [toDelete, setToDelete] = useState<{ kind: "invoice" | "expense"; id: string; name: string } | null>(null);
+  const [toDelete, setToDelete] = useState<{ kind: "invoice" | "expense"; id: string; name: string; status?: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [toDeleteVendor, setToDeleteVendor] = useState<any | null>(null);
   const [deletingVendor, setDeletingVendor] = useState(false);

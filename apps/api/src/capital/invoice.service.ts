@@ -6,7 +6,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { LedgerService, CapitalDb } from "./ledger.service";
 import { ReportingService } from "./reporting.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
-import { ACTIVE_STATUSES, POSTABLE_STATUSES, invoiceTotals, invalidateFinance, logAudit, notifyRole } from "./finance-kernel";
+import { ACTIVE_STATUSES, INVOICE_CREDIT_INCLUDE, POSTABLE_STATUSES, invoiceTotals, invalidateFinance, logAudit, notifyRole, startOfTodayUtc, toBdt } from "./finance-kernel";
 import { AccountsService } from "../accounts/accounts.service";
 
 @Injectable()
@@ -31,20 +31,20 @@ export class InvoiceService {
    * the client health score all read 0 overdue while invoices sat unpaid.
    */
   private async recomputeInvoiceStatus(invoiceId: string) {
-    const inv = await this.prisma.invoice.findUnique({ where: { id: invoiceId }, include: { lineItems: true, payments: true } });
+    const inv = await this.prisma.invoice.findUnique({ where: { id: invoiceId }, include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE } });
     if (!inv) return;
     const t = invoiceTotals(inv);
     if (inv.status === "DRAFT" || inv.status === "CANCELLED" || inv.status === "VOID") return;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const pastDue = !!inv.dueDate && inv.dueDate < today;
+    const today = startOfTodayUtc();
+    const pastDue = !!inv.dueDate && new Date(inv.dueDate).getTime() < today.getTime();
+    const settled = t.paid + t.credits >= t.grand;
     const status =
-      t.paid >= t.grand && t.grand > 0 ? "PAID"
+      settled && t.grand > 0 ? "PAID"
       : t.paid > 0 ? "PARTIALLY_PAID"
       : pastDue ? "OVERDUE"
       : (["PAID", "PARTIALLY_PAID", "OVERDUE"].includes(inv.status) ? "SENT" : inv.status);
     if (status !== inv.status) await this.prisma.invoice.update({ where: { id: invoiceId }, data: { status } });
-    return { total: t.grand, paid: t.paid };
+    return { total: t.grand, paid: t.paid, credits: t.credits };
   }
 
   /**
@@ -55,8 +55,9 @@ export class InvoiceService {
     const now = Date.now();
     if (!force && now - this.lastOverdueSync < 60_000) return { skipped: true, toOverdue: 0, toSent: 0 };
     this.lastOverdueSync = now;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // DATE columns compare in UTC; use the local calendar day expressed as UTC
+    // midnight so "due yesterday" is overdue today (see startOfTodayUtc).
+    const today = startOfTodayUtc();
     const [toOverdue, toSent] = await Promise.all([
       this.prisma.invoice.updateMany({
         where: { status: { in: ["SENT", "VIEWED"] }, dueDate: { lt: today } },
@@ -81,7 +82,9 @@ export class InvoiceService {
   private async applyOverpayment(invoice: any, db: CapitalDb = this.prisma) {
     if (!invoice) return;
     const t = invoiceTotals(invoice);
-    const excess = Math.round((t.paid - t.grand) * 100) / 100;
+    // Credits also settle the invoice, so only the excess of paid+credits over
+    // the grand total is a real overpayment.
+    const excess = Math.round((t.paid + t.credits - t.grand) * 100) / 100;
     if (excess > 0) {
       await db.creditBalance.create({ data: { clientId: invoice.clientId, amount: excess, currency: invoice.currency, source: `Overpayment on ${invoice.invoiceNumber}` } });
     }
@@ -94,10 +97,10 @@ export class InvoiceService {
     if (!projectId) return;
     const invoices = await this.prisma.invoice.findMany({
       where: { projectId, status: { in: ACTIVE_STATUSES as InvoiceStatus[] } },
-      include: { lineItems: true, payments: true },
+      include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE },
     });
-    const totalBilled = invoices.reduce((s, i) => s + invoiceTotals(i).grand, 0);
-    const outstanding = invoices.reduce((s, i) => s + invoiceTotals(i).balance, 0);
+    const totalBilled = invoices.reduce((s, i) => s + invoiceTotals(i).grandBdt, 0);
+    const outstanding = invoices.reduce((s, i) => s + invoiceTotals(i).balanceBdt, 0);
     const paymentStatus = totalBilled === 0 ? "PENDING" : outstanding <= 0 ? "PAID" : "PARTIAL";
     await this.prisma.project
       .update({ where: { id: projectId }, data: { totalBilled: Math.round(totalBilled * 100) / 100, paymentStatus } })
@@ -122,6 +125,7 @@ export class InvoiceService {
         lineItems: true,
         // `type` is required: refunds must subtract from the paid amount.
         payments: { select: { id: true, amount: true, type: true, paymentMethod: true, paymentDate: true } },
+        ...INVOICE_CREDIT_INCLUDE,
       },
       orderBy: { issueDate: "desc" },
       // Safety cap: the invoice table is the heaviest list in the product.
@@ -174,17 +178,17 @@ export class InvoiceService {
         project: { select: { id: true, name: true } },
         lineItems: true,
         payments: { select: { id: true, amount: true, type: true, paymentMethod: true, paymentDate: true } },
+        ...INVOICE_CREDIT_INCLUDE,
       },
       orderBy: { issueDate: "desc" },
     });
 
-    const midnight = new Date();
-    midnight.setHours(0, 0, 0, 0);
+    const midnight = startOfTodayUtc();
     const in7 = new Date(midnight.getTime() + 7 * 86400000);
     const live = (inv: any) => !["DRAFT", "CANCELLED", "VOID"].includes(inv.status);
-    const isOverdue = (inv: any) => {
+    const isOverdueRow = (inv: any) => {
       const t = invoiceTotals(inv);
-      return live(inv) && t.balance > 0 && inv.dueDate && inv.dueDate < midnight;
+      return live(inv) && t.balance > 0 && inv.dueDate && new Date(inv.dueDate) < midnight;
     };
     const isDue7 = (inv: any) => {
       const t = invoiceTotals(inv);
@@ -196,27 +200,27 @@ export class InvoiceService {
     // chips stay meaningful while you are inside one of them.
     const counts = {
       all: all.length,
-      overdue: all.filter(isOverdue).length,
+      overdue: all.filter(isOverdueRow).length,
       due7: all.filter(isDue7).length,
       draft: all.filter((i) => i.status === "DRAFT").length,
       paid: all.filter((i) => i.status === "PAID").length,
     };
     const values = {
-      overdue: all.filter(isOverdue).reduce((s, i) => s + invoiceTotals(i).balance, 0),
-      due7: all.filter(isDue7).reduce((s, i) => s + invoiceTotals(i).balance, 0),
-      draft: all.filter((i) => i.status === "DRAFT").reduce((s, i) => s + invoiceTotals(i).grand, 0),
+      overdue: all.filter(isOverdueRow).reduce((s, i) => s + invoiceTotals(i).balanceBdt, 0),
+      due7: all.filter(isDue7).reduce((s, i) => s + invoiceTotals(i).balanceBdt, 0),
+      draft: all.filter((i) => i.status === "DRAFT").reduce((s, i) => s + invoiceTotals(i).grandBdt, 0),
     };
 
     const lo = query.min === undefined || query.min === "" ? null : Number(query.min);
     const hi = query.max === undefined || query.max === "" ? null : Number(query.max);
     const filtered = all.filter((inv) => {
       const t = invoiceTotals(inv);
-      if (query.quick === "overdue" && !isOverdue(inv)) return false;
+      if (query.quick === "overdue" && !isOverdueRow(inv)) return false;
       if (query.quick === "due7" && !isDue7(inv)) return false;
       if (query.quick === "draft" && inv.status !== "DRAFT") return false;
       if (query.quick === "paid" && inv.status !== "PAID") return false;
-      if (lo != null && t.grand < lo) return false;
-      if (hi != null && t.grand > hi) return false;
+      if (lo != null && t.grandBdt < lo) return false;
+      if (hi != null && t.grandBdt > hi) return false;
       return true;
     });
 
@@ -225,13 +229,13 @@ export class InvoiceService {
         const t = invoiceTotals(inv);
         if (inv.status === "DRAFT") {
           acc.drafts += 1;
-          acc.draftValue += t.grand;
+          acc.draftValue += t.grandBdt;
           return acc;
         }
         if (!live(inv)) return acc;
-        acc.billed += t.grand;
-        acc.paid += t.paid;
-        acc.due += t.balance;
+        acc.billed += t.grandBdt;
+        acc.paid += t.paidBdt;
+        acc.due += t.balanceBdt;
         return acc;
       },
       { billed: 0, paid: 0, due: 0, drafts: 0, draftValue: 0 }
@@ -372,6 +376,24 @@ export class InvoiceService {
   }
 
   async createInvoice(body: any, createdById?: string) {
+    // Money validation before anything touches the ledger: a negative rate or an
+    // empty line list would create an invoice whose totals are meaningless.
+    const rawLines = body.lines ?? body.lineItems;
+    if (!Array.isArray(rawLines) || rawLines.length === 0) {
+      throw new BadRequestException("An invoice needs at least one line item");
+    }
+    for (const [index, l] of rawLines.entries()) {
+      if (!String(l?.description ?? "").trim()) throw new BadRequestException(`Line ${index + 1} needs a description`);
+      const unitPrice = Number(l.unitPrice ?? (l.amount != null ? l.amount / Number(l.quantity ?? 1) : NaN));
+      const quantity = Number(l.quantity ?? 1);
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new BadRequestException(`Line ${index + 1}: rate cannot be negative`);
+      if (!Number.isFinite(quantity) || quantity <= 0) throw new BadRequestException(`Line ${index + 1}: quantity must be greater than zero`);
+    }
+    const currency = body.currency ?? "BDT";
+    const exchangeRate = Number(body.exchangeRate ?? 1);
+    if (currency !== "BDT" && (!Number.isFinite(exchangeRate) || exchangeRate <= 0)) {
+      throw new BadRequestException(`An exchange rate is required for ${currency} invoices`);
+    }
     const target = await this.resolveBillingTarget(body.clientId, body.projectId);
     const client = await this.prisma.client.findUnique({ where: { id: target.clientId }, select: { id: true } }).catch(() => null);
     if (!client) throw new NotFoundException("Client not found");
@@ -380,15 +402,20 @@ export class InvoiceService {
     const clash = await this.prisma.invoice.findUnique({ where: { invoiceNumber } }).catch(() => null);
     if (clash) invoiceNumber = await this.ledger.nextInvoiceNumber();
     const discountRate = body.discountRate != null && body.discountRate !== "" ? Number(body.discountRate) : null;
-    const invoice = await this.prisma.$transaction(async (tx) => {
+    const invoice = await (async () => {
+      // Two creates that run at the same instant can compute the same "next"
+      // number; retry with a fresh number instead of failing the request.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await this.prisma.$transaction(async (tx) => {
       const created = await tx.invoice.create({
         data: {
           invoiceNumber,
           clientId: body.clientId,
           projectId: body.projectId,
           invoiceType: body.invoiceType ?? "ONE_TIME",
-          currency: body.currency ?? "BDT",
-          exchangeRate: body.exchangeRate ?? 1,
+          currency,
+          exchangeRate,
           issueDate: body.issueDate ? new Date(body.issueDate) : new Date(),
           dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
           status: body.status ?? "DRAFT",
@@ -436,7 +463,16 @@ export class InvoiceService {
       if (POSTABLE_STATUSES.includes(created.status)) await this.ledger.postInvoiceGL(created, createdById, tx);
       await logAudit(tx, "Invoice", created.id, "created", { invoiceNumber });
       return created;
-    }, { timeout: 15000 });
+          }, { timeout: 15000 });
+        } catch (error: any) {
+          if (error?.code === "P2002" && attempt < 5) {
+            invoiceNumber = await this.ledger.nextInvoiceNumber();
+            continue;
+          }
+          throw error;
+        }
+      }
+    })();
     try {
       await this.notifications.notifyRole(
         "Finance",
@@ -479,7 +515,19 @@ export class InvoiceService {
     if (body.dueDate === null) data.dueDate = null;
     const wasPosted = POSTABLE_STATUSES.includes(existing.status);
     const willPost = body.status !== undefined ? POSTABLE_STATUSES.includes(body.status) : wasPosted;
-    const postedBefore = wasPosted || willPost;
+    // Only these fields can change what the ledger should say. Editing notes,
+    // terms, due date, payment details or installments must NOT reverse and
+    // re-post the journal (that used to double-book revenue on a notes edit).
+    const ledgerFieldsChanged =
+      body.lines !== undefined ||
+      body.status !== undefined ||
+      body.taxApplicable !== undefined ||
+      body.taxRate !== undefined ||
+      body.discountRate !== undefined ||
+      body.shippingFee !== undefined ||
+      body.issueDate !== undefined ||
+      body.currency !== undefined ||
+      body.exchangeRate !== undefined;
     const updated = await this.prisma.$transaction(async (tx) => {
       if (body.lines) {
         await tx.invoiceLineItem.deleteMany({ where: { invoiceId: id } });
@@ -503,8 +551,8 @@ export class InvoiceService {
           })),
         };
       }
-      if (postedBefore && (body.lines || body.installments || body.status !== undefined || body.taxApplicable !== undefined || body.taxRate !== undefined || body.discountRate !== undefined || body.shippingFee !== undefined || body.issueDate !== undefined)) {
-        await this.ledger.reverseGL(id, actorId, tx);
+      if (wasPosted && ledgerFieldsChanged) {
+        await this.ledger.reverseGL(id, actorId, tx, ["INVOICE"]);
       }
       const next = await tx.invoice.update({
         where: { id },
@@ -516,7 +564,9 @@ export class InvoiceService {
         await tx.invoice.update({ where: { id }, data: { discountAmount: updatedTotals.discount } });
         (next as any).discountAmount = updatedTotals.discount;
       }
-      if (wasPosted || willPost) await this.ledger.postInvoiceGL(next, actorId, tx);
+      // Re-post only when something actually changed (or the document just
+      // became postable). A pure metadata edit leaves the ledger untouched.
+      if (willPost && (!wasPosted || ledgerFieldsChanged)) await this.ledger.postInvoiceGL(next, actorId, tx);
       await logAudit(tx, "Invoice", id, "updated", { from: existing.status, to: body.status ?? existing.status }, actorId);
       return next;
     }, { timeout: 15000 });
@@ -526,8 +576,9 @@ export class InvoiceService {
     await this.syncProjectBilling(body.projectId ?? existing.projectId);
     await invalidateFinance(this.cache);
     // "Mark as paid" without a payment row would leave the receivable open in
-    // the ledger — let the money itself decide PAID / PARTIALLY_PAID.
-    if (body.status === "PAID" || body.status === "PARTIALLY_PAID") {
+    // the ledger — let the money itself decide PAID / PARTIALLY_PAID. This also
+    // keeps the list badge truthful after a line/amount edit.
+    if (ledgerFieldsChanged) {
       await this.recomputeInvoiceStatus(id).catch(() => {});
     }
     await this.refreshClientHealth(updated.clientId ?? existing.clientId);
@@ -603,7 +654,7 @@ export class InvoiceService {
         );
       }
       await this.prisma.$transaction(async (tx) => {
-        await this.ledger.reverseGL(id, actorId, tx);
+        await this.ledger.reverseGL(id, actorId, tx, ["INVOICE"]);
         await tx.invoice.update({ where: { id }, data: { status: "VOID", shareEnabled: false } });
         await logAudit(tx, "Invoice", id, "voided", { invoiceNumber: inv.invoiceNumber, previousStatus: inv.status }, actorId);
       }, { timeout: 15000 });
@@ -621,7 +672,7 @@ export class InvoiceService {
           await this.ledger.creditBankAccount(p.bankAccountId, Number(p.amount), tx);
         }
       }
-      await this.ledger.reverseGL(id, actorId, tx);
+      await this.ledger.reverseGL(id, actorId, tx, ["INVOICE"]);
       await tx.invoice.delete({ where: { id } });
       await logAudit(tx, "Invoice", id, "deleted", { invoiceNumber: inv.invoiceNumber, status: inv.status }, actorId);
     }, { timeout: 15000 });
@@ -657,13 +708,25 @@ export class InvoiceService {
     const saved = await this.prisma.$transaction(async (tx) => {
       let installmentId = body.installmentId ?? null;
       if (invoice.installments.length) {
-        const target = invoice.installments.find((s) => s.id === body.installmentId) ?? invoice.installments.find((s) => s.status !== "PAID");
-        if (target) {
-          installmentId = target.id;
+        // Allocate the payment across the plan in sequence, never over-crediting
+        // an installment: a ৳1,200 payment on 2×৳500 closes both rows.
+        const ordered = [...invoice.installments].sort((a, b) => a.sequence - b.sequence);
+        const start = body.installmentId
+          ? Math.max(0, ordered.findIndex((s) => s.id === body.installmentId))
+          : Math.max(0, ordered.findIndex((s) => s.status !== "PAID"));
+        let remaining = Number(body.amount);
+        for (let i = start; i < ordered.length && remaining > 0.001; i++) {
+          const target = ordered[i];
+          const balance = Math.max(Number(target.amount) - Number(target.paidAmount), 0);
+          if (balance <= 0) continue;
+          const applied = Math.min(remaining, balance);
+          const newPaid = Math.round((Number(target.paidAmount) + applied) * 100) / 100;
           await tx.installment.update({
             where: { id: target.id },
-            data: { paidAmount: { increment: body.amount }, status: Number(target.paidAmount) + body.amount >= Number(target.amount) ? "PAID" : "PARTIAL" },
+            data: { paidAmount: newPaid, status: newPaid >= Number(target.amount) ? "PAID" : "PARTIAL" },
           });
+          if (!installmentId) installmentId = target.id;
+          remaining -= applied;
         }
       }
       const referenceId = body.referenceId ?? (installmentId ? `${invoice.invoiceNumber}/#${invoice.installments.find((s) => s.id === installmentId)?.sequence ?? 1}` : null);
@@ -672,6 +735,8 @@ export class InvoiceService {
           invoiceId,
           installmentId,
           amount: body.amount,
+          currency: invoice.currency,
+          exchangeRate: invoice.exchangeRate ?? 1,
           paymentMethod: body.paymentMethod as any,
           referenceId,
           paymentDate: body.paymentDate ? new Date(body.paymentDate) : new Date(),
@@ -680,8 +745,10 @@ export class InvoiceService {
         },
       });
       const bankId = body.bankAccountId ?? (await this.ledger.defaultBankAccount(tx));
+      // Cash actually received is in BDT; foreign invoices convert at their rate.
+      const bdtAmount = toBdt(Number(body.amount), invoice);
       if (bankId) {
-        await this.ledger.creditBankAccount(bankId, Number(body.amount), tx);
+        await this.ledger.creditBankAccount(bankId, bdtAmount, tx);
         await tx.payment.update({ where: { id: payment.id }, data: { bankAccountId: bankId, balanceCredited: true } });
       }
       const [acctBank, acctAR] = await Promise.all([this.ledger.accountByCode("1200", tx), this.ledger.accountByCode("1100", tx)]);
@@ -689,20 +756,27 @@ export class InvoiceService {
         "PAYMENT",
         `${invoice.invoiceNumber} / ${referenceId ?? payment.id}`,
         body.paymentDate ? new Date(body.paymentDate) : new Date(),
-        invoiceId,
+        payment.id,
         null,
         [
-          { accountId: acctBank.id, debit: Number(body.amount), credit: 0 },
-          { accountId: acctAR.id, debit: 0, credit: Number(body.amount) },
+          { accountId: acctBank.id, debit: bdtAmount, credit: 0 },
+          { accountId: acctAR.id, debit: 0, credit: bdtAmount },
         ],
         recordedById,
         tx
       );
-      const paid = paidSoFar + Number(body.amount);
-      const status = paid >= total ? "PAID" : "PARTIALLY_PAID";
+      // Status always comes from the money actually recorded (payments, refunds
+      // and credit notes), never from the requested amount.
+      const fresh = await tx.invoice.findUnique({
+        where: { id: invoiceId },
+        include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE },
+      });
+      const freshTotals = invoiceTotals(fresh);
+      const settled = freshTotals.paid + freshTotals.credits >= freshTotals.grand;
+      const status = settled && freshTotals.grand > 0 ? "PAID" : freshTotals.paid > 0 ? "PARTIALLY_PAID" : invoice.status;
       await tx.invoice.update({ where: { id: invoiceId }, data: { status } });
       await logAudit(tx, "Invoice", invoiceId, "payment_recorded", { amount: body.amount, status, installment: installmentId ?? null });
-      const updatedInvoice = await tx.invoice.findUnique({ where: { id: invoiceId }, include: { lineItems: true, payments: true, client: { select: { id: true } } } });
+      const updatedInvoice = await tx.invoice.findUnique({ where: { id: invoiceId }, include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE, client: { select: { id: true } } } });
       if (updatedInvoice) await this.applyOverpayment(updatedInvoice, tx);
       return tx.payment.findUnique({ where: { id: payment.id } });
     }, { timeout: 15000 });
@@ -722,6 +796,70 @@ export class InvoiceService {
     await this.refreshClientHealth(invoice.clientId);
     void this.wa.notifyPaymentReceived(invoiceId, { amount: Number(body.amount), referenceId: (saved as any)?.referenceId ?? null }).catch(() => {});
     return saved;
+  }
+
+  /**
+   * Undo a single payment. A wrong amount previously could only be "refunded"
+   * (which moves money the other way) — this removes the payment row, its
+   * journal, the installment allocation and the cash it put in the bank.
+   */
+  async deletePayment(invoiceId: string, paymentId: string, actorId?: string) {
+    const payment = await this.prisma.payment.findFirst({
+      where: { id: paymentId, invoiceId },
+      include: { installment: { select: { id: true, paidAmount: true, amount: true } } },
+    });
+    if (!payment) throw new NotFoundException("Payment not found");
+    if (payment.type === "REFUND") {
+      throw new BadRequestException("Refunds are reversed from their credit note, not deleted here.");
+    }
+    const invoice = await this.prisma.invoice.findUnique({ where: { id: invoiceId }, select: { id: true, projectId: true, clientId: true } });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    await this.prisma.$transaction(async (tx) => {
+      // New payments own their GL entry (sourceId = payment.id). Legacy rows used
+      // the invoice id, so fall back to matching the reference string.
+      const entry =
+        (await tx.journalEntry.findFirst({ where: { sourceId: payment.id, entryType: "PAYMENT" }, orderBy: { createdAt: "desc" } })) ??
+        (await tx.journalEntry.findFirst({
+          where: {
+            sourceId: invoiceId,
+            entryType: "PAYMENT",
+            OR: [
+              ...(payment.referenceId ? [{ reference: { contains: `/ ${payment.referenceId}` } }] : []),
+              { reference: { contains: `/ ${payment.id}` } },
+            ],
+          },
+          orderBy: { createdAt: "desc" },
+        }));
+      if (entry) await this.ledger.reverseJournalEntry(entry.id, actorId, tx);
+      if (payment.balanceCredited && payment.bankAccountId) {
+        // Remove the cash that this payment had added to the bank.
+        const bdt = toBdt(Number(payment.amount), payment);
+        await this.ledger.debitBankAccount(payment.bankAccountId, bdt, tx);
+      }
+      if (payment.installment) {
+        const nextPaid = Math.max(Number(payment.installment.paidAmount) - Number(payment.amount), 0);
+        await tx.installment.update({
+          where: { id: payment.installment.id },
+          data: { paidAmount: nextPaid, status: nextPaid <= 0 ? "PENDING" : nextPaid >= Number(payment.installment.amount) ? "PAID" : "PARTIAL" },
+        });
+      }
+      await tx.payment.delete({ where: { id: payment.id } });
+      // Recompute status from what is left.
+      const fresh = await tx.invoice.findUnique({ where: { id: invoiceId }, include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE } });
+      if (fresh && !["DRAFT", "CANCELLED", "VOID"].includes(fresh.status)) {
+        const t = invoiceTotals(fresh);
+        const settled = t.paid + t.credits >= t.grand;
+        const today = startOfTodayUtc();
+        const pastDue = !!fresh.dueDate && new Date(fresh.dueDate).getTime() < today.getTime();
+        const status = settled && t.grand > 0 ? "PAID" : t.paid > 0 ? "PARTIALLY_PAID" : pastDue ? "OVERDUE" : "SENT";
+        await tx.invoice.update({ where: { id: invoiceId }, data: { status } });
+      }
+      await logAudit(tx, "Invoice", invoiceId, "payment_deleted", { paymentId: payment.id, amount: Number(payment.amount) }, actorId);
+    }, { timeout: 15000 });
+    await this.syncProjectBilling(invoice.projectId);
+    await invalidateFinance(this.cache);
+    await this.refreshClientHealth(invoice.clientId);
+    return { ok: true };
   }
 
   // ── Public share links + WhatsApp manual hooks ─────────────────────
@@ -766,6 +904,7 @@ export class InvoiceService {
       include: {
         lineItems: true,
         payments: { orderBy: { paymentDate: "desc" } },
+        ...INVOICE_CREDIT_INCLUDE,
         project: { select: { id: true, name: true } },
         client: { select: { companyName: true } },
       },
@@ -865,7 +1004,7 @@ export class InvoiceService {
       id: p.id,
       source: "invoice",
       date: p.paymentDate,
-      amount: Number(p.amount),
+      amount: toBdt(Number(p.amount), p),
       currency: p.currency,
       method: p.paymentMethod,
       reference: p.referenceId,
@@ -882,7 +1021,7 @@ export class InvoiceService {
       id: m.id,
       source: "manual",
       date: m.date,
-      amount: Number(m.amount),
+      amount: toBdt(Number(m.amount), m),
       currency: m.currency,
       method: m.paymentMethod,
       reference: m.referenceId,
@@ -895,8 +1034,8 @@ export class InvoiceService {
       bankAccount: m.bankAccount?.accountName ?? null,
       notes: m.notes,
       attachmentUrl: m.attachmentUrl,
-      taxWithheld: Number(m.taxWithheld ?? 0),
-      netAmount: Number(m.amount) - Number(m.taxWithheld ?? 0),
+      taxWithheld: toBdt(Number(m.taxWithheld ?? 0), m),
+      netAmount: toBdt(Number(m.amount) - Number(m.taxWithheld ?? 0), m),
       // Manual income never flows through the payment table, so it is its own
       // bank line: treat it as reconciled only when a statement line exists.
       reconciled: false,
@@ -955,6 +1094,7 @@ export class InvoiceService {
     const bankId = body.bankAccountId ?? (await this.ledger.defaultBankAccount());
     const rawDate = body.date ?? body.paymentDate;
     const date = rawDate ? new Date(rawDate) : new Date();
+    const rate = Number(body.exchangeRate ?? 1) || 1;
 
     const income = await this.prisma.$transaction(async (tx) => {
       const row = await tx.manualIncome.create({
@@ -977,18 +1117,19 @@ export class InvoiceService {
         },
       });
 
-      if (bankId && net > 0) await this.ledger.creditBankAccount(bankId, net, tx);
+      const netBdt = toBdt(net, { exchangeRate: rate });
+      if (bankId && netBdt > 0) await this.ledger.creditBankAccount(bankId, netBdt, tx);
       const [acctBank, acctOther] = await Promise.all([
         this.ledger.accountByCode("1200", tx),
         this.ledger.accountByCode("4200", tx),
       ]);
       const lines = [
-        { accountId: acctBank.id, debit: net, credit: 0, memo: row.description },
-        { accountId: acctOther.id, debit: 0, credit: amount, memo: row.category },
+        { accountId: acctBank.id, debit: netBdt, credit: 0, memo: row.description },
+        { accountId: acctOther.id, debit: 0, credit: toBdt(amount, { exchangeRate: rate }), memo: row.category },
       ];
       if (taxWithheld > 0) {
         const acctTax = await this.ledger.ensureAccount("1150", "Tax Withheld Receivable", "ASSET", tx);
-        lines.push({ accountId: acctTax.id, debit: taxWithheld, credit: 0, memo: "Tax withheld by client" });
+        lines.push({ accountId: acctTax.id, debit: toBdt(taxWithheld, { exchangeRate: rate }), credit: 0, memo: "Tax withheld by client" });
       }
       await this.ledger.postGL(
         "MANUAL_INCOME",
@@ -1022,82 +1163,137 @@ export class InvoiceService {
     });
   }
 
+  /** Remove a manual income entry and reverse its bank + ledger effect. */
+  async deleteIncome(id: string, actorId?: string) {
+    const row = await this.prisma.manualIncome.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException("Income entry not found");
+    await this.prisma.$transaction(async (tx) => {
+      for (let guard = 0; guard < 5; guard++) {
+        const reversal = await this.ledger.reverseGL(id, actorId, tx, ["MANUAL_INCOME"]);
+        if (!reversal) break;
+      }
+      if (row.bankAccountId) {
+        const net = toBdt(Number(row.amount) - Number(row.taxWithheld ?? 0), row);
+        if (net > 0) await this.ledger.debitBankAccount(row.bankAccountId, net, tx);
+      }
+      await tx.manualIncome.delete({ where: { id } });
+      await logAudit(tx, "ManualIncome", id, "deleted", { amount: Number(row.amount) }, actorId);
+    }, { timeout: 15000 });
+    await invalidateFinance(this.cache);
+    return { ok: true };
+  }
+
 
   async createCreditNote(body: any, actorId?: string) {
+    const amount = Number(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException("Credit / refund amount must be greater than zero");
+    }
+    let invoice: any = null;
     if (body.invoiceId) {
-      const inv = await this.prisma.invoice
-        .findUnique({ where: { id: body.invoiceId }, select: { status: true, invoiceNumber: true, clientId: true } })
-        .catch(() => null);
-      if (!inv) throw new NotFoundException("Invoice not found");
-      if (["DRAFT", "CANCELLED", "VOID"].includes(inv.status)) {
-        throw new BadRequestException(`Invoice ${inv.invoiceNumber} is ${inv.status.toLowerCase()} — issue it before crediting or refunding.`);
+      invoice = await this.prisma.invoice.findUnique({
+        where: { id: body.invoiceId },
+        include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE },
+      });
+      if (!invoice) throw new NotFoundException("Invoice not found");
+      if (["DRAFT", "CANCELLED", "VOID"].includes(invoice.status)) {
+        throw new BadRequestException(`Invoice ${invoice.invoiceNumber} is ${invoice.status.toLowerCase()} — issue it before crediting or refunding.`);
       }
-      if (body.clientId && body.clientId !== inv.clientId) {
+      if (body.clientId && body.clientId !== invoice.clientId) {
         throw new BadRequestException("The credit note client must match the invoice client.");
       }
-      body = { ...body, clientId: inv.clientId };
+      body = { ...body, clientId: invoice.clientId };
     }
-    const referenceNumber = await this.ledger.nextCreditNoteNumber();
     const type = body.type ?? "CREDIT_NOTE";
-    const creditNote = await this.prisma.creditNote.create({
-      data: {
-        referenceNumber,
-        type,
-        clientId: body.clientId,
-        invoiceId: body.invoiceId ?? null,
-        amount: body.amount,
-        currency: body.currency ?? "BDT",
-        exchangeRate: body.exchangeRate ?? 1,
-        reason: body.reason,
-        date: body.date ? new Date(body.date) : new Date(),
-        status: "ISSUED",
-        createdById: actorId,
-      },
-    });
-    const [acctRevenue, acctAR, acctBank, acctBadDebt] = await Promise.all([this.ledger.accountByCode("4000"), this.ledger.accountByCode("1100"), this.ledger.accountByCode("1200"), this.ledger.accountByCode("6500")]);
-    if (type === "CREDIT_NOTE") {
-      await this.ledger.postGL("CREDIT_NOTE", referenceNumber, creditNote.date, creditNote.id, body.reason, [
-        { accountId: acctRevenue.id, debit: Number(body.amount), credit: 0 },
-        { accountId: acctAR.id, debit: 0, credit: Number(body.amount) },
-      ], actorId);
-      if (body.invoiceId) {
-        await this.recomputeInvoiceStatus(body.invoiceId);
-      } else {
-        await this.prisma.creditBalance.create({ data: { clientId: body.clientId, amount: Number(body.amount), currency: body.currency ?? "BDT", source: `Credit note ${referenceNumber}` } });
+    // Guardrails that stop a typo from inventing money: you can never refund
+    // more than was collected, and a credit note can never push an invoice
+    // below zero (which would turn a receivable into a phantom negative debt).
+    if (invoice && type === "REFUND") {
+      const t = invoiceTotals(invoice);
+      if (amount > t.paid + 0.001) {
+        throw new BadRequestException(
+          `Refund of ৳${amount.toLocaleString("en-US")} exceeds the ৳${t.paid.toLocaleString("en-US")} collected on ${invoice.invoiceNumber}.`
+        );
       }
-    } else if (type === "REFUND") {
-      const bankId = body.bankAccountId ?? (await this.ledger.defaultBankAccount());
-      const payment = await this.prisma.payment.create({
+    }
+    if (invoice && (type === "CREDIT_NOTE" || type === "WRITE_OFF")) {
+      const t = invoiceTotals(invoice);
+      if (amount > t.balance + 0.001) {
+        throw new BadRequestException(
+          `${type === "WRITE_OFF" ? "Write-off" : "Credit note"} of ৳${amount.toLocaleString("en-US")} exceeds the ৳${t.balance.toLocaleString("en-US")} outstanding on ${invoice.invoiceNumber}.`
+        );
+      }
+    }
+    const creditNote = await this.prisma.$transaction(async (tx) => {
+      const referenceNumber = await this.ledger.nextCreditNoteNumber(tx);
+      const created = await tx.creditNote.create({
         data: {
+          referenceNumber,
+          type,
+          clientId: body.clientId,
           invoiceId: body.invoiceId ?? null,
-          type: "REFUND",
-          amount: body.amount,
-          paymentMethod: body.paymentMethod ?? "BANK_TRANSFER",
-          referenceId: `RFN-${referenceNumber}`,
-          paymentDate: creditNote.date,
-          notes: body.reason,
-          recordedById: actorId,
+          amount,
+          currency: body.currency ?? invoice?.currency ?? "BDT",
+          exchangeRate: body.exchangeRate ?? invoice?.exchangeRate ?? 1,
+          reason: body.reason,
+          date: body.date ? new Date(body.date) : new Date(),
+          status: "ISSUED",
+          createdById: actorId,
         },
       });
-      if (bankId) {
-        await this.ledger.debitBankAccount(bankId, Number(body.amount));
-        await this.prisma.payment.update({ where: { id: payment.id }, data: { bankAccountId: bankId, balanceCredited: true } });
+      const [acctRevenue, acctAR, acctBank, acctBadDebt] = await Promise.all([
+        this.ledger.accountByCode("4000", tx),
+        this.ledger.accountByCode("1100", tx),
+        this.ledger.accountByCode("1200", tx),
+        this.ledger.accountByCode("6500", tx),
+      ]);
+      // Convert to BDT once, up front: the GL and the bank must agree.
+      const bdt = toBdt(amount, { exchangeRate: created.exchangeRate });
+      if (type === "CREDIT_NOTE") {
+        await this.ledger.postGL("CREDIT_NOTE", referenceNumber, created.date, created.id, body.reason, [
+          { accountId: acctRevenue.id, debit: bdt, credit: 0 },
+          { accountId: acctAR.id, debit: 0, credit: bdt },
+        ], actorId, tx);
+        if (!body.invoiceId) {
+          await tx.creditBalance.create({ data: { clientId: body.clientId, amount, currency: created.currency, source: `Credit note ${referenceNumber}` } });
+        }
+      } else if (type === "REFUND") {
+        const bankId = body.bankAccountId ?? (await this.ledger.defaultBankAccount(tx));
+        const payment = await tx.payment.create({
+          data: {
+            invoiceId: body.invoiceId ?? null,
+            type: "REFUND",
+            amount,
+            currency: created.currency,
+            exchangeRate: created.exchangeRate ?? 1,
+            paymentMethod: body.paymentMethod ?? "BANK_TRANSFER",
+            referenceId: `RFN-${referenceNumber}`,
+            paymentDate: created.date,
+            notes: body.reason,
+            recordedById: actorId,
+          },
+        });
+        if (bankId) {
+          await this.ledger.debitBankAccount(bankId, bdt, tx);
+          await tx.payment.update({ where: { id: payment.id }, data: { bankAccountId: bankId, balanceCredited: true } });
+        }
+        await tx.creditNote.update({ where: { id: created.id }, data: { refundPaymentId: payment.id } });
+        await this.ledger.postGL("REFUND", referenceNumber, created.date, created.id, body.reason, [
+          { accountId: acctAR.id, debit: bdt, credit: 0 },
+          { accountId: acctBank.id, debit: 0, credit: bdt },
+        ], actorId, tx);
+      } else {
+        // WRITE_OFF
+        await this.ledger.postGL("WRITE_OFF", referenceNumber, created.date, created.id, body.reason, [
+          { accountId: acctBadDebt.id, debit: bdt, credit: 0 },
+          { accountId: acctAR.id, debit: 0, credit: bdt },
+        ], actorId, tx);
       }
-      await this.prisma.creditNote.update({ where: { id: creditNote.id }, data: { refundPaymentId: payment.id } });
-      await this.ledger.postGL("REFUND", referenceNumber, creditNote.date, creditNote.id, body.reason, [
-        { accountId: acctAR.id, debit: Number(body.amount), credit: 0 },
-        { accountId: acctBank.id, debit: 0, credit: Number(body.amount) },
-      ], actorId);
-      if (body.invoiceId) await this.recomputeInvoiceStatus(body.invoiceId);
-    } else {
-      // WRITE_OFF
-      await this.ledger.postGL("WRITE_OFF", referenceNumber, creditNote.date, creditNote.id, body.reason, [
-        { accountId: acctBadDebt.id, debit: Number(body.amount), credit: 0 },
-        { accountId: acctAR.id, debit: 0, credit: Number(body.amount) },
-      ], actorId);
-      if (body.invoiceId) await this.recomputeInvoiceStatus(body.invoiceId);
-    }
-    await logAudit(this.prisma, "CreditNote", creditNote.id, "created", { type, amount: Number(body.amount), referenceNumber }, actorId);
+      await logAudit(tx, "CreditNote", created.id, "created", { type, amount, referenceNumber }, actorId);
+      return created;
+    }, { timeout: 15000 });
+    if (body.invoiceId) await this.recomputeInvoiceStatus(body.invoiceId);
+    await this.syncProjectBilling(invoice?.projectId ?? null);
     await invalidateFinance(this.cache);
     await this.refreshClientHealth(creditNote.clientId);
     return this.prisma.creditNote.findUnique({ where: { id: creditNote.id }, include: { client: { select: { companyName: true } }, invoice: { select: { invoiceNumber: true } } } });

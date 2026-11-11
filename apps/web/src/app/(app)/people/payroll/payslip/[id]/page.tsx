@@ -14,10 +14,10 @@ function Row({ label, value, sub, tone }: { label: string; value: string; sub?: 
   return (
     <div className="flex items-center justify-between py-2">
       <div>
-        <p className="text-[12.5px] font-medium">{label}</p>
-        {sub && <p className="text-[10.5px] text-muted-foreground">{sub}</p>}
+        <p className="text-body font-medium">{label}</p>
+        {sub && <p className="text-micro text-muted-foreground">{sub}</p>}
       </div>
-      <p className={`text-[13px] font-bold tabular-nums ${tone === "rose" ? "text-rose-500" : tone === "emerald" ? "text-emerald-600 dark:text-emerald-400" : ""}`}>{value}</p>
+      <p className={`text-body-lg font-bold tabular-nums ${tone === "rose" ? "text-rose-500" : tone === "emerald" ? "text-emerald-600 dark:text-emerald-400" : ""}`}>{value}</p>
     </div>
   );
 }
@@ -86,11 +86,11 @@ export default function PayslipPage() {
                 {brandingLogo ? (
                   <img src={brandingLogo} alt={brandingAppName} className="h-10 max-w-[140px] object-contain" />
                 ) : (
-                  <span className="flex size-10 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-md shadow-violet-500/25"><Building2 className="size-5" /></span>
+                  <span className="flex size-10 items-center justify-center rounded-xl bg-brand-gradient text-white shadow-md shadow-violet-500/25"><Building2 className="size-4" /></span>
                 )}
                 <div>
-                  <p className="font-heading text-[15px] font-bold">{brandingAppName}</p>
-                  <p className="text-[11px] text-muted-foreground">Salary slip — {r.period}</p>
+                  <p className="font-heading text-section font-bold">{brandingAppName}</p>
+                  <p className="text-meta text-muted-foreground">Salary slip — {r.period}</p>
                 </div>
               </div>
               <StatusBadge status={r.status} />
@@ -99,24 +99,24 @@ export default function PayslipPage() {
               <div className="flex items-center gap-3">
                 <Avatar name={data.employee?.name} />
                 <div>
-                  <p className="text-[14px] font-bold">{data.employee?.name}</p>
-                  <p className="text-[11.5px] text-muted-foreground">{data.employee?.roleTitle}{data.employee?.department ? ` · ${data.employee.department}` : ""}</p>
+                  <p className="text-body-lg font-bold">{data.employee?.name}</p>
+                  <p className="text-meta text-muted-foreground">{data.employee?.roleTitle}{data.employee?.department ? ` · ${data.employee.department}` : ""}</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Pay period</p>
-                <p className="text-[12.5px] font-semibold tabular-nums">{r.period}</p>
-                <p className="text-[10.5px] text-muted-foreground">Issued {formatDate(r.updatedAt ?? r.createdAt)}</p>
+                <p className="text-micro font-semibold uppercase tracking-wider text-muted-foreground">Pay period</p>
+                <p className="text-body font-semibold tabular-nums">{r.period}</p>
+                <p className="text-micro text-muted-foreground">Issued {formatDate(r.updatedAt ?? r.createdAt)}</p>
               </div>
             </div>
             <div className="p-5">
-              <p className="mb-2 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Earnings</p>
+              <p className="mb-2 text-micro font-bold uppercase tracking-wider text-muted-foreground">Earnings</p>
               <div className="divide-y divide-border/60">
                 <Row label="Basic salary" value={formatBDT(Number(r.basicSalary ?? 0))} sub={`daily rate ${formatBDT(Number(breakdown.dailyRate ?? 0))} × ${breakdown.divisor ?? "—"} (divisor)`} />
                 {Number(r.allowances ?? 0) > 0 && <Row label="Allowances" value={formatBDT(Number(r.allowances))} />}
                 {Number(r.bonus ?? 0) > 0 && <Row label="Bonus" value={formatBDT(Number(r.bonus))} tone="emerald" />}
               </div>
-              <p className="mb-2 mt-5 text-[10.5px] font-bold uppercase tracking-wider text-muted-foreground">Deductions</p>
+              <p className="mb-2 mt-5 text-micro font-bold uppercase tracking-wider text-muted-foreground">Deductions</p>
               <div className="divide-y divide-border/60">
                 <Row label="Late arrivals" value={`−${formatBDT(Number(r.lateDeduction ?? 0))}`} sub={`${breakdown.lateCount ?? 0} late day(s) in ${breakdown.workingDays ?? "—"} working days`} tone="rose" />
                 <Row label="Half-day LOP" value={`−${formatBDT(Number(r.halfDayDeduction ?? 0))}`} sub={`${breakdown.halfDays ?? 0} half day(s)`} tone="rose" />
@@ -124,14 +124,14 @@ export default function PayslipPage() {
                 <Row label="Unpaid leave" value={`−${formatBDT(Number(r.unpaidLeaveDeduction ?? 0))}`} tone="rose" />
               </div>
               <div className="mt-5 flex items-center justify-between rounded-xl bg-brand-gradient-soft px-4 py-3">
-                <p className="text-[12.5px] font-bold text-violet-800 dark:text-violet-200">Net pay</p>
-                <p className="text-[15px] font-extrabold tabular-nums text-violet-800 dark:text-violet-200">{formatBDT(Number(r.netPay ?? 0))}</p>
+                <p className="text-body font-bold text-violet-800 dark:text-violet-200">Net pay</p>
+                <p className="text-section font-extrabold tabular-nums text-violet-800 dark:text-violet-200">{formatBDT(Number(r.netPay ?? 0))}</p>
               </div>
               <div className="mt-6 flex items-end justify-between gap-4">
-                <p className="text-[10.5px] text-muted-foreground">Generated by Zoolyum OS payroll. Deductions follow the attendance policy (late ladder, half-day cutoff, daily rate divisor).</p>
+                <p className="text-micro text-muted-foreground">Generated by Zoolyum OS payroll. Deductions follow the attendance policy (late ladder, half-day cutoff, daily rate divisor).</p>
                 <div className="text-right">
                   <div className="w-40 border-b border-border" />
-                  <p className="mt-1 text-[10.5px] font-semibold text-muted-foreground">Authorized signature</p>
+                  <p className="mt-1 text-micro font-semibold text-muted-foreground">Authorized signature</p>
                 </div>
               </div>
             </div>

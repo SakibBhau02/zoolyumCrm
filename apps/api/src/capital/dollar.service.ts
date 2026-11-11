@@ -145,6 +145,19 @@ export class DollarService {
       const acctUsd = await this.ledger.ensureAccount("1250", "USD / FX Inventory", "ASSET", tx);
       const acctGain = await this.ledger.ensureAccount("4400", "FX Gain on Dollar Sales", "REVENUE", tx);
       const acctLoss = await this.ledger.ensureAccount("6600", "FX Loss on Dollar Sales", "OPEX", tx);
+      // You cannot sell USD you never bought. If the inventory account does not
+      // hold enough, book the acquisition first (against opening equity) so the
+      // balance sheet never shows a negative asset. The entry gets its own
+      // sourceId so deleting the sale does not reverse the opening position.
+      const inventory = await this.ledger.accountBalance(acctUsd.id, tx);
+      if (inventory < costBdt) {
+        const shortfall = Math.round((costBdt - inventory) * 100) / 100;
+        const acctEquity = await this.ledger.accountByCode("3000", tx);
+        await this.ledger.postGL("FX_OPENING", `${created.reference} / opening inventory`, date, `${created.id}:opening`, "USD inventory acquired", [
+          { accountId: acctUsd.id, debit: shortfall, credit: 0, memo: `${usd} USD inventory` },
+          { accountId: acctEquity.id, debit: 0, credit: shortfall, memo: "Opening capital" },
+        ], actorId, tx);
+      }
       const lines: { accountId: string; debit: number; credit: number; memo?: string }[] = [
         { accountId: acctBank.id, debit: bdt, credit: 0, memo: `${usd} USD sold @ ${effectiveRate}` },
         { accountId: acctUsd.id, debit: 0, credit: costBdt, memo: `${usd} USD @ cost ${costRate}` },
@@ -180,7 +193,10 @@ export class DollarService {
     if (!sale) throw new NotFoundException("Dollar sale not found");
 
     await this.prisma.$transaction(async (tx) => {
-      await this.ledger.reverseGL(id, actorId, tx);
+      // Reverse the sale journal AND any opening FX inventory entry created for
+      // it (those use `<id>:opening`), then undo the cash it brought in.
+      await this.ledger.reverseGL(id, actorId, tx, ["DOLLAR_SALE"]);
+      await this.ledger.reverseGL(`${id}:opening`, actorId, tx, ["FX_OPENING"]);
       if (sale.bankAccountId) await this.ledger.debitBankAccount(sale.bankAccountId, Number(sale.bdtAmount), tx);
       await tx.dollarSale.delete({ where: { id } });
       await logAudit(tx, "DollarSale", id, "deleted", { reference: sale.reference, bdt: Number(sale.bdtAmount) }, actorId);

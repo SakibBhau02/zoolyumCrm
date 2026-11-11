@@ -1,9 +1,12 @@
 export const DAYS = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
 export const dayShort: Record<string, string> = { SUNDAY: "Sun", MONDAY: "Mon", TUESDAY: "Tue", WEDNESDAY: "Wed", THURSDAY: "Thu", FRIDAY: "Fri", SATURDAY: "Sat" };
-export const LEAVE_TYPES = ["CASUAL", "SICK", "ANNUAL", "UNPAID"];
+export const LEAVE_TYPES = ["CASUAL", "SICK", "EARNED", "UNPAID"];
 export const ATT_STATUSES = ["PRESENT", "ABSENT", "LATE", "HALF_DAY"];
 export const EMPLOYMENT_TYPES = ["full-time", "part-time", "contract"];
-export const EMPLOYMENT_STATUSES = ["ACTIVE", "ON_LEAVE", "TERMINATED"];
+// Must match prisma enum EmploymentStatus: ACTIVE | ON_LEAVE | EXITED.
+// "TERMINATED" does not exist on the server (400) and omitting EXITED meant the
+// auto-offboarding flow could never be triggered from the profile form.
+export const EMPLOYMENT_STATUSES = ["ACTIVE", "ON_LEAVE", "EXITED"];
 export const COURSE_TYPES = ["mandatory", "optional"];
 export const CANDIDATE_STAGES = ["applied", "screening", "interview", "offer", "hired", "rejected"];
 export const label = (v: string) => v.replace(/_/g, " ").toLowerCase();

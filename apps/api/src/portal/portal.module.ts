@@ -17,10 +17,22 @@ import { TelegramModule } from "../telegram/telegram.module";
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.get<string>("JWT_SECRET") ?? "dev-secret",
-        signOptions: { expiresIn: "7d" as any },
-      }),
+      useFactory: (config: ConfigService) => {
+        const secret = config.get<string>("JWT_SECRET");
+        if (!secret) {
+          if (process.env.NODE_ENV === "production") {
+            throw new Error("JWT_SECRET is required in production");
+          }
+          return {
+            secret: "dev-secret",
+            signOptions: { expiresIn: (config.get<string>("PORTAL_JWT_EXPIRES_IN") ?? "7d") as any },
+          };
+        }
+        return {
+          secret,
+          signOptions: { expiresIn: (config.get<string>("PORTAL_JWT_EXPIRES_IN") ?? "7d") as any },
+        };
+      },
     }),
     NotificationsModule,
     TelegramModule,

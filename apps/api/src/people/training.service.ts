@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
@@ -13,13 +13,14 @@ export class TrainingService {
   }
 
   async createCourse(body: any) {
+    if (!body?.title?.trim()) throw new BadRequestException("title is required");
     return this.prisma.trainingCourse.create({
       data: {
-        title: body.title,
+        title: body.title.trim(),
         description: body.description ?? "",
         type: body.type ?? "optional",
         category: body.category ?? "technical",
-        duration: body.duration ?? 0,
+        duration: Number(body.duration) || 0,
         provider: body.provider ?? "",
         format: body.format ?? "online",
       },
@@ -27,8 +28,10 @@ export class TrainingService {
   }
 
   async deleteCourse(id: string) {
-    await this.prisma.trainingCourse.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException("Course not found");
+    await this.prisma.trainingCourse.delete({ where: { id } }).catch((err) => {
+      if (err?.code === "P2025") throw new NotFoundException("Course not found");
+      if (err?.code === "P2003") throw new BadRequestException("This course still has enrollments — remove them first");
+      throw err;
     });
     return { ok: true };
   }
@@ -44,6 +47,15 @@ export class TrainingService {
   }
 
   async createEnrollment(body: { courseId: string; employeeId: string; status?: string; progress?: number }) {
+    if (!body?.courseId || !body?.employeeId) throw new BadRequestException("courseId and employeeId are required");
+    const [course, employee] = await Promise.all([
+      this.prisma.trainingCourse.findUnique({ where: { id: body.courseId }, select: { id: true } }),
+      this.prisma.employee.findUnique({ where: { id: body.employeeId }, select: { id: true } }),
+    ]);
+    if (!course) throw new NotFoundException("Course not found");
+    if (!employee) throw new NotFoundException("Employee not found");
+    // Re-enrolling used to be a no-op (`update: {}`) so a second call silently
+    // changed nothing and the UI still looked "saved".
     return this.prisma.trainingEnrollment.upsert({
       where: { courseId_employeeId: { courseId: body.courseId, employeeId: body.employeeId } },
       create: {
@@ -52,7 +64,10 @@ export class TrainingService {
         status: body.status ?? "enrolled",
         progress: body.progress ?? 0,
       },
-      update: {},
+      update: {
+        ...(body.status !== undefined ? { status: body.status } : {}),
+        ...(body.progress !== undefined ? { progress: body.progress } : {}),
+      },
     });
   }
 

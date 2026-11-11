@@ -148,8 +148,11 @@ export async function buildPortalReportPdf(
   doc.setFont(font, "bold");
   doc.setFontSize(14);
   doc.setTextColor(...INK);
-  doc.text(report.title, M, y);
-  y += 6;
+  const titleLines = doc.splitTextToSize(String(report.title ?? ""), W).slice(0, 2);
+  titleLines.forEach((line: string, i: number) => {
+    doc.text(line, M, y + i * 5.8);
+  });
+  y += titleLines.length * 5.8 + 1;
   doc.setFont(font, "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...SLATE);
@@ -228,7 +231,8 @@ export async function buildPortalReportPdf(
     doc.setFont(font, "bold");
     doc.setFontSize(8);
     doc.setTextColor(...INK);
-    doc.text(`${i + 1}. ${titleOf(item)}`, M + 3, y + 4);
+    const itemTitle = doc.splitTextToSize(`${i + 1}. ${titleOf(item)}`, W - 42)[0] ?? "";
+    doc.text(itemTitle, M + 3, y + 4);
     doc.setFont(font, "normal");
     doc.setFontSize(7);
     doc.setTextColor(...FAINT);
@@ -261,7 +265,8 @@ export async function buildPortalReportPdf(
     doc.setFont(font, "normal");
     doc.setFontSize(8);
     doc.setTextColor(...INK);
-    doc.text(`${i + 1}. ${titleOf(item)}`, M + 3, y + 4);
+    const pendingTitle = doc.splitTextToSize(`${i + 1}. ${titleOf(item)}`, W - 30)[0] ?? "";
+    doc.text(pendingTitle, M + 3, y + 4);
     const st = statusOf(item);
     if (st) {
       doc.setFont(font, "bold");

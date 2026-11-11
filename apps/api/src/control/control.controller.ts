@@ -42,6 +42,33 @@ export class ControlController {
     return this.control.branding();
   }
 
+  /**
+   * Public display branding for the client portal / login pages. No auth, no
+   * invoice configuration, no payment details — only what a logo header needs.
+   */
+  @Public()
+  @Get("branding/public")
+  async publicBranding() {
+    const b: any = await this.control.branding();
+    if (!b) return null;
+    return {
+      appName: b.appName,
+      logoUrl: b.logoUrl,
+      logoDarkUrl: b.logoDarkUrl,
+      logoLightUrl: b.logoLightUrl,
+      primaryColor: b.primaryColor,
+      secondaryColor: b.secondaryColor,
+      tagline: b.tagline,
+      email: b.email,
+      phone: b.phone,
+      address: b.address,
+      city: b.city,
+      country: b.country,
+      website: b.website,
+      defaultCurrency: b.defaultCurrency,
+    };
+  }
+
   @Patch("branding")
   @Roles(...ADMIN)
   updateBranding(@Body() dto: UpdateBrandingDto, @CurrentUser("sub") actorId: string) {

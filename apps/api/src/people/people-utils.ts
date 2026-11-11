@@ -1,10 +1,36 @@
 import type { CacheService } from "../cache/cache.service";
+import { BadRequestException } from "@nestjs/common";
 
 // Day keys follow the app convention: DATE columns round-trip as UTC
 // midnight, so all day-level math uses UTC getters; punch time-of-day
 // (late detection) uses local getters (device wall time).
 export const dateStr = (d: Date) =>
   `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+
+export const PERIOD_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+export const DAY_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+
+/**
+ * Every month/period that reaches `dhakaDaysInMonth` / `monthRange` must pass
+ * through here. Before this, `?month=banana` produced `NaN` dates and a 500
+ * instead of a 400.
+ */
+export const assertPeriod = (period: unknown, field = "month"): string => {
+  const s = String(period ?? "").trim();
+  if (!PERIOD_RE.test(s)) throw new BadRequestException(`${field} is required in YYYY-MM format`);
+  return s;
+};
+
+export const assertDay = (day: unknown, field = "date"): string => {
+  const s = String(day ?? "").trim();
+  if (!DAY_RE.test(s)) throw new BadRequestException(`${field} is required in YYYY-MM-DD format`);
+  // `new Date("2026-02-31")` silently rolls over to March 3 — reject it instead.
+  const d = new Date(`${s}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime()) || dateStr(d) !== s) {
+    throw new BadRequestException(`${field} is not a real calendar date`);
+  }
+  return s;
+};
 
 export const monthRange = (period: string) => {
   const [y, m] = period.split("-").map(Number);
@@ -113,4 +139,5 @@ export const invalidatePeopleCache = async (cache: CacheService) => {
   await cache.del("people:overview");
   await cache.del("people:employees");
   await cache.del("people:employees:masked");
+  await cache.del("people:employees:minimal");
 };

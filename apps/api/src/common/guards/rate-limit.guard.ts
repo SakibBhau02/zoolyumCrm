@@ -63,7 +63,10 @@ export class RateLimitGuard implements CanActivate {
   }
 
   private clientIp(req: any): string {
-    const forwarded = String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim();
+    // Only honour a forwarded address when the app is actually behind a trusted
+    // proxy; otherwise any client can rotate X-Forwarded-For and bypass limits.
+    const trustProxy = process.env.TRUST_PROXY === "1" || process.env.TRUST_PROXY === "true";
+    const forwarded = trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim() : "";
     return (forwarded || req.ip || req.socket?.remoteAddress || "unknown").replace(/^::ffff:/, "");
   }
 }

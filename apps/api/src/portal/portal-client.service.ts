@@ -1,5 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import {
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { basename, join } from "path";
+import { randomUUID } from "crypto";
 import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
@@ -9,6 +17,7 @@ import { PortalAccessService, PortalScope } from "./portal-access.service";
 import { TelegramService } from "./telegram.service";
 import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
 import { invoiceTotals, isReceivable } from "../capital/finance-kernel";
+import { summariseDollarSales, toClientDollarView } from "../common/dollar-purchases";
 
 const ACTIVE_PROJECT_STATUSES = ["ACTIVE", "PLANNING"];
 const DONE_TASK_STATUSES = ["DONE"];
@@ -36,7 +45,9 @@ export class PortalClientService {
 
   private async invalidatePortal() {
     await this.cache.del("portal:comments");
+    await this.cache.delPattern("portal:comments:*");
     await this.cache.del("portal:approvals");
+    await this.cache.del("portal:approvals:v2");
     await this.cache.del("portal:activity");
   }
 
@@ -44,34 +55,53 @@ export class PortalClientService {
   async branding() {
     const b = await this.prisma.brandingConfig.findFirst();
     if (!b) return null;
-    const { id, updatedAt, ...rest } = b as any;
+    // Public-safe invoice branding: display identity + the fields the invoice /
+    // report PDFs actually print. Internal numbering config stays server-side.
+    const { id, updatedAt, invoiceNumberingFormat, ...rest } = b as any;
     return rest;
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, ip = "unknown") {
     const normalized = String(email ?? "").toLowerCase().trim();
 
-    // Brute-force guard: 8 failures per identifier per 15 minutes.
-    const attemptKey = `portal:login:fail:${normalized}`;
-    const failures = Number((await this.cache.get<number>(attemptKey)) ?? 0);
-    if (failures >= 8) {
-      throw new BadRequestException("Too many sign-in attempts. Please try again in a few minutes.");
+    // Two counters: a per-IP+identifier budget stops one host from guessing,
+    // while a higher per-identifier budget still slows a distributed attack.
+    // The old single per-email lock let anyone lock a known client out.
+    const ipKey = `portal:login:fail:${normalized}:${ip}`;
+    const emailKey = `portal:login:fail:${normalized}`;
+    const [ipFails, emailFails] = await Promise.all([
+      this.cache.get<number>(ipKey).catch(() => 0),
+      this.cache.get<number>(emailKey).catch(() => 0),
+    ]);
+    if (Number(ipFails ?? 0) >= 8 || Number(emailFails ?? 0) >= 30) {
+      throw new HttpException(
+        "Too many sign-in attempts. Please try again in a few minutes.",
+        HttpStatus.TOO_MANY_REQUESTS
+      );
     }
 
     const contact = await this.prisma.clientContact.findFirst({
-      where: { email: normalized, portalAccessEnabled: true },
+      // Emails are normalised on write; the insensitive match keeps legacy
+      // mixed-case rows working.
+      where: { email: { equals: normalized, mode: "insensitive" }, portalAccessEnabled: true },
       include: { portalUser: true, client: { select: { id: true, companyName: true } } },
     });
+    const noteFailure = async () => {
+      await Promise.all([
+        this.cache.set(ipKey, Number(ipFails ?? 0) + 1, 15 * 60),
+        this.cache.set(emailKey, Number(emailFails ?? 0) + 1, 15 * 60),
+      ]);
+    };
     if (!contact?.portalUser || !contact.portalUser.isActive) {
-      await this.cache.set(attemptKey, failures + 1, 15 * 60);
+      await noteFailure();
       throw new UnauthorizedException("Invalid portal credentials");
     }
     const valid = await bcrypt.compare(password, contact.portalUser.passwordHash);
     if (!valid) {
-      await this.cache.set(attemptKey, failures + 1, 15 * 60);
+      await noteFailure();
       throw new UnauthorizedException("Invalid portal credentials");
     }
-    await this.cache.del(attemptKey);
+    await Promise.all([this.cache.del(ipKey), this.cache.del(emailKey)]);
 
     await this.prisma.portalUser.update({
       where: { id: contact.portalUser.id },
@@ -88,6 +118,8 @@ export class PortalClientService {
         scope: "portal",
         clientId: contact.clientId,
         aud: "portal",
+        ver: contact.portalUser.tokenVersion,
+        jti: randomUUID(),
       }),
       portalUser: {
         id: contact.portalUser.id,
@@ -96,6 +128,53 @@ export class PortalClientService {
         clientId: contact.clientId,
         clientName: contact.client.companyName,
       },
+    };
+  }
+
+  /** Revokes the current session only (jti deny-list, shared through the cache). */
+  async logout(payload: { jti?: string; exp?: number }) {
+    if (payload?.jti) {
+      const ttl = payload.exp ? Math.max(1, payload.exp - Math.floor(Date.now() / 1000)) : 7 * 86400;
+      await this.cache.set(`revoked:portal:jti:${payload.jti}`, true, ttl);
+    }
+    return { ok: true };
+  }
+
+  /** Self-service password change. Rotates tokenVersion (other sessions die) and
+   * returns a fresh token so the current tab stays signed in. */
+  async changePassword(scope: PortalScope, currentPassword: string, newPassword: string) {
+    if (String(newPassword ?? "").length < 8) {
+      throw new BadRequestException("Password must be at least 8 characters");
+    }
+    if (newPassword === currentPassword) {
+      throw new BadRequestException("Choose a password you have not used here before");
+    }
+    const pu = await this.prisma.portalUser.findUnique({
+      where: { id: scope.portalUserId },
+      include: { clientContact: { select: { email: true } } },
+    });
+    if (!pu) throw new UnauthorizedException("Portal account not found");
+    const valid = await bcrypt.compare(currentPassword, pu.passwordHash);
+    if (!valid) throw new BadRequestException("Current password is incorrect");
+
+    const updated = await this.prisma.portalUser.update({
+      where: { id: pu.id },
+      data: { passwordHash: await bcrypt.hash(newPassword, 10), tokenVersion: { increment: 1 } },
+    });
+    await this.access.invalidate(pu.id);
+    await this.prisma.portalActivityLog.create({
+      data: { portalUserId: pu.id, action: "LOGGED_IN" },
+    });
+    return {
+      ok: true,
+      portalToken: await this.jwt.signAsync({
+        sub: pu.id,
+        scope: "portal",
+        clientId: scope.clientId,
+        aud: "portal",
+        ver: updated.tokenVersion,
+        jti: randomUUID(),
+      }),
     };
   }
 
@@ -109,6 +188,13 @@ export class PortalClientService {
       modules: scope.modules,
       canSeeAdSpend: scope.canSeeAdSpend,
       restrictedProjects: scope.projectIds,
+      permissions: {
+        work: scope.modules.includes("WORK"),
+        performance: scope.modules.includes("PERFORMANCE"),
+        messages: scope.modules.includes("MESSAGES"),
+        files: scope.modules.includes("FILES"),
+        billing: scope.modules.includes("BILLING"),
+      },
     };
   }
 
@@ -116,9 +202,10 @@ export class PortalClientService {
   /** Project-wise billing snapshot shared by the dashboard and invoices tab. */
   private buildBilling(invoices: any[], projects: any[]) {
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
+    // Billing months are reported in UTC everywhere (ads use UTC too) so a
+    // Dhaka midnight never splits "this month" between two numbers.
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
     const byProject = projects
       .map((p) => {
@@ -177,98 +264,121 @@ export class PortalClientService {
   }
 
   async overview(scope: PortalScope) {
-    this.access.requireModule(scope, "WORK");
+    const canWork = scope.modules.includes("WORK");
+    const canBill = scope.modules.includes("BILLING");
+    const canAds = scope.modules.includes("PERFORMANCE") && scope.canSeeAdSpend;
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 86400000);
     const weekAhead = new Date(now.getTime() + 7 * 86400000);
-    const monthStart = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const projectFilter = this.access.projectWhere(scope);
+    const needsProjects = canWork || canBill;
 
-    const [projects, visibleTasks, updates, invoices, adAccounts, adSpend] = await Promise.all([
-      this.prisma.project.findMany({
-        where: { clientId: scope.clientId, ...projectFilter },
-        select: {
-          id: true,
-          name: true,
-          status: true,
-          healthStatus: true,
-          progress: true,
-          startDate: true,
-          targetEndDate: true,
-          billingType: true,
-          budgetAmount: true,
-          amount: true,
-          monthlyRate: true,
-          nextBillingDate: true,
-          recurringInterval: true,
-          assignedPmId: true,
-          milestones: { where: { clientVisible: true }, select: { id: true, name: true, status: true, dueDate: true } },
-        },
-        orderBy: { createdAt: "desc" },
-      }),
-      this.prisma.task.findMany({
-        where: {
-          isClientVisible: true,
-          archivedAt: null,
-          project: { clientId: scope.clientId, ...projectFilter },
-        },
-        select: {
-          id: true,
-          title: true,
-          status: true,
-          priority: true,
-          dueDate: true,
-          completedAt: true,
-          projectId: true,
-          project: { select: { id: true, name: true } },
-        },
-        orderBy: [{ dueDate: "asc" }],
-        take: 500,
-      }),
-      this.prisma.projectReport.findMany({
-        where: { status: "SENT", project: { clientId: scope.clientId, ...projectFilter } },
-        select: {
-          id: true,
-          title: true,
-          periodStart: true,
-          periodEnd: true,
-          pmNotes: true,
-          sentAt: true,
-          project: { select: { id: true, name: true } },
-        },
-        orderBy: { periodEnd: "desc" },
-        take: 3,
-      }),
-      this.prisma.invoice.findMany({
-        where: {
-          clientId: scope.clientId,
-          status: { notIn: ["DRAFT", "VOID", "CANCELLED"] },
-          ...(scope.projectIds ? { projectId: { in: scope.projectIds } } : {}),
-        },
-        select: {
-          id: true,
-          invoiceNumber: true,
-          status: true,
-          projectId: true,
-          issueDate: true,
-          dueDate: true,
-          lineItems: { select: { amount: true } },
-          payments: { select: { amount: true, type: true } },
-          taxApplicable: true,
-          taxRate: true,
-          discountRate: true,
-          shippingFee: true,
-        },
-        orderBy: { issueDate: "desc" },
-        take: 200,
-      }),
-      scope.modules.includes("PERFORMANCE") && scope.canSeeAdSpend
+    const taskBase: any = {
+      isClientVisible: true,
+      archivedAt: null,
+      project: { clientId: scope.clientId, ...projectFilter },
+    };
+
+    const [
+      projects,
+      statusGroups,
+      projectStatusGroups,
+      updates,
+      invoices,
+      adAccounts,
+      adSpend,
+      completedThisWeek,
+      dueSoon,
+      overdue,
+    ] = await Promise.all([
+      needsProjects
+        ? this.prisma.project.findMany({
+            where: { clientId: scope.clientId, ...projectFilter },
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              healthStatus: true,
+              progress: true,
+              startDate: true,
+              targetEndDate: true,
+              billingType: true,
+              budgetAmount: true,
+              amount: true,
+              monthlyRate: true,
+              nextBillingDate: true,
+              recurringInterval: true,
+              assignedPmId: true,
+              milestones: {
+                where: { clientVisible: true },
+                select: { id: true, name: true, status: true, dueDate: true },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          })
+        : Promise.resolve([] as any[]),
+      canWork
+        ? this.prisma.task.groupBy({
+            by: ["status"],
+            where: taskBase,
+            _count: true,
+          })
+        : Promise.resolve([] as any[]),
+      canWork
+        ? this.prisma.task.groupBy({
+            by: ["projectId", "status"],
+            where: taskBase,
+            _count: true,
+          })
+        : Promise.resolve([] as any[]),
+      canWork
+        ? this.prisma.projectReport.findMany({
+            where: { status: "SENT", project: { clientId: scope.clientId, ...projectFilter } },
+            select: {
+              id: true,
+              title: true,
+              periodStart: true,
+              periodEnd: true,
+              pmNotes: true,
+              sentAt: true,
+              project: { select: { id: true, name: true } },
+            },
+            orderBy: { periodEnd: "desc" },
+            take: 3,
+          })
+        : Promise.resolve([] as any[]),
+      canBill
+        ? this.prisma.invoice.findMany({
+            where: {
+              clientId: scope.clientId,
+              status: { notIn: ["DRAFT", "VOID", "CANCELLED"] },
+              ...(scope.projectIds ? { projectId: { in: scope.projectIds } } : {}),
+            },
+            select: {
+              id: true,
+              invoiceNumber: true,
+              status: true,
+              projectId: true,
+              issueDate: true,
+              dueDate: true,
+              lineItems: { select: { amount: true } },
+              payments: { select: { amount: true, type: true } },
+              taxApplicable: true,
+              taxRate: true,
+              discountRate: true,
+              shippingFee: true,
+            },
+            orderBy: { issueDate: "desc" },
+          })
+        : Promise.resolve([] as any[]),
+      canAds
         ? this.prisma.adAccount.findMany({
             where: { clientId: scope.clientId },
             select: { id: true, lastSyncAt: true },
           })
-        : Promise.resolve([]),
-      scope.modules.includes("PERFORMANCE") && scope.canSeeAdSpend
+        : Promise.resolve([] as any[]),
+      canAds
         ? this.prisma.adInsight.aggregate({
             where: {
               clientId: scope.clientId,
@@ -280,27 +390,67 @@ export class PortalClientService {
             _count: true,
           })
         : Promise.resolve(null),
+      canWork
+        ? this.prisma.task.count({
+            where: {
+              ...taskBase,
+              status: "DONE",
+              OR: [
+                { completedAt: { gte: weekAgo } },
+                { completedAt: null, dueDate: { gte: weekAgo } },
+              ],
+            },
+          })
+        : Promise.resolve(0),
+      canWork
+        ? this.prisma.task.count({
+            where: { ...taskBase, dueDate: { gte: now, lte: weekAhead }, status: { not: "DONE" } },
+          })
+        : Promise.resolve(0),
+      canWork
+        ? this.prisma.task.count({
+            where: { ...taskBase, dueDate: { lt: now }, status: { not: "DONE" } },
+          })
+        : Promise.resolve(0),
     ]);
+
+    const statusCounts: Record<string, number> = {};
+    for (const g of statusGroups as { status: string; _count: number }[]) {
+      statusCounts[g.status] = g._count;
+    }
+    const taskTotal = Object.values(statusCounts).reduce((s, n) => s + n, 0);
+
+    const byProject = new Map<string, Record<string, number>>();
+    for (const g of projectStatusGroups as { projectId: string; status: string; _count: number }[]) {
+      const row = byProject.get(g.projectId) ?? {};
+      row[g.status] = g._count;
+      byProject.set(g.projectId, row);
+    }
 
     const active = projects.filter((p) => ACTIVE_PROJECT_STATUSES.includes(p.status));
     const doneStatuses = new Set(DONE_TASK_STATUSES);
-    const lastSyncedAt = adAccounts
-      .map((a) => a.lastSyncAt)
-      .filter((d): d is Date => !!d)
-      .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+    const lastSyncedAt =
+      adAccounts
+        .map((a) => a.lastSyncAt)
+        .filter((d): d is Date => !!d)
+        .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
 
     const pmIds = Array.from(new Set(projects.map((p) => p.assignedPmId).filter(Boolean))) as string[];
-    const [accountOwner, pms] = await Promise.all([
-      this.prisma.client.findUnique({
-        where: { id: scope.clientId },
-        select: {
-          accountOwner: { select: { id: true, name: true, email: true, employee: { select: { phone: true } } } },
-        },
-      }),
-      pmIds.length
-        ? this.prisma.user.findMany({ where: { id: { in: pmIds } }, select: { id: true, name: true } })
-        : Promise.resolve([]),
-    ]);
+    const [accountOwner, pms] = canWork
+      ? await Promise.all([
+          this.prisma.client.findUnique({
+            where: { id: scope.clientId },
+            select: {
+              accountOwner: {
+                select: { id: true, name: true, email: true, employee: { select: { phone: true } } },
+              },
+            },
+          }),
+          pmIds.length
+            ? this.prisma.user.findMany({ where: { id: { in: pmIds } }, select: { id: true, name: true } })
+            : Promise.resolve([] as any[]),
+        ])
+      : [null, []];
     const teamMap = new Map<string, { id: string; name: string; email: string | null; phone: string | null; role: string }>();
     if (accountOwner?.accountOwner) {
       const am = accountOwner.accountOwner;
@@ -324,26 +474,33 @@ export class PortalClientService {
     }
     const team = Array.from(teamMap.values());
 
-    const sumLines = (i: any) => invoiceTotals(i).grand;
-    const paidOf = (i: any) => invoiceTotals(i).paid;
-    const pending = invoices.filter((i) => isReceivable(i.status) && invoiceTotals(i).balance > 0);
-    const billingBreakdown = this.buildBilling(invoices, projects);
+    const pending = canBill
+      ? invoices.filter((i) => isReceivable(i.status) && invoiceTotals(i).balance > 0)
+      : [];
+    const billingBreakdown = this.buildBilling(canBill ? invoices : [], canBill ? projects : []);
+
+    // FX purchases (Dollar Desk) — shown to the client as part of billing.
+    const dollarRows = canBill
+      ? await this.prisma.dollarSale.findMany({ where: { clientId: scope.clientId }, orderBy: [{ date: "desc" }, { createdAt: "desc" }] })
+      : [];
+    const dollarPurchases = toClientDollarView(summariseDollarSales(dollarRows));
 
     // Per-project progress prefers client-visible milestones, then visible tasks,
     // and only falls back to the stored project percentage.
-    const projectCards = projects.map((p) => {
-      const tasks = visibleTasks.filter((t) => t.projectId === p.id);
-      const done = tasks.filter((t) => doneStatuses.has(t.status)).length;
+    const projectCards = (canWork ? projects : []).map((p) => {
+      const counts = byProject.get(p.id) ?? {};
+      const total = Object.keys(counts).reduce((s, k) => s + (counts[k] ?? 0), 0);
+      const done = counts["DONE"] ?? 0;
       let progress = Number(p.progress ?? 0);
       if (p.milestones.length) {
-        progress = Math.round((p.milestones.filter((m) => m.status === "COMPLETED").length / p.milestones.length) * 100);
-      } else if (tasks.length) {
-        progress = Math.round((done / tasks.length) * 100);
+        progress = Math.round((p.milestones.filter((m: any) => m.status === "COMPLETED").length / p.milestones.length) * 100);
+      } else if (total) {
+        progress = Math.round((done / total) * 100);
       }
       const nextMilestone =
         p.milestones
-          .filter((m) => m.status !== "COMPLETED" && m.dueDate)
-          .sort((a, b) => +new Date(a.dueDate!) - +new Date(b.dueDate!))[0] ?? null;
+          .filter((m: any) => m.status !== "COMPLETED" && m.dueDate)
+          .sort((a: any, b: any) => +new Date(a.dueDate!) - +new Date(b.dueDate!))[0] ?? null;
       return {
         id: p.id,
         name: p.name,
@@ -351,7 +508,7 @@ export class PortalClientService {
         healthStatus: p.healthStatus,
         billingType: p.billingType,
         progress: Math.max(0, Math.min(100, progress)),
-        taskCount: tasks.length,
+        taskCount: total,
         tasksDone: done,
         nextMilestone: nextMilestone ? { name: nextMilestone.name, dueDate: nextMilestone.dueDate } : null,
         targetEndDate: p.targetEndDate,
@@ -359,49 +516,42 @@ export class PortalClientService {
     });
 
     const thisWeek = {
-      // completedAt is not always recorded (bulk imports); fall back to dueDate.
-      completed: visibleTasks.filter((t) => {
-        if (!doneStatuses.has(t.status)) return false;
-        const at = t.completedAt ?? t.dueDate;
-        return !!at && new Date(at) >= weekAgo;
-      }).length,
-      inProgress: visibleTasks.filter((t) => t.status === "IN_PROGRESS").length,
-      inReview: visibleTasks.filter((t) => t.status === "REVIEW").length,
-      blocked: visibleTasks.filter((t) => t.status === "BLOCKED" || (t as any).isBlocked).length,
-      dueSoon: visibleTasks.filter(
-        (t) => t.dueDate && new Date(t.dueDate) >= now && new Date(t.dueDate) <= weekAhead && !doneStatuses.has(t.status)
-      ).length,
-      overdue: visibleTasks.filter(
-        (t) => t.dueDate && new Date(t.dueDate) < now && !doneStatuses.has(t.status)
-      ).length,
+      completed: completedThisWeek,
+      inProgress: statusCounts["IN_PROGRESS"] ?? 0,
+      inReview: statusCounts["REVIEW"] ?? 0,
+      blocked: statusCounts["BLOCKED"] ?? 0,
+      dueSoon,
+      overdue,
     };
 
-    const totalInvoiced = invoices.reduce((s, i) => s + sumLines(i), 0);
-    const totalCollected = invoices.reduce((s, i) => s + paidOf(i), 0);
-    const nextMilestone =
-      active
-        .flatMap((p) =>
-          p.milestones
-            .filter((m) => m.status !== "COMPLETED" && m.dueDate)
-            .map((m) => ({ name: m.name, dueDate: m.dueDate!, projectName: p.name }))
-        )
-        .sort((a, b) => +new Date(a.dueDate) - +new Date(b.dueDate))[0] ?? null;
+    const totalInvoiced = canBill ? invoices.reduce((s, i) => s + invoiceTotals(i).grand, 0) : 0;
+    const totalCollected = canBill ? invoices.reduce((s, i) => s + invoiceTotals(i).paid, 0) : 0;
+    const nextMilestone = canWork
+      ? active
+          .flatMap((p) =>
+            p.milestones
+              .filter((m: any) => m.status !== "COMPLETED" && m.dueDate)
+              .map((m: any) => ({ name: m.name, dueDate: m.dueDate!, projectName: p.name }))
+          )
+          .sort((a, b) => +new Date(a.dueDate) - +new Date(b.dueDate))[0] ?? null
+      : null;
 
     return {
       clientName: scope.clientName,
       contactName: firstName(scope.contactName),
+      permissions: { work: canWork, billing: canBill, ads: canAds, files: scope.modules.includes("FILES") },
       generatedAt: now,
       activeProjectCount: active.length,
-      projectCount: projects.length,
+      projectCount: needsProjects ? projects.length : 0,
       team,
       nextMilestone,
       taskStats: {
-        total: visibleTasks.length,
-        done: visibleTasks.filter((t) => doneStatuses.has(t.status)).length,
-        inProgress: visibleTasks.filter((t) => t.status === "IN_PROGRESS").length,
-        todo: visibleTasks.filter((t) => t.status === "TODO").length,
-        review: visibleTasks.filter((t) => t.status === "REVIEW").length,
-        blocked: visibleTasks.filter((t) => t.status === "BLOCKED").length,
+        total: taskTotal,
+        done: statusCounts["DONE"] ?? 0,
+        inProgress: statusCounts["IN_PROGRESS"] ?? 0,
+        todo: statusCounts["TODO"] ?? 0,
+        review: statusCounts["REVIEW"] ?? 0,
+        blocked: statusCounts["BLOCKED"] ?? 0,
       },
       thisWeek,
       projects: projectCards,
@@ -429,20 +579,31 @@ export class PortalClientService {
         totalCollected: money(totalCollected),
         pendingInvoiceCount: pending.length,
         pendingInvoiceValue: money(pending.reduce((s, i) => s + invoiceTotals(i).balance, 0)),
-        totalOutstanding: money(invoices.reduce((s, i) => s + (isReceivable(i.status) ? invoiceTotals(i).balance : 0), 0)),
+        totalOutstanding: money(
+          canBill ? invoices.reduce((s, i) => s + (isReceivable(i.status) ? invoiceTotals(i).balance : 0), 0) : 0
+        ),
         overdueAmount: billingBreakdown.totalOverdue,
         totalMonthlyDue: billingBreakdown.totalMonthlyDue,
         byProject: billingBreakdown.byProject,
       },
-      recentInvoices: invoices.slice(0, 5).map((i) => ({
-        id: i.id,
-        invoiceNumber: i.invoiceNumber,
-        amount: money(invoiceTotals(i).grand),
-        paid: money(paidOf(i)),
-        status: i.status,
-        issueDate: i.issueDate,
-        dueDate: i.dueDate,
-      })),
+      dollarPurchases: {
+        count: dollarPurchases.summary.count,
+        totalUsd: dollarPurchases.summary.totalUsd,
+        totalBdt: dollarPurchases.summary.totalBdt,
+        averageRate: dollarPurchases.summary.averageRate,
+        lastPurchaseDate: dollarPurchases.summary.lastPurchaseDate,
+      },
+      recentInvoices: canBill
+        ? invoices.slice(0, 5).map((i) => ({
+            id: i.id,
+            invoiceNumber: i.invoiceNumber,
+            amount: money(invoiceTotals(i).grand),
+            paid: money(invoiceTotals(i).paid),
+            status: i.status,
+            issueDate: i.issueDate,
+            dueDate: i.dueDate,
+          }))
+        : [],
       ads: adSpend && adAccounts.length > 0
         ? {
             available: true,
@@ -464,8 +625,8 @@ export class PortalClientService {
       status?: string;
       q?: string;
       due?: "week" | "overdue" | "all";
-      page?: string;
-      pageSize?: string;
+      page?: string | number;
+      pageSize?: string | number;
     }
   ) {
     this.access.requireModule(scope, "WORK");
@@ -554,21 +715,79 @@ export class PortalClientService {
     };
   }
 
+  private fileDto(f: any) {
+    const raw = String(f.fileUrl ?? "");
+    const display = f.fileName || basename(raw.split("?")[0]) || "File";
+    return {
+      id: f.id,
+      projectId: f.projectId,
+      milestoneId: f.milestoneId ?? null,
+      fileName: display,
+      size: f.size ?? null,
+      mimeType: f.mimeType ?? null,
+      versionNumber: f.versionNumber ?? 1,
+      uploadedAt: f.uploadedAt,
+      approvalStatus: f.approvalStatus,
+    };
+  }
+
+  private deliverableDto(d: any) {
+    return {
+      id: d.id,
+      title: d.title,
+      description: d.description,
+      status: d.status,
+      completedAt: d.completedAt,
+      sortOrder: d.sortOrder,
+    };
+  }
+
   async projects(scope: PortalScope) {
     this.access.requireModule(scope, "WORK");
+    const canFiles = scope.modules.includes("FILES");
     const projects = await this.prisma.project.findMany({
       where: { clientId: scope.clientId, ...this.access.projectWhere(scope) },
-      include: {
-        milestones: { where: { clientVisible: true }, orderBy: { dueDate: "asc" } },
-        files: { orderBy: { uploadedAt: "desc" } },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        healthStatus: true,
+        progress: true,
+        billingType: true,
+        startDate: true,
+        targetEndDate: true,
+        description: true,
         assignedPm: { select: { id: true, name: true, email: true, employee: { select: { phone: true } } } },
-        deliverables: { orderBy: { sortOrder: "asc" } },
-        client: {
+        milestones: {
+          where: { clientVisible: true },
+          select: { id: true, name: true, status: true, dueDate: true },
+          orderBy: { dueDate: "asc" },
+        },
+        files: {
           select: {
-            accountOwner: {
-              select: { id: true, name: true, email: true, employee: { select: { phone: true } } },
-            },
+            id: true,
+            projectId: true,
+            milestoneId: true,
+            fileUrl: true,
+            fileName: true,
+            size: true,
+            mimeType: true,
+            versionNumber: true,
+            uploadedAt: true,
+            approvalStatus: true,
           },
+          orderBy: { uploadedAt: "desc" },
+        },
+        deliverables: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            completedAt: true,
+            sortOrder: true,
+          },
+          orderBy: { sortOrder: "asc" },
         },
         tasks: {
           where: { isClientVisible: true, archivedAt: null },
@@ -583,6 +802,13 @@ export class PortalClientService {
           },
           orderBy: [{ status: "asc" }, { dueDate: "asc" }],
         },
+        client: {
+          select: {
+            accountOwner: {
+              select: { id: true, name: true, email: true, employee: { select: { phone: true } } },
+            },
+          },
+        },
         _count: { select: { comments: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -592,15 +818,25 @@ export class PortalClientService {
       const done = p.tasks.filter((t) => t.status === "DONE").length;
       let progress = Number(p.progress ?? 0);
       if (p.milestones.length) {
-        progress = Math.round((p.milestones.filter((m) => m.status === "COMPLETED").length / p.milestones.length) * 100);
+        progress = Math.round((p.milestones.filter((m: any) => m.status === "COMPLETED").length / p.milestones.length) * 100);
       } else if (p.tasks.length) {
         progress = Math.round((done / p.tasks.length) * 100);
       }
       return {
-        ...p,
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        status: p.status,
+        healthStatus: p.healthStatus,
+        billingType: p.billingType,
+        startDate: p.startDate,
+        targetEndDate: p.targetEndDate,
         progress: Math.max(0, Math.min(100, progress)),
         tasksDone: done,
         tasksTotal: p.tasks.length,
+        milestones: p.milestones,
+        files: canFiles ? p.files.map((f) => this.fileDto(f)) : [],
+        deliverables: canFiles ? p.deliverables.map((d) => this.deliverableDto(d)) : [],
         tasks: p.tasks.map((t) => ({
           ...t,
           assignedTo: t.assignedTo ? { id: t.assignedTo.id, name: firstName(t.assignedTo.name) } : null,
@@ -624,6 +860,7 @@ export class PortalClientService {
               },
             }
           : { accountOwner: null },
+        _count: { tasks: p.tasks.length, comments: p._count.comments },
       };
     });
   }
@@ -631,14 +868,61 @@ export class PortalClientService {
   async projectDetail(scope: PortalScope, projectId: string) {
     this.access.requireModule(scope, "WORK");
     await this.access.assertProjectOwned(scope, projectId);
+    const canFiles = scope.modules.includes("FILES");
 
     const project = await this.prisma.project.findFirst({
       where: { id: projectId, clientId: scope.clientId },
-      include: {
-        milestones: { where: { clientVisible: true }, orderBy: { dueDate: "asc" } },
-        deliverables: { orderBy: { sortOrder: "asc" } },
-        files: { orderBy: { uploadedAt: "desc" } },
-        assignedPm: { select: { id: true, name: true } },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        status: true,
+        healthStatus: true,
+        billingType: true,
+        startDate: true,
+        targetEndDate: true,
+        progress: true,
+        milestones: {
+          where: { clientVisible: true },
+          select: { id: true, name: true, status: true, dueDate: true },
+          orderBy: { dueDate: "asc" },
+        },
+        deliverables: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            completedAt: true,
+            sortOrder: true,
+          },
+          orderBy: { sortOrder: "asc" },
+        },
+        files: {
+          select: {
+            id: true,
+            projectId: true,
+            milestoneId: true,
+            fileUrl: true,
+            fileName: true,
+            size: true,
+            mimeType: true,
+            versionNumber: true,
+            uploadedAt: true,
+            approvalStatus: true,
+          },
+          orderBy: { uploadedAt: "desc" },
+        },
+        assignedPm: {
+          select: { id: true, name: true, email: true, employee: { select: { phone: true } } },
+        },
+        client: {
+          select: {
+            accountOwner: {
+              select: { id: true, name: true, email: true, employee: { select: { phone: true } } },
+            },
+          },
+        },
         tasks: {
           where: { isClientVisible: true, archivedAt: null },
           select: {
@@ -676,7 +960,7 @@ export class PortalClientService {
     const done = project.tasks.filter((t) => t.status === "DONE").length;
     let progress = Number(project.progress ?? 0);
     if (project.milestones.length) {
-      progress = Math.round((project.milestones.filter((m) => m.status === "COMPLETED").length / project.milestones.length) * 100);
+      progress = Math.round((project.milestones.filter((m: any) => m.status === "COMPLETED").length / project.milestones.length) * 100);
     } else if (project.tasks.length) {
       progress = Math.round((done / project.tasks.length) * 100);
     }
@@ -694,11 +978,27 @@ export class PortalClientService {
       tasksDone: done,
       tasksTotal: project.tasks.length,
       assignedPm: project.assignedPm
-        ? { id: project.assignedPm.id, name: firstName(project.assignedPm.name), role: "Project Manager" }
+        ? {
+            id: project.assignedPm.id,
+            name: firstName(project.assignedPm.name),
+            email: project.assignedPm.email,
+            employee: project.assignedPm.employee,
+            role: "Project Manager",
+          }
         : null,
+      client: project.client?.accountOwner
+        ? {
+            accountOwner: {
+              id: project.client.accountOwner.id,
+              name: firstName(project.client.accountOwner.name),
+              email: project.client.accountOwner.email,
+              employee: project.client.accountOwner.employee,
+            },
+          }
+        : { accountOwner: null },
       milestones: project.milestones,
-      deliverables: project.deliverables,
-      files: project.files,
+      deliverables: canFiles ? project.deliverables.map((d) => this.deliverableDto(d)) : [],
+      files: canFiles ? project.files.map((f) => this.fileDto(f)) : [],
       tasks: project.tasks.map((t) => ({
         ...t,
         assignedTo: t.assignedTo ? { name: firstName(t.assignedTo.name) } : null,
@@ -764,6 +1064,14 @@ export class PortalClientService {
       },
     });
     if (!r) throw new NotFoundException("Report not found");
+    await this.prisma.portalActivityLog.create({
+      data: {
+        portalUserId: scope.portalUserId,
+        action: "VIEWED_REPORT",
+        relatedEntityType: "ProjectReport",
+        relatedEntityId: r.id,
+      },
+    });
     return {
       id: r.id,
       title: r.title,
@@ -773,7 +1081,9 @@ export class PortalClientService {
       completed: r.completed,
       pending: r.pending,
       note: r.pmNotes,
-      billing: r.billing,
+      // A report can carry an invoiced/collected snapshot; only expose it when
+      // the contact is actually allowed to see billing.
+      billing: scope.modules.includes("BILLING") ? r.billing : null,
       sentAt: r.sentAt,
     };
   }
@@ -795,7 +1105,11 @@ export class PortalClientService {
         client: {
           select: {
             companyName: true,
-            contacts: { select: { name: true, email: true, phone: true, roleTitle: true }, take: 3 },
+            contacts: {
+              where: { isPrimary: true },
+              select: { name: true, email: true, phone: true, roleTitle: true },
+              take: 1,
+            },
           },
         },
       },
@@ -822,6 +1136,15 @@ export class PortalClientService {
     });
     const billingBreakdown = this.buildBilling(invoices, projects);
 
+    // Dollar Desk purchases are part of the client's billing picture: the BDT
+    // they paid for USD is money that left their account. Client-facing view,
+    // so the agency's cost rate / margin are intentionally excluded.
+    const dollarRows = await this.prisma.dollarSale.findMany({
+      where: { clientId: scope.clientId },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    });
+    const dollarPurchases = toClientDollarView(summariseDollarSales(dollarRows));
+
     return {
       summary: {
         totalInvoiced: money(totalInvoiced),
@@ -831,6 +1154,7 @@ export class PortalClientService {
         totalMonthlyDue: billingBreakdown.totalMonthlyDue,
       },
       byProject: billingBreakdown.byProject,
+      dollarPurchases,
       invoices: invoices.map((i) => ({
         id: i.id,
         invoiceNumber: i.invoiceNumber,
@@ -869,10 +1193,11 @@ export class PortalClientService {
             return {
               id: p.id,
               amount: Number(p.amount),
+              type: p.type,
               paymentMethod: p.paymentMethod,
               referenceId: p.referenceId,
               serial,
-              receiptNo: p.referenceId ?? `${i.invoiceNumber}-P${serial}`,
+              receiptNo: p.type === "REFUND" ? `REFUND-${p.referenceId ?? serial}` : p.referenceId ?? `${i.invoiceNumber}-P${serial}`,
               paymentDate: p.paymentDate,
             };
           });
@@ -904,25 +1229,34 @@ export class PortalClientService {
   }
 
   // ── Messaging (project thread or "general") ─────────────────────────────
-  async messages(scope: PortalScope, threadKey?: string) {
+  async messages(scope: PortalScope, threadKey?: string, opts?: { before?: string; limit?: number }) {
     this.access.requireModule(scope, "MESSAGES");
     const key = threadKey?.trim() || "general";
     if (key !== "general") await this.access.assertProjectOwned(scope, key);
 
+    const before = opts?.before ? new Date(opts.before) : null;
+    const validBefore = before && !Number.isNaN(before.getTime()) ? before : null;
+    const take = Math.min(100, Math.max(1, Number(opts?.limit) || 50));
+
     const rows = await this.prisma.clientComment.findMany({
-      where:
-        key === "general"
+      where: {
+        ...(key === "general"
           ? { threadKey: key, clientId: scope.clientId }
-          : { threadKey: key, project: { clientId: scope.clientId } },
+          : { threadKey: key, project: { clientId: scope.clientId } }),
+        ...(validBefore ? { createdAt: { lt: validBefore } } : {}),
+      },
       include: {
         project: { select: { id: true, name: true } },
         author: { select: { id: true, name: true } },
         portalUser: { select: { clientContact: { select: { name: true } } } },
       },
-      orderBy: { createdAt: "asc" },
-      take: 300,
+      // Newest page first, then reversed for the conversation view. The old
+      // ascending + take(300) hid every new reply once a thread grew past 300.
+      orderBy: { createdAt: "desc" },
+      take,
     });
-    return rows.map((c) => ({
+
+    return rows.reverse().map((c) => ({
       id: c.id,
       content: c.content,
       parentId: c.parentId,
@@ -939,6 +1273,33 @@ export class PortalClientService {
     }));
   }
 
+  /** Every file shared with this contact (the FILES tab). */
+  async files(scope: PortalScope) {
+    this.access.requireModule(scope, "FILES");
+    const files = await this.prisma.projectFile.findMany({
+      where: { project: { clientId: scope.clientId, ...this.access.projectWhere(scope) } },
+      select: {
+        id: true,
+        projectId: true,
+        milestoneId: true,
+        fileUrl: true,
+        fileName: true,
+        size: true,
+        mimeType: true,
+        versionNumber: true,
+        uploadedAt: true,
+        approvalStatus: true,
+        project: { select: { id: true, name: true } },
+      },
+      orderBy: { uploadedAt: "desc" },
+      take: 500,
+    });
+    return files.map((f) => ({
+      ...this.fileDto(f),
+      project: f.project ? { id: f.project.id, name: f.project.name } : null,
+    }));
+  }
+
   async threads(scope: PortalScope) {
     this.access.requireModule(scope, "MESSAGES");
     const projects = await this.prisma.project.findMany({
@@ -946,11 +1307,15 @@ export class PortalClientService {
       select: { id: true, name: true },
       orderBy: { createdAt: "desc" },
     });
-    const keys = ["general", ...projects.map((p) => p.id)];
-    const [counts, reads] = await Promise.all([
-      this.prisma.clientComment.groupBy({
+    const [counts, reads] = await Promise.all([      this.prisma.clientComment.groupBy({
         by: ["threadKey"],
-        where: { threadKey: { in: keys } },
+        where: {
+          // "general" is a per-client conversation, not one global thread.
+          OR: [
+            { threadKey: "general", clientId: scope.clientId },
+            { threadKey: { in: projects.map((p) => p.id) } },
+          ],
+        },
         _count: true,
         _max: { createdAt: true },
       }),
@@ -1077,12 +1442,34 @@ export class PortalClientService {
     if (!file || file.project.clientId !== scope.clientId) throw new NotFoundException("File not found");
     this.access.assertProjectId(scope, file.project.id);
 
-    const approval = await this.prisma.deliverableApproval.create({
-      data: { projectFileId: fileId, portalUserId: scope.portalUserId, decision, revisionNotes },
+    const notes = String(revisionNotes ?? "").trim();
+    if (decision === "REVISION_REQUESTED" && !notes) {
+      throw new BadRequestException("Please describe what should be revised");
+    }
+
+    const existing = await this.prisma.deliverableApproval.findUnique({
+      where: {
+        projectFileId_portalUserId: { projectFileId: fileId, portalUserId: scope.portalUserId },
+      },
+    });
+    const approval = await this.prisma.deliverableApproval.upsert({
+      where: {
+        projectFileId_portalUserId: { projectFileId: fileId, portalUserId: scope.portalUserId },
+      },
+      create: {
+        projectFileId: fileId,
+        portalUserId: scope.portalUserId,
+        decision,
+        revisionNotes: notes || null,
+      },
+      update: { decision, revisionNotes: notes || null, decidedAt: new Date() },
     });
     await this.prisma.projectFile.update({
       where: { id: fileId },
-      data: { approvalStatus: decision === "APPROVED" ? "APPROVED" : "REVISION_REQUESTED" },
+      data: {
+        approvalStatus: decision === "APPROVED" ? "APPROVED" : "REVISION_REQUESTED",
+        approvedAt: decision === "APPROVED" ? new Date() : null,
+      },
     });
     await this.prisma.portalActivityLog.create({
       data: {
@@ -1093,32 +1480,38 @@ export class PortalClientService {
       },
     });
 
-    try {
-      const proj = await this.prisma.project.findUnique({
-        where: { id: file.projectId },
-        select: { name: true, assignedPmId: true },
-      });
-      if (proj?.assignedPmId) {
-        await this.notifications.create(
-          proj.assignedPmId,
-          "CLIENT_MESSAGE",
-          decision === "APPROVED" ? "Client approved a file" : "Client requested revision",
-          `${scope.contactName} ${decision === "APPROVED" ? "approved" : "requested changes on"} a file in "${proj.name}".`,
-          `/flow/${file.projectId}?tab=files&file=${fileId}`
-        );
-      }
-    } catch {}
+    // Re-opening a decision (e.g. approve after a revision request) should
+    // notify the PM, but an accidental double click should not.
+    if (!existing || existing.decision !== decision) {
+      try {
+        const proj = await this.prisma.project.findUnique({
+          where: { id: file.projectId },
+          select: { name: true, assignedPmId: true },
+        });
+        if (proj?.assignedPmId) {
+          await this.notifications.create(
+            proj.assignedPmId,
+            "CLIENT_MESSAGE",
+            decision === "APPROVED" ? "Client approved a file" : "Client requested revision",
+            `${scope.contactName} ${decision === "APPROVED" ? "approved" : "requested changes on"} a file in "${proj.name}".`,
+            `/flow/${file.projectId}?tab=files&file=${fileId}`
+          );
+        }
+      } catch {}
+    }
 
     await this.invalidatePortal();
     return approval;
   }
 
   // ── Client-side notifications ───────────────────────────────────────────
-  async listNotifications(scope: PortalScope, limit = 30) {    const [items, unread] = await Promise.all([
+  async listNotifications(scope: PortalScope, limit = 30) {
+    const take = Math.min(100, Math.max(1, Number(limit) || 30));
+    const [items, unread] = await Promise.all([
       this.prisma.notification.findMany({
         where: { portalUserId: scope.portalUserId },
         orderBy: { createdAt: "desc" },
-        take: Math.min(100, Math.max(1, limit)),
+        take,
       }),
       this.prisma.notification.count({ where: { portalUserId: scope.portalUserId, isRead: false } }),
     ]);
@@ -1143,7 +1536,7 @@ export class PortalClientService {
     this.access.requireModule(scope, "FILES");
     const file = await this.prisma.projectFile.findUnique({
       where: { id: fileId },
-      select: { id: true, fileUrl: true, projectId: true, project: { select: { clientId: true } } },
+      select: { id: true, fileUrl: true, fileName: true, projectId: true, project: { select: { clientId: true } } },
     });
     if (!file || file.project.clientId !== scope.clientId) throw new NotFoundException("File not found");
     this.access.assertProjectId(scope, file.projectId);
@@ -1158,7 +1551,20 @@ export class PortalClientService {
     if (!filePath.startsWith(dir) && !filePath.startsWith(join(process.cwd(), "uploads"))) {
       throw new NotFoundException("File not found");
     }
-    return { path: filePath, filename: safe };
+    await this.prisma.portalActivityLog
+      .create({
+        data: {
+          portalUserId: scope.portalUserId,
+          action: "FILE_DOWNLOADED",
+          relatedEntityType: "ProjectFile",
+          relatedEntityId: fileId,
+        },
+      })
+      .catch(() => null);
+    return {
+      path: filePath,
+      filename: file.fileName ? basename(sanitizeFilename(file.fileName)) : safe,
+    };
   }
 
   // ── Telegram linking ───────────────────────────────────────────────────

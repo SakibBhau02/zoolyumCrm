@@ -166,9 +166,13 @@ export class OnboardingService {
 
   async addItem(checklistId: string, body: { label: string; owner?: string }) {
     if (!body.label?.trim()) throw new BadRequestException("label is required");
+    const owner = body.owner?.trim() || null;
     const count = await this.prisma.employeeChecklistItem.count({ where: { checklistId } });
     await this.prisma.employeeChecklistItem.create({
-      data: { checklistId, label: body.label.trim(), owner: body.owner ?? null, sortOrder: count },
+      data: { checklistId, label: body.label.trim(), owner, sortOrder: count },
+    }).catch((err) => {
+      if (err?.code === "P2003") throw new NotFoundException("Checklist not found");
+      throw err;
     });
     await this.prisma.employeeChecklist.update({ where: { id: checklistId }, data: { status: "IN_PROGRESS", completedAt: null } }).catch(() => null);
     const row = await this.prisma.employeeChecklist.findUnique({ where: { id: checklistId }, include: SHAPE });

@@ -3,6 +3,9 @@ import { PrismaService } from "../prisma/prisma.service";
 import { AttendanceService } from "./attendance.service";
 import { dateStrDhaka, dhakaDayRange } from "./people-utils";
 
+/** Compensation is Owner / HR only — same rule as Directory. */
+const PAY_ROLES = ["Owner", "HR/Admin", "Admin"];
+
 /**
  * Employee 360 — one screen that answers "what does this person's month look
  * like": attendance (days by kind, late minutes), tasks completed, meetings
@@ -57,7 +60,7 @@ export class TeamService {
     };
   }
 
-  async employee360(employeeId: string, query: { month?: string; days?: string } = {}) {
+  async employee360(employeeId: string, query: { month?: string; days?: string } = {}, user?: any) {
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
       select: {
@@ -243,7 +246,9 @@ export class TeamService {
           workingDays: l.workingDays,
         })),
       },
-      payroll: payroll
+      // Compensation is HR-only. Directory already masked this; Team 360 used to
+      // hand every PEOPLE viewer (including Team Member) a colleague's net pay.
+      payroll: payroll && PAY_ROLES.includes(user?.role)
         ? {
             id: payroll.id,
             period: payroll.period,

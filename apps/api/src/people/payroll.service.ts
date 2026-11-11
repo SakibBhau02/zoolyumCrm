@@ -3,7 +3,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { CapitalService } from "../capital/capital.service";
 import { AttendanceService } from "./attendance.service";
-import { dhakaDayRange, dhakaDaysInMonth, leaveDays } from "./people-utils";
+import { assertPeriod, dhakaDayRange, dhakaDaysInMonth, leaveDays } from "./people-utils";
 
 @Injectable()
 export class PayrollService {
@@ -55,8 +55,9 @@ export class PayrollService {
   }
 
   async payroll(period?: string) {
+    const p = period ? assertPeriod(period, "period") : undefined;
     return this.prisma.payrollRecord.findMany({
-      where: period ? { period } : undefined,
+      where: p ? { period: p } : undefined,
       include: {
         employee: { select: { id: true, name: true, roleTitle: true, department: true } },
         salaryExpense: { select: { id: true, amount: true } },
@@ -67,6 +68,26 @@ export class PayrollService {
 
   private appendAudit(existing: any, entry: any) {    const trail = Array.isArray(existing?.auditTrail) ? existing.auditTrail : [];
     return [...trail, entry];
+  }
+
+  /**
+   * A posted salary expense must follow the payroll record: reverse + repost the
+   * ledger, update the expense amount, and move the bank balance by the delta.
+   * `recomputePayrollRecord` used to update the expense only, so cash drifted.
+   */
+  private async syncPostedSalary(rec: any, netPay: number, actorId?: string) {
+    const expense = rec?.salaryExpense;
+    if (!expense?.id) return;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const diff = r2(netPay - Number(rec.netPay ?? 0));
+    await this.capital.updateExpense(expense.id, { amount: r2(netPay) }, actorId, { skipPayrollSync: true });
+    if (diff !== 0 && expense.bankAccountId && expense.balanceDeducted) {
+      await this.prisma.bankAccount.update({
+        where: { id: expense.bankAccountId },
+        data: { currentBalance: { decrement: diff } },
+      });
+    }
+    await this.capital.invalidateFinance().catch(() => null);
   }
 
   private computeNet(basic: number, allowances: number, bonus: number, lateD: number, halfD: number, absentD: number, unpaidD: number) {
@@ -94,12 +115,13 @@ export class PayrollService {
   }
 
   async runPayroll(period: string) {
+    const month = assertPeriod(period, "period");
     const employees = await this.prisma.employee.findMany({ where: { employmentStatus: "ACTIVE" } });
-    const existing = await this.prisma.payrollRecord.findMany({ where: { period }, select: { employeeId: true } });
+    const existing = await this.prisma.payrollRecord.findMany({ where: { period: month }, select: { employeeId: true } });
     const existingIds = new Set(existing.map((e) => e.employeeId));
-    const report = await this.attendance.attendanceReport({ month: period });
+    const report = await this.attendance.attendanceReport({ month });
     const reportMap = new Map(report.map((r) => [r.employeeId, r]));
-    const days = dhakaDaysInMonth(period);
+    const days = dhakaDaysInMonth(month);
     const mStart = dhakaDayRange(days[0]).start;
     const mEnd = dhakaDayRange(days[days.length - 1]).end;
     const unpaidLeaves = await this.prisma.leaveRequest.findMany({
@@ -115,38 +137,51 @@ export class PayrollService {
     const unpaidMap: Record<string, number> = {};
     for (const l of unpaidLeaves) unpaidMap[l.employeeId] = (unpaidMap[l.employeeId] ?? 0) + leaveDays(l.startDate, l.endDate);
 
-    const created = [];
+    const rows: any[] = [];
     for (const e of employees) {
       if (existingIds.has(e.id)) continue;
-      const c = await this.buildForEmployee(e, period, reportMap, unpaidMap);
-      const rec = await this.prisma.payrollRecord.create({
-        data: {
-          employeeId: e.id,
-          period,
-          basicSalary: c.basic,
-          allowances: 0,
-          lateDeduction: Math.round(c.lateD * 100) / 100,
-          halfDayDeduction: Math.round(c.halfD * 100) / 100,
-          absentDeduction: Math.round(c.absentD * 100) / 100,
-          unpaidLeaveDeduction: Math.round(c.unpaidD * 100) / 100,
-          deductions: Math.round(c.totalD * 100) / 100,
-          bonus: 0,
-          netPay: Math.round(c.netPay * 100) / 100,
-          status: "DRAFT",
-          breakdown: c.breakdown as any,
-          auditTrail: [
-            {
-              action: "generated",
-              at: new Date().toISOString(),
-              by: "Payroll Run",
-              attendance: c.attendance,
-            },
-          ],
-        },
+      const c = await this.buildForEmployee(e, month, reportMap, unpaidMap);
+      rows.push({
+        employeeId: e.id,
+        period: month,
+        basicSalary: c.basic,
+        allowances: 0,
+        lateDeduction: Math.round(c.lateD * 100) / 100,
+        halfDayDeduction: Math.round(c.halfD * 100) / 100,
+        absentDeduction: Math.round(c.absentD * 100) / 100,
+        unpaidLeaveDeduction: Math.round(c.unpaidD * 100) / 100,
+        deductions: Math.round(c.totalD * 100) / 100,
+        bonus: 0,
+        netPay: Math.round(c.netPay * 100) / 100,
+        status: "DRAFT" as const,
+        breakdown: c.breakdown as any,
+        auditTrail: [
+          {
+            action: "generated",
+            at: new Date().toISOString(),
+            by: "Payroll Run",
+            attendance: c.attendance,
+          },
+        ],
       });
-      created.push(rec.id);
     }
-    return { period, createdCount: created.length };
+    if (!rows.length) {
+      return { period: month, createdCount: 0, skipped: employees.length, attendanceRows: report.length, warning: null };
+    }
+    // skipDuplicates rides on PayrollRecord's (employeeId, period) unique index:
+    // a double click or two HR users running at once can no longer pay twice.
+    const inserted = await this.prisma.payrollRecord.createMany({ data: rows, skipDuplicates: true });
+    return {
+      period: month,
+      createdCount: inserted.count,
+      skipped: employees.length - inserted.count,
+      attendanceRows: report.length,
+      // Silence here used to mean "full salary, zero deductions" with no hint.
+      warning:
+        report.length === 0
+          ? "No attendance was computed for this period — deductions are 0. Run attendance recompute first if that is not what you expect."
+          : null,
+    };
   }
 
   /** Manual edit of a payroll record (any status) — recomputes net pay, syncs a posted salary expense. */
@@ -182,15 +217,8 @@ export class PayrollService {
         auditTrail: this.appendAudit(rec, { action: "manual-edit", at: new Date().toISOString(), by: actorId ?? "staff", before: { netPay: Number(rec.netPay) }, after: { netPay: r2(netPay) } }),
       },
     });
-    // Keep a posted salary expense in sync (GL reversal/repost handled inside).
-    if (rec.salaryExpense) {
-      await this.capital.updateExpense(rec.salaryExpense.id, { amount: r2(netPay) }, actorId, { skipPayrollSync: true });
-      const diff = r2(netPay) - Number(rec.netPay);
-      const bankId = (rec.salaryExpense as any).bankAccountId;
-      if (diff !== 0 && bankId && (rec.salaryExpense as any).balanceDeducted) {
-        await this.prisma.bankAccount.update({ where: { id: bankId }, data: { currentBalance: { decrement: diff } } });
-      }
-    }
+    // Keep a posted salary expense in sync (ledger reversal/repost + bank).
+    await this.syncPostedSalary(rec, netPay, actorId);
     return updated;
   }
 
@@ -232,7 +260,7 @@ export class PayrollService {
       },
     });
     if (rec.salaryExpense) {
-      await this.capital.updateExpense(rec.salaryExpense.id, { amount: r2(netPay) }, actorId, { skipPayrollSync: true });
+      await this.syncPostedSalary(rec, r2(netPay), actorId);
     }
     return updated;
   }
@@ -248,7 +276,7 @@ export class PayrollService {
     return { ok: true };
   }
 
-  async updatePayrollStatus(id: string, status: "DRAFT" | "FINALIZED" | "PAID", actorId?: string) {
+  async updatePayrollStatus(id: string, status: "DRAFT" | "FINALIZED" | "PAID", actorId?: string, bankAccountId?: string) {
     const rec = await this.prisma.payrollRecord.findUnique({
       where: { id },
       include: { employee: { select: { name: true } }, salaryExpense: { select: { id: true, amount: true, bankAccountId: true, balanceDeducted: true } } },
@@ -286,7 +314,18 @@ export class PayrollService {
       },
     });
     if (status === "FINALIZED" && !rec.salaryExpense) {
-      const bankAccount = await this.prisma.bankAccount.findFirst({ orderBy: { accountType: "asc" } });
+      // Which account pays salaries: the one HR picked, else the account that
+      // paid the previous salary, else the first account by name. The old code
+      // sorted by accountType, which is arbitrary.
+      const lastSalary = await this.prisma.expense.findFirst({
+        where: { category: "SALARY", bankAccountId: { not: null } },
+        orderBy: { createdAt: "desc" },
+        select: { bankAccountId: true },
+      });
+      const bankAccount =
+        (bankAccountId ? await this.prisma.bankAccount.findUnique({ where: { id: bankAccountId } }) : null) ??
+        (lastSalary?.bankAccountId ? await this.prisma.bankAccount.findUnique({ where: { id: lastSalary.bankAccountId } }) : null) ??
+        (await this.prisma.bankAccount.findFirst({ orderBy: { accountName: "asc" } }));
       const expense = await this.prisma.expense.create({
         data: {
           description: `Salary — ${rec.employee.name} (${rec.period})`,

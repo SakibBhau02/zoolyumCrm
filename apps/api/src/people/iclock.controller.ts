@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -7,7 +8,9 @@ import {
   Post,
   Query,
   Req,
+  ServiceUnavailableException,
 } from "@nestjs/common";
+import { timingSafeEqual } from "node:crypto";
 import { AttendanceService } from "./attendance.service";
 import { Public } from "../common/decorators/public.decorator";
 import { RateLimit } from "../common/decorators/rate-limit.decorator";
@@ -29,13 +32,29 @@ import { RateLimit } from "../common/decorators/rate-limit.decorator";
 export class IclockController {
   constructor(private readonly attendance: AttendanceService) {}
 
-  /** Reject a request that did not present the configured device key. */
-  private assertDevice(key?: string) {
+  /**
+   * Reject a request that did not present the configured device key.
+   *
+   * Fails CLOSED in production: a missing ICLOCK_DEVICE_KEY used to mean "no
+   * authentication at all", so anyone on the network could post punches for any
+   * PIN and fabricate attendance / overtime. Local development stays open so an
+   * unconfigured terminal still works, but production refuses to serve.
+   */
+  private assertDevice(key?: string, sn?: string) {
     const expected = process.env.ICLOCK_DEVICE_KEY?.trim();
-    if (!expected) return;
-    if (String(key ?? "") !== expected) {
+    if (!expected) {
+      if (process.env.NODE_ENV === "production") {
+        throw new ServiceUnavailableException("Attendance device key is not configured (set ICLOCK_DEVICE_KEY)");
+      }
+      if (!sn) throw new BadRequestException("SN is required");
+      return;
+    }
+    const given = Buffer.from(String(key ?? ""), "utf8");
+    const want = Buffer.from(expected, "utf8");
+    if (given.length !== want.length || !timingSafeEqual(given, want)) {
       throw new ForbiddenException("Unknown attendance device");
     }
+    if (!sn) throw new BadRequestException("SN is required");
   }
 
   @Public()
@@ -43,7 +62,7 @@ export class IclockController {
   @Get("getrequest")
   @Header("Content-Type", "text/plain")
   async getRequest(@Query("SN") sn: string, @Query("key") key?: string) {
-    this.assertDevice(key);
+    this.assertDevice(key, sn);
     await this.attendance.touchDevice(sn).catch(() => {});
     return this.attendance.iclockGetRequest(sn);
   }
@@ -54,25 +73,27 @@ export class IclockController {
   @Get("cdata")
   @Header("Content-Type", "text/plain")
   async cdataGet(@Query("SN") sn: string, @Query("key") key?: string) {
-    this.assertDevice(key);
+    this.assertDevice(key, sn);
     await this.attendance.touchDevice(sn).catch(() => {});
     return "OK";
   }
 
   @Public()
+  @RateLimit({ limit: 60, windowSec: 60, name: "iclock.devicecmd" })
   @Get("devicecmd")
   @Header("Content-Type", "text/plain")
   deviceCmd(@Query("SN") sn: string, @Query("key") key?: string) {
-    this.assertDevice(key);
+    this.assertDevice(key, sn);
     return "OK";
   }
 
   // Firmware posts command results here (some models use POST).
   @Public()
+  @RateLimit({ limit: 60, windowSec: 60, name: "iclock.devicecmd.post" })
   @Post("devicecmd")
   @Header("Content-Type", "text/plain")
-  deviceCmdPost(@Query("key") key?: string) {
-    this.assertDevice(key);
+  deviceCmdPost(@Query("SN") sn: string, @Query("key") key?: string) {
+    this.assertDevice(key, sn);
     return "OK";
   }
 
@@ -87,7 +108,7 @@ export class IclockController {
     @Body() body: any,
     @Req() req: any
   ) {
-    this.assertDevice(key);
+    this.assertDevice(key, sn);
     let raw = "";
     if (typeof body === "string") raw = body;
     else if (Buffer.isBuffer(body)) raw = body.toString("utf-8");

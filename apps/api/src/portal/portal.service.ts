@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { basename } from "path";
 import * as bcrypt from "bcryptjs";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
@@ -17,15 +18,31 @@ export class PortalService {
   ) {}
 
   private async invalidateUsers() {
+    await this.cache.del("portal:users:v2");
     await this.cache.del("portal:users");
   }
 
   async users() {
-    return this.cache.wrap("portal:users", 30, () =>
+    return this.cache.wrap("portal:users:v2", 30, () =>
       this.prisma.portalUser.findMany({
-        include: {
+        // Never expose passwordHash / telegramChatId / telegramLinkCode.
+        select: {
+          id: true,
+          clientContactId: true,
+          userId: true,
+          isActive: true,
+          lastLoginAt: true,
+          createdAt: true,
+          telegramLinkedAt: true,
           clientContact: {
-            include: { client: { select: { id: true, companyName: true } } },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              roleTitle: true,
+              isPrimary: true,
+              client: { select: { id: true, companyName: true } },
+            },
           },
           user: { select: { name: true, email: true } },
         },
@@ -48,9 +65,20 @@ export class PortalService {
     );
   }
 
-  async comments() {
-    return this.cache.wrap("portal:comments", 30, () =>
+  async comments(q?: string) {
+    const term = String(q ?? "").trim();
+    const key = `portal:comments:${term ? Buffer.from(term).toString("base64url").slice(0, 40) : "all"}`;
+    return this.cache.wrap(key, 30, () =>
       this.prisma.clientComment.findMany({
+        where: term
+          ? {
+              OR: [
+                { content: { contains: term, mode: "insensitive" } },
+                { client: { companyName: { contains: term, mode: "insensitive" } } },
+                { project: { name: { contains: term, mode: "insensitive" } } },
+              ],
+            }
+          : undefined,
         include: {
           // project is null for the client-level "general" thread.
           project: { select: { id: true, name: true } },
@@ -59,21 +87,54 @@ export class PortalService {
           author: { select: { name: true } },
         },
         orderBy: { createdAt: "desc" },
-        take: 20,
+        take: 50,
       })
     );
   }
 
   async approvals() {
-    return this.cache.wrap("portal:approvals", 30, () =>
-      this.prisma.deliverableApproval.findMany({
+    return this.cache.wrap("portal:approvals:v2", 30, async () => {
+      const rows = await this.prisma.deliverableApproval.findMany({
         include: {
-          portalUser: { select: { clientContact: { select: { name: true, client: { select: { companyName: true } } } } } },
+          portalUser: {
+            select: {
+              clientContact: { select: { name: true, client: { select: { companyName: true } } } },
+            },
+          },
         },
         orderBy: { decidedAt: "desc" },
-        take: 20,
-      })
-    );
+        take: 30,
+      });
+      const fileIds = Array.from(new Set(rows.map((r) => r.projectFileId)));
+      const files = fileIds.length
+        ? await this.prisma.projectFile.findMany({
+            where: { id: { in: fileIds } },
+            select: {
+              id: true,
+              fileName: true,
+              fileUrl: true,
+              versionNumber: true,
+              project: { select: { id: true, name: true } },
+            },
+          })
+        : [];
+      const fileMap = new Map(files.map((f) => [f.id, f]));
+      return rows.map((r) => {
+        const f = fileMap.get(r.projectFileId);
+        const fallback = f?.fileUrl ? basename(f.fileUrl.split("?")[0]) : null;
+        return {
+          ...r,
+          projectFile: f
+            ? {
+                id: f.id,
+                fileName: f.fileName || fallback || "File",
+                versionNumber: f.versionNumber,
+                project: f.project,
+              }
+            : null,
+        };
+      });
+    });
   }
 
   async clients() {
@@ -102,21 +163,39 @@ export class PortalService {
   }
 
   async createPortalUser(clientContactId: string, password: string) {
-    if (!password || password.length < 6) {
-      throw new BadRequestException("Password must be at least 6 characters");
+    if (!password || password.length < 8) {
+      throw new BadRequestException("Password must be at least 8 characters");
     }
     const contact = await this.prisma.clientContact.findUnique({
       where: { id: clientContactId },
       include: { portalUser: true },
     });
     if (!contact) throw new NotFoundException("Client contact not found");
+    if (!contact.email) {
+      throw new BadRequestException("Add an email address to this contact before creating portal access");
+    }
     if (contact.portalUser) throw new ConflictException("Portal user already exists for this contact");
-    const portalUser = await this.prisma.portalUser.create({
-      data: {
-        clientContactId,
-        passwordHash: await bcrypt.hash(password, 10),
-        isActive: true,
-      },
+    const portalUser = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.portalUser.create({
+        data: {
+          clientContactId,
+          passwordHash: await bcrypt.hash(password, 10),
+          isActive: true,
+        },
+        select: { id: true, clientContactId: true, isActive: true, lastLoginAt: true, createdAt: true },
+      });
+      // New accounts start with full module access but advertising hidden until
+      // an admin explicitly shares spend (legacy contacts without a row keep it).
+      await tx.portalContactAccess.create({
+        data: {
+          portalUserId: created.id,
+          scope: "ALL",
+          projectIds: [],
+          modules: [...PORTAL_MODULES],
+          canSeeAdSpend: false,
+        },
+      });
+      return created;
     });
     await this.prisma.clientContact.update({
       where: { id: clientContactId },
@@ -127,15 +206,19 @@ export class PortalService {
   }
 
   async resetPortalPassword(portalUserId: string, password: string) {
-    if (!password || password.length < 6) {
-      throw new BadRequestException("Password must be at least 6 characters");
+    if (!password || password.length < 8) {
+      throw new BadRequestException("Password must be at least 8 characters");
     }
     const portalUser = await this.prisma.portalUser.findUnique({ where: { id: portalUserId } });
     if (!portalUser) throw new NotFoundException("Portal user not found");
     const updated = await this.prisma.portalUser.update({
       where: { id: portalUserId },
-      data: { passwordHash: await bcrypt.hash(password, 10) },
+      // Rotate the token version so every session opened with the old password
+      // dies instead of living for the rest of its 7-day lifetime.
+      data: { passwordHash: await bcrypt.hash(password, 10), tokenVersion: { increment: 1 } },
+      select: { id: true, clientContactId: true, isActive: true, lastLoginAt: true, createdAt: true },
     });
+    await this.access.invalidate(portalUserId);
     await this.invalidateUsers();
     return updated;
   }
@@ -148,7 +231,13 @@ export class PortalService {
     if (!portalUser) throw new NotFoundException("Portal user not found");
     const updated = await this.prisma.portalUser.update({
       where: { id: portalUserId },
-      data: { isActive },
+      data: {
+        isActive,
+        // Disabling invalidates outstanding tokens even if the account is later
+        // re-enabled.
+        ...(isActive ? {} : { tokenVersion: { increment: 1 } }),
+      },
+      select: { id: true, clientContactId: true, isActive: true, lastLoginAt: true, createdAt: true },
     });
     await this.prisma.clientContact.update({
       where: { id: portalUser.clientContactId },
@@ -192,22 +281,22 @@ export class PortalService {
       where: { isActive: true, clientContact: { clientId } },
       select: { id: true, contactAccess: { select: { modules: true, scope: true, projectIds: true } } },
     });
+    const notifications: { portalUserId: string; type: string; title: string; message: string; link: string }[] = [];
     for (const pu of portalUsers) {
-      const modules = pu.contactAccess?.modules?.length ? pu.contactAccess.modules : [...PORTAL_MODULES];
+      const modules = pu.contactAccess ? pu.contactAccess.modules : [...PORTAL_MODULES];
       if (!modules.includes("MESSAGES")) continue;
       if (projectId && pu.contactAccess?.scope === "CUSTOM" && !pu.contactAccess.projectIds.includes(projectId)) {
         continue;
       }
-      await this.prisma.notification.create({
-        data: {
-          portalUserId: pu.id,
-          type: "AGENCY_MESSAGE",
-          title: "New message from your agency",
-          message: content.slice(0, 140),
-          link: `/portal-client?thread=${encodeURIComponent(threadKey)}`,
-        },
+      notifications.push({
+        portalUserId: pu.id,
+        type: "AGENCY_MESSAGE",
+        title: "New message from your agency",
+        message: content.slice(0, 140),
+        link: `/portal-client?thread=${encodeURIComponent(threadKey)}`,
       });
     }
+    if (notifications.length) await this.prisma.notification.createMany({ data: notifications });
 
     // Push the same heads-up to Telegram for contacts who linked their chat.
     await this.telegram
@@ -217,6 +306,9 @@ export class PortalService {
       .catch(() => null);
 
     await this.cache.del("portal:comments");
+    await this.cache.delPattern("portal:comments:*");
+    await this.cache.del("portal:approvals");
+    await this.cache.del("portal:approvals:v2");
     return comment;
   }
 
@@ -243,6 +335,7 @@ export class PortalService {
       where: { projectId, archivedAt: null },
       data: { isClientVisible: visible },
     });
+    await this.cache.del("dashboard:overview");
     return { updated: result.count, isClientVisible: visible };
   }
 
@@ -304,8 +397,8 @@ export class PortalService {
       access: {
         scope: a?.scope ?? "ALL",
         projectIds: a?.projectIds ?? [],
-        modules: a?.modules?.length ? a.modules : [...PORTAL_MODULES],
-        canSeeAdSpend: a?.canSeeAdSpend ?? true,
+        modules: a ? a.modules : [...PORTAL_MODULES],
+        canSeeAdSpend: a ? a.canSeeAdSpend : true,
       },
     };
   }
@@ -345,8 +438,8 @@ export class PortalService {
         portalUserId,
         scope: scope ?? "ALL",
         projectIds: projectIds ?? [],
-        modules: modules ?? [...PORTAL_MODULES],
-        canSeeAdSpend: dto.canSeeAdSpend ?? true,
+        modules: modules ?? [],
+        canSeeAdSpend: dto.canSeeAdSpend ?? false,
       },
       update: data,
     });

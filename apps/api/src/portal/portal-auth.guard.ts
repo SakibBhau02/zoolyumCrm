@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import { PORTAL_PUBLIC_KEY } from "../common/decorators/portal-public.decorator";
+import { CacheService } from "../cache/cache.service";
 import { PortalAccessService } from "./portal-access.service";
 
 @Injectable()
@@ -9,7 +10,8 @@ export class PortalAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly reflector: Reflector,
-    private readonly access: PortalAccessService
+    private readonly access: PortalAccessService,
+    private readonly cache: CacheService
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -38,13 +40,25 @@ export class PortalAuthGuard implements CanActivate {
       throw new UnauthorizedException("Invalid or expired portal token");
     }
     // Staff tokens must never be accepted on portal routes (and vice versa).
-    if (payload.scope !== "portal" || !payload.sub) {
+    if (payload.scope !== "portal" || !payload.sub || payload.aud !== "portal") {
       throw new UnauthorizedException("Invalid portal token");
+    }
+    // Logout revokes the exact session by jti, so a copied token stops working
+    // immediately instead of living until its natural expiry.
+    if (payload.jti) {
+      const revoked = await this.cache.get(`revoked:portal:jti:${payload.jti}`).catch(() => null);
+      if (revoked) throw new UnauthorizedException("This session has ended. Please sign in again.");
     }
 
     request.portalUser = payload;
     // Resolve the full permission envelope once per request (cached 60s).
-    request.portalScope = await this.access.resolve(payload.sub);
+    const scope = await this.access.resolve(payload.sub);
+    // Password reset / disable bumps tokenVersion; every older token dies.
+    const tokenVersion = typeof payload.ver === "number" ? payload.ver : 0;
+    if (tokenVersion !== scope.tokenVersion) {
+      throw new UnauthorizedException("Session expired — please sign in again");
+    }
+    request.portalScope = scope;
     return true;
   }
 }

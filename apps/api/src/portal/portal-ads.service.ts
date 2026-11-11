@@ -42,6 +42,21 @@ function pctDelta(current: number, previous: number): number | null {
   return Math.round(((current - previous) / previous) * 10000) / 100;
 }
 
+/** True only for a full calendar month (UTC) — the only window a monthly budget can be compared against. */
+function isFullCalendarMonth(range: Range): boolean {
+  const from = range.from;
+  const to = range.to;
+  const lastDay = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth() + 1, 0)).getUTCDate();
+  return (
+    from.getUTCDate() === 1 &&
+    from.getUTCHours() === 0 &&
+    from.getUTCMinutes() === 0 &&
+    to.getUTCDate() === lastDay &&
+    to.getUTCHours() === 23 &&
+    to.getUTCMinutes() === 59
+  );
+}
+
 type Row = {
   spend: number;
   impressions: number;
@@ -355,8 +370,9 @@ export class PortalAdsService {
         cpc: money(c.clicks ? c.spend / c.clicks : 0),
         cpa: money(c.conversions ? c.spend / c.conversions : 0),
         roas: ratio(c.spend ? c.conversionValue / c.spend : 0),
-        // Budget pacing only makes sense when a budget exists and the window is the whole month.
-        budgetUsedPct: c.budget ? ratio((c.spend / c.budget) * 100) : null,
+        // Budget pacing only makes sense when a budget exists and the window is
+        // a full calendar month; 7/90-day spend is not a monthly pace.
+        budgetUsedPct: c.budget && isFullCalendarMonth(range) ? ratio((c.spend / c.budget) * 100) : null,
       }))
       .sort((a, b) => b.spend - a.spend);
 

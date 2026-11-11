@@ -5,7 +5,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { LedgerService, CapitalDb } from "./ledger.service";
 import { InvoiceService } from "./invoice.service";
 import { ApprovalPolicyService } from "./approval-policy.service";
-import { invalidateFinance, logAudit, notifyRole } from "./finance-kernel";
+import { invalidateFinance, logAudit, notifyRole, toBdt } from "./finance-kernel";
 import { recomputeProjectStats } from "../common/project-stats";
 import { writeSystemAudit } from "../common/system-audit";
 
@@ -86,8 +86,9 @@ export class ExpenseService {
     if (!body.description?.trim()) {
       throw new BadRequestException("Expense description is required");
     }
-    if (body.amount === undefined || body.amount === null || Number.isNaN(Number(body.amount))) {
-      throw new BadRequestException("Valid expense amount is required");
+    const amount = Number(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException("Expense amount must be greater than zero");
     }
     const target = await this.resolveExpenseTarget(body.clientId, body.projectId);
     body = { ...body, clientId: target.clientId, projectId: target.projectId };
@@ -99,10 +100,12 @@ export class ExpenseService {
       const actor = await this.prisma.user.findUnique({ where: { id: submittedById }, select: { role: { select: { name: true } } } }).catch(() => null);
       const roleName = String((actor as any)?.role?.name ?? "");
       if (!["Owner", "Finance", "Admin", "HR/Admin", "CONTROL"].includes(roleName)) status = "PENDING";
-      // The approval matrix applies to creation too — a Finance user cannot
-      // self-approve a ৳5L expense just by posting it as pre-approved.
+      // The approval matrix applies to creation too (role + limit), but the
+      // "different approver" rule is about approving *someone else's* pending
+      // claim — it must not block a privileged actor's own direct posting,
+      // which used to make "Record expense" impossible for Owner/Finance.
       if (status === "APPROVED") {
-        await this.approvalPolicy.assertCanApprove({ actorId: submittedById, amount: Number(body.amount), submittedById });
+        await this.approvalPolicy.assertCanApprove({ actorId: submittedById, amount, submittedById: null });
       }
     }
     const isApproved = status === "APPROVED";
@@ -119,7 +122,9 @@ export class ExpenseService {
         date: body.date ? new Date(body.date) : new Date(),
         dueDate: body.dueDate ? new Date(body.dueDate) : null,
         isPayable: body.isPayable ?? false,
-        paidAmount: body.isPayable ? 0 : body.amount,
+        // A non-payable expense only becomes "paid" once it is actually
+        // approved and the cash leaves the bank.
+        paidAmount: body.isPayable ? 0 : isApproved ? amount : 0,
         isClientBillable: body.isClientBillable ?? false,
         clientId: body.clientId ?? null,
         projectId: body.projectId ?? null,
@@ -145,7 +150,7 @@ export class ExpenseService {
       // Direct-approved (non-payable) expenses hit the bank balance immediately,
       // mirroring the approve-transition path in updateExpense.
       if (isApproved && !expense.isPayable && bankId) {
-        await this.ledger.debitBankAccount(bankId, Number(expense.amount), tx);
+        await this.ledger.debitBankAccount(bankId, toBdt(Number(expense.amount), expense), tx);
         await tx.expense.update({ where: { id: expense.id }, data: { balanceDeducted: true } });
       }
       return tx.expense.findUnique({ where: { id: expense.id } }).then((s) => s ?? expense);
@@ -172,15 +177,17 @@ export class ExpenseService {
     ]);
     const def = await db.expenseCategoryDef.findUnique({ where: { key: expense.category } }).catch(() => null);
     const expenseAcct = acctExp ?? (def?.accountId ? await db.account.findUnique({ where: { id: def.accountId } }).catch(() => null) : null) ?? (await this.ledger.accountByCode("5070", db));
+    // Book in BDT so a foreign-currency expense matches the cash it moved.
+    const amount = toBdt(Number(expense.amount), expense);
     if (expense.isPayable) {
       await this.ledger.postGL("EXPENSE", `EXP-${expense.id.slice(-8)}`, expense.date, expense.id, null, [
-        { accountId: expenseAcct.id, debit: Number(expense.amount), credit: 0, memo: expense.description },
-        { accountId: acctAP.id, debit: 0, credit: Number(expense.amount) },
+        { accountId: expenseAcct.id, debit: amount, credit: 0, memo: expense.description },
+        { accountId: acctAP.id, debit: 0, credit: amount },
       ], actorId, db);
     } else {
       await this.ledger.postGL("EXPENSE", `EXP-${expense.id.slice(-8)}`, expense.date, expense.id, null, [
-        { accountId: expenseAcct.id, debit: Number(expense.amount), credit: 0, memo: expense.description },
-        { accountId: acctBank.id, debit: 0, credit: Number(expense.amount) },
+        { accountId: expenseAcct.id, debit: amount, credit: 0, memo: expense.description },
+        { accountId: acctBank.id, debit: 0, credit: amount },
       ], actorId, db);
     }
   }
@@ -225,32 +232,58 @@ export class ExpenseService {
     if (body.approvalStatus === "APPROVED" || body.approvalStatus === "REJECTED") {
       data.approvedBy = actorId ? { connect: { id: actorId } } : undefined;
     }
+    if (body.amount !== undefined) {
+      const amount = Number(body.amount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new BadRequestException("Expense amount must be greater than zero");
+    }
     const wasApproved = existing.approvalStatus === "APPROVED";
     const willBeApproved = body.approvalStatus !== undefined ? body.approvalStatus === "APPROVED" : wasApproved;
-    // Approval matrix: enforced on the transition INTO approved, using the
-    // amount being approved (the edited one when present). Editing an already
-    // approved expense re-posts to the ledger, so it must clear the same bar.
-    if (willBeApproved) {
+    const wasPayable = existing.isPayable;
+    const willBePayable = body.isPayable !== undefined ? Boolean(body.isPayable) : wasPayable;
+    const newAmount = body.amount !== undefined ? Number(body.amount) : Number(existing.amount);
+    const newRate = body.exchangeRate !== undefined ? Number(body.exchangeRate) : Number(existing.exchangeRate ?? 1) || 1;
+    const amountChanged =
+      Math.abs(newAmount - Number(existing.amount)) > 0.001 || newRate !== (Number(existing.exchangeRate ?? 1) || 1);
+    // Approval matrix applies when the expense enters APPROVED, and whenever an
+    // already-approved amount is changed. A pure metadata edit (notes, vendor,
+    // receipt) must not be blocked by the approver rule.
+    if (willBeApproved && (!wasApproved || amountChanged)) {
       await this.approvalPolicy.assertCanApprove({
         actorId,
-        amount: Number(body.amount ?? existing.amount),
+        amount: newAmount,
         submittedById: existing.submittedById,
       });
     }
-    const wasPayable = body.isPayable !== undefined ? body.isPayable : existing.isPayable;
+    const ledgerFieldsChanged =
+      amountChanged || body.category !== undefined || body.isPayable !== undefined || body.accountId !== undefined;
+    // A non-payable expense is settled in cash, so its paid amount follows the
+    // (possibly edited) total; a payable one is settled by vendor payments.
+    if (willBeApproved && !willBePayable) data.paidAmount = newAmount;
     const result = await this.prisma.$transaction(async (tx) => {
-      if (wasApproved && !willBeApproved) {
-        await this.ledger.reverseGL(id, actorId, tx);
+      // Reverse only the EXPENSE journal — never the payment journals that share
+      // the same sourceId — and only when the financial facts really changed.
+      if (wasApproved && (!willBeApproved || ledgerFieldsChanged)) {
+        await this.ledger.reverseGL(id, actorId, tx, ["EXPENSE"]);
       }
-      if (wasApproved && willBeApproved && (body.amount !== undefined || body.category !== undefined || body.isPayable !== undefined || body.accountId !== undefined)) {
-        await this.ledger.reverseGL(id, actorId, tx);
-      }
-      if (!wasPayable && willBeApproved && !existing.balanceDeducted) {
+      if (!wasApproved && willBeApproved && !willBePayable && !existing.balanceDeducted) {
         const bankId = body.bankAccountId ?? existing.bankAccountId ?? (await this.ledger.defaultBankAccount(tx));
         if (bankId) {
-          await this.ledger.debitBankAccount(bankId, Number(body.amount ?? existing.amount), tx);
+          await this.ledger.debitBankAccount(bankId, toBdt(newAmount, { exchangeRate: newRate }), tx);
           data.bankAccount = { connect: { id: bankId } };
           data.balanceDeducted = true;
+        }
+      }
+      // Editing the amount of an already-paid expense must move the same cash
+      // that the ledger just re-posted, otherwise GL cash and the bank drift.
+      if (wasApproved && willBeApproved && !willBePayable && existing.balanceDeducted && amountChanged) {
+        const delta =
+          toBdt(newAmount, { exchangeRate: newRate }) - toBdt(Number(existing.amount), existing);
+        if (Math.abs(delta) > 0.001) {
+          const bankId = existing.bankAccountId ?? (await this.ledger.defaultBankAccount(tx));
+          if (bankId) {
+            if (delta > 0) await this.ledger.debitBankAccount(bankId, delta, tx);
+            else await this.ledger.creditBankAccount(bankId, Math.abs(delta), tx);
+          }
         }
       }
       // Prisma checked inputs reject raw FK scalars whenever a to-one relation
@@ -264,7 +297,7 @@ export class ExpenseService {
         }
       }
       const next = await tx.expense.update({ where: { id }, data });
-      if (willBeApproved) await this.postExpenseGL(next, actorId, tx);
+      if (willBeApproved && (!wasApproved || ledgerFieldsChanged)) await this.postExpenseGL(next, actorId, tx);
       // Payroll sync-back: a finance-side edit of a posted salary expense flows
       // back into the linked payroll record (single source of truth + audit).
       if (existing.payrollRecordId && !opts?.skipPayrollSync && body.amount !== undefined) {
@@ -281,12 +314,8 @@ export class ExpenseService {
                 auditTrail: [...trail, { action: "finance-adjusted", at: new Date().toISOString(), by: actorId ?? "staff", before: { netPay: oldAmount }, after: { netPay: newAmount } }],
               },
             });
-            if (existing.balanceDeducted && existing.bankAccountId) {
-              const diff = newAmount - oldAmount;
-              if (diff !== 0) {
-                await tx.bankAccount.update({ where: { id: existing.bankAccountId }, data: { currentBalance: { decrement: diff } } });
-              }
-            }
+            // The bank delta for a paid salary expense is handled once, above,
+            // by the general "amount changed" branch — not twice here.
           }
         }
       }
@@ -309,15 +338,31 @@ export class ExpenseService {
 
 
   async deleteExpense(id: string) {
-    const existing = await this.prisma.expense.findUnique({ where: { id } }).catch(() => null);
+    const existing = await this.prisma.expense.findUnique({ where: { id }, include: { payments: true } }).catch(() => null);
     if (!existing) throw new NotFoundException("Expense not found");
     if (existing.payrollRecordId) {
       throw new BadRequestException("This salary is posted from payroll — reopen it there (or edit the amount) instead of deleting");
     }
+    const payments = existing.payments ?? [];
+    // Cash that vendor payments actually took out of the bank.
+    const paidBack = payments
+      .filter((p) => p.balanceCredited)
+      .reduce((s, p) => s + (Number(p.amount) - Number(p.taxWithheld ?? 0)), 0);
     await this.prisma.$transaction(async (tx) => {
-      if (existing.approvalStatus === "APPROVED") await this.ledger.reverseGL(id, undefined, tx);
+      if (existing.approvalStatus === "APPROVED") {
+        // Reverse every journal this expense owns — the EXPENSE posting and each
+        // vendor payment. The old code reversed only the newest one, leaving the
+        // expense and half the payments booked after deletion.
+        for (let guard = 0; guard < 20; guard++) {
+          const reversal = await this.ledger.reverseGL(id, undefined, tx, ["EXPENSE", "EXPENSE_PAYMENT"]);
+          if (!reversal) break;
+        }
+      }
       if (existing.balanceDeducted && existing.bankAccountId && !existing.isPayable) {
-        await this.ledger.creditBankAccount(existing.bankAccountId, Number(existing.amount), tx);
+        await this.ledger.creditBankAccount(existing.bankAccountId, toBdt(Number(existing.amount), existing), tx);
+      } else if (existing.isPayable && paidBack > 0.001) {
+        const bankId = payments.find((p) => p.bankAccountId)?.bankAccountId ?? null;
+        if (bankId) await this.ledger.creditBankAccount(bankId, paidBack, tx);
       }
       await tx.expense.delete({ where: { id } });
     }, { timeout: 15000 });
@@ -339,8 +384,13 @@ export class ExpenseService {
   async payExpense(id: string, body: { amount: number; paymentMethod: string; bankAccountId?: string; referenceId?: string; paymentDate?: string; notes?: string; taxWithheld?: number }, actorId?: string) {
     const expense = await this.prisma.expense.findUnique({ where: { id } }).catch(() => null);
     if (!expense) throw new NotFoundException("Expense not found");
+    if (expense.approvalStatus !== "APPROVED") {
+      throw new BadRequestException("Approve this expense before paying the vendor.");
+    }
+    const requested = Number(body.amount);
+    if (!Number.isFinite(requested) || requested <= 0) throw new BadRequestException("Payment amount must be greater than zero");
     const remaining = Math.max(Number(expense.amount) - Number(expense.paidAmount ?? 0), 0);
-    const amount = Math.min(Number(body.amount), remaining);
+    const amount = Math.min(requested, remaining);
     if (amount <= 0) throw new BadRequestException("Nothing left to pay on this expense");
     const taxWithheld = Math.max(0, Math.min(Number(body.taxWithheld ?? 0), amount));
     const net = Math.round((amount - taxWithheld) * 100) / 100;
@@ -350,6 +400,8 @@ export class ExpenseService {
       data: {
         expenseId: id,
         amount,
+        currency: expense.currency,
+        exchangeRate: expense.exchangeRate ?? 1,
         paymentMethod: body.paymentMethod as any,
         referenceId: body.referenceId ?? `EXP-${id.slice(-8)}/pay`,
         paymentDate: body.paymentDate ? new Date(body.paymentDate) : new Date(),
@@ -358,18 +410,20 @@ export class ExpenseService {
         taxWithheld,
       },
     });
+    // Cash in BDT: a foreign-currency bill is settled at its own rate.
+    const netBdt = toBdt(net, expense);
     if (bankId) {
-      if (net > 0) await this.ledger.debitBankAccount(bankId, net, tx);
+      if (netBdt > 0) await this.ledger.debitBankAccount(bankId, netBdt, tx);
       await tx.payment.update({ where: { id: created.id }, data: { bankAccountId: bankId, balanceCredited: true } });
     }
     const [acctAP, acctBank] = await Promise.all([this.ledger.accountByCode("2000", tx), this.ledger.accountByCode("1200", tx)]);
     const lines = [
-      { accountId: acctAP.id, debit: amount, credit: 0 },
-      { accountId: acctBank.id, debit: 0, credit: net },
+      { accountId: acctAP.id, debit: toBdt(amount, expense), credit: 0 },
+      { accountId: acctBank.id, debit: 0, credit: netBdt },
     ];
     if (taxWithheld > 0) {
       const acctTds = await this.ledger.ensureAccount("2200", "TDS / VDS Payable", "LIABILITY", tx);
-      lines.push({ accountId: acctTds.id, debit: 0, credit: taxWithheld });
+      lines.push({ accountId: acctTds.id, debit: 0, credit: toBdt(taxWithheld, expense) });
     }
     await this.ledger.postGL(
       "EXPENSE_PAYMENT",

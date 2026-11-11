@@ -597,7 +597,7 @@ model ClientContact {
   clientId            String
   name                String
   roleTitle           String?
-  email               String?
+  email               String?     @unique
   phone               String?
   isPrimary           Boolean     @default(false)
   portalAccessEnabled Boolean     @default(false)
@@ -1031,8 +1031,11 @@ model Employee {
   careerHistory            Json?                  @default("[]")
   deviceId                 String?                @unique
   weeklyOffDays            String[]               @default([])
-  shiftStart               String?                @default("10:00")
-  shiftEnd                 String?                @default("18:00")
+  // No default: NULL means "follow AttendancePolicy". A non-null value is an
+  // explicit per-employee schedule. The old @default("10:00") made every row
+  // non-null, so policy shift changes could never reach anyone.
+  shiftStart               String?
+  shiftEnd                 String?
   graceMinutes             Int?
   education                String?
   emergencyContactName     String?
@@ -1074,6 +1077,9 @@ model Attendance {
   checkOutTime        DateTime?
   status              AttendanceStatus       @default(PRESENT)
   isManuallyCorrected Boolean                @default(false)
+  // Which fields HR edited by hand. The nightly recompute keeps these and
+  // refreshes the rest, so a manual fix survives while punches still flow.
+  correctedFields     String[]               @default([])
   correctedById       String?
   correctedBy         User?                  @relation(fields: [correctedById], references: [id])
   employee            Employee               @relation(fields: [employeeId], references: [id], onDelete: Cascade)
@@ -1133,6 +1139,10 @@ model PayrollRecord {
   salaryExpense        Expense?
   employee             Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
+  // One payroll record per person per month. Without this, two concurrent
+  // runs (double click, two HR users) both pass the "already exists?" check
+  // and salary is paid twice.
+  @@unique([employeeId, period])
   @@index([period])
 }
 
@@ -1289,6 +1299,8 @@ model PunchLog {
   createdAt    DateTime  @default(now())
   employee     Employee? @relation(fields: [employeeId], references: [id])
 
+  // A device retrying an ATTLOG batch must not create the same punch twice.
+  @@unique([deviceId, punchTime])
   @@index([employeeId, punchTime])
   @@index([punchTime])
   @@index([unmatched])
@@ -2092,9 +2104,12 @@ model PortalUser {
   passwordHash         String
   lastLoginAt          DateTime?
   isActive             Boolean               @default(true)
+  /// Bumped on password reset / force-logout; tokens carry the previous value.
+  tokenVersion         Int                   @default(0)
   createdAt            DateTime              @default(now())
   telegramChatId       String?               @unique
   telegramLinkCode     String?
+  telegramLinkCreatedAt DateTime?
   telegramLinkedAt     DateTime?
   clientComments       ClientComment[]
   deliverableApprovals DeliverableApproval[]
@@ -2113,9 +2128,9 @@ model PortalContactAccess {
   scope          PortalScope @default(ALL)
   /// Only used when scope = CUSTOM.
   projectIds     String[]    @default([])
-  /// Which portal tabs this contact may open.
-  modules        String[]    @default(["WORK", "PERFORMANCE", "MESSAGES", "FILES", "BILLING"])
-  canSeeAdSpend  Boolean     @default(true)
+  /// Which portal tabs this contact may open. An empty list denies every module.
+  modules        String[]    @default([])
+  canSeeAdSpend  Boolean     @default(false)
   updatedAt      DateTime    @updatedAt
   portalUser     PortalUser  @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
 }
@@ -2183,6 +2198,7 @@ model DeliverableApproval {
   decidedAt     DateTime         @default(now())
   portalUser    PortalUser       @relation(fields: [portalUserId], references: [id])
 
+  @@unique([projectFileId, portalUserId])
   @@index([decidedAt])
   @@index([projectFileId])
 }
@@ -2574,6 +2590,8 @@ enum PortalAction {
   APPROVED_DELIVERABLE
   COMMENTED
   LOGGED_IN
+  FILE_DOWNLOADED
+  VIEWED_REPORT
 }
 
 enum CommentSentiment {

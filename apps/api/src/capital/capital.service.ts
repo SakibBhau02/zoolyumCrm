@@ -126,6 +126,16 @@ export class CapitalService {
   }
 
 
+  async deletePayment(invoiceId: string, paymentId: string, actorId?: string) {
+    return this.invoiceService.deletePayment(invoiceId, paymentId, actorId);
+  }
+
+
+  async deleteIncome(id: string, actorId?: string) {
+    return this.invoiceService.deleteIncome(id, actorId);
+  }
+
+
   async income(query: { q?: string }) {
     return this.invoiceService.income(query);
   }

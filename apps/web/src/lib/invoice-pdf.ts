@@ -9,6 +9,10 @@ export interface PdfInvoiceLine {
   amount?: number | string;
 }
 
+/** BANK_TRANSFER → "Bank Transfer" (raw enum labels looked unfinished). */
+const methodLabel = (m?: string | null): string =>
+  m ? m.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()) : "—";
+
 export interface PdfInvoiceContact {
   name?: string;
   email?: string | null;
@@ -328,14 +332,18 @@ function drawSignatureBlock(
       imgH = 0;
     }
   }
+  const signerName = branding?.authorizedSignerName?.trim();
   if (!imgH) {
-    // No uploaded signature: a script-style placeholder sits ABOVE the line,
-    // with clear gaps so it can never overlap the signer name below.
-    doc.setFont("times", "italic");
-    doc.setFontSize(13);
-    doc.setTextColor(37, 99, 235);
-    doc.text("Authorized Representative", x + slotW / 2, y + 5, { align: "center" });
-    y += 8;
+    // No uploaded signature. Only add the script-style name when a real signer
+    // exists — printing "Authorized Representative" on every invoice looked like
+    // an unfinished placeholder.
+    if (signerName) {
+      doc.setFont("times", "italic");
+      doc.setFontSize(13);
+      doc.setTextColor(37, 99, 235);
+      doc.text(signerName, x + slotW / 2, y + 5, { align: "center" });
+      y += 8;
+    }
   } else {
     y += imgH + 1.5;
   }
@@ -345,7 +353,7 @@ function drawSignatureBlock(
   doc.setFont(BODY_FONT, "bold");
   doc.setFontSize(8);
   doc.setTextColor(...INK);
-  doc.text(branding?.authorizedSignerName?.trim() || "Authorized Signer", x + slotW / 2, y + 5, {
+  doc.text(signerName || branding?.appName?.trim() || "", x + slotW / 2, y + 5, {
     align: "center",
   });
   doc.setFont(BODY_FONT, "normal");
@@ -719,7 +727,7 @@ export function buildInvoicePdf(inv: PdfInvoice, branding?: InvoiceBranding | nu
       doc.setFont(BODY_FONT, "normal");
       doc.setFontSize(6.8);
       doc.setTextColor(...FAINT);
-      const meta = ` (${dateShort(p.paymentDate)}) • ${(p.paymentMethod || "").toUpperCase()}`;
+      const meta = ` (${dateShort(p.paymentDate)}) • ${methodLabel(p.paymentMethod)}`;
       doc.text(fitText(meta, bw - (tagX - bx) - 30), tagX, pY);
       doc.setFont(BODY_FONT, "bold");
       doc.setFontSize(7.2);
@@ -1043,7 +1051,7 @@ export function buildReceiptPdf(
   y += 5;
   box("Received from:", inv.client?.companyName ?? "—");
   box("Invoice:", `#${inv.invoiceNumber}  (Total ${sym} ${money2(t.grand)})`);
-  box("Method:", (payment.paymentMethod ?? "—").toUpperCase());
+  box("Method:", methodLabel(payment.paymentMethod));
   box("Amount:", `${sym} ${money2(payment.amount)}`);
   if (payment.notes) box("Note:", String(payment.notes).slice(0, 80));
   y += 2;

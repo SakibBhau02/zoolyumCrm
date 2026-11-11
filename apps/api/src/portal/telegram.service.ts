@@ -58,15 +58,18 @@ export class TelegramService {
   // ── Linking ────────────────────────────────────────────────────────────
   /** One-time code + deep link the client taps to connect their chat. */
   async createLink(portalUserId: string) {
+    if (!(await this.token())) {
+      return { enabled: false, code: null, deepLink: null, expiresInMinutes: LINK_CODE_TTL_MS / 60000 };
+    }
     const code = `zl${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
     await this.prisma.portalUser.update({
       where: { id: portalUserId },
-      data: { telegramLinkCode: code },
+      data: { telegramLinkCode: code, telegramLinkCreatedAt: new Date() },
     });
     const bot = await this.botUsername();
     const link = bot ? `https://t.me/${bot}?start=${code}` : null;
     return {
-      enabled: !!((await this.token()) ?? null),
+      enabled: true,
       code,
       deepLink: link,
       expiresInMinutes: LINK_CODE_TTL_MS / 60000,
@@ -76,7 +79,7 @@ export class TelegramService {
   async unlink(portalUserId: string) {
     await this.prisma.portalUser.update({
       where: { id: portalUserId },
-      data: { telegramChatId: null, telegramLinkCode: null, telegramLinkedAt: null },
+      data: { telegramChatId: null, telegramLinkCode: null, telegramLinkCreatedAt: null, telegramLinkedAt: null },
     });
     return { ok: true };
   }
@@ -84,13 +87,22 @@ export class TelegramService {
   async status(portalUserId: string) {
     const pu = await this.prisma.portalUser.findUnique({
       where: { id: portalUserId },
-      select: { telegramChatId: true, telegramLinkedAt: true, telegramLinkCode: true },
+      select: {
+        telegramChatId: true,
+        telegramLinkedAt: true,
+        telegramLinkCode: true,
+        telegramLinkCreatedAt: true,
+      },
     });
+    const pending =
+      pu?.telegramLinkCode && pu.telegramLinkCreatedAt
+        ? Date.now() - pu.telegramLinkCreatedAt.getTime() < LINK_CODE_TTL_MS
+        : false;
     return {
       enabled: !!(await this.token()),
       linked: !!pu?.telegramChatId,
       linkedAt: pu?.telegramLinkedAt ?? null,
-      pendingCode: pu?.telegramLinkCode ?? null,
+      pendingCode: pending ? pu?.telegramLinkCode ?? null : null,
       botName: await this.botUsername(),
     };
   }
@@ -103,13 +115,31 @@ export class TelegramService {
     if (!code) return null;
     const pu = await this.prisma.portalUser.findFirst({
       where: { telegramLinkCode: code, isActive: true },
-      select: { id: true },
+      select: { id: true, telegramLinkCreatedAt: true },
     });
     if (!pu) return null;
-    // Codes are single-use: clear it as soon as it is consumed.
+    // Link codes are single-use and expire after 15 minutes.
+    if (!pu.telegramLinkCreatedAt || Date.now() - pu.telegramLinkCreatedAt.getTime() > LINK_CODE_TTL_MS) {
+      await this.prisma.portalUser
+        .update({ where: { id: pu.id }, data: { telegramLinkCode: null, telegramLinkCreatedAt: null } })
+        .catch(() => null);
+      return null;
+    }
+    // A Telegram chat belongs to one portal account at a time: detach any other
+    // contact that previously linked the same chat, so notifications cannot
+    // cross accounts.
+    await this.prisma.portalUser.updateMany({
+      where: { telegramChatId: String(chatId), id: { not: pu.id } },
+      data: { telegramChatId: null, telegramLinkedAt: null },
+    });
     await this.prisma.portalUser.update({
       where: { id: pu.id },
-      data: { telegramChatId: String(chatId), telegramLinkCode: null, telegramLinkedAt: new Date() },
+      data: {
+        telegramChatId: String(chatId),
+        telegramLinkCode: null,
+        telegramLinkCreatedAt: null,
+        telegramLinkedAt: new Date(),
+      },
     });
     return "✅ Connected. You will now get portal updates here.";
   }
@@ -129,7 +159,7 @@ export class TelegramService {
     try {
       await this.call("sendMessage", {
         chat_id: pu.telegramChatId,
-        text,
+        text: escapeHtml(text),
         parse_mode: "HTML",
         disable_web_page_preview: true,
       });
@@ -147,18 +177,23 @@ export class TelegramService {
       where: { isActive: true, telegramChatId: { not: null }, clientContact: { clientId } },
       select: { id: true, contactAccess: { select: { scope: true, projectIds: true } } },
     });
-    let sent = 0;
-    for (const u of users) {
-      if (
-        opts?.onlyLinkedToProject &&
-        u.contactAccess?.scope === "CUSTOM" &&
-        !u.contactAccess.projectIds.includes(opts.onlyLinkedToProject)
-      ) {
-        continue;
-      }
-      const r = await this.notifyPortalUser(u.id, text);
-      if (r.sent) sent++;
-    }
-    return { sent };
+    const targets = users.filter(
+      (u) =>
+        !(
+          opts?.onlyLinkedToProject &&
+          u.contactAccess?.scope === "CUSTOM" &&
+          !u.contactAccess.projectIds.includes(opts.onlyLinkedToProject)
+        )
+    );
+    const results = await Promise.allSettled(targets.map((u) => this.notifyPortalUser(u.id, text)));
+    return { sent: results.filter((r) => r.status === "fulfilled" && r.value.sent).length };
   }
+}
+
+/** Telegram parses HTML; client-authored text must not be able to break it. */
+function escapeHtml(value: string): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }

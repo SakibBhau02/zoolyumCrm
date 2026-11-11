@@ -3,7 +3,7 @@ import { InvoiceStatus, RevenueTag } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { ACTIVE_STATUSES, buildTrend, invoiceTotals } from "./finance-kernel";
+import { ACTIVE_STATUSES, INVOICE_CREDIT_INCLUDE, buildTrend, invoiceTotals, startOfTodayUtc, toBdt } from "./finance-kernel";
 
 @Injectable()
 export class ReportingService {
@@ -21,13 +21,13 @@ export class ReportingService {
 
   private async computeOverview() {
     const [invoices, expenses, bankAccounts, payments, snapshots, unreconciledCount] = await Promise.all([
-      this.prisma.invoice.findMany({ include: { lineItems: true, payments: true } }),
+      this.prisma.invoice.findMany({ include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE } }),
       this.prisma.expense.findMany({
         where: { approvalStatus: "APPROVED" },
-        select: { amount: true, date: true, category: true, isClientBillable: true, description: true },
+        select: { amount: true, exchangeRate: true, date: true, category: true, isClientBillable: true, description: true },
       }),
       this.prisma.bankAccount.findMany({ select: { accountName: true, accountType: true, currentBalance: true } }),
-      this.prisma.payment.findMany({ select: { amount: true, paymentMethod: true } }),
+      this.prisma.payment.findMany({ select: { amount: true, exchangeRate: true, type: true, paymentMethod: true } }),
       this.prisma.metricSnapshot.findMany({ orderBy: { recordedAt: "asc" } }),
       // Bank entries nobody has matched yet — the cash figure cannot be trusted
       // until these are cleared, so the overview surfaces them.
@@ -36,33 +36,32 @@ export class ReportingService {
 
     const invoiceable = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status));
     const sumLines = (i: any, tag?: RevenueTag) =>
-      i.lineItems.filter((l: any) => (tag ? l.revenueTag === tag : true)).reduce((s: number, l: any) => s + Number(l.amount), 0);
-    // Net of refunds; identical rule to the Accounts module and the web UI.
-    const paidOf = (i: any) => invoiceTotals(i).paid;
+      i.lineItems.filter((l: any) => (tag ? l.revenueTag === tag : true)).reduce((s: number, l: any) => s + toBdt(Number(l.amount), i), 0);
+    // Net of refunds and credits; identical rule to the Accounts module and the web UI.
+    const paidOf = (i: any) => invoiceTotals(i).paidBdt;
 
-    const totalInvoiced = invoiceable.reduce((s, i) => s + invoiceTotals(i).grand, 0);
+    const totalInvoiced = invoiceable.reduce((s, i) => s + invoiceTotals(i).grandBdt, 0);
     const recognizedRevenue = invoiceable.reduce((s, i) => s + sumLines(i, "AGENCY_REVENUE") + sumLines(i, "MANAGEMENT_FEE"), 0);
-    const collected = invoices.reduce((s, i) => s + paidOf(i), 0);
-    const outstanding = invoiceable.reduce((s, i) => s + invoiceTotals(i).balance, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const collected = invoiceable.reduce((s, i) => s + paidOf(i), 0);
+    const outstanding = invoiceable.reduce((s, i) => s + invoiceTotals(i).balanceBdt, 0);
+    const today = startOfTodayUtc();
     // Date-based: status badges are synced, but this must hold even if a row
     // was never swept (e.g. between cron runs).
     const overdueAmount = invoiceable.reduce((s, i) => {
-      const bal = invoiceTotals(i).balance;
-      return bal > 0 && i.dueDate && i.dueDate < today ? s + bal : s;
+      const bal = invoiceTotals(i).balanceBdt;
+      return bal > 0 && i.dueDate && new Date(i.dueDate).getTime() < today.getTime() ? s + bal : s;
     }, 0);
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const expensesMonth = expenses.filter((e) => e.date >= monthStart).reduce((s, e) => s + Number(e.amount), 0);
+    const expensesMonth = expenses.filter((e) => e.date >= monthStart).reduce((s, e) => s + toBdt(Number(e.amount), e), 0);
     const billableShare = expensesMonth
-      ? Math.round((expenses.filter((e) => e.isClientBillable && e.date >= monthStart).reduce((s, e) => s + Number(e.amount), 0) / expensesMonth) * 100)
+      ? Math.round((expenses.filter((e) => e.isClientBillable && e.date >= monthStart).reduce((s, e) => s + toBdt(Number(e.amount), e), 0) / expensesMonth) * 100)
       : 0;
     const cashPosition = bankAccounts.reduce((s, b) => s + Number(b.currentBalance), 0);
 
     const paymentSplit = new Map<string, number>();
-    for (const p of payments) paymentSplit.set(p.paymentMethod, (paymentSplit.get(p.paymentMethod) ?? 0) + Number(p.amount));
+    for (const p of payments) paymentSplit.set(p.paymentMethod, (paymentSplit.get(p.paymentMethod) ?? 0) + (p.type === "REFUND" ? -1 : 1) * toBdt(Number(p.amount), p));
 
     const trend = buildTrend(snapshots);
     const profitTrend = trend.map((t) => ({ month: t.month, revenue: t.invoiced, expenses: t.expenses, profit: t.invoiced - t.expenses }));
@@ -92,20 +91,19 @@ export class ReportingService {
   private async computeAging() {
     const invoices = await this.prisma.invoice.findMany({
       where: { status: { in: ["SENT", "VIEWED", "PARTIALLY_PAID", "OVERDUE"] as InvoiceStatus[] } },
-      include: { lineItems: true, payments: true, client: { select: { id: true, companyName: true } } },
+      include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE, client: { select: { id: true, companyName: true } } },
     });
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const now = startOfTodayUtc();
     const buckets: Record<string, number> = { CURRENT: 0, "1-30": 0, "31-60": 0, "61-90": 0, "90+": 0 };
     const byClient = new Map<string, { clientId: string; clientName: string; total: number; current: number; d30: number; d60: number; d90: number; d90p: number }>();
     let totalOutstanding = 0;
     for (const inv of invoices) {
       const t = invoiceTotals(inv);
-      const bal = Math.max(t.grand - t.paid, 0);
+      const bal = t.balanceBdt;
       if (bal <= 0) continue;
       totalOutstanding += bal;
       const due = inv.dueDate ?? inv.issueDate;
-      const days = Math.floor((now.getTime() - due.getTime()) / 86400000);
+      const days = Math.floor((now.getTime() - new Date(due).getTime()) / 86400000);
       const key = days <= 0 ? "CURRENT" : days <= 30 ? "1-30" : days <= 60 ? "31-60" : days <= 90 ? "61-90" : "90+";
       buckets[key] += bal;
       const c = byClient.get(inv.clientId) ?? { clientId: inv.clientId, clientName: inv.client.companyName, total: 0, current: 0, d30: 0, d60: 0, d90: 0, d90p: 0 };
@@ -134,14 +132,13 @@ export class ReportingService {
 
 
   private async computeForecast() {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const now = startOfTodayUtc();
     const horizon = new Date(now);
     horizon.setDate(horizon.getDate() + 90);
     const [invoices, expenses, bankAccounts] = await Promise.all([
       this.prisma.invoice.findMany({
         where: { status: { in: ["SENT", "VIEWED", "PARTIALLY_PAID", "OVERDUE"] as InvoiceStatus[] }, dueDate: { lte: horizon } },
-        include: { lineItems: true, payments: true },
+        include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE },
       }),
       this.prisma.expense.findMany({ where: { approvalStatus: "APPROVED", date: { gte: now, lte: horizon } } }),
       this.prisma.bankAccount.findMany({ select: { currentBalance: true } }),
@@ -149,17 +146,17 @@ export class ReportingService {
     const buckets = [0, 1, 2].map((i) => ({ label: `0-${(i + 1) * 30}d`, inflow: 0, outflow: 0, net: 0 }));
     for (const inv of invoices) {
       const t = invoiceTotals(inv);
-      const bal = Math.max(t.grand - t.paid, 0);
+      const bal = t.balanceBdt;
       if (bal <= 0) continue;
       const due = inv.dueDate ?? inv.issueDate;
-      const days = Math.floor((due.getTime() - now.getTime()) / 86400000);
+      const days = Math.floor((new Date(due).getTime() - now.getTime()) / 86400000);
       const idx = Math.min(2, Math.floor(Math.max(days, 0) / 30));
       buckets[idx].inflow += bal;
     }
     for (const e of expenses) {
       const days = Math.floor((e.date.getTime() - now.getTime()) / 86400000);
       const idx = Math.min(2, Math.floor(Math.max(days, 0) / 30));
-      buckets[idx].outflow += Number(e.amount);
+      buckets[idx].outflow += toBdt(Number(e.amount), e);
     }
     for (const b of buckets) {
       b.inflow = Math.round(b.inflow * 100) / 100;
@@ -186,7 +183,7 @@ export class ReportingService {
       }),
       this.prisma.invoice.findMany({
         where: { projectId },
-        include: { lineItems: true, payments: true, client: { select: { id: true, companyName: true } } },
+        include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE, client: { select: { id: true, companyName: true } } },
         orderBy: { issueDate: "desc" },
       }),
       this.prisma.expense.findMany({
@@ -197,15 +194,15 @@ export class ReportingService {
     ]);
     if (!project) throw new NotFoundException("Project not found");
     const active = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status));
-    const amountOf = (i: any) => invoiceTotals(i).grand;
-    const paidOf = (i: any) => invoiceTotals(i).paid;
+    const amountOf = (i: any) => invoiceTotals(i).grandBdt;
+    const paidOf = (i: any) => invoiceTotals(i).paidBdt;
     const totalInvoiced = active.reduce((s, i) => s + amountOf(i), 0);
     const collected = invoices.reduce((s, i) => s + paidOf(i), 0);
-    const outstanding = active.reduce((s, i) => s + invoiceTotals(i).balance, 0);
+    const outstanding = active.reduce((s, i) => s + invoiceTotals(i).balanceBdt, 0);
     const approvedExpenses = expenses.filter((e) => e.approvalStatus === "APPROVED");
-    const expensesTotal = approvedExpenses.reduce((s, e) => s + Number(e.amount), 0);
+    const expensesTotal = approvedExpenses.reduce((s, e) => s + toBdt(Number(e.amount), e), 0);
     const byCategory = new Map<string, number>();
-    for (const e of approvedExpenses) byCategory.set(e.category, (byCategory.get(e.category) ?? 0) + Number(e.amount));
+    for (const e of approvedExpenses) byCategory.set(e.category, (byCategory.get(e.category) ?? 0) + toBdt(Number(e.amount), e));
     return {
       project: { id: project.id, name: project.name, billingType: project.billingType, recurringInterval: project.recurringInterval, nextBillingDate: project.nextBillingDate, monthlyRate: project.monthlyRate, totalBilled: project.totalBilled, paymentStatus: project.paymentStatus, budgetAmount: project.budgetAmount, currency: (project as any).currency ?? "BDT" },
       totalInvoiced,
@@ -309,29 +306,67 @@ export class ReportingService {
     const lines = await this.prisma.journalEntryLine.findMany({ include: { account: true } });
     const assets = new Map<string, { name: string; code: string; amount: number }>();
     const liabilities = new Map<string, { name: string; code: string; amount: number }>();
-    let totalAssets = 0, totalLiabilities = 0;
+    const equityAccounts = new Map<string, { name: string; code: string; amount: number }>();
+    const pnl = new Map<string, { name: string; code: string; amount: number }>();
+    let totalDebit = 0;
+    let totalCredit = 0;
     for (const l of lines) {
-      const bal = Number(l.debit) - Number(l.credit);
+      const debit = Number(l.debit);
+      const credit = Number(l.credit);
+      totalDebit += debit;
+      totalCredit += credit;
+      const bal = debit - credit;
+      const code = String(l.account.code ?? "");
+      const bucket = (map: typeof assets) => {
+        const row = map.get(l.accountId) ?? { name: l.account.name, code, amount: 0 };
+        row.amount += -bal;
+        map.set(l.accountId, row);
+      };
       if (l.account.category === "ASSET") {
-        const a = assets.get(l.accountId) ?? { name: l.account.name, code: l.account.code ?? "", amount: 0 };
-        a.amount += bal;
-        assets.set(l.accountId, a);
+        const row = assets.get(l.accountId) ?? { name: l.account.name, code, amount: 0 };
+        row.amount += bal;
+        assets.set(l.accountId, row);
       } else if (l.account.category === "LIABILITY") {
-        const li = liabilities.get(l.accountId) ?? { name: l.account.name, code: l.account.code ?? "", amount: 0 };
-        li.amount += -bal;
-        liabilities.set(l.accountId, li);
+        // Equity is the 3xxx block (seed keeps "Retained Earnings" at 3000).
+        if (code.startsWith("3")) bucket(equityAccounts);
+        else bucket(liabilities);
+      } else if (l.account.category === "REVENUE" || l.account.category === "DIRECT_COST" || l.account.category === "OPEX") {
+        // Profit & loss accounts are not closed into equity in this workspace,
+        // so their net movement is presented as current-period equity.
+        bucket(pnl);
       }
     }
-    for (const a of assets.values()) { a.amount = Math.round(a.amount * 100) / 100; totalAssets += a.amount; }
-    for (const li of liabilities.values()) { li.amount = Math.round(li.amount * 100) / 100; totalLiabilities += li.amount; }
-    const equity = Math.round((totalAssets - totalLiabilities) * 100) / 100;
+    const round = (m: Map<string, { name: string; code: string; amount: number }>) => {
+      for (const row of m.values()) row.amount = Math.round(row.amount * 100) / 100;
+      return Array.from(m.values()).sort((a, b) => a.code.localeCompare(b.code));
+    };
+    const assetRows = round(assets);
+    const liabilityRows = round(liabilities);
+    const equityRows = round(equityAccounts);
+    const pnlRows = round(pnl);
+    const totalAssets = Math.round(assetRows.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+    const totalLiabilities = Math.round(liabilityRows.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+    const currentProfit = Math.round(pnlRows.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+    const retained = Math.round(equityRows.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+    const totalEquity = Math.round((retained + currentProfit) * 100) / 100;
     return {
-      assets: Array.from(assets.values()).sort((a, b) => a.code.localeCompare(b.code)),
-      liabilities: Array.from(liabilities.values()).sort((a, b) => a.code.localeCompare(b.code)),
-      totalAssets: Math.round(totalAssets * 100) / 100,
-      totalLiabilities: Math.round(totalLiabilities * 100) / 100,
-      equity,
-      balanced: Math.abs(equity - (totalAssets - totalLiabilities)) < 0.01,
+      assets: assetRows,
+      liabilities: liabilityRows,
+      equityAccounts: equityRows,
+      equity: totalEquity,
+      retainedEarnings: retained,
+      currentProfit,
+      totalAssets,
+      totalLiabilities,
+      totalEquity,
+      totalEquityAndLiabilities: Math.round((totalLiabilities + totalEquity) * 100) / 100,
+      totalDebit: Math.round(totalDebit * 100) / 100,
+      totalCredit: Math.round(totalCredit * 100) / 100,
+      // A real check: assets must equal liabilities + equity. The old version
+      // defined equity as assets − liabilities and then compared the two, so it
+      // could never report an imbalance. The trial-balance check is independent.
+      balanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
+      trialBalanced: Math.abs(totalDebit - totalCredit) < 0.01,
     };
   }
 
@@ -371,13 +406,17 @@ export class ReportingService {
     }
     const openingBalance = 0; // ledger starts this cycle
     const closingBalance = bankAccounts.reduce((s, b) => s + Number(b.currentBalance), 0);
+    const netChange = Math.round((closingBalance - openingBalance) * 100) / 100;
     return {
       operating: Array.from(operating.entries()).map(([type, net]) => ({ type, net: Math.round(net * 100) / 100 })),
       netOperating: Math.round(netOperating * 100) / 100,
       openingBalance,
       closingBalance,
-      netChange: Math.round((closingBalance - openingBalance) * 100) / 100,
-      detail: detail.slice(0, 200),
+      netChange,
+      // When these disagree the GL cash account and the operational bank
+      // balances are out of step (usually an un-posted opening balance).
+      reconciled: Math.abs(Math.round(netOperating * 100) / 100 - netChange) < 0.01,
+      detail: detail.slice(-200),
     };
   }
   // ── Reports data ─────────────────────────────────────────────────────
@@ -390,14 +429,16 @@ export class ReportingService {
 
   private async computeReportsData() {
     const [invoices, expenses, payments, projects] = await Promise.all([
-      this.prisma.invoice.findMany({ include: { lineItems: true, payments: true } }),
+      this.prisma.invoice.findMany({ include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE } }),
       this.prisma.expense.findMany({ where: { approvalStatus: "APPROVED" } }),
       this.prisma.payment.findMany(),
       this.prisma.project.findMany({ select: { id: true, name: true } }),
     ]);
 
-    const sumLines = (i: any) => i.lineItems.reduce((s: number, l: any) => s + Number(l.amount), 0);
-    const paidOf = (i: any) => invoiceTotals(i).paid;
+    const sumLines = (i: any) => i.lineItems.reduce((s: number, l: any) => s + toBdt(Number(l.amount), i), 0);
+    const paidOf = (i: any) => invoiceTotals(i).paidBdt;
+    // Signed BDT value of a payment: refunds reduce the total.
+    const paymentBdt = (p: any) => (p.type === "REFUND" ? -1 : 1) * toBdt(Number(p.amount), p);
 
     // Revenue by category (invoiceType)
     const byCategory = new Map<string, number>();
@@ -408,49 +449,61 @@ export class ReportingService {
 
     // Payment methods distribution
     const byMethod = new Map<string, number>();
-    for (const p of payments) byMethod.set(p.paymentMethod, (byMethod.get(p.paymentMethod) ?? 0) + Number(p.amount));
+    for (const p of payments) byMethod.set(p.paymentMethod, (byMethod.get(p.paymentMethod) ?? 0) + paymentBdt(p));
 
-    // 8-month trend
+    // 8-month trend — collected is bucketed by PAYMENT date (cash actually
+    // arrived), revenue by invoice issue date. Previously collected was added
+    // from issue date, which made the cash trend lag reality.
     const months: { month: string; revenue: number; expenses: number; profit: number; collected: number }[] = [];
+    const monthKeys: string[] = [];
     const now = new Date();
     for (let i = 7; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      monthKeys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
       months.push({
         month: d.toLocaleString("en-US", { month: "short" }),
         revenue: 0, expenses: 0, profit: 0, collected: 0,
       });
-      const idx = months.length - 1;
-      for (const inv of invoices) {
-        if (inv.issueDate.toISOString().slice(0, 7) !== key) continue;
-        if (ACTIVE_STATUSES.includes(inv.status)) months[idx].revenue += sumLines(inv);
-        months[idx].collected += paidOf(inv);
-      }
-      for (const e of expenses) {
-        if (e.date.toISOString().slice(0, 7) === key) months[idx].expenses += Number(e.amount);
-      }
-      months[idx].profit = Math.round((months[idx].revenue - months[idx].expenses) * 100) / 100;
-      months[idx].revenue = Math.round(months[idx].revenue * 100) / 100;
-      months[idx].expenses = Math.round(months[idx].expenses * 100) / 100;
-      months[idx].collected = Math.round(months[idx].collected * 100) / 100;
     }
-
-    // Weekly cash flow (current month)
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const cashFlow = [0, 1, 2, 3].map((w) => ({ week: `W${w + 1}`, inflow: 0, outflow: 0, net: 0 }));
+    const monthIndex = new Map(monthKeys.map((k, i) => [k, i]));
+    const keyOf = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
     for (const inv of invoices) {
-      if (inv.payments.length === 0) continue;
-      if (inv.issueDate >= monthStart && inv.issueDate < nextMonth) {
-        const w = Math.min(3, Math.floor((inv.issueDate.getDate() - 1) / 7));
-        cashFlow[w].inflow += paidOf(inv);
-      }
+      const idx = monthIndex.get(keyOf(inv.issueDate));
+      if (idx === undefined) continue;
+      if (ACTIVE_STATUSES.includes(inv.status)) months[idx].revenue += sumLines(inv);
+    }
+    for (const p of payments) {
+      const idx = monthIndex.get(keyOf(p.paymentDate));
+      if (idx === undefined) continue;
+      months[idx].collected += paymentBdt(p);
     }
     for (const e of expenses) {
-      if (e.date >= monthStart && e.date < nextMonth) {
-        const w = Math.min(3, Math.floor((e.date.getDate() - 1) / 7));
-        cashFlow[w].outflow += Number(e.amount);
-      }
+      const idx = monthIndex.get(keyOf(e.date));
+      if (idx === undefined) continue;
+      months[idx].expenses += toBdt(Number(e.amount), e);
+    }
+    for (const m of months) {
+      m.profit = Math.round((m.revenue - m.expenses) * 100) / 100;
+      m.revenue = Math.round(m.revenue * 100) / 100;
+      m.expenses = Math.round(m.expenses * 100) / 100;
+      m.collected = Math.round(m.collected * 100) / 100;
+    }
+
+    // Weekly cash flow (current month) — bucketed by the date cash moved.
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const cashFlow = [0, 1, 2, 3].map((w) => ({ week: `W${w + 1}`, inflow: 0, outflow: 0, net: 0 }));
+    for (const p of payments) {
+      if (p.paymentDate < monthStart || p.paymentDate >= nextMonth) continue;
+      const w = Math.min(3, Math.floor((new Date(p.paymentDate).getUTCDate() - 1) / 7));
+      const signed = paymentBdt(p);
+      if (signed >= 0) cashFlow[w].inflow += signed;
+      else cashFlow[w].outflow += Math.abs(signed);
+    }
+    for (const e of expenses) {
+      if (e.date < monthStart || e.date >= nextMonth) continue;
+      const w = Math.min(3, Math.floor((new Date(e.date).getUTCDate() - 1) / 7));
+      cashFlow[w].outflow += toBdt(Number(e.amount), e);
     }
     for (const w of cashFlow) {
       w.inflow = Math.round(w.inflow * 100) / 100;
@@ -460,7 +513,7 @@ export class ReportingService {
 
     // Budget overview (top expense categories, with real budgets)
     const byExpCat = new Map<string, number>();
-    for (const e of expenses) byExpCat.set(e.category, (byExpCat.get(e.category) ?? 0) + Number(e.amount));
+    for (const e of expenses) byExpCat.set(e.category, (byExpCat.get(e.category) ?? 0) + toBdt(Number(e.amount), e));
     const budgets = await this.prisma.budget.findMany();
     const budgetPlanned = new Map<string, number>();
     for (const b of budgets) {
@@ -473,22 +526,31 @@ export class ReportingService {
       .map((x) => ({ name: x.category, planned: Math.round(budgetPlanned.get(x.category) ?? 0), actual: x.spent }));
 
     // Key metrics
-    const totalInvoiced = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status)).reduce((s, i) => s + invoiceTotals(i).grand, 0);
-    const totalCollected = payments.reduce((s, p) => s + (p.type === "REFUND" ? -Number(p.amount) : Number(p.amount)), 0);
+    const totalInvoiced = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status)).reduce((s, i) => s + invoiceTotals(i).grandBdt, 0);
+    const totalCollected = payments.reduce((s, p) => s + paymentBdt(p), 0);
     const avgInvoiceValue = totalInvoiced ? totalInvoiced / Math.max(invoices.filter((i) => ACTIVE_STATUSES.includes(i.status)).length, 1) : 0;
-    const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
+    const totalExpenses = expenses.reduce((s, e) => s + toBdt(Number(e.amount), e), 0);
     const profitMargin = totalInvoiced ? ((totalInvoiced - totalExpenses) / totalInvoiced) * 100 : 0;
     const collectionRate = totalInvoiced ? (totalCollected / totalInvoiced) * 100 : 0;
 
-    // Tax report (quarterly)
+    // Tax report (quarterly). Collected is real cash received in the quarter —
+    // it used to be hard-coded to 0, so the tax table always showed ৳0.
     const quarters = ["Q1", "Q2", "Q3", "Q4"].map((q, qi) => {
-      const start = new Date(now.getFullYear(), qi * 3, 1);
-      const end = new Date(now.getFullYear(), qi * 3 + 3, 1);
-      let revenue = 0, exp = 0;
+      const start = new Date(Date.UTC(now.getUTCFullYear(), qi * 3, 1));
+      const end = new Date(Date.UTC(now.getUTCFullYear(), qi * 3 + 3, 1));
+      let revenue = 0, exp = 0, collected = 0;
       for (const inv of invoices) if (inv.issueDate >= start && inv.issueDate < end && ACTIVE_STATUSES.includes(inv.status)) revenue += sumLines(inv);
-      for (const e of expenses) if (e.date >= start && e.date < end) exp += Number(e.amount);
+      for (const e of expenses) if (e.date >= start && e.date < end) exp += toBdt(Number(e.amount), e);
+      for (const p of payments) if (p.paymentDate >= start && p.paymentDate < end) collected += paymentBdt(p);
       const taxable = Math.max(revenue - exp, 0);
-      return { quarter: q, revenue: Math.round(revenue), expenses: Math.round(exp), taxableIncome: Math.round(taxable), estimatedTax: Math.round(taxable * 0.22) };
+      return {
+        quarter: q,
+        revenue: Math.round(revenue),
+        collected: Math.round(collected),
+        expenses: Math.round(exp),
+        taxableIncome: Math.round(taxable),
+        estimatedTax: Math.round(taxable * 0.22),
+      };
     });
 
     return {
@@ -511,14 +573,14 @@ export class ReportingService {
         rows: quarters.map((q) => ({
           label: q.quarter,
           invoiced: q.revenue,
-          collected: 0,
+          collected: q.collected,
           expenses: q.expenses,
           net: q.taxableIncome,
           estimatedTax: q.estimatedTax,
         })),
         totals: {
           invoiced: quarters.reduce((s, q) => s + q.revenue, 0),
-          collected: 0,
+          collected: quarters.reduce((s, q) => s + q.collected, 0),
           expenses: quarters.reduce((s, q) => s + q.expenses, 0),
           net: quarters.reduce((s, q) => s + q.taxableIncome, 0),
           estimatedTax: quarters.reduce((s, q) => s + q.estimatedTax, 0),
@@ -564,7 +626,7 @@ export class ReportingService {
     const [invoices, payments, expenses] = await Promise.all([
       this.prisma.invoice.findMany({
         where: { issueDate: { gte: from, lte: to } },
-        include: { lineItems: true, payments: true, client: { select: { id: true, companyName: true } } },
+        include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE, client: { select: { id: true, companyName: true } } },
         orderBy: { issueDate: "desc" },
       }),
       this.prisma.payment.findMany({
@@ -581,17 +643,16 @@ export class ReportingService {
     const r2 = (n: number) => Math.round(n * 100) / 100;
     const active = invoices.filter((i) => ACTIVE_STATUSES.includes(i.status));
     const sumLines = (i: any) =>
-      (i.lineItems ?? []).reduce((s: number, l: any) => s + Number(l.amount ?? 0), 0);
+      (i.lineItems ?? []).reduce((s: number, l: any) => s + toBdt(Number(l.amount ?? 0), i), 0);
+    const paymentBdt = (p: any) => (p.type === "REFUND" ? -1 : 1) * toBdt(Number(p.amount ?? 0), p);
 
-    const invoiced = r2(active.reduce((s, i) => s + invoiceTotals(i).grand, 0));
-    const collected = r2(
-      payments.reduce((s, p) => s + (p.type === "REFUND" ? -Number(p.amount) : Number(p.amount)), 0)
-    );
-    const expensesTotal = r2(expenses.reduce((s, e) => s + Number(e.amount), 0));
+    const invoiced = r2(active.reduce((s, i) => s + invoiceTotals(i).grandBdt, 0));
+    const collected = r2(payments.reduce((s, p) => s + paymentBdt(p), 0));
+    const expensesTotal = r2(expenses.reduce((s, e) => s + toBdt(Number(e.amount), e), 0));
     const profit = r2(invoiced - expensesTotal);
     const margin = invoiced ? Math.round((profit / invoiced) * 10000) / 100 : 0;
     const collectionRate = invoiced ? Math.round((collected / invoiced) * 10000) / 100 : 0;
-    const outstanding = r2(active.reduce((s, i) => s + invoiceTotals(i).balance, 0));
+    const outstanding = r2(active.reduce((s, i) => s + invoiceTotals(i).balanceBdt, 0));
 
     // ── monthly buckets across the window ──
     const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -615,15 +676,15 @@ export class ReportingService {
     }
     for (const inv of active) {
       const b = buckets.get(monthKey(inv.issueDate));
-      if (b) b.invoiced += invoiceTotals(inv).grand;
+      if (b) b.invoiced += invoiceTotals(inv).grandBdt;
     }
     for (const p of payments) {
       const b = buckets.get(monthKey(p.paymentDate));
-      if (b) b.collected += p.type === "REFUND" ? -Number(p.amount) : Number(p.amount);
+      if (b) b.collected += paymentBdt(p);
     }
     for (const e of expenses) {
       const b = buckets.get(monthKey(e.date));
-      if (b) b.expenses += Number(e.amount);
+      if (b) b.expenses += toBdt(Number(e.amount), e);
     }
     const monthly = Array.from(buckets.values()).map((b) => ({
       ...b,
@@ -643,9 +704,9 @@ export class ReportingService {
       const row =
         byStatusMap.get(inv.status) ?? { status: inv.status, count: 0, invoiced: 0, paid: 0, balance: 0 };
       row.count += 1;
-      row.invoiced += ACTIVE_STATUSES.includes(inv.status) ? t.grand : 0;
-      row.paid += t.paid;
-      row.balance += ACTIVE_STATUSES.includes(inv.status) ? t.balance : 0;
+      row.invoiced += ACTIVE_STATUSES.includes(inv.status) ? t.grandBdt : 0;
+      row.paid += t.paidBdt;
+      row.balance += ACTIVE_STATUSES.includes(inv.status) ? t.balanceBdt : 0;
       byStatusMap.set(inv.status, row);
     }
     const byStatus = Array.from(byStatusMap.values())
@@ -658,13 +719,12 @@ export class ReportingService {
 
     const byMethodMap = new Map<string, number>();
     for (const p of payments) {
-      const net = p.type === "REFUND" ? -Number(p.amount) : Number(p.amount);
-      byMethodMap.set(p.paymentMethod, (byMethodMap.get(p.paymentMethod) ?? 0) + net);
+      byMethodMap.set(p.paymentMethod, (byMethodMap.get(p.paymentMethod) ?? 0) + paymentBdt(p));
     }
 
     const byExpenseCategoryMap = new Map<string, number>();
     for (const e of expenses)
-      byExpenseCategoryMap.set(e.category, (byExpenseCategoryMap.get(e.category) ?? 0) + Number(e.amount));
+      byExpenseCategoryMap.set(e.category, (byExpenseCategoryMap.get(e.category) ?? 0) + toBdt(Number(e.amount), e));
 
     const clientMap = new Map<
       string,
@@ -682,9 +742,9 @@ export class ReportingService {
           invoices: 0,
         };
       row.invoices += 1;
-      row.invoiced += ACTIVE_STATUSES.includes(inv.status) ? t.grand : 0;
-      row.paid += t.paid;
-      row.balance += ACTIVE_STATUSES.includes(inv.status) ? t.balance : 0;
+      row.invoiced += ACTIVE_STATUSES.includes(inv.status) ? t.grandBdt : 0;
+      row.paid += t.paidBdt;
+      row.balance += ACTIVE_STATUSES.includes(inv.status) ? t.balanceBdt : 0;
       clientMap.set(inv.clientId, row);
     }
     const topClients = Array.from(clientMap.values())
@@ -735,9 +795,9 @@ export class ReportingService {
           dueDate: inv.dueDate,
           status: inv.status,
           invoiceType: inv.invoiceType,
-          amount: t.grand,
-          paid: t.paid,
-          balance: t.balance,
+          amount: t.grandBdt,
+          paid: t.paidBdt,
+          balance: t.balanceBdt,
         };
       }),
       expenses: expenses.map((e) => ({
@@ -745,14 +805,14 @@ export class ReportingService {
         date: e.date,
         description: e.description,
         category: e.category,
-        amount: Number(e.amount),
+        amount: toBdt(Number(e.amount), e),
         paymentMethod: e.paymentMethod,
         isClientBillable: e.isClientBillable,
       })),
       payments: payments.map((p) => ({
         id: p.id,
         date: p.paymentDate,
-        amount: p.type === "REFUND" ? -Number(p.amount) : Number(p.amount),
+        amount: paymentBdt(p),
         method: p.paymentMethod,
         type: p.type,
         reference: p.referenceId,
@@ -769,7 +829,7 @@ export class ReportingService {
   private async computeProfitability() {
     const projects = await this.prisma.project.findMany({
       include: {
-        invoices: { include: { lineItems: true, payments: true } },
+        invoices: { include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE } },
         expenses: true,
         tasks: { include: { timeLogs: true } },
       },
@@ -777,9 +837,9 @@ export class ReportingService {
     const rows = projects.map((p) => {
       const revenue = p.invoices
         .filter((i) => ACTIVE_STATUSES.includes(i.status))
-        .reduce((s, i) => s + i.lineItems.filter((l) => l.revenueTag !== "PASS_THROUGH").reduce((x, l) => x + Number(l.amount), 0), 0);
-      const cost = p.expenses.filter((e) => e.approvalStatus === "APPROVED").reduce((s, e) => s + Number(e.amount), 0);
-      const collected = p.invoices.reduce((s, i) => s + invoiceTotals(i).paid, 0);
+        .reduce((s, i) => s + i.lineItems.filter((l) => l.revenueTag !== "PASS_THROUGH").reduce((x, l) => x + toBdt(Number(l.amount), i), 0), 0);
+      const cost = p.expenses.filter((e) => e.approvalStatus === "APPROVED").reduce((s, e) => s + toBdt(Number(e.amount), e), 0);
+      const collected = p.invoices.reduce((s, i) => s + invoiceTotals(i).paidBdt, 0);
       const hours = p.tasks.reduce((s, t) => s + t.timeLogs.reduce((x, l) => x + Number(l.hours), 0), 0);
       return {
         id: p.id,
@@ -800,12 +860,12 @@ export class ReportingService {
       const monthlyExpense = new Map<string, number>();
       for (const i of p.invoices) {
         if (!ACTIVE_STATUSES.includes(i.status)) continue;
-        const rev = i.lineItems.filter((l) => l.revenueTag !== "PASS_THROUGH").reduce((x, l) => x + Number(l.amount), 0);
+        const rev = i.lineItems.filter((l) => l.revenueTag !== "PASS_THROUGH").reduce((x, l) => x + toBdt(Number(l.amount), i), 0);
         if (rev > 0) monthlyRevenue.set(monthKey(i.issueDate), (monthlyRevenue.get(monthKey(i.issueDate)) ?? 0) + rev);
       }
       for (const e of p.expenses) {
         if (e.approvalStatus !== "APPROVED") continue;
-        monthlyExpense.set(monthKey(e.date), (monthlyExpense.get(monthKey(e.date)) ?? 0) + Number(e.amount));
+        monthlyExpense.set(monthKey(e.date), (monthlyExpense.get(monthKey(e.date)) ?? 0) + toBdt(Number(e.amount), e));
       }
       for (const [m, rev] of monthlyRevenue) {
         const entry = months.get(m) ?? { month: m, revenue: 0, expenses: 0, profit: 0, margin: null as number | null };
@@ -862,18 +922,18 @@ export class ReportingService {
       this.prisma.manualIncome.findMany(),
       this.prisma.dollarSale.findMany({ select: { usdAmount: true, profit: true, marginPct: true, paymentMethod: true } }),
     ]);
-    const totalPayments = payments.filter((p) => p.type === "IN").reduce((s, p) => s + Number(p.amount), 0);
+    const totalPayments = payments.filter((p) => p.type === "IN").reduce((s, p) => s + toBdt(Number(p.amount), p), 0);
     const recurring = payments
       .filter((p) => p.type === "IN" && p.invoice?.invoiceType === "RECURRING")
-      .reduce((s, p) => s + Number(p.amount), 0);
+      .reduce((s, p) => s + toBdt(Number(p.amount), p), 0);
     const oneTime = totalPayments - recurring;
-    const manualTotal = manual.reduce((s, m) => s + Number(m.amount), 0);
+    const manualTotal = manual.reduce((s, m) => s + toBdt(Number(m.amount), m), 0);
     const fxProfit = dollarSales.reduce((s, d) => s + Number(d.profit), 0);
     const fxUsd = dollarSales.reduce((s, d) => s + Number(d.usdAmount), 0);
     const txCount = payments.filter((p) => p.type === "IN").length + manual.length + dollarSales.length;
     const byMethod = new Map<string, number>();
-    for (const p of payments) if (p.type === "IN") byMethod.set(p.paymentMethod, (byMethod.get(p.paymentMethod) ?? 0) + Number(p.amount));
-    for (const m of manual) byMethod.set(m.paymentMethod, (byMethod.get(m.paymentMethod) ?? 0) + Number(m.amount));
+    for (const p of payments) if (p.type === "IN") byMethod.set(p.paymentMethod, (byMethod.get(p.paymentMethod) ?? 0) + toBdt(Number(p.amount), p));
+    for (const m of manual) byMethod.set(m.paymentMethod, (byMethod.get(m.paymentMethod) ?? 0) + toBdt(Number(m.amount), m));
     for (const d of dollarSales) {
       if (Number(d.profit) === 0) continue;
       byMethod.set(d.paymentMethod, (byMethod.get(d.paymentMethod) ?? 0) + Number(d.profit));

@@ -6,17 +6,85 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { CacheService } from "../cache/cache.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
 import { ScoringService } from "../scoring/scoring.service";
-import { normalizeTaskStatus } from "./task-status";
 import { recomputeProjectStats } from "../common/project-stats";
 
 /**
- * Folds legacy/loose status strings onto the real enum. Old saved views and
- * bookmarks still carry `BACKLOG` / `IN_REVIEW`, which used to reach Prisma and
- * throw a validation error; now they simply mean TODO / REVIEW.
+ * Strict counterpart of `normalizeTaskStatus`: known aliases fold onto the enum,
+ * anything else returns null so callers can reject it with a 400 instead of
+ * silently writing TODO (which used to swallow typos and broken clients).
  */
-function toTaskStatus(value?: string | null): TaskStatus | null {
-  if (!value) return null;
-  return normalizeTaskStatus(value) as TaskStatus;
+function parseTaskStatus(value?: string | null): TaskStatus | null {
+  const v = String(value ?? "").toUpperCase().replace(/[\s-]/g, "_");
+  if (!v) return null;
+  if (v === "IN_REVIEW" || v === "REVIEW") return "REVIEW";
+  if (v === "BACKLOG" || v === "TODO" || v === "OPEN") return "TODO";
+  if (v === "IN_PROGRESS" || v === "PROGRESS" || v === "DOING") return "IN_PROGRESS";
+  if (v === "BLOCKED") return "BLOCKED";
+  if (v === "DONE" || v === "COMPLETED" || v === "CLOSED") return "DONE";
+  return null;
+}
+
+const PRIORITY_SET = new Set<string>(["LOW", "MEDIUM", "HIGH", "URGENT"]);
+const AUTOMATION_TRIGGERS = new Set<string>(["status-changed", "priority-changed", "assigned"]);
+const AUTOMATION_ACTIONS = new Set<string>([
+  "assign-to", "set-priority", "change-status", "change-priority", "notify", "create-task", "archive",
+]);
+
+/** Trim + drop NUL/control characters that Postgres rejects mid-string. */
+function cleanText(value: any): string {
+  return String(value ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim();
+}
+
+function cleanOptionalText(value: any): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  return cleanText(value);
+}
+
+function assertTitle(value: any): string {
+  const title = cleanText(value);
+  if (!title) throw new BadRequestException("A task needs a title");
+  if (title.length > 200) throw new BadRequestException("Title must be 200 characters or fewer");
+  return title;
+}
+
+function assertDescription(value: any): string | undefined {
+  const description = cleanOptionalText(value);
+  if (description !== undefined && description.length > 20000) {
+    throw new BadRequestException("Description must be 20,000 characters or fewer");
+  }
+  return description;
+}
+
+function assertPriority(value: any): Priority {
+  const p = String(value ?? "").toUpperCase();
+  if (!PRIORITY_SET.has(p)) {
+    throw new BadRequestException(`Priority must be one of ${[...PRIORITY_SET].join(", ").toLowerCase()}`);
+  }
+  return p as Priority;
+}
+
+function assertHours(value: any, field = "Hours"): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0 || n > 24) {
+    throw new BadRequestException(`${field} must be greater than 0 and at most 24`);
+  }
+  return n;
+}
+
+function assertEstimate(value: any): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || n > 10000) {
+    throw new BadRequestException("Estimated hours must be between 0 and 10,000");
+  }
+  return n;
+}
+
+function assertDate(value: any, field: string): Date {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) throw new BadRequestException(`${field} is not a valid date`);
+  const year = d.getUTCFullYear();
+  if (year < 1970 || year > 2100) throw new BadRequestException(`${field} must be between 1970 and 2100`);
+  return d;
 }
 
 const STATUS_ORDER: TaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW", "BLOCKED", "DONE"];
@@ -169,25 +237,29 @@ export class TasksService {
   async stats() {
     return this.cache.wrap("tasks:stats", 30, async () => {
       const [tasks, timeLogs] = await Promise.all([
-        this.prisma.task.findMany({ select: { id: true, status: true, dueDate: true, priority: true, archivedAt: true } }),
+        this.prisma.task.findMany({ select: { id: true, status: true, dueDate: true, priority: true, archivedAt: true, parentTaskId: true } }),
         this.prisma.timeLog.findMany({ select: { hours: true, date: true } }),
       ]);
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const open = tasks.filter((t) => t.status !== "DONE" && !t.archivedAt);
+      // Count only what the board/list actually shows: top-level, non-archived
+      // tasks. Archived work and subtasks used to inflate the header badges
+      // while being invisible everywhere else.
+      const visible = tasks.filter((t) => !t.archivedAt && !t.parentTaskId);
+      const open = visible.filter((t) => t.status !== "DONE");
       const weekStart = new Date(today);
       weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
       const hoursThisWeek = timeLogs.filter((l) => l.date >= weekStart).reduce((s, l) => s + Number(l.hours), 0);
       return {
-        total: tasks.length,
+        total: visible.length,
         open: open.length,
         dueToday: open.filter((t) => t.dueDate && t.dueDate >= today && t.dueDate < new Date(today.getTime() + 86400000)).length,
         overdue: open.filter((t) => t.dueDate && t.dueDate < today).length,
-        blocked: tasks.filter((t) => t.status === "BLOCKED").length,
-        inProgress: tasks.filter((t) => t.status === "IN_PROGRESS").length,
-        review: tasks.filter((t) => t.status === "REVIEW").length,
-        done: tasks.filter((t) => t.status === "DONE").length,
-        highPriority: tasks.filter((t) => t.priority === "URGENT" || t.priority === "HIGH").length,
+        blocked: visible.filter((t) => t.status === "BLOCKED").length,
+        inProgress: visible.filter((t) => t.status === "IN_PROGRESS").length,
+        review: visible.filter((t) => t.status === "REVIEW").length,
+        done: visible.filter((t) => t.status === "DONE").length,
+        highPriority: visible.filter((t) => t.priority === "URGENT" || t.priority === "HIGH").length,
         hoursThisWeek: Math.round(hoursThisWeek * 10) / 10,
       };
     });
@@ -198,6 +270,26 @@ export class TasksService {
     await this.cache.delPattern("tasks:list:*");
     await this.cache.del("flow:overview");
     await this.cache.del("dashboard:overview");
+  }
+
+  /**
+   * Every subtask below `rootId`, breadth-first. `Task.parentTaskId` has no
+   * self-relation in Prisma, so nothing cascades at the DB level — deleting a
+   * parent used to leave its children alive but unreachable (the list always
+   * filters `parentTaskId: null`).
+   */
+  private async descendantIds(rootId: string): Promise<string[]> {
+    const found = new Set<string>();
+    let frontier = [rootId];
+    while (frontier.length) {
+      const kids = await this.prisma.task.findMany({
+        where: { parentTaskId: { in: frontier } },
+        select: { id: true },
+      });
+      frontier = kids.map((k) => k.id).filter((id) => !found.has(id) && id !== rootId);
+      frontier.forEach((id) => found.add(id));
+    }
+    return [...found];
   }
 
   /** Resolve employee id for a user id (assignee checks are employee-based). */
@@ -218,9 +310,12 @@ export class TasksService {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) throw new NotFoundException("Task not found");
     if (user && !(await this.canEditProgress(task, user))) throw new ForbiddenException("You don't have permission to edit this task");
+    const content = cleanText(body.content);
+    if (!content) throw new BadRequestException("A checklist item needs text");
+    if (content.length > 500) throw new BadRequestException("Checklist items must be 500 characters or fewer");
     const last = await this.prisma.taskChecklistItem.findFirst({ where: { taskId }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
     return this.prisma.taskChecklistItem.create({
-      data: { taskId, content: body.content, sortOrder: (last?.sortOrder ?? -1) + 1 },
+      data: { taskId, content, sortOrder: (last?.sortOrder ?? -1) + 1 },
       include: { doneBy: { select: { id: true, name: true } } },
     });
   }
@@ -232,7 +327,12 @@ export class TasksService {
     const existing = await this.prisma.taskChecklistItem.findFirst({ where: { id: itemId, taskId } });
     if (!existing) throw new NotFoundException("Checklist item not found");
     const data: any = {};
-    if (body.content !== undefined) data.content = body.content;
+    if (body.content !== undefined) {
+      const content = cleanText(body.content);
+      if (!content) throw new BadRequestException("A checklist item needs text");
+      if (content.length > 500) throw new BadRequestException("Checklist items must be 500 characters or fewer");
+      data.content = content;
+    }
     if (body.done !== undefined) {
       data.done = body.done;
       // stamp who/when for done transitions (cleared on un-done)
@@ -342,14 +442,17 @@ export class TasksService {
       if (ok) allowed.push(t.id);
     }
     if (!allowed.length) throw new ForbiddenException("You don't have permission to modify these tasks");
-    const skipped = tasks.length - allowed.length;
+    // Unknown ids are skipped too, so "affected + skipped" always adds up to
+    // what the caller sent instead of silently dropping the difference.
+    const skipped = body.ids.length - allowed.length;
 
     const now = new Date();
     let count = 0;
     switch (body.op) {
       case "status": {
         if (!body.value) throw new BadRequestException("status value required");
-        const nextStatus = normalizeTaskStatus(body.value) as TaskStatus;
+        const nextStatus = parseTaskStatus(body.value);
+        if (!nextStatus) throw new BadRequestException(`Unknown status "${body.value}"`);
         const idsToSpawn: string[] = [];
         for (const id of allowed) {
           const task = tasks.find((t) => t.id === id)!;
@@ -397,14 +500,16 @@ export class TasksService {
       }
       case "priority": {
         if (!body.value) throw new BadRequestException("priority value required");
-        const res = await this.prisma.task.updateMany({ where: { id: { in: allowed } }, data: { priority: body.value as Priority } });
+        const priority = assertPriority(body.value);
+        const res = await this.prisma.task.updateMany({ where: { id: { in: allowed } }, data: { priority } });
         count = res.count;
         break;
       }
       case "dueDate": {
+        const dueDate = body.value ? assertDate(body.value, "Due date") : null;
         const res = await this.prisma.task.updateMany({
           where: { id: { in: allowed } },
-          data: { dueDate: body.value ? new Date(body.value) : null },
+          data: { dueDate },
         });
         count = res.count;
         break;
@@ -420,7 +525,13 @@ export class TasksService {
         break;
       }
       case "delete": {
-        const res = await this.prisma.task.deleteMany({ where: { id: { in: allowed } } });
+        // Include descendants so a bulk delete cannot orphan subtasks either.
+        const allIds = new Set<string>();
+        for (const id of allowed) {
+          allIds.add(id);
+          (await this.descendantIds(id)).forEach((child) => allIds.add(child));
+        }
+        const res = await this.prisma.task.deleteMany({ where: { id: { in: [...allIds] } } });
         count = res.count;
         break;
       }
@@ -905,11 +1016,16 @@ export class TasksService {
     return tasks.map((t) => ({ ...t, priorityScore: score(t) })).sort((a, b) => b.priorityScore - a.priorityScore);
   }
 
-  async list(query: { status?: string; priority?: string; taskType?: string; assignee?: string; projectId?: string; sprintId?: string; q?: string; parent?: string; mine?: boolean; sort?: string; archived?: string; employeeId?: string }, user?: any) {
+  async list(query: { status?: string; priority?: string; taskType?: string; assignee?: string; projectId?: string; sprintId?: string; q?: string; parent?: string; mine?: boolean; sort?: string; archived?: string; employeeId?: string; limit?: string | number; offset?: string | number }, user?: any) {
     // `mine` is resolved from the JWT here — the query string used to carry an
     // employeeId that the client never sent, so "Mine" silently matched nothing.
     const mineEmployeeId = (query.mine === true || String(query.mine) === "true") ? (await this.getEmployeeIdByUserId(user?.sub)) ?? undefined : undefined;
-    return this.cache.wrapQuery("tasks:list", { ...query, mineEmployeeId }, 30, async () => {
+    const viewerEmployeeId = await this.getEmployeeIdByUserId(user?.sub);
+    const privileged = !!user && (this.isAdmin(user.role) || this.isPM(user.role));
+    // Every list query is scoped: a view-only role must not receive tasks it
+    // cannot open (the detail endpoint already 403s those).
+    const scopeKey = privileged ? "all" : viewerEmployeeId ?? "none";
+    return this.cache.wrapQuery("tasks:list", { ...query, mineEmployeeId, scopeKey }, 30, async () => {
       const sort = query.sort ?? "due";
     const orderBy: any =
       sort === "priority" ? [{ priority: "desc" }, { dueDate: "asc" }]
@@ -917,18 +1033,35 @@ export class TasksService {
           : sort === "created" ? { createdAt: "desc" }
             : sort === "status" ? [{ status: "asc" }, { dueDate: "asc" }]
               : [{ dueDate: "asc" }, { priority: "desc" }];
+    const statusFilter = query.status ? parseTaskStatus(query.status) : null;
+    if (query.status && !statusFilter) {
+      throw new BadRequestException(`Unknown status "${query.status}"`);
+    }
+    const priorityFilter = query.priority ? String(query.priority).toUpperCase() : null;
+    if (priorityFilter && !PRIORITY_SET.has(priorityFilter)) {
+      throw new BadRequestException(`Unknown priority "${query.priority}"`);
+    }
+    const take = Math.min(1000, Math.max(1, Number(query.limit) || 500));
+    const skip = Math.max(0, Number(query.offset) || 0);
     const [tasks, childCounts] = await Promise.all([
       this.prisma.task.findMany({
         where: {
           ...(query.archived === "true" ? {} : { archivedAt: null }),
-          ...(query.status ? { status: toTaskStatus(query.status) ?? undefined } : {}),
-          ...(query.priority ? { priority: query.priority as Priority } : {}),
+          ...(statusFilter ? { status: statusFilter } : {}),
+          ...(priorityFilter ? { priority: priorityFilter as Priority } : {}),
           ...(query.taskType ? { taskType: query.taskType } : {}),
           ...(query.assignee ? { assignedToId: query.assignee } : {}),
           ...(query.projectId ? { projectId: query.projectId } : {}),
           ...(query.sprintId ? { sprintId: query.sprintId } : {}),
           ...(query.parent ? { parentTaskId: query.parent } : { parentTaskId: null }),
-          ...(query.q ? { OR: [{ title: { contains: query.q, mode: "insensitive" } }, { tags: { has: query.q } }] } : {}),
+          ...(query.q ? {
+            OR: [
+              { title: { contains: query.q, mode: "insensitive" } },
+              { description: { contains: query.q, mode: "insensitive" } },
+              { tags: { has: query.q } },
+              { id: query.q },
+            ],
+          } : {}),
           ...(mineEmployeeId ? { assignedToId: mineEmployeeId } : {}),
         },
         include: {
@@ -940,13 +1073,23 @@ export class TasksService {
           _count: { select: { timeLogs: true, comments: true, checklist: true } },
         },
         orderBy,
-        // Safety cap for the unbounded board/table query.
-        take: 500,
+        // Bounded page; callers can pass ?limit=&offset= for the rest.
+        take,
+        skip,
       }),
       this.prisma.task.groupBy({ by: ["parentTaskId"], where: { parentTaskId: { not: null } }, _count: { _all: true } }),
     ]);
     const counts = new Map(childCounts.map((c) => [c.parentTaskId!, c._count._all]));
-    return tasks.map((t) => ({ ...t, subtaskCount: counts.get(t.id) ?? 0 }));
+    const scoped = privileged
+      ? tasks
+      : viewerEmployeeId
+        ? tasks.filter((t) =>
+            this.isAssignee(t, viewerEmployeeId) ||
+            t.reporterId === viewerEmployeeId ||
+            t.assignedById === viewerEmployeeId
+          )
+        : [];
+    return scoped.map((t) => ({ ...t, subtaskCount: counts.get(t.id) ?? 0 }));
     });
   }
 
@@ -1012,7 +1155,19 @@ export class TasksService {
     createdByName?: string;
     assignedToName?: string;
   }) {
-    const status = body.status ?? "TODO";
+    const status = body.status ? parseTaskStatus(body.status) : "TODO";
+    if (!status) throw new BadRequestException(`Unknown status "${body.status}"`);
+    const title = assertTitle(body.title);
+    const description = assertDescription(body.description);
+    const priority = body.priority ? assertPriority(body.priority) : "MEDIUM";
+    const dueDate = body.dueDate ? assertDate(body.dueDate, "Due date") : undefined;
+    const startDate = body.startDate ? assertDate(body.startDate, "Start date") : undefined;
+    const estimatedHours = body.estimatedHours !== undefined && body.estimatedHours !== null
+      ? assertEstimate(body.estimatedHours)
+      : undefined;
+    if (dueDate && startDate && dueDate < startDate) {
+      throw new BadRequestException("Due date cannot be before the start date");
+    }
     await this.assertTaskTypeAllowed(body.assignedToId, body.taskType);
     let sortOrder = 0;
     if (body.parentTaskId) {
@@ -1052,24 +1207,24 @@ export class TasksService {
     ];
     const task = await this.prisma.task.create({
       data: {
-        title: body.title,
-        description: body.description,
+        title,
+        description,
         projectId: body.projectId,
         sprintId: (body as any).sprintId,
         assignedToId: body.assignedToId,
         assignedById,
         assignedAt: body.assignedToId ? new Date() : null,
         reporterId: reporterId as string | undefined,
-        priority: body.priority ?? "MEDIUM",
-        dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
-        startDate: body.startDate ? new Date(body.startDate) : undefined,
+        priority,
+        dueDate,
+        startDate,
         taskType: body.taskType ?? "general",
-        estimatedHours: body.estimatedHours ?? undefined,
+        estimatedHours,
         isClientVisible: body.isClientVisible ?? false,
         parentTaskId: body.parentTaskId,
         sortOrder,
         status,
-        tags: body.tags ?? [],
+        tags: (body.tags ?? []).map((t) => cleanText(t)).filter(Boolean).slice(0, 30),
         referenceLinks: body.referenceLinks ?? [],
         attachments: body.attachments ?? [],
         assignees: body.assignees ?? [],
@@ -1118,10 +1273,28 @@ export class TasksService {
         log.push({ action: "updated", field, from: from ?? null, to: to ?? null, at: new Date().toISOString(), by: actorName ?? "System" });
       }
     };
-    if (body.title !== undefined) push("title", existing.title, body.title), (data.title = body.title);
-    if (body.description !== undefined) push("description", existing.description, body.description), (data.description = body.description);
-    if (body.status !== undefined) push("status", existing.status, body.status), (data.status = body.status), (data.completedAt = body.status === "DONE" ? existing.completedAt ?? new Date() : null);
-    if (body.priority !== undefined) push("priority", existing.priority, body.priority), (data.priority = body.priority);
+    if (body.title !== undefined) {
+      const title = assertTitle(body.title);
+      push("title", existing.title, title);
+      data.title = title;
+    }
+    if (body.description !== undefined) {
+      const description = assertDescription(body.description) ?? null;
+      push("description", existing.description, description);
+      data.description = description;
+    }
+    if (body.status !== undefined) {
+      const status = parseTaskStatus(body.status);
+      if (!status) throw new BadRequestException(`Unknown status "${body.status}"`);
+      push("status", existing.status, status);
+      data.status = status;
+      data.completedAt = status === "DONE" ? existing.completedAt ?? new Date() : null;
+    }
+    if (body.priority !== undefined) {
+      const priority = assertPriority(body.priority);
+      push("priority", existing.priority, priority);
+      data.priority = priority;
+    }
     if (body.taskType !== undefined) push("taskType", existing.taskType, body.taskType), (data.taskType = body.taskType);
     if (body.assignedToId !== undefined) push("assignee", existing.assignedToId, body.assignedToId), (data.assignedToId = body.assignedToId);
     // Reassignment records who handed it over, so "assigned by X" survives the
@@ -1132,22 +1305,54 @@ export class TasksService {
       data.assignedAt = body.assignedToId ? new Date() : null;
     }
     if (body.reporterId !== undefined) push("reporter", existing.reporterId, body.reporterId), (data.reporterId = body.reporterId);
-    if (body.dueDate !== undefined) push("dueDate", existing.dueDate?.toISOString().slice(0, 10), body.dueDate), (data.dueDate = body.dueDate ? new Date(body.dueDate) : null);
-    if (body.startDate !== undefined) push("startDate", existing.startDate?.toISOString().slice(0, 10), body.startDate), (data.startDate = body.startDate ? new Date(body.startDate) : null);
-    if (body.estimatedHours !== undefined) push("estimatedHours", existing.estimatedHours ? Number(existing.estimatedHours) : null, body.estimatedHours), (data.estimatedHours = body.estimatedHours ?? null);
+    if (body.dueDate !== undefined) {
+      const dueDate = body.dueDate ? assertDate(body.dueDate, "Due date") : null;
+      push("dueDate", existing.dueDate?.toISOString().slice(0, 10) ?? null, dueDate?.toISOString().slice(0, 10) ?? null);
+      data.dueDate = dueDate;
+    }
+    if (body.startDate !== undefined) {
+      const startDate = body.startDate ? assertDate(body.startDate, "Start date") : null;
+      push("startDate", existing.startDate?.toISOString().slice(0, 10) ?? null, startDate?.toISOString().slice(0, 10) ?? null);
+      data.startDate = startDate;
+    }
+    const nextStart = data.startDate !== undefined ? data.startDate : existing.startDate;
+    const nextDue = data.dueDate !== undefined ? data.dueDate : existing.dueDate;
+    if (nextDue && nextStart && nextDue < nextStart) {
+      throw new BadRequestException("Due date cannot be before the start date");
+    }
+    if (body.estimatedHours !== undefined) {
+      const estimate = body.estimatedHours === null || body.estimatedHours === "" ? null : assertEstimate(body.estimatedHours);
+      push("estimatedHours", existing.estimatedHours ? Number(existing.estimatedHours) : null, estimate);
+      data.estimatedHours = estimate;
+    }
     if (body.isClientVisible !== undefined) push("isClientVisible", existing.isClientVisible, body.isClientVisible), (data.isClientVisible = body.isClientVisible);
     if (body.isBlocked !== undefined) push("isBlocked", existing.isBlocked, body.isBlocked), (data.isBlocked = body.isBlocked);
     if (body.projectId !== undefined) push("project", existing.projectId, body.projectId), (data.projectId = body.projectId);
-    if (body.parentTaskId !== undefined) data.parentTaskId = body.parentTaskId;
+    if (body.parentTaskId !== undefined) {
+      if (body.parentTaskId) {
+        if (body.parentTaskId === id) throw new BadRequestException("A task cannot be its own parent");
+        const parent = await this.prisma.task.findUnique({ where: { id: body.parentTaskId }, select: { id: true } });
+        if (!parent) throw new BadRequestException("Parent task not found");
+        const descendants = await this.descendantIds(id);
+        if (descendants.includes(body.parentTaskId)) {
+          throw new BadRequestException("A task cannot be nested under its own subtask");
+        }
+      }
+      data.parentTaskId = body.parentTaskId || null;
+    }
     if (body.sortOrder !== undefined) data.sortOrder = Number(body.sortOrder) || 0;
-    if (body.tags !== undefined) data.tags = body.tags;
+    if (body.tags !== undefined) data.tags = (Array.isArray(body.tags) ? body.tags : []).map((t: any) => cleanText(t)).filter(Boolean).slice(0, 30);
     if (body.referenceLinks !== undefined) data.referenceLinks = body.referenceLinks;
     if (body.attachments !== undefined) data.attachments = body.attachments;
     if (body.assignees !== undefined) data.assignees = body.assignees;
     if (body.customFields !== undefined) data.customFields = body.customFields;
     if (body.isRecurring !== undefined) data.isRecurring = body.isRecurring;
     if (body.recurrenceSchedule !== undefined) data.recurrenceSchedule = body.recurrenceSchedule;
-    if (body.archivedAt !== undefined) push("archived", existing.archivedAt ?? null, body.archivedAt), (data.archivedAt = body.archivedAt ? new Date() : null);
+    if (body.archivedAt !== undefined) {
+      if (typeof body.archivedAt !== "boolean") throw new BadRequestException("archivedAt must be a boolean");
+      push("archived", existing.archivedAt ?? null, body.archivedAt);
+      data.archivedAt = body.archivedAt ? new Date() : null;
+    }
 
     const currentLog = (existing.activityLog ?? []) as any[];
     data.activityLog = [...log.reverse(), ...currentLog].slice(0, 100);
@@ -1186,12 +1391,13 @@ export class TasksService {
     const existing = await this.prisma.task.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Task not found");
     if (user && !(await this.canEditFull(existing, user))) throw new ForbiddenException("Only the assigner, reporter, PM or Admin can delete this task");
-    await this.prisma.task.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException("Task not found");
-    });
+    // The UI promises "delete this task and its children" — make that true.
+    const ids = [id, ...(await this.descendantIds(id))];
+    const res = await this.prisma.task.deleteMany({ where: { id: { in: ids } } });
+    if (!res.count) throw new NotFoundException("Task not found");
     await this.rescoreProject(existing.projectId);
     await this.invalidateTasks();
-    return { ok: true };
+    return { ok: true, deleted: res.count };
   }
 
   async clone(id: string, user?: any) {
@@ -1230,26 +1436,28 @@ export class TasksService {
     return cloned;
   }
 
-  async updateStatus(id: string, status: TaskStatus, actor?: any) {
+  async updateStatus(id: string, status: TaskStatus | string, actor?: any) {
     const existing = await this.prisma.task.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Task not found");
+    const nextStatus = parseTaskStatus(status);
+    if (!nextStatus) throw new BadRequestException(`Unknown status "${status}"`);
     const actorName = actor?.name ?? actor ?? "System";
     const actorUser = typeof actor === "object" && actor?.sub ? actor : { sub: actor, name: actorName };
     if (!(await this.canEditProgress(existing, actorUser))) throw new ForbiddenException("You don't have permission to change status");
     const t = await this.prisma.task.update({
       where: { id },
       data: {
-        status,
+        status: nextStatus,
         // stamp/clear completion time so burndown + cycle-time have a source of truth
-        ...(status === "DONE" ? { completedAt: existing.completedAt ?? new Date() } : { completedAt: null }),
+        ...(nextStatus === "DONE" ? { completedAt: existing.completedAt ?? new Date() } : { completedAt: null }),
         activityLog: [
-          { action: "updated", field: "status", from: existing.status, to: status, at: new Date().toISOString(), by: actorName ?? "System" },
+          { action: "updated", field: "status", from: existing.status, to: nextStatus, at: new Date().toISOString(), by: actorName ?? "System" },
           ...(((existing.activityLog ?? []) as any[])),
         ].slice(0, 100),
       },
     });
-    await this.applyAutomation({ type: "status", taskId: t.id, title: t.title, prev: existing.status, next: status, actorName });
-    if (status === "DONE" && existing.status !== "DONE") {
+    await this.applyAutomation({ type: "status", taskId: t.id, title: t.title, prev: existing.status, next: nextStatus, actorName });
+    if (nextStatus === "DONE" && existing.status !== "DONE") {
       void this.wa.notifyTaskClientUpdate(t.id).catch(() => {});
       await this.recordEstimateAccuracy(t).catch(() => {});
       await this.spawnRecurrence(id).catch(() => {});
@@ -1315,10 +1523,17 @@ export class TasksService {
     if (user && !(await this.canViewTask(task, user)) && !(await this.canEditProgress(task, user))) {
       throw new ForbiddenException("You don't have permission to comment on this task");
     }
+    const content = cleanText(body.content);
+    if (!content) throw new BadRequestException("A comment needs text");
+    if (content.length > 5000) throw new BadRequestException("Comments must be 5,000 characters or fewer");
+    if (body.parentId) {
+      const parent = await this.prisma.taskComment.findFirst({ where: { id: body.parentId, taskId }, select: { id: true } });
+      if (!parent) throw new BadRequestException("The comment you are replying to is not on this task");
+    }
     const comment = await this.prisma.taskComment.create({
       data: {
         taskId,
-        content: body.content,
+        content,
         authorId: body.authorId,
         parentId: body.parentId,
         mentionedUserIds: body.mentionedUserIds ?? [],
@@ -1328,7 +1543,7 @@ export class TasksService {
 
     // Notify @mentions + the assignee/reporter. Author and anyone already
     // notified as a mention are excluded so nobody gets two pings.
-    const excerpt = body.content.length > 140 ? `${body.content.slice(0, 140)}…` : body.content;
+    const excerpt = content.length > 140 ? `${content.slice(0, 140)}…` : content;
     const notified = new Set<string>([body.authorId ?? ""]);
     const mentioned = (body.mentionedUserIds ?? []).filter(Boolean);
     for (const uid of mentioned) {
@@ -1407,22 +1622,28 @@ export class TasksService {
     return { closed: stale.length };
   }
 
-  async toggleReaction(taskId: string, commentId: string, body: { emoji: string; userId: string }, user?: any) {
+  async toggleReaction(taskId: string, commentId: string, body: { emoji: string; userId?: string }, user?: any) {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) throw new NotFoundException("Task not found");
     if (user && !(await this.canViewTask(task, user))) throw new ForbiddenException("You don't have permission to react on this task");
+    // Identity comes from the session, never from the request body — the old
+    // shape let anyone react as somebody else.
+    const actorId = user?.sub;
+    if (!actorId) throw new BadRequestException("Login required to react");
+    const emoji = cleanText(body.emoji).slice(0, 8);
+    if (!emoji) throw new BadRequestException("Pick an emoji");
     const c = await this.prisma.taskComment.findFirst({ where: { id: commentId, taskId } });
     if (!c) throw new NotFoundException("Comment not found");
     const reactions = ((c.reactions ?? []) as any[]);
-    const existing = reactions.find((r) => r.emoji === body.emoji);
+    const existing = reactions.find((r) => r.emoji === emoji);
     let next: any[];
     if (existing) {
-      const has = (existing.userIds ?? []).includes(body.userId);
+      const has = (existing.userIds ?? []).includes(actorId);
       next = reactions
-        .map((r) => (r.emoji === body.emoji ? { ...r, userIds: has ? r.userIds.filter((u: string) => u !== body.userId) : [...r.userIds, body.userId] } : r))
+        .map((r) => (r.emoji === emoji ? { ...r, userIds: has ? r.userIds.filter((u: string) => u !== actorId) : [...r.userIds, actorId] } : r))
         .filter((r) => r.userIds.length > 0);
     } else {
-      next = [...reactions, { emoji: body.emoji, userIds: [body.userId] }];
+      next = [...reactions, { emoji, userIds: [actorId] }];
     }
     return this.prisma.taskComment.update({
       where: { id: commentId },
@@ -1454,6 +1675,28 @@ export class TasksService {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) throw new NotFoundException("Task not found");
     if (user && !(await this.canWorkOnTask(task, user))) throw new ForbiddenException("You don't have permission to edit this task's dependencies");
+    const target = await this.prisma.task.findUnique({ where: { id: dependsOnTaskId }, select: { id: true } });
+    if (!target) throw new BadRequestException("The task you are depending on does not exist");
+    // Walk the existing graph: if `taskId` is already reachable from
+    // `dependsOnTaskId`, adding this edge would close a cycle.
+    const seen = new Set<string>([dependsOnTaskId]);
+    const queue = [dependsOnTaskId];
+    while (queue.length) {
+      const current = queue.shift()!;
+      if (current === taskId) throw new BadRequestException("That would create a circular dependency");
+      const next = await this.prisma.taskDependency.findMany({
+        where: { taskId: current },
+        select: { dependsOnTaskId: true },
+      });
+      for (const edge of next) {
+        if (!seen.has(edge.dependsOnTaskId)) {
+          seen.add(edge.dependsOnTaskId);
+          queue.push(edge.dependsOnTaskId);
+        }
+      }
+    }
+    const allowedTypes = new Set(["blocked-by", "blocks", "related"]);
+    if (!allowedTypes.has(type)) throw new BadRequestException(`Unknown dependency type "${type}"`);
     return this.prisma.taskDependency.upsert({
       where: { taskId_dependsOnTaskId: { taskId, dependsOnTaskId } },
       create: { taskId, dependsOnTaskId, type },
@@ -1479,12 +1722,17 @@ export class TasksService {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     if (!task) throw new NotFoundException("Task not found");
     if (user && !(await this.canEditProgress(task, user))) throw new ForbiddenException("You don't have permission to log time on this task");
+    const hours = assertHours(body.hours);
+    // Time belongs to the caller. Admins may still attribute a manual entry to
+    // someone else; nobody can post hours as another person.
+    const selfEmployeeId = await this.empId(user?.sub);
+    const employeeId = selfEmployeeId ?? (this.isAdmin(user?.role) ? body.employeeId : undefined);
     const log = await this.prisma.timeLog.create({
       data: {
         taskId,
-        employeeId: body.employeeId,
-        hours: body.hours,
-        date: body.date ? new Date(body.date) : new Date(),
+        employeeId,
+        hours,
+        date: body.date ? assertDate(body.date, "Log date") : new Date(),
         notes: body.notes,
         loggedVia: body.loggedVia ?? "MANUAL",
         isBillable: body.isBillable ?? true,
@@ -1514,14 +1762,25 @@ export class TasksService {
 
   async createTemplate(body: { name: string; description?: string; category?: string; benchmarkDurationDays?: number; benchmarkHours?: number; defaultTasks: any[] }, user?: any) {
     this.requirePlanner(user);
+    const name = cleanText(body.name);
+    if (!name) throw new BadRequestException("A template needs a name");
+    if (name.length > 120) throw new BadRequestException("Template name must be 120 characters or fewer");
+    if (!Array.isArray(body.defaultTasks) || body.defaultTasks.length === 0) {
+      throw new BadRequestException("Add at least one task to the template");
+    }
+    if (body.defaultTasks.length > 100) throw new BadRequestException("A template can hold at most 100 tasks");
+    const defaultTasks = body.defaultTasks.map((t: any) => {
+      const title = assertTitle(t?.title);
+      return { ...t, title };
+    });
     return this.prisma.taskTemplate.create({
       data: {
-        name: body.name,
-        description: body.description,
-        category: body.category,
+        name,
+        description: cleanOptionalText(body.description),
+        category: cleanOptionalText(body.category),
         benchmarkDurationDays: body.benchmarkDurationDays,
         benchmarkHours: body.benchmarkHours,
-        defaultTasks: body.defaultTasks,
+        defaultTasks,
       },
     });
   }
@@ -1606,9 +1865,18 @@ export class TasksService {
 
   async createAutomation(body: { name: string; trigger: string; action: string; config: any; enabled?: boolean }, user?: any) {
     this.requirePlanner(user);
+    const name = cleanText(body.name);
+    if (!name) throw new BadRequestException("An automation rule needs a name");
+    if (name.length > 120) throw new BadRequestException("Rule name must be 120 characters or fewer");
+    if (!AUTOMATION_TRIGGERS.has(body.trigger)) {
+      throw new BadRequestException(`Trigger must be one of ${[...AUTOMATION_TRIGGERS].join(", ")}`);
+    }
+    if (!AUTOMATION_ACTIONS.has(body.action)) {
+      throw new BadRequestException(`Action must be one of ${[...AUTOMATION_ACTIONS].join(", ")}`);
+    }
     return this.prisma.automationRule.create({
       data: {
-        name: body.name,
+        name,
         trigger: body.trigger,
         action: body.action,
         config: body.config ?? {},
@@ -1619,7 +1887,17 @@ export class TasksService {
 
   async updateAutomation(id: string, body: any, user?: any) {
     this.requirePlanner(user);
-    return this.prisma.automationRule.update({ where: { id }, data: body }).catch(() => {
+    if (body.trigger !== undefined && !AUTOMATION_TRIGGERS.has(body.trigger)) {
+      throw new BadRequestException(`Trigger must be one of ${[...AUTOMATION_TRIGGERS].join(", ")}`);
+    }
+    if (body.action !== undefined && !AUTOMATION_ACTIONS.has(body.action)) {
+      throw new BadRequestException(`Action must be one of ${[...AUTOMATION_ACTIONS].join(", ")}`);
+    }
+    const data: any = {};
+    for (const key of ["name", "trigger", "action", "config", "enabled"]) {
+      if (body[key] !== undefined) data[key] = key === "name" ? cleanText(body.name) : body[key];
+    }
+    return this.prisma.automationRule.update({ where: { id }, data }).catch(() => {
       throw new NotFoundException("Rule not found");
     });
   }
@@ -1781,7 +2059,7 @@ export class TasksService {
         weeklyOffDaysInWindow: offDays,
         outDays,
         capacity: effective,
-        utilization: effective ? Math.min(1.5, allocated / effective) : allocated > 0 ? 1.5 : 0,
+        utilization: effective ? allocated / effective : allocated > 0 ? 1.5 : 0,
         overbooked: effective > 0 ? allocated > effective : allocated > 0,
         overbookedReason: reasons.length ? reasons.join("; ") : null,
         urgent: tasks.filter((t) => t.priority === "URGENT").length,

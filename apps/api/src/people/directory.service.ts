@@ -7,10 +7,44 @@ import { dateStrDhaka, invalidatePeopleCache } from "./people-utils";
 /** UTC-midnight labelled with today's Dhaka date — matches `attendance.date`. */
 const todayColumn = () => new Date(`${dateStrDhaka(new Date())}T00:00:00.000Z`);
 
+const PAY_ROLES = ["Owner", "HR/Admin", "Admin"];
 /** Compensation is only visible to Owner / HR — enforced on read, not just in the UI. */
-const canSeePay = (user: any) => ["Owner", "HR/Admin"].includes(user?.role);
+const canSeePay = (user: any) => PAY_ROLES.includes(user?.role);
+/** Full company directory needs PEOPLE view; everyone else gets a picker shape. */
+const canViewPeople = (user: any) => PAY_ROLES.includes(user?.role) || user?.permissions?.PEOPLE?.view === true;
 const stripPay = <T extends { salary?: any; costRate?: any }>(e: T, user: any): T =>
   canSeePay(user) ? e : { ...e, salary: null, costRate: null };
+/** Emergency contacts and contract documents are HR-only. */
+const stripPrivate = <T extends Record<string, any>>(e: T, user: any): T =>
+  canSeePay(user) ? e : { ...e, emergencyContactName: null, emergencyContactPhone: null, emergencyContactRelation: null, documents: [] };
+const EMPLOYMENT_STATUSES = ["ACTIVE", "ON_LEAVE", "EXITED"] as const;
+const cleanText = (v: any): string | null => {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s === "" ? null : s;
+};
+const assertManager = async (prisma: PrismaService, managerId: any, selfId?: string) => {
+  if (managerId === undefined) return undefined;
+  if (managerId === null || managerId === "") return null;
+  const id = String(managerId);
+  if (selfId && id === selfId) throw new BadRequestException("An employee cannot report to themselves");
+  const exists = await prisma.employee.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) throw new BadRequestException("reportingManagerId does not match any employee");
+  return id;
+};
+const assertStatus = (status: any) => {
+  if (status === undefined) return undefined;
+  if (!EMPLOYMENT_STATUSES.includes(status)) {
+    throw new BadRequestException(`employmentStatus must be one of ${EMPLOYMENT_STATUSES.join(", ")}`);
+  }
+  return status;
+};
+const assertMoney = (v: any, field: string) => {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) throw new BadRequestException(`${field} must be a positive number`);
+  return n;
+};
 @Injectable()
 export class DirectoryService {
   constructor(
@@ -52,8 +86,12 @@ export class DirectoryService {
   }
 
   async employees(user?: any) {
-    // NOTE: cache key is role-split — compensation is stripped for non-HR.
-    return this.cache.wrap(canSeePay(user) ? "people:employees" : "people:employees:masked", 30, async () => {
+    // `@SkipPermission` so pickers work for every signed-in user, but the shape
+    // follows the caller's rights: full directory for PEOPLE viewers, a minimal
+    // picker list (id/name/role) for everyone else.
+    const full = canViewPeople(user);
+    const key = !full ? "people:employees:minimal" : canSeePay(user) ? "people:employees" : "people:employees:masked";
+    return this.cache.wrap(key, 30, async () => {
       const utilLogs = await this.prisma.utilizationLog.groupBy({ by: ["employeeId"], _max: { weekStartDate: true } });
       const latestLogs = await this.prisma.utilizationLog.findMany({
         where: { OR: utilLogs.map((u) => ({ employeeId: u.employeeId, weekStartDate: u._max.weekStartDate! })) },
@@ -69,15 +107,26 @@ export class DirectoryService {
         },
         orderBy: { name: "asc" },
       });
+      if (!full) {
+        // Enough for an assignee / attendee dropdown, nothing more.
+        return employees.map((e) => ({
+          id: e.id,
+          name: e.name,
+          roleTitle: e.roleTitle,
+          department: e.department,
+          employmentStatus: e.employmentStatus,
+          workLocation: e.workLocation,
+        }));
+      }
       return employees.map((e) => {
         const util = latestLogs.find((l) => l.employeeId === e.id);
         const att = attendance.find((a) => a.employeeId === e.id);
-        return stripPay({
+        return stripPrivate(stripPay({
           ...e,
           utilizationRate: util?.utilizationRate ?? null,
           billableHours: util ? Number(util.billableHours) : null,
           todayStatus: att?.status ?? "NOT_LOGGED",
-        }, user);
+        }, user), user);
       });
     });
   }
@@ -105,44 +154,66 @@ export class DirectoryService {
     if (!detail) throw new NotFoundException("Employee not found");
     const payrollRecords = canSeePay(user)
       ? detail.payrollRecords
-      : detail.payrollRecords.map((p: any) => ({ ...p, basicSalary: null, netPay: null, allowances: null, bonus: null, deductions: null, lateDeduction: null, halfDayDeduction: null, absentDeduction: null, unpaidLeaveDeduction: null }));
-    return stripPay({ ...detail, payrollRecords }, user);
+      : detail.payrollRecords.map((p: any) => ({
+          ...p,
+          basicSalary: null,
+          netPay: null,
+          allowances: null,
+          bonus: null,
+          deductions: null,
+          lateDeduction: null,
+          halfDayDeduction: null,
+          absentDeduction: null,
+          unpaidLeaveDeduction: null,
+          // breakdown holds the daily rate and auditTrail holds before/after
+          // net pay — both leaked the salary even though netPay was nulled.
+          breakdown: null,
+          auditTrail: [],
+        }));
+    return stripPrivate(stripPay({ ...detail, payrollRecords }, user), user);
   }
 
   async createEmployee(body: any, user?: any) {
     if (!body.name?.trim()) {
       throw new BadRequestException("Employee name is required");
     }
-    if (body.salary !== undefined && !["Owner", "HR/Admin"].includes(user?.role)) {
+    if (!body.roleTitle?.trim()) {
+      throw new BadRequestException("roleTitle is required");
+    }
+    if (body.salary !== undefined && !PAY_ROLES.includes(user?.role)) {
       throw new ForbiddenException("Only Owner or HR/Admin can set salary");
     }
+    const managerId = await assertManager(this.prisma, body.reportingManagerId);
+    const status = assertStatus(body.employmentStatus);
+    const joinDate = body.joinDate ? new Date(body.joinDate) : new Date();
+    if (Number.isNaN(joinDate.getTime())) throw new BadRequestException("joinDate must be a valid date");
     const result = await this.prisma.employee.create({
       data: {
-        name: body.name,
-        roleTitle: body.roleTitle,
-        department: body.department ?? null,
-        email: body.email ?? null,
-        phone: body.phone ?? null,
-        workLocation: body.workLocation ?? "Remote",
-        employmentType: body.employmentType ?? "full-time",
-        salary: body.salary ?? null,
-        payFrequency: body.payFrequency ?? "monthly",
+        name: String(body.name).trim(),
+        roleTitle: String(body.roleTitle).trim(),
+        department: cleanText(body.department),
+        email: cleanText(body.email),
+        phone: cleanText(body.phone),
+        workLocation: cleanText(body.workLocation) ?? "Remote",
+        employmentType: cleanText(body.employmentType) ?? "full-time",
+        salary: assertMoney(body.salary, "salary"),
+        payFrequency: cleanText(body.payFrequency) ?? "monthly",
         documents: body.documents ?? [],
         careerHistory: body.careerHistory ?? [],
-        education: body.education ?? null,
-        emergencyContactName: body.emergencyContactName ?? null,
-        emergencyContactPhone: body.emergencyContactPhone ?? null,
-        emergencyContactRelation: body.emergencyContactRelation ?? null,
-        joinDate: body.joinDate ? new Date(body.joinDate) : new Date(),
-        reportingManagerId: body.reportingManagerId ?? null,
-        employmentStatus: body.employmentStatus ?? "ACTIVE",
-        costRate: body.costRate ?? null,
-        skillTags: body.skillTags ?? [],
-        deviceId: body.deviceId ?? null,
-        weeklyOffDays: body.weeklyOffDays ?? [],
-        shiftStart: body.shiftStart ?? null,
-        shiftEnd: body.shiftEnd ?? null,
-        graceMinutes: body.graceMinutes ?? null,
+        education: cleanText(body.education),
+        emergencyContactName: cleanText(body.emergencyContactName),
+        emergencyContactPhone: cleanText(body.emergencyContactPhone),
+        emergencyContactRelation: cleanText(body.emergencyContactRelation),
+        joinDate,
+        reportingManagerId: managerId ?? null,
+        employmentStatus: status ?? "ACTIVE",
+        costRate: assertMoney(body.costRate, "costRate"),
+        skillTags: Array.isArray(body.skillTags) ? body.skillTags : [],
+        deviceId: cleanText(body.deviceId),
+        weeklyOffDays: Array.isArray(body.weeklyOffDays) ? body.weeklyOffDays : [],
+        shiftStart: cleanText(body.shiftStart),
+        shiftEnd: cleanText(body.shiftEnd),
+        graceMinutes: body.graceMinutes === undefined || body.graceMinutes === "" || body.graceMinutes === null ? null : Number(body.graceMinutes),
       },
     });
     await invalidatePeopleCache(this.cache);
@@ -156,29 +227,57 @@ export class DirectoryService {
     const existing = await this.prisma.employee.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Employee not found");
     const sensitive = ["salary", "costRate", "deviceId", "weeklyOffDays", "shiftStart", "shiftEnd", "graceMinutes"];
-    if (sensitive.some((f) => body[f] !== undefined) && !["Owner", "HR/Admin"].includes(user?.role)) {
+    if (sensitive.some((f) => body[f] !== undefined) && !PAY_ROLES.includes(user?.role)) {
       throw new ForbiddenException("Only Owner or HR/Admin can change salary, device mapping or schedule");
     }
+    const managerId = await assertManager(this.prisma, body.reportingManagerId, id);
+    const status = assertStatus(body.employmentStatus);
     const data: any = {};
-    for (const f of ["name", "roleTitle", "department", "email", "phone", "workLocation", "employmentType", "employmentStatus", "reportingManagerId", "skillTags", "documents", "careerHistory", "education", "emergencyContactName", "emergencyContactPhone", "emergencyContactRelation", "costRate", "deviceId", "weeklyOffDays", "shiftStart", "shiftEnd", "graceMinutes"]) {
-      if (body[f] !== undefined) data[f] = body[f];
+    for (const f of ["roleTitle", "department", "email", "phone", "workLocation", "employmentType", "education", "emergencyContactName", "emergencyContactPhone", "emergencyContactRelation", "payFrequency", "deviceId", "shiftStart", "shiftEnd"]) {
+      if (body[f] !== undefined) data[f] = cleanText(body[f]);
     }
-    if (body.salary !== undefined) data.salary = body.salary;
-    if (body.payFrequency !== undefined) data.payFrequency = body.payFrequency;
-    if (body.joinDate !== undefined) data.joinDate = new Date(body.joinDate);
+    if (body.name !== undefined) {
+      if (!body.name?.trim()) throw new BadRequestException("Employee name is required");
+      data.name = String(body.name).trim();
+    }
+    for (const f of ["skillTags", "documents", "careerHistory", "weeklyOffDays"]) {
+      if (body[f] !== undefined) {
+        if (!Array.isArray(body[f])) throw new BadRequestException(`${f} must be an array`);
+        data[f] = body[f];
+      }
+    }
+    if (body.salary !== undefined) data.salary = assertMoney(body.salary, "salary");
+    if (body.costRate !== undefined) data.costRate = assertMoney(body.costRate, "costRate");
+    if (body.graceMinutes !== undefined) {
+      data.graceMinutes = body.graceMinutes === "" || body.graceMinutes === null ? null : Number(body.graceMinutes);
+      if (data.graceMinutes !== null && !Number.isFinite(data.graceMinutes)) throw new BadRequestException("graceMinutes must be a number");
+    }
+    if (managerId !== undefined) data.reportingManagerId = managerId;
+    if (status !== undefined) data.employmentStatus = status;
+    if (body.joinDate !== undefined) {
+      const jd = new Date(body.joinDate);
+      if (Number.isNaN(jd.getTime())) throw new BadRequestException("joinDate must be a valid date");
+      data.joinDate = jd;
+    }
     const result = await this.prisma.employee.update({ where: { id }, data });
     await invalidatePeopleCache(this.cache);
     // Exiting an employee opens the offboarding run so gear and access are
     // actually collected instead of living in someone's memory.
-    if (body.employmentStatus === "EXITED" && existing.employmentStatus !== "EXITED") {
+    if (status === "EXITED" && existing.employmentStatus !== "EXITED") {
       await this.onboarding.autoStartOffboarding(id);
     }
     return result;
   }
 
   async deleteEmployee(id: string) {
-    await this.prisma.employee.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException("Employee not found");
+    await this.prisma.employee.delete({ where: { id } }).catch((err) => {
+      if (err?.code === "P2025") throw new NotFoundException("Employee not found");
+      if (err?.code === "P2003") {
+        throw new BadRequestException(
+          "This employee still has attendance, payroll, tasks or reportees attached. Set their status to EXITED instead of deleting."
+        );
+      }
+      throw err;
     });
     await invalidatePeopleCache(this.cache);
     return { ok: true };

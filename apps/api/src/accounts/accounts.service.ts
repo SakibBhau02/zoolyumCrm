@@ -4,6 +4,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { ScoringService } from "../scoring/scoring.service";
 import { isReceivable, invoiceTotals } from "../capital/finance-kernel";
+import { summariseDollarSales } from "../common/dollar-purchases";
 
 interface ClientFinancials {
   totalInvoiced: number;
@@ -48,6 +49,12 @@ function assertHttpUrl(value: string) {
 function assertContactEmail(email: string | null | undefined) {
   const value = email?.trim();
   if (value && !EMAIL_RE.test(value)) throw new BadRequestException("Contact email looks invalid");
+}
+
+/** Emails are stored lower-cased so portal login is deterministic. */
+function normalizeEmail(email: string | null | undefined): string | null {
+  const value = email?.trim().toLowerCase();
+  return value || null;
 }
 
 function startOfToday() {
@@ -449,6 +456,14 @@ export class AccountsService {
       .filter((e) => e.approvalStatus === "PENDING")
       .reduce((s, e) => s + Number(e.amount), 0);
 
+    // Dollar Desk: USD the client bought from the agency. Client-level (not
+    // project-level), so it belongs on the client file alongside billing.
+    const dollarRows = await this.prisma.dollarSale.findMany({
+      where: { clientId: id },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    });
+    const dollar = summariseDollarSales(dollarRows);
+
     return {
       ...client,
       // Full history so the Billing tab's filters and counts agree with the
@@ -469,6 +484,9 @@ export class AccountsService {
       draftAmount,
       draftCount,
       aging,
+      // USD the client bought (Dollar Desk), with the agency-side margin — this
+      // is an internal view, so profit is included.
+      dollar,
       finance: {
         expensesTotal,
         pendingExpenses,
@@ -556,7 +574,7 @@ export class AccountsService {
                 create: {
                   name: contactName,
                   roleTitle: pc?.roleTitle?.trim() || null,
-                  email: pc?.email?.trim() || null,
+                  email: normalizeEmail(pc?.email),
                   phone: pc?.phone?.trim() || null,
                   isPrimary: true,
                 },
@@ -608,7 +626,7 @@ export class AccountsService {
       contactData = {
         name: contactName,
         roleTitle: pc.roleTitle?.trim() || null,
-        email: pc.email?.trim() || null,
+        email: normalizeEmail(pc.email),
         phone: pc.phone?.trim() || null,
         isPrimary: true,
       };
@@ -697,7 +715,7 @@ export class AccountsService {
       clientId: id,
       name,
       roleTitle: body.roleTitle?.trim() || null,
-      email: body.email?.trim() || null,
+      email: normalizeEmail(body.email),
       phone: body.phone?.trim() || null,
       isPrimary: body.isPrimary ?? false,
     };
@@ -728,7 +746,7 @@ export class AccountsService {
       data: {
         name: body.name !== undefined ? body.name.trim() : undefined,
         roleTitle: body.roleTitle !== undefined ? body.roleTitle?.trim() || null : undefined,
-        email: body.email !== undefined ? body.email?.trim() || null : undefined,
+        email: body.email !== undefined ? normalizeEmail(body.email) : undefined,
         phone: body.phone !== undefined ? body.phone?.trim() || null : undefined,
         isPrimary: body.isPrimary,
       },

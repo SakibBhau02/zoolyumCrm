@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { AttendanceStatus } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
-import { dateStrDhaka, dhakaDayRange, dhakaDaysInMonth, eachDayStr, invalidatePeopleCache, isWorkingDay, minutesOf, parseDeviceTime, toHHmmDhaka, weekdayDhaka } from "./people-utils";
+import { dateStrDhaka, dhakaDayRange, dhakaDaysInMonth, eachDayStr, invalidatePeopleCache, isWorkingDay, minutesOf, parseDeviceTime, toHHmmDhaka, weekdayDhaka, assertPeriod, assertDay } from "./people-utils";
 
 @Injectable()
 export class AttendanceService {
@@ -15,6 +15,21 @@ export class AttendanceService {
   private offDaysFor(emp: any, policy: any) {
     const od = emp.weeklyOffDays && emp.weeklyOffDays.length ? emp.weeklyOffDays : policy.weeklyOffDays;
     return new Set(od);
+  }
+
+  /** An empty string from a form means "unset", not "00:00". */
+  private shiftOf(v: unknown): string | null {
+    const s = typeof v === "string" ? v.trim() : "";
+    return s === "" ? null : s;
+  }
+
+  /** Per-employee schedule when explicitly set, otherwise the company policy. */
+  private effectiveShift(emp: any, policy: any) {
+    return {
+      start: this.shiftOf(emp?.shiftStart) ?? this.shiftOf(policy?.shiftStart) ?? "10:00",
+      end: this.shiftOf(emp?.shiftEnd) ?? this.shiftOf(policy?.shiftEnd) ?? "18:00",
+      grace: emp?.graceMinutes ?? policy?.graceMinutes ?? 0,
+    };
   }
 
   /**
@@ -42,8 +57,7 @@ export class AttendanceService {
   }
 
   private computeDayStatus(emp: any, punches: { punchTime: Date }[], policy: any): { status: AttendanceStatus; checkIn: Date | null; checkOut: Date | null; minutesLate: number } {
-    const shiftStart = emp.shiftStart ?? policy.shiftStart;
-    const grace = emp.graceMinutes ?? policy.graceMinutes;
+    const { start: shiftStart, grace } = this.effectiveShift(emp, policy);
     const cutoff = policy.halfDayCutoff;
     if (!punches.length) return { status: "ABSENT", checkIn: null, checkOut: null, minutesLate: 0 };
     const checkIn = punches[0].punchTime;
@@ -61,7 +75,8 @@ export class AttendanceService {
   // page could never answer "how long did they work". Everything below derives
   // from first-punch → last-punch per day (single shift model, no breaks).
   private expectedMinutes(emp: any, policy: any): number {
-    const diff = minutesOf(emp.shiftEnd ?? policy.shiftEnd) - minutesOf(emp.shiftStart ?? policy.shiftStart);
+    const { start, end } = this.effectiveShift(emp, policy);
+    const diff = minutesOf(end) - minutesOf(start);
     return diff > 0 ? diff : 0;
   }
 
@@ -70,11 +85,16 @@ export class AttendanceService {
     checkOut: Date | null,
     expected: number,
     threshold: number,
-    now = new Date()
+    opts: { isToday?: boolean; now?: Date } = {}
   ): { worked: number; overtime: number; undertime: number; open: boolean } {
     if (!checkIn) return { worked: 0, overtime: 0, undertime: 0, open: false };
-    // No checkout yet = still inside; hours-so-far instead of zero.
-    const end = checkOut ?? now;
+    // No checkout = still inside. For *today* we report hours-so-far; for a past
+    // day the shift is over, so pretending they are still working makes worked
+    // time (and overtime) grow every time the report is opened.
+    if (!checkOut && opts.isToday === false) {
+      return { worked: 0, overtime: 0, undertime: 0, open: true };
+    }
+    const end = checkOut ?? opts.now ?? new Date();
     const worked = Math.max(0, Math.round((end.getTime() - checkIn.getTime()) / 60000));
     const extra = worked - expected;
     return {
@@ -88,19 +108,26 @@ export class AttendanceService {
   /** Month (default) or trailing-N-days / explicit from→to window. Future days excluded. */
   private resolveDays(query: { month?: string; days?: string; from?: string; to?: string }): string[] {
     const today = dateStrDhaka(new Date());
-    if (query.from && query.to) {
+    if (query.from || query.to) {
+      if (!query.from || !query.to) throw new BadRequestException("from and to must be provided together (YYYY-MM-DD)");
+      const from = assertDay(query.from, "from");
+      const to = assertDay(query.to, "to");
+      if (to < from) throw new BadRequestException("to must be on or after from");
       const out: string[] = [];
-      const d = new Date(`${query.from}T00:00:00.000Z`);
-      const end = new Date(`${query.to}T00:00:00.000Z`);
+      const d = new Date(`${from}T00:00:00.000Z`);
+      const end = new Date(`${to}T00:00:00.000Z`);
       let guard = 0;
       while (d <= end && guard++ < 366) {
         out.push(d.toISOString().slice(0, 10));
         d.setUTCDate(d.getUTCDate() + 1);
       }
+      if (guard >= 366) throw new BadRequestException("Range is limited to 366 days");
       return out.filter((x) => x <= today);
     }
     if (query.days) {
-      const n = Math.min(90, Math.max(1, parseInt(String(query.days), 10) || 30));
+      const parsed = parseInt(String(query.days), 10);
+      if (!Number.isFinite(parsed)) throw new BadRequestException("days must be a number");
+      const n = Math.min(90, Math.max(1, parsed || 30));
       const out: string[] = [];
       const d = new Date(`${today}T00:00:00.000Z`);
       for (let i = n - 1; i >= 0; i--) {
@@ -110,7 +137,7 @@ export class AttendanceService {
       }
       return out;
     }
-    return dhakaDaysInMonth(query.month ?? today.slice(0, 7)).filter((x) => x <= today);
+    return dhakaDaysInMonth(query.month ? assertPeriod(query.month) : today.slice(0, 7)).filter((x) => x <= today);
   }
 
   private rangeBounds(days: string[]) {
@@ -128,9 +155,38 @@ export class AttendanceService {
   }
 
   async updateAttendancePolicy(body: any) {
+    const int = (v: any, field: string, min: number, max: number) => {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < min || n > max) throw new BadRequestException(`${field} must be a number between ${min} and ${max}`);
+      return Math.round(n);
+    };
+    const hhmm = (v: any, field: string) => {
+      const s = String(v ?? "").trim();
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(s)) throw new BadRequestException(`${field} must be HH:MM`);
+      return s;
+    };
     const data: any = {};
-    for (const f of ["weeklyOffDays", "graceMinutes", "shiftStart", "shiftEnd", "halfDayCutoff", "lateLadder", "dailyRateDivisor", "proRataEnabled", "overtimeThresholdMinutes"]) {
-      if (body[f] !== undefined) data[f] = body[f];
+    if (body.weeklyOffDays !== undefined) {
+      const days = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+      const list = Array.isArray(body.weeklyOffDays) ? body.weeklyOffDays : [];
+      const clean: string[] = [...new Set<string>(list.map((d: any) => String(d).trim().toUpperCase()))];
+      const bad = clean.filter((d) => !days.includes(d));
+      if (bad.length) throw new BadRequestException(`Unknown weekday: ${bad.join(", ")}`);
+      data.weeklyOffDays = clean;
+    }
+    if (body.graceMinutes !== undefined && body.graceMinutes !== null && body.graceMinutes !== "") data.graceMinutes = int(body.graceMinutes, "graceMinutes", 0, 240);
+    if (body.shiftStart !== undefined) data.shiftStart = hhmm(body.shiftStart, "shiftStart");
+    if (body.shiftEnd !== undefined) data.shiftEnd = hhmm(body.shiftEnd, "shiftEnd");
+    if (body.halfDayCutoff !== undefined) data.halfDayCutoff = hhmm(body.halfDayCutoff, "halfDayCutoff");
+    if (body.dailyRateDivisor !== undefined) data.dailyRateDivisor = int(body.dailyRateDivisor, "dailyRateDivisor", 0, 31);
+    if (body.overtimeThresholdMinutes !== undefined) data.overtimeThresholdMinutes = int(body.overtimeThresholdMinutes, "overtimeThresholdMinutes", 0, 480);
+    if (body.proRataEnabled !== undefined) data.proRataEnabled = body.proRataEnabled === true || body.proRataEnabled === "true";
+    if (body.lateLadder !== undefined) {
+      if (!Array.isArray(body.lateLadder)) throw new BadRequestException("lateLadder must be an array");
+      data.lateLadder = body.lateLadder
+        .filter((r: any) => Number(r?.lates) > 0)
+        .map((r: any) => ({ lates: int(r.lates, "lateLadder.lates", 1, 60), days: int(r.days, "lateLadder.days", 0, 31) }))
+        .sort((a: any, b: any) => a.lates - b.lates);
     }
     return this.prisma.attendancePolicy.update({ where: { id: "default" }, data });
   }
@@ -145,7 +201,7 @@ export class AttendanceService {
   }
 
   async workCalendar(month?: string) {
-    const m = month && /^\d{4}-\d{2}$/.test(month) ? month : dateStrDhaka(new Date()).slice(0, 7);
+    const m = month ? assertPeriod(month) : dateStrDhaka(new Date()).slice(0, 7);
     const [overrides, holidays, policy] = await Promise.all([
       this.prisma.workdayOverride.findMany({
         where: { date: { gte: `${m}-01`, lt: `${m}-32` } },
@@ -193,11 +249,21 @@ export class AttendanceService {
     overrides: Map<string, { isOpen: boolean; note: string | null }>;
     leavesByEmp: Map<string, { startDate: Date; endDate: Date }[]>;
     punchesByEmpDate: Map<string, { punchTime: Date }[]>;
+    /** Existing rows, so a recompute does not silently undo an HR correction. */
+    existingByEmpDate?: Map<string, { id: string; status: AttendanceStatus; checkInTime: Date | null; checkOutTime: Date | null; correctedFields: string[] }>;
+    /** Explicit "Recompute" from HR may overwrite manual corrections. */
+    force?: boolean;
   }) {
     // dstr is a Dhaka calendar date (YYYY-MM-DD). The stored `attendance.date`
     // is UTC-midnight labelled with that date so displays stay correct.
     const date = new Date(`${dstr}T00:00:00.000Z`);
     const { start, end } = dhakaDayRange(dstr);
+    // A day before the hire date is not "absent" — the person was not employed.
+    // Writing ABSENT rows here made a new hire look like they skipped 3 weeks.
+    if (emp.joinDate && dstr < dateStrDhaka(emp.joinDate)) {
+      await this.prisma.attendance.deleteMany({ where: { employeeId: emp.id, date } });
+      return null;
+    }
     // Precedence: explicit override > weekly off / holiday.
     const ov = ctx.overrides.get(dstr)?.isOpen;
     if (ov === false) return null; // office closed by override
@@ -205,17 +271,38 @@ export class AttendanceService {
       if (this.offDaysFor(emp, ctx.policy).has(weekdayDhaka(date))) return null;
       if (ctx.holidays.has(dstr)) return null;
     }
+    // HR owns the fields they corrected. The nightly cron used to overwrite the
+    // whole row at 23:45, leaving the correction flag on top of derived values.
+    // Now the derived values are merged around whatever HR edited, so a manual
+    // fix survives while new punches still update the untouched fields.
+    const existing = ctx.existingByEmpDate
+      ? ctx.existingByEmpDate.get(`${emp.id}|${dstr}`)
+      : await this.prisma.attendance.findUnique({
+          where: { employeeId_date: { employeeId: emp.id, date } },
+          select: { id: true, status: true, checkInTime: true, checkOutTime: true, correctedFields: true },
+        });
+    const protectedFields = new Set(ctx.force ? [] : existing?.correctedFields ?? []);
     const punches = (ctx.punchesByEmpDate.get(`${emp.id}|${dstr}`) ?? []).sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
     const leaves = (ctx.leavesByEmp.get(emp.id) ?? []).filter((l) => date >= l.startDate && date <= l.endDate);
     if (leaves.length && !punches.length) {
+      // Keep an HR-corrected row instead of deleting it for the leave.
+      if (existing && protectedFields.size) return null;
       await this.prisma.attendance.deleteMany({ where: { employeeId: emp.id, date } });
       return null;
     }
-    const { status, checkIn, checkOut } = this.computeDayStatus(emp, punches, ctx.policy);
+    const derived = this.computeDayStatus(emp, punches, ctx.policy);
+    const status = protectedFields.has("status") && existing ? existing.status : derived.status;
+    const checkInTime = protectedFields.has("checkInTime") && existing ? existing.checkInTime : derived.checkIn;
+    const checkOutTime = protectedFields.has("checkOutTime") && existing ? existing.checkOutTime : derived.checkOut;
     const att = await this.prisma.attendance.upsert({
       where: { employeeId_date: { employeeId: emp.id, date } },
-      update: { status, checkInTime: checkIn, checkOutTime: checkOut },
-      create: { employeeId: emp.id, date, status, checkInTime: checkIn, checkOutTime: checkOut },
+      update: {
+        status,
+        checkInTime,
+        checkOutTime,
+        ...(ctx.force ? { isManuallyCorrected: false, correctedFields: [] } : {}),
+      },
+      create: { employeeId: emp.id, date, status, checkInTime, checkOutTime },
     });
     if (punches.length) {
       await this.prisma.punchLog.updateMany({
@@ -227,7 +314,7 @@ export class AttendanceService {
   }
 
   /** Recompute one day. Public so LeaveService can refresh days after a leave decision. */
-  async recomputeDay(employeeId: string, dstr: string) {
+  async recomputeDay(employeeId: string, dstr: string, opts: { force?: boolean } = {}) {
     const { start, end } = dhakaDayRange(dstr);
     const policy = await this.attendancePolicy();
     const emp = await this.prisma.employee.findUnique({ where: { id: employeeId } });
@@ -244,50 +331,59 @@ export class AttendanceService {
       overrides,
       leavesByEmp: new Map([[employeeId, leaves.map((l) => ({ startDate: l.startDate, endDate: l.endDate }))]]),
       punchesByEmpDate: new Map([[`${employeeId}|${dstr}`, punches]]),
+      force: opts.force === true,
     });
   }
 
   async importPunches(rows: { deviceId: string; time: string; verifyMethod?: string; workCode?: string; deviceSn?: string; source?: string }[]) {
+    if (!Array.isArray(rows) || !rows.length) return { imported: 0, unmatched: 0, skipped: 0 };
     const employees = await this.prisma.employee.findMany({ where: { deviceId: { not: null } }, select: { id: true, deviceId: true } });
     const byDevice = new Map(employees.map((e) => [e.deviceId!, e.id]));
-    const existing = await this.prisma.punchLog.findMany({
-      where: { OR: rows.filter((r) => r.time).map((r) => ({ deviceId: String(r.deviceId), punchTime: new Date(r.time) })) },
-      select: { deviceId: true, punchTime: true },
-    });
-    const seenKeys = new Set(existing.map((e) => `${e.deviceId}|${new Date(e.punchTime).getTime()}`));
+
+    // Validate and de-duplicate BEFORE building a query: one bad row used to
+    // produce an Invalid Date in the `OR` list and 500 the whole batch.
     const batchKeys = new Set<string>();
-    const created: any[] = [];
+    const prepared: any[] = [];
+    let skipped = 0;
     for (const r of rows) {
-      if (!r.time) continue;
+      if (!r?.time) { skipped++; continue; }
       const time = new Date(r.time);
-      if (Number.isNaN(time.getTime())) continue;
-      const key = `${r.deviceId}|${time.getTime()}`;
-      if (seenKeys.has(key) || batchKeys.has(key)) continue;
+      if (Number.isNaN(time.getTime())) { skipped++; continue; }
+      const deviceId = String(r.deviceId ?? "").trim();
+      if (!deviceId) { skipped++; continue; }
+      const key = `${deviceId}|${time.getTime()}`;
+      if (batchKeys.has(key)) { skipped++; continue; }
       batchKeys.add(key);
-      const empId = byDevice.get(String(r.deviceId)) ?? null;
-      created.push(
-        await this.prisma.punchLog.create({
-          data: {
-            deviceId: String(r.deviceId),
-            employeeId: empId,
-            punchTime: time,
-            verifyMethod: r.verifyMethod ?? null,
-            workCode: r.workCode ?? null,
-            deviceSn: r.deviceSn ?? null,
-            source: r.source ?? "DEVICE",
-            unmatched: !empId,
-          },
-        })
-      );
+      const empId = byDevice.get(deviceId) ?? null;
+      prepared.push({
+        deviceId,
+        employeeId: empId,
+        punchTime: time,
+        verifyMethod: r.verifyMethod ?? null,
+        workCode: r.workCode ?? null,
+        deviceSn: r.deviceSn ?? null,
+        source: r.source ?? "DEVICE",
+        unmatched: !empId,
+      });
     }
-    const affected = new Set<string>();
-    for (const p of created) if (p.employeeId) affected.add(`${p.employeeId}|${dateStrDhaka(p.punchTime)}`);
-    for (const key of affected) {
-      const [employeeId, dstr] = key.split("|");
-      await this.recomputeDay(employeeId, dstr);
+    if (!prepared.length) return { imported: 0, unmatched: 0, skipped };
+
+    // skipDuplicates leans on PunchLog's (deviceId, punchTime) unique index, so
+    // a device retrying a batch cannot insert the same punch twice.
+    const inserted = await this.prisma.punchLog.createMany({ data: prepared, skipDuplicates: true });
+    const affected = new Map<string, { employeeId: string; dstr: string }>();
+    for (const p of prepared) {
+      if (!p.employeeId) continue;
+      const dstr = dateStrDhaka(p.punchTime);
+      affected.set(`${p.employeeId}|${dstr}`, { employeeId: p.employeeId, dstr });
     }
+    for (const { employeeId, dstr } of affected.values()) await this.recomputeDay(employeeId, dstr);
     await invalidatePeopleCache(this.cache);
-    return { imported: created.length, unmatched: created.filter((c) => c.unmatched).length };
+    return {
+      imported: inserted.count,
+      unmatched: prepared.filter((p) => p.unmatched).length,
+      skipped: skipped + (prepared.length - inserted.count),
+    };
   }
 
   async iclockGetRequest(_sn?: string) {
@@ -320,18 +416,23 @@ export class AttendanceService {
     return "OK";
   }
 
-  async punches(month?: string, unmatchedOnly = false) {
+  async punches(query: { month?: string; days?: string; from?: string; to?: string } = {}, unmatchedOnly = false, limit?: number) {
     const where: any = {};
-    if (month) {
-      const days = dhakaDaysInMonth(month);
-      where.punchTime = { gte: dhakaDayRange(days[0]).start, lt: dhakaDayRange(days[days.length - 1]).end };
+    const hasRange = !!(query.month || query.days || (query.from && query.to));
+    if (hasRange) {
+      const days = this.resolveDays(query);
+      if (days.length) {
+        const { start, end } = this.rangeBounds(days);
+        where.punchTime = { gte: start, lt: end };
+      }
     }
     if (unmatchedOnly) where.unmatched = true;
+    const take = Math.min(5000, Math.max(1, Number(limit) || 2000));
     return this.prisma.punchLog.findMany({
       where,
       include: { employee: { select: { id: true, name: true } } },
       orderBy: { punchTime: "desc" },
-      take: 500,
+      take,
     });
   }
 
@@ -400,19 +501,24 @@ export class AttendanceService {
     return { ok: true, action, employee: emp.name, punch, status: fresh?.status ?? null };
   }
 
-  async recomputeMonth(month: string) {
-    const days = dhakaDaysInMonth(month);
+  async recomputeMonth(month: string, opts: { force?: boolean } = {}) {
+    const period = assertPeriod(month);
+    const days = dhakaDaysInMonth(period);
     const first = dhakaDayRange(days[0]);
     const last = dhakaDayRange(days[days.length - 1]);
     const start = first.start;
     const end = last.end;
     const policy = await this.attendancePolicy();
-    const [employees, holidays, leaves, punches, overrides] = await Promise.all([
+    const [employees, holidays, leaves, punches, overrides, existingRows] = await Promise.all([
       this.prisma.employee.findMany({ where: { employmentStatus: "ACTIVE" } }),
       this.prisma.holiday.findMany({ select: { date: true } }),
       this.prisma.leaveRequest.findMany({ where: { status: "APPROVED", startDate: { lt: new Date(end.getTime() + 86400000) }, endDate: { gte: start } } }),
       this.prisma.punchLog.findMany({ where: { employeeId: { not: null }, punchTime: { gte: start, lt: end } } }),
       this.overrideMap(),
+      this.prisma.attendance.findMany({
+        where: { date: { gte: new Date(`${days[0]}T00:00:00.000Z`), lt: new Date(new Date(`${days[days.length - 1]}T00:00:00.000Z`).getTime() + 86400000) } },
+        select: { id: true, employeeId: true, date: true, status: true, checkInTime: true, checkOutTime: true, correctedFields: true },
+      }),
     ]);
     const ctx = {
       policy,
@@ -420,7 +526,18 @@ export class AttendanceService {
       overrides,
       leavesByEmp: new Map<string, { startDate: Date; endDate: Date }[]>(),
       punchesByEmpDate: new Map<string, { punchTime: Date }[]>(),
+      existingByEmpDate: new Map<string, { id: string; status: AttendanceStatus; checkInTime: Date | null; checkOutTime: Date | null; correctedFields: string[] }>(),
+      force: opts.force === true,
     };
+    for (const row of existingRows) {
+      ctx.existingByEmpDate.set(`${row.employeeId}|${dateStrDhaka(row.date)}`, {
+        id: row.id,
+        status: row.status,
+        checkInTime: row.checkInTime,
+        checkOutTime: row.checkOutTime,
+        correctedFields: row.correctedFields ?? [],
+      });
+    }
     for (const l of leaves) {
       const arr = ctx.leavesByEmp.get(l.employeeId) ?? [];
       arr.push({ startDate: l.startDate, endDate: l.endDate });
@@ -444,18 +561,40 @@ export class AttendanceService {
       }
     }
     await invalidatePeopleCache(this.cache);
-    return { month, processed };
+    return { month: period, processed, force: opts.force === true };
   }
 
   async correctAttendance(id: string, body: { field?: string; value?: any; reason?: string }, user: any) {
     const att = await this.prisma.attendance.findUnique({ where: { id } });
     if (!att) throw new NotFoundException("Attendance record not found");
     const field = body.field === "checkInTime" || body.field === "checkOutTime" ? body.field : "status";
+    let newVal: any;
+    if (field === "status") {
+      const allowed: AttendanceStatus[] = ["PRESENT", "ABSENT", "LATE", "HALF_DAY", "WFH"];
+      const v = String(body.value ?? "").toUpperCase() as AttendanceStatus;
+      if (!allowed.includes(v)) throw new BadRequestException(`status must be one of ${allowed.join(", ")}`);
+      newVal = v;
+    } else {
+      // Accept "HH:MM" (device/HR wall time, interpreted as Dhaka on that date)
+      // or a full ISO instant. Everything else is a 400, not a Prisma 500.
+      const raw = String(body.value ?? "").trim();
+      if (raw === "") newVal = null;
+      else if (/^\d{2}:\d{2}$/.test(raw)) {
+        const day = dateStrDhaka(att.date);
+        const [h, m] = raw.split(":").map(Number);
+        if (h > 23 || m > 59) throw new BadRequestException("time must be between 00:00 and 23:59");
+        newVal = new Date(new Date(`${day}T00:00:00.000Z`).getTime() + h * 3600000 + m * 60000 - 6 * 3600000);
+      } else {
+        const parsed = new Date(raw);
+        if (Number.isNaN(parsed.getTime())) throw new BadRequestException("value must be HH:MM or an ISO timestamp");
+        newVal = parsed;
+      }
+    }
+    const correctedFields = Array.from(new Set([...(att.correctedFields ?? []), field]));
     const oldVal = (att as any)[field];
-    const newVal = field === "status" ? body.value : body.value ? new Date(body.value) : null;
     const updated = await this.prisma.attendance.update({
       where: { id },
-      data: { [field]: newVal, isManuallyCorrected: true, correctedById: user?.sub ?? null },
+      data: { [field]: newVal, isManuallyCorrected: true, correctedFields, correctedById: user?.sub ?? null },
     });
     await this.prisma.attendanceCorrection.create({
       data: {
@@ -511,10 +650,14 @@ export class AttendanceService {
           if (off.has(weekdayDhaka(new Date(`${dstr}T00:00:00.000Z`)))) { weekOffDays++; continue; }
           if (holidaySet.has(dstr)) { holidayDays++; continue; }
         }
-        if (empLeaves.some((l) => dstr >= dateStrDhaka(l.startDate) && dstr <= dateStrDhaka(l.endDate))) { leaveDays++; workingDays++; continue; }
-        workingDays++;
         const att = empAtt.find((a) => dateStrDhaka(a.date) === dstr);
         const dayPunches = empPunches.filter((p) => dateStrDhaka(p.punchTime) === dstr).sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
+        // Leave only counts when the person did not actually work: punching in
+        // beats an approved leave row, otherwise the same day is "leave" in this
+        // report and "PRESENT" in Attendance/employeeAttendance.
+        const onLeave = empLeaves.some((l) => dstr >= dateStrDhaka(l.startDate) && dstr <= dateStrDhaka(l.endDate));
+        if (onLeave && !dayPunches.length && !att?.checkInTime) { leaveDays++; workingDays++; continue; }
+        workingDays++;
         // "No row and no punch" means the day was never processed — that is not
         // evidence of absence, so it must not feed a deduction. A real ABSENT is
         // one the engine (or HR) actually wrote.
@@ -529,7 +672,7 @@ export class AttendanceService {
         const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
         const co = att?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
         if (ci) {
-          const h = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold);
+          const h = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, { isToday: dstr === todayStr });
           workedMinutes += h.worked;
           expectedMinutes += expected;
           overtimeMinutes += h.overtime;
@@ -554,7 +697,9 @@ export class AttendanceService {
         divisor, dailyRate: Math.round(daily * 100) / 100,
         lateDeductionDays: lateDays,
         lateDeduction: Math.round(lateDays * daily * 100) / 100,
-        halfDayDeduction: Math.round((halfDay * daily * 0.5) * 100) / 100,
+        // "Half-day = half LOP" toggle: the settings page exposed it but the
+        // engine always charged 0.5, so the option did nothing.
+        halfDayDeduction: Math.round((halfDay * daily * (policy.proRataEnabled === false ? 1 : 0.5)) * 100) / 100,
         absentDeduction: Math.round(absent * daily * 100) / 100,
       });
     }
@@ -567,7 +712,7 @@ export class AttendanceService {
     const { start, end } = this.rangeBounds(days);
     const [records, punches, employees, policy] = await Promise.all([
       this.prisma.attendance.findMany({
-        where: { status: "LATE", date: { gte: start, lt: end } },
+        where: { status: "LATE", date: { gte: start, lt: end }, employee: { employmentStatus: { not: "EXITED" } } },
         include: { employee: { select: { id: true, name: true, roleTitle: true, department: true } } },
         orderBy: [{ date: "asc" }, { employee: { name: "asc" } }],
       }),
@@ -581,8 +726,7 @@ export class AttendanceService {
       const dayPunches = punches
         .filter((p) => p.employeeId === r.employeeId && dateStrDhaka(p.punchTime) === dateStrDhaka(r.date))
         .sort((a, b) => a.punchTime.getTime() - b.punchTime.getTime());
-      const shiftStart = emp?.shiftStart ?? policy.shiftStart;
-      const grace = emp?.graceMinutes ?? policy.graceMinutes;
+      const { start: shiftStart, grace } = this.effectiveShift(emp, policy);
       const checkIn = r.checkInTime ?? dayPunches[0]?.punchTime ?? null;
       const minutesLate = checkIn ? Math.max(0, minutesOf(toHHmmDhaka(checkIn)) - (minutesOf(shiftStart) + grace)) : 0;
       return { ...r, minutesLate, shiftStart, graceMinutes: grace };
@@ -600,20 +744,36 @@ export class AttendanceService {
     const emp = body.employeeId
       ? await this.prisma.employee.findUnique({ where: { id: body.employeeId }, select: { id: true } })
       : null;
-    if (!emp) throw new NotFoundException("Employee not found");
-    const date = body.date ? new Date(body.date) : new Date();
+    if (!emp) throw new BadRequestException("employeeId is required and must exist");
+    const allowed: AttendanceStatus[] = ["PRESENT", "ABSENT", "LATE", "HALF_DAY", "WFH"];
+    if (body.status !== undefined && !allowed.includes(body.status)) {
+      throw new BadRequestException(`status must be one of ${allowed.join(", ")}`);
+    }
+    // `@db.Date` truncates in UTC, so the "today" fallback must be the Dhaka
+    // date labelled at UTC midnight — otherwise 00:00–05:59 lands on yesterday.
+    const dayStr = body.date ? assertDay(body.date) : dateStrDhaka(new Date());
+    const date = new Date(`${dayStr}T00:00:00.000Z`);
+    const parseTime = (v?: string) => {
+      if (!v) return undefined;
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) throw new BadRequestException("checkInTime / checkOutTime must be valid timestamps");
+      return d;
+    };
+    const checkInTime = parseTime(body.checkInTime);
+    const checkOutTime = parseTime(body.checkOutTime);
     const result = await this.prisma.attendance.upsert({
       where: { employeeId_date: { employeeId: body.employeeId, date } },
       update: {
         status: body.status,
-        checkInTime: body.checkInTime ? new Date(body.checkInTime) : undefined,
-        checkOutTime: body.checkOutTime ? new Date(body.checkOutTime) : undefined,
+        checkInTime,
+        checkOutTime,
       },
       create: {
         employeeId: body.employeeId,
         date,
         status: body.status ?? "PRESENT",
-        checkInTime: body.checkInTime ? new Date(body.checkInTime) : undefined,
+        checkInTime,
+        checkOutTime,
       },
     });
     await invalidatePeopleCache(this.cache);
@@ -654,11 +814,16 @@ export class AttendanceService {
   }
 
   async createHoliday(body: { date: string; name: string; description?: string; tentative?: boolean; isGovernment?: boolean }) {
+    const name = String(body?.name ?? "").trim();
+    if (!name) throw new BadRequestException("name is required");
+    const day = assertDay(body?.date, "date");
+    const existing = await this.prisma.holiday.findFirst({ where: { date: day }, select: { id: true, name: true } });
+    if (existing) throw new BadRequestException(`${day} is already a holiday (${existing.name})`);
     return this.prisma.holiday.create({
       data: {
-        date: body.date,
-        name: body.name,
-        description: body.description ?? null,
+        date: day,
+        name,
+        description: body.description?.trim() || null,
         tentative: body.tentative ?? false,
         isGovernment: body.isGovernment ?? true,
       },
@@ -666,8 +831,9 @@ export class AttendanceService {
   }
 
   async deleteHoliday(id: string) {
-    await this.prisma.holiday.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException("Holiday not found");
+    await this.prisma.holiday.delete({ where: { id } }).catch((err) => {
+      if (err?.code === "P2025") throw new NotFoundException("Holiday not found");
+      throw err;
     });
     return { ok: true };
   }
@@ -705,8 +871,7 @@ export class AttendanceService {
     // Days before the person was hired are not "absent" — they were not employed.
     // Counting them made a fresh hire look like they had 19 unpaid absences.
     const joinedStr = emp.joinDate ? dateStrDhaka(emp.joinDate) : null;
-    const shiftStart = emp.shiftStart ?? policy.shiftStart;
-    const grace = emp.graceMinutes ?? policy.graceMinutes;
+    const { start: shiftStart, grace } = this.effectiveShift(emp, policy);
     const dayList: any[] = [];
     const summary = { working: 0, present: 0, late: 0, halfDay: 0, absent: 0, leave: 0, off: 0, holiday: 0, lateMinutes: 0, workedMinutes: 0, expectedMinutes: 0, overtimeMinutes: 0, undertimeMinutes: 0, beforeJoining: 0, unrecorded: 0 };
     for (const dstr of days) {
@@ -747,7 +912,7 @@ export class AttendanceService {
         const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
         const co = att?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
         if (ci) {
-          hours = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold);
+          hours = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, { isToday: dstr === todayStr });
           summary.workedMinutes += hours.worked;
           summary.expectedMinutes += expected;
           summary.overtimeMinutes += hours.overtime;
@@ -770,7 +935,7 @@ export class AttendanceService {
       });
     }
     return {
-      employee: { ...emp, shiftStart, graceMinutes: grace, expectedMinutes: expected },
+      employee: { ...emp, shiftStart, shiftEnd: this.shiftOf(emp.shiftEnd) ?? this.shiftOf(policy.shiftEnd) ?? "18:00", graceMinutes: grace, expectedMinutes: expected },
       range: { from: days[0], to: days[days.length - 1], count: days.length },
       month: query.month ?? null,
       summary,
@@ -820,8 +985,9 @@ export class AttendanceService {
         let minutesLate: number | null = null;
         if (a?.checkInTime) {
           const policy = await this.attendancePolicy();
-          const full = await this.prisma.employee.findUnique({ where: { id: emp.id }, select: { shiftStart: true, graceMinutes: true } });
-          minutesLate = Math.max(0, minutesOf(toHHmmDhaka(new Date(a.checkInTime))) - (minutesOf(full?.shiftStart ?? policy.shiftStart) + (full?.graceMinutes ?? policy.graceMinutes)));
+          const full = await this.prisma.employee.findUnique({ where: { id: emp.id }, select: { shiftStart: true, shiftEnd: true, graceMinutes: true } });
+          const eff = this.effectiveShift(full ?? {}, policy);
+          minutesLate = Math.max(0, minutesOf(toHHmmDhaka(new Date(a.checkInTime))) - (minutesOf(eff.start) + eff.grace));
         }
         mine = a
           ? {
@@ -880,9 +1046,8 @@ export class AttendanceService {
       const ci = a?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
       const co = a?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
       const expected = this.expectedMinutes(emp, policy);
-      const h = ci ? this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, now) : null;
-      const shiftStart = emp.shiftStart ?? policy.shiftStart;
-      const grace = emp.graceMinutes ?? policy.graceMinutes;
+      const h = ci ? this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, { isToday: true, now }) : null;
+      const { start: shiftStart, grace } = this.effectiveShift(emp, policy);
       const minutesLate = ci ? Math.max(0, minutesOf(toHHmmDhaka(new Date(ci))) - (minutesOf(shiftStart) + grace)) : null;
       const state = !ci ? "not_in" : !co ? "inside" : "left";
       return {
@@ -970,7 +1135,7 @@ export class AttendanceService {
         const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
         const co = att?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
         if (ci) {
-          const h = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold);
+          const h = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, { isToday: dstr === dateStrDhaka(new Date()) });
           worked += h.worked;
           overtime += h.overtime;
           counted++;
@@ -1043,8 +1208,9 @@ export class AttendanceService {
 
   /** HR cleanup: remove a decommissioned / test device (punch history keeps its SN string). */
   async deleteDevice(id: string) {
-    await this.prisma.attendanceDevice.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException("Device not found");
+    await this.prisma.attendanceDevice.delete({ where: { id } }).catch((err) => {
+      if (err?.code === "P2025") throw new NotFoundException("Device not found");
+      throw err;
     });
     return { ok: true };
   }

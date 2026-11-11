@@ -39,12 +39,31 @@ export class PeopleAutomationService {
     return !!hit;
   }
 
-  /** Is today a working day, per policy + holiday calendar? */
+  /** Same rule, but for a role-wide broadcast (one per type per day). */
+  private async roleNotifiedToday(roleMatch: string, type: string) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const hit = await this.prisma.notification.findFirst({
+      where: {
+        type,
+        createdAt: { gte: start },
+        user: { role: { name: { contains: roleMatch, mode: "insensitive" } } },
+      },
+      select: { id: true },
+    });
+    return !!hit;
+  }
+
+  /** Is today a working day, per policy + holiday calendar + work calendar? */
   private async workingDay(dateStr: string) {
-    const [policy, holiday] = await Promise.all([
+    const [policy, holiday, override] = await Promise.all([
       this.prisma.attendancePolicy.findUnique({ where: { id: "default" } }),
       this.prisma.holiday.findFirst({ where: { date: dateStr }, select: { id: true } }),
+      this.prisma.workdayOverride.findFirst({ where: { date: dateStr }, select: { isOpen: true } }),
     ]);
+    // An explicit calendar override wins over both the weekly off and holidays —
+    // an override-open Saturday was skipped by the cron, so nobody got a row.
+    if (override) return override.isOpen;
     if (holiday) return false;
     const dow = DAY_NAMES[new Date(`${dateStr}T00:00:00Z`).getUTCDay()];
     return !(policy?.weeklyOffDays ?? []).includes(dow);
@@ -145,6 +164,7 @@ export class PeopleAutomationService {
     const period = dateStrDhaka(new Date()).slice(0, 7);
     const existing = await this.prisma.payrollRecord.count({ where: { period } });
     if (existing > 0) return { skipped: "already-run" };
+    if (await this.roleNotifiedToday("Owner", "PAYROLL_REMINDER")) return { skipped: "already-notified" };
     const sent = await this.notifications.notifyRole("Owner", "PAYROLL_REMINDER", "Payroll not run yet", `No payroll records exist for ${period}. Run payroll before month-end so deductions land against real attendance.`, "/people/payroll").catch(() => 0);
     await this.notifications.notifyRole("HR", "PAYROLL_REMINDER", "Payroll not run yet", `No payroll records exist for ${period}. Run payroll before month-end.`, "/people/payroll").catch(() => null);
     return { period, sent };
@@ -171,6 +191,7 @@ export class PeopleAutomationService {
       }
     }
     if (!soon.length) return { sent: 0 };
+    if (await this.roleNotifiedToday("HR", "DOCUMENT_EXPIRY")) return { skipped: "already-notified", pending: soon.length };
     await this.notifications
       .notifyRole("HR", "DOCUMENT_EXPIRY", `${soon.length} document${soon.length === 1 ? " needs" : "s need"} attention`, soon.slice(0, 8).join("\n"), "/people/directory")
       .catch(() => 0);
@@ -190,6 +211,7 @@ export class PeopleAutomationService {
       include: { employee: { select: { name: true } }, items: { where: { done: false }, select: { label: true } } },
     });
     if (!runs.length) return { sent: 0 };
+    if (await this.roleNotifiedToday("HR", "ONBOARDING_STALE")) return { skipped: "already-notified", pending: runs.length };
     const lines = runs.slice(0, 8).map((r) => `${r.employee.name} · ${r.kind.toLowerCase()} · ${r.items.length} step(s) left`);
     await this.notifications
       .notifyRole("HR", "ONBOARDING_STALE", `${runs.length} checklist${runs.length === 1 ? "" : "s"} stalled for over a week`, lines.join("\n"), "/people/onboarding")
@@ -232,6 +254,7 @@ export class PeopleAutomationService {
       `${overdue} overdue task${overdue === 1 ? "" : "s"} across the team`,
     ].join("\n");
 
+    if (await this.roleNotifiedToday("Owner", "PEOPLE_DIGEST")) return { skipped: "already-sent" };
     const count = await this.notifications.notifyRole("Owner", "PEOPLE_DIGEST", "Weekly people digest", body, "/people").catch(() => 0);
     return { sent: count };
   }

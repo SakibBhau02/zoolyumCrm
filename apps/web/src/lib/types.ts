@@ -410,6 +410,31 @@ export interface ClientDetail extends Client {
       date: string; approvalStatus: string; isClientBillable: boolean; projectId: string | null;
     }[];
   };
+  /** Dollar Desk purchases — USD the client bought from the agency. */
+  dollar?: {
+    summary: {
+      count: number;
+      totalUsd: number;
+      totalBdt: number;
+      totalProfit: number;
+      averageRate: number | null;
+      lastPurchaseDate: string | null;
+    };
+    purchases: {
+      id: string;
+      reference: string;
+      date: string;
+      usdAmount: number;
+      bdtAmount: number;
+      rate: number;
+      costRate: number;
+      costBdt: number;
+      profit: number;
+      marginPct: number;
+      paymentMethod: string;
+      notes: string | null;
+    }[];
+  };
 }
 
 export interface AccountsOverview {

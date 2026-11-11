@@ -67,3 +67,33 @@ test("staff sees credit notes and custom installments in invoice drawer", async 
   await expect(page.getByText("Custom amounts & dates", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
 });
+
+/**
+ * Regression guard: privileged staff must be able to record an expense from the
+ * UI (the create path briefly rejected pre-approved expenses with a
+ * "you cannot approve your own expense" 403), and the list must refresh after
+ * create/delete without a manual reload.
+ */
+test("staff can record and delete an expense from the UI", async ({ page }) => {
+  await login(page);
+  const marker = `E2E expense ${Date.now()}`;
+
+  await page.goto("/capital/expenses");
+  await page.getByRole("button", { name: "Record Expense" }).last().click();
+  await expect(page.getByText("Vendor & bill", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Company overhead", exact: true }).click();
+
+  const dialog = page.locator('div[role="dialog"]');
+  await dialog.getByPlaceholder(/Google Ads/).fill(marker);
+  await dialog.getByPlaceholder("12000").fill("1234");
+  await dialog.getByRole("button", { name: "Record expense" }).click();
+
+  // Appears immediately (no reload) and is already approved for a finance role.
+  const row = page.locator("tbody tr", { hasText: marker });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("APPROVED")).toBeVisible();
+
+  await row.getByRole("button", { name: "Delete expense" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.locator("tbody tr", { hasText: marker })).toHaveCount(0);
+});

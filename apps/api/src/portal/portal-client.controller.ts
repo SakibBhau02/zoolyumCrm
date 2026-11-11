@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Res, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { Public } from "../common/decorators/public.decorator";
 import { PortalPublic } from "../common/decorators/portal-public.decorator";
 import { RateLimit } from "../common/decorators/rate-limit.decorator";
@@ -7,6 +19,16 @@ import { PortalCtx } from "./portal-ctx.decorator";
 import type { PortalScope } from "./portal-access.service";
 import { PortalClientService } from "./portal-client.service";
 import { PortalAdsService } from "./portal-ads.service";
+import {
+  PortalAdsQueryDto,
+  PortalApprovalDto,
+  PortalChangePasswordDto,
+  PortalLoginDto,
+  PortalMessageQueryDto,
+  PortalNotificationQueryDto,
+  PortalPostMessageDto,
+  PortalTaskQueryDto,
+} from "./dto/portal.dto";
 
 /**
  * Client-facing API.
@@ -21,17 +43,35 @@ import { PortalAdsService } from "./portal-ads.service";
 export class PortalClientController {
   constructor(private readonly portal: PortalClientService, private readonly ads: PortalAdsService) {}
 
+  private ip(req: any): string {
+    return String(req?.ip || req?.socket?.remoteAddress || "unknown").replace(/^::ffff:/, "");
+  }
+
   // ── Session ────────────────────────────────────────────────────────────
   @PortalPublic()
   @RateLimit({ limit: 10, windowSec: 60, name: "portal.login" })
+  @HttpCode(200)
   @Post("login")
-  login(@Body() body: { email: string; password: string }) {
-    return this.portal.login(body.email, body.password);
+  login(@Body() body: PortalLoginDto, @Req() req: any) {
+    return this.portal.login(body.email, body.password, this.ip(req));
   }
 
   @Get("me")
   me(@PortalCtx() scope: PortalScope) {
     return this.portal.me(scope);
+  }
+
+  @Post("logout")
+  @HttpCode(200)
+  logout(@Req() req: any) {
+    return this.portal.logout(req.portalUser);
+  }
+
+  @Post("password")
+  @RateLimit({ limit: 5, windowSec: 60, name: "portal.password" })
+  @HttpCode(200)
+  changePassword(@PortalCtx() scope: PortalScope, @Body() body: PortalChangePasswordDto) {
+    return this.portal.changePassword(scope, body.currentPassword, body.newPassword);
   }
 
   @Get("branding")
@@ -46,18 +86,7 @@ export class PortalClientController {
   }
 
   @Get("tasks")
-  tasks(
-    @PortalCtx() scope: PortalScope,
-    @Query()
-    query: {
-      projectId?: string;
-      status?: string;
-      q?: string;
-      due?: "week" | "overdue" | "all";
-      page?: string;
-      pageSize?: string;
-    }
-  ) {
+  tasks(@PortalCtx() scope: PortalScope, @Query() query: PortalTaskQueryDto) {
     return this.portal.tasks(scope, query);
   }
 
@@ -94,15 +123,20 @@ export class PortalClientController {
   }
 
   @Get("threads/:threadKey/messages")
-  threadMessages(@PortalCtx() scope: PortalScope, @Param("threadKey") threadKey: string) {
-    return this.portal.messages(scope, threadKey);
+  threadMessages(
+    @PortalCtx() scope: PortalScope,
+    @Param("threadKey") threadKey: string,
+    @Query() query: PortalMessageQueryDto
+  ) {
+    return this.portal.messages(scope, threadKey, { before: query.before, limit: query.limit });
   }
 
   @Post("threads/:threadKey/messages")
+  @RateLimit({ limit: 30, windowSec: 60, name: "portal.message.post" })
   postThreadMessage(
     @PortalCtx() scope: PortalScope,
     @Param("threadKey") threadKey: string,
-    @Body() body: { content: string; parentId?: string }
+    @Body() body: PortalPostMessageDto
   ) {
     return this.portal.postMessage(scope, threadKey, body.content, body.parentId);
   }
@@ -122,40 +156,41 @@ export class PortalClientController {
   postProjectMessage(
     @PortalCtx() scope: PortalScope,
     @Param("projectId") projectId: string,
-    @Body() body: { content: string }
+    @Body() body: PortalPostMessageDto
   ) {
-    return this.portal.postMessage(scope, projectId, body.content);
+    return this.portal.postMessage(scope, projectId, body.content, body.parentId);
   }
 
   // ── Deliverables ───────────────────────────────────────────────────────
+  @Get("files")
+  files(@PortalCtx() scope: PortalScope) {
+    return this.portal.files(scope);
+  }
+
   @Post("files/:fileId/approval")
+  @RateLimit({ limit: 20, windowSec: 3600, name: "portal.approval" })
   approve(
     @PortalCtx() scope: PortalScope,
     @Param("fileId") fileId: string,
-    @Body() body: { decision: "APPROVED" | "REVISION_REQUESTED"; revisionNotes?: string }
+    @Body() body: PortalApprovalDto
   ) {
     return this.portal.approveDeliverable(scope, fileId, body.decision, body.revisionNotes);
   }
 
   // ── Advertising performance (client-facing) ────────────────────────────
   @Get("ads/summary")
-  adsSummary(@PortalCtx() scope: PortalScope, @Query("from") from?: string, @Query("to") to?: string) {
-    return this.ads.summary(scope, from, to);
+  adsSummary(@PortalCtx() scope: PortalScope, @Query() query: PortalAdsQueryDto) {
+    return this.ads.summary(scope, query.from, query.to);
   }
 
   @Get("ads/trend")
-  adsTrend(
-    @PortalCtx() scope: PortalScope,
-    @Query("from") from?: string,
-    @Query("to") to?: string,
-    @Query("granularity") granularity?: "day" | "week"
-  ) {
-    return this.ads.trend(scope, from, to, granularity === "week" ? "week" : "day");
+  adsTrend(@PortalCtx() scope: PortalScope, @Query() query: PortalAdsQueryDto) {
+    return this.ads.trend(scope, query.from, query.to, query.granularity === "week" ? "week" : "day");
   }
 
   @Get("ads/campaigns")
-  adsCampaigns(@PortalCtx() scope: PortalScope, @Query("from") from?: string, @Query("to") to?: string) {
-    return this.ads.campaigns(scope, from, to);
+  adsCampaigns(@PortalCtx() scope: PortalScope, @Query() query: PortalAdsQueryDto) {
+    return this.ads.campaigns(scope, query.from, query.to);
   }
 
   // ── Notifications + activity ───────────────────────────────────────────
@@ -165,8 +200,8 @@ export class PortalClientController {
   }
 
   @Get("notifications")
-  notifications(@PortalCtx() scope: PortalScope, @Query("limit") limit?: string) {
-    return this.portal.listNotifications(scope, Number(limit) || 30);
+  notifications(@PortalCtx() scope: PortalScope, @Query() query: PortalNotificationQueryDto) {
+    return this.portal.listNotifications(scope, query.limit ?? 30);
   }
 
   @Post("notifications/read")
@@ -176,6 +211,7 @@ export class PortalClientController {
 
   // ── Files (ownership-checked download) ─────────────────────────────────
   @Get("files/:fileId/download")
+  @RateLimit({ limit: 60, windowSec: 60, name: "portal.download" })
   async downloadFile(
     @PortalCtx() scope: PortalScope,
     @Param("fileId") fileId: string,
@@ -183,6 +219,7 @@ export class PortalClientController {
   ) {
     const file = await this.portal.fileForDownload(scope, fileId);
     res.setHeader("Content-Disposition", `attachment; filename="${file.filename}"`);
+    res.setHeader("Cache-Control", "private, no-store");
     return res.sendFile(file.path);
   }
 

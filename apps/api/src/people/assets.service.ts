@@ -16,12 +16,12 @@ export type AssetStatus = (typeof ASSET_STATUSES)[number];
 export class AssetsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** AST-0001, AST-0002 … derived from the current max, not from a count (deletes would collide). */
+  /** AST-0001, AST-0002 … derived from the current numeric max (deletes would collide). */
   private async nextTag() {
-    const rows = await this.prisma.asset.findMany({ select: { tag: true }, orderBy: { tag: "desc" }, take: 50 });
+    const rows = await this.prisma.asset.findMany({ select: { tag: true } });
     let max = 0;
     for (const r of rows) {
-      const m = /^AST-(\d+)$/.exec(r.tag);
+      const m = /^AST-(\d+)$/.exec(r.tag ?? "");
       if (m) max = Math.max(max, Number(m[1]));
     }
     return `AST-${String(max + 1).padStart(4, "0")}`;
@@ -45,6 +45,14 @@ export class AssetsService {
   async create(body: any) {
     if (!body?.name?.trim()) throw new BadRequestException("name is required");
     const status: AssetStatus = ASSET_STATUSES.includes(body.status) ? body.status : "AVAILABLE";
+    // "Assigned to nobody" must not exist: the register would claim gear is out.
+    if (status === "ASSIGNED" && !body.assignedToId) {
+      throw new BadRequestException("Pick an employee before saving an asset as ASSIGNED");
+    }
+    if (body.assignedToId) {
+      const emp = await this.prisma.employee.findUnique({ where: { id: body.assignedToId }, select: { id: true } });
+      if (!emp) throw new BadRequestException("assignedToId does not match any employee");
+    }
     return this.prisma.asset.create({
       data: {
         tag: body.tag?.trim() || (await this.nextTag()),
@@ -83,8 +91,9 @@ export class AssetsService {
   }
 
   async remove(id: string) {
-    await this.prisma.asset.delete({ where: { id } }).catch(() => {
-      throw new NotFoundException("Asset not found");
+    await this.prisma.asset.delete({ where: { id } }).catch((err) => {
+      if (err?.code === "P2025") throw new NotFoundException("Asset not found");
+      throw err;
     });
     return { ok: true };
   }
@@ -98,6 +107,11 @@ export class AssetsService {
     if (!asset) throw new NotFoundException("Asset not found");
     if (!emp) throw new NotFoundException("Employee not found");
     if (asset.status === "RETIRED") throw new BadRequestException("Retired assets cannot be assigned");
+    // Silent re-assignment is how one laptop ends up "held" by two people.
+    if (asset.status === "ASSIGNED" && asset.assignedToId && asset.assignedToId !== employeeId) {
+      const holder = await this.prisma.employee.findUnique({ where: { id: asset.assignedToId }, select: { name: true } });
+      throw new BadRequestException(`${asset.tag} is already with ${holder?.name ?? "another employee"} — return it first`);
+    }
     return this.prisma.asset.update({
       where: { id },
       data: { status: "ASSIGNED", assignedToId: employeeId, assignedAt: new Date() },

@@ -1,7 +1,16 @@
-import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { PortalService } from "./portal.service";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { RequirePermission } from "../common/decorators/require-permission.decorator";
+import {
+  BulkTaskVisibilityDto,
+  ContactAccessDto,
+  CreatePortalUserDto,
+  ResetPortalPasswordDto,
+  SetPortalAccessDto,
+  SetTaskVisibilityDto,
+  StaffReplyDto,
+} from "./dto/portal.dto";
 
 @RequirePermission("PORTAL")
 @Controller("portal")
@@ -20,8 +29,8 @@ export class PortalController {
   }
 
   @Get("comments")
-  comments() {
-    return this.portal.comments();
+  comments(@Query("q") q?: string) {
+    return this.portal.comments(q);
   }
 
   @Get("approvals")
@@ -35,26 +44,23 @@ export class PortalController {
   }
 
   @Post("users")
-  createUser(@Body() body: { clientContactId: string; password: string }) {
+  createUser(@Body() body: CreatePortalUserDto) {
     return this.portal.createPortalUser(body.clientContactId, body.password);
   }
 
   @Patch("users/:id/password")
-  resetPassword(@Param("id") id: string, @Body() body: { password: string }) {
+  resetPassword(@Param("id") id: string, @Body() body: ResetPortalPasswordDto) {
     return this.portal.resetPortalPassword(id, body.password);
   }
 
   @Patch("users/:id/access")
-  setAccess(@Param("id") id: string, @Body() body: { isActive: boolean }) {
+  setAccess(@Param("id") id: string, @Body() body: SetPortalAccessDto) {
     return this.portal.setPortalAccess(id, body.isActive);
   }
 
   // ── Staff → client messaging ───────────────────────────────────────────
   @Post("comments")
-  reply(
-    @Body() body: { threadKey: string; content: string; parentId?: string; clientId?: string },
-    @CurrentUser("sub") authorId: string
-  ) {
+  reply(@Body() body: StaffReplyDto, @CurrentUser("sub") authorId: string) {
     return this.portal.replyToThread(body, authorId);
   }
 
@@ -65,13 +71,13 @@ export class PortalController {
   }
 
   @Patch("tasks/:id/visibility")
-  setTaskVisibility(@Param("id") id: string, @Body() body: { isClientVisible: boolean }) {
-    return this.portal.setTaskVisibility(id, !!body.isClientVisible);
+  setTaskVisibility(@Param("id") id: string, @Body() body: SetTaskVisibilityDto) {
+    return this.portal.setTaskVisibility(id, body.isClientVisible);
   }
 
   @Post("projects/:id/tasks/visibility")
-  bulkTaskVisibility(@Param("id") id: string, @Body() body: { isClientVisible: boolean }) {
-    return this.portal.bulkTaskVisibility(id, !!body.isClientVisible);
+  bulkTaskVisibility(@Param("id") id: string, @Body() body: BulkTaskVisibilityDto) {
+    return this.portal.bulkTaskVisibility(id, body.isClientVisible);
   }
 
   // ── Per-contact access ─────────────────────────────────────────────────
@@ -81,11 +87,7 @@ export class PortalController {
   }
 
   @Patch("contacts/:id/access")
-  updateContactAccess(
-    @Param("id") id: string,
-    @Body()
-    body: { scope?: "ALL" | "CUSTOM"; projectIds?: string[]; modules?: string[]; canSeeAdSpend?: boolean }
-  ) {
+  updateContactAccess(@Param("id") id: string, @Body() body: ContactAccessDto) {
     return this.portal.updateContactAccess(id, body);
   }
 

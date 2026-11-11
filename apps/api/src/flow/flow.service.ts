@@ -1294,6 +1294,9 @@ export class FlowService {
     for (const d of project.deliverables) {
       const status = deriveStatus(d);
       if (status === "DELIVERED") {
+        // The PDF section says "Completed this period": a deliverable finished
+        // before the window must not be re-announced inside it.
+        if (d.completedAt && (d.completedAt < start || d.completedAt > end)) continue;
         completed.push({
           deliverableId: d.id,
           title: d.title,

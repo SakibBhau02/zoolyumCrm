@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Eye, Globe2, KeyRound, MessageSquareText, Power, Send, ThumbsUp, UserPlus } from "lucide-react";
+import { Eye, EyeOff, Globe2, KeyRound, MessageSquareText, Power, Send, Settings2, ThumbsUp, UserPlus } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { timeAgo } from "@/lib/format";
-import { Avatar, cn, FadeIn, PageHeader, SkeletonBlock, StatCard, StatusBadge } from "@/components/shared";
+import { Avatar, cn, EmptyState, FadeIn, PageHeader, SkeletonBlock, StatCard, StatusBadge } from "@/components/shared";
 import { TableShell, Td, THead, Th, Tr, Btn } from "@/components/table";
 import { Field, Input, Modal } from "@/components/ui";
 
@@ -28,6 +28,8 @@ type ClientWithContacts = {
 };
 
 export default function PortalPage() {
+  const portalUrl =
+    typeof window !== "undefined" ? `${window.location.origin}/portal-client` : "/portal-client";
   const { data: users, loading } = useApi<any[]>("/portal/users");
   const { data: comments, mutate: mutateComments } = useApi<any[]>("/portal/comments");
   const { data: approvals } = useApi<any[]>("/portal/approvals");
@@ -36,9 +38,22 @@ export default function PortalPage() {
     { id: string; name: string; clientName: string; totalTasks: number; visibleTasks: number }[]
   >("/portal/tasks/visibility-audit");
 
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [commentQuery, setCommentQuery] = useState("");
+
   const setVisibility = async (projectId: string, isClientVisible: boolean) => {
     if (busy) return;
+    if (
+      !window.confirm(
+        isClientVisible
+          ? "Share every active task in this project with the client portal?"
+          : "Hide every task in this project from the client portal?"
+      )
+    ) {
+      return;
+    }
     setBusy(true);
+    setPageError(null);
     try {
       await apiFetch(`/portal/projects/${projectId}/tasks/visibility`, {
         method: "POST",
@@ -46,7 +61,7 @@ export default function PortalPage() {
       });
       mutateAudit();
     } catch (err: any) {
-      setModalError(err?.message ?? "Failed to update visibility");
+      setPageError(err?.message ?? "Failed to update visibility");
     } finally {
       setBusy(false);
     }
@@ -54,8 +69,14 @@ export default function PortalPage() {
 
   const [passwordModal, setPasswordModal] = useState<{ mode: "create" | "reset"; contact: ClientWithContacts["contacts"][number] } | null>(null);
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+
+  const [accessFor, setAccessFor] = useState<ClientWithContacts["contacts"][number] | null>(null);
+  const [accessDraft, setAccessDraft] = useState<any | null>(null);
+  const [accessBusy, setAccessBusy] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
 
   const [replyTarget, setReplyTarget] = useState("");
   const [replyBody, setReplyBody] = useState("");
@@ -123,7 +144,7 @@ export default function PortalPage() {
 
   const submitPassword = async () => {
     if (!passwordModal || busy) return;
-    if (password.length < 6) return setModalError("Password must be at least 6 characters");
+    if (password.length < 8) return setModalError("Password must be at least 8 characters");
     setBusy(true);
     setModalError(null);
     try {
@@ -135,9 +156,14 @@ export default function PortalPage() {
         passwordModal.mode === "create"
           ? { clientContactId: passwordModal.contact.id, password }
           : { password };
-      await apiFetch(path, { method: "POST", body: JSON.stringify(body) });
+      await apiFetch(path, {
+        method: passwordModal.mode === "create" ? "POST" : "PATCH",
+        body: JSON.stringify(body),
+      });
       setPasswordModal(null);
       setPassword("");
+      setShowPw(false);
+      setPageError(null);
       refresh();
     } catch (err: any) {
       setModalError(err?.message ?? "Failed to save password");
@@ -148,7 +174,15 @@ export default function PortalPage() {
 
   const toggleAccess = async (contact: ClientWithContacts["contacts"][number]) => {
     if (!contact.portalUser || busy) return;
+    if (!contact.portalUser.isActive) {
+      if (!window.confirm(`Re-enable portal access for ${contact.name}?`)) return;
+    } else if (
+      !window.confirm(`Disable portal access for ${contact.name}? Their open sessions will be revoked.`)
+    ) {
+      return;
+    }
     setBusy(true);
+    setPageError(null);
     try {
       await apiFetch(`/portal/users/${contact.portalUser.id}/access`, {
         method: "PATCH",
@@ -156,9 +190,52 @@ export default function PortalPage() {
       });
       refresh();
     } catch (err: any) {
-      setModalError(err?.message ?? "Failed to update access");
+      setPageError(err?.message ?? "Failed to update access");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const openAccess = async (contact: ClientWithContacts["contacts"][number]) => {
+    if (!contact.portalUser) return;
+    setAccessFor(contact);
+    setAccessDraft(null);
+    setAccessError(null);
+    try {
+      const r = await apiFetch<any>(`/portal/contacts/${contact.portalUser.id}/access`);
+      setAccessDraft({
+        scope: r.access.scope,
+        projectIds: r.access.projectIds ?? [],
+        modules: r.access.modules ?? [],
+        canSeeAdSpend: !!r.access.canSeeAdSpend,
+        availableProjects: r.availableProjects ?? [],
+      });
+    } catch (err: any) {
+      setAccessError(err?.message ?? "Failed to load access");
+    }
+  };
+
+  const saveAccess = async () => {
+    if (!accessFor?.portalUser || !accessDraft || accessBusy) return;
+    setAccessBusy(true);
+    setAccessError(null);
+    try {
+      await apiFetch(`/portal/contacts/${accessFor.portalUser.id}/access`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          scope: accessDraft.scope,
+          projectIds: accessDraft.scope === "CUSTOM" ? accessDraft.projectIds : [],
+          modules: accessDraft.modules,
+          canSeeAdSpend: !!accessDraft.canSeeAdSpend,
+        }),
+      });
+      setAccessFor(null);
+      setAccessDraft(null);
+      refresh();
+    } catch (err: any) {
+      setAccessError(err?.message ?? "Failed to save access");
+    } finally {
+      setAccessBusy(false);
     }
   };
 
@@ -169,16 +246,25 @@ export default function PortalPage() {
         subtitle="Branded, restricted external view — live status, deliverables and billing."
         actions={
           <span className="rounded-full border border-border bg-card px-3 py-1.5 text-[11.5px] text-muted-foreground">
-            Portal URL: portal.zoolyum.com
+            Portal URL: {portalUrl}
           </span>
         }
       />
 
+      {pageError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2.5 text-[12px] text-rose-700 dark:text-rose-300">
+          <span>{pageError}</span>
+          <button onClick={() => setPageError(null)} className="text-[11px] font-semibold hover:underline">
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Portal Users" value={users?.length ?? "—"} sub="active client logins" delta="+1" icon={<Globe2 className="size-5" />} />
-        <StatCard label="Deliverable Decisions" value={approvals?.length ?? "—"} sub="approve / revision" delta="+3" icon={<ThumbsUp className="size-5" />} />
-        <StatCard label="Client Comments" value={comments?.length ?? "—"} sub="searchable thread" delta="+2" icon={<MessageSquareText className="size-5" />} />
-        <StatCard label="Sentiment Flagged" value={(comments ?? []).filter((c) => c.sentiment === "NEGATIVE_URGENT").length} sub="needs account-owner check" delta="0" icon={<MessageSquareText className="size-5" />} />
+        <StatCard label="Portal Users" value={users?.length ?? "—"} sub="client logins created" icon={<Globe2 className="size-5" />} />
+        <StatCard label="Deliverable Decisions" value={approvals?.length ?? "—"} sub="approve / revision" icon={<ThumbsUp className="size-5" />} />
+        <StatCard label="Client Comments" value={comments?.length ?? "—"} sub="latest 50" icon={<MessageSquareText className="size-5" />} />
+        <StatCard label="Sentiment Flagged" value={(comments ?? []).filter((c) => c.sentiment === "NEGATIVE_URGENT").length} sub="needs account-owner check" icon={<MessageSquareText className="size-5" />} />
       </div>
 
       <div className="mt-8">
@@ -186,8 +272,10 @@ export default function PortalPage() {
           title="What clients can see"
           subtitle="The portal only shows tasks flagged as client-visible. Share a project's tasks before your client logs in."
         />
-        {!audit || audit.length === 0 ? (
+        {!audit ? (
           <SkeletonBlock className="h-16" />
+        ) : audit.length === 0 ? (
+          <EmptyState title="No active projects with tasks" hint="Portal visibility warnings appear here once a project has tasks." />
         ) : (
           <FadeIn>
             {audit.some((p) => p.visibleTasks === 0) && (
@@ -293,7 +381,7 @@ export default function PortalPage() {
                               <span className="hidden text-[10.5px] text-muted-foreground sm:block">
                                 last login {timeAgo(ct.portalUser.lastLoginAt)}
                               </span>
-                              <Btn variant="outline" className="px-2.5 py-1 text-[11px]" onClick={() => { setPasswordModal({ mode: "reset", contact: ct }); setPassword(""); setModalError(null); }}>
+                              <Btn variant="outline" className="px-2.5 py-1 text-[11px]" onClick={() => { setPasswordModal({ mode: "reset", contact: ct }); setPassword(""); setShowPw(false); setModalError(null); }}>
                                 <KeyRound className="size-3.5" /> Reset
                               </Btn>
                               <Btn variant="outline" className={cn("px-2.5 py-1 text-[11px]", ct.portalUser.isActive ? "" : "text-emerald-600 dark:text-emerald-300")} onClick={() => toggleAccess(ct)}>
@@ -307,9 +395,18 @@ export default function PortalPage() {
                               >
                                 <Eye className="size-3.5" /> Preview
                               </Btn>
+                              <Btn variant="outline" className="px-2.5 py-1 text-[11px]" onClick={() => openAccess(ct)}>
+                                <Settings2 className="size-3.5" /> Access
+                              </Btn>
                             </>
                           ) : (
-                            <Btn variant="primary" className="px-2.5 py-1 text-[11px]" onClick={() => { setPasswordModal({ mode: "create", contact: ct }); setPassword(""); setModalError(null); }}>
+                            <Btn
+                              variant="primary"
+                              className="px-2.5 py-1 text-[11px]"
+                              disabled={!ct.email}
+                              title={ct.email ? undefined : "Add an email to this contact first"}
+                              onClick={() => { setPasswordModal({ mode: "create", contact: ct }); setPassword(""); setShowPw(false); setModalError(null); }}
+                            >
                               <UserPlus className="size-3.5" /> Create access
                             </Btn>
                           )}
@@ -366,6 +463,15 @@ export default function PortalPage() {
 
           <div className="mt-4">
             <FadeIn>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold text-muted-foreground">Recent client messages</p>
+                <Input
+                  value={commentQuery}
+                  onChange={(e) => setCommentQuery(e.target.value)}
+                  placeholder="Search messages, client or project…"
+                  className="max-w-sm"
+                />
+              </div>
               <TableShell>
                 <table className="w-full">
                   <THead>
@@ -376,7 +482,16 @@ export default function PortalPage() {
                     <Th>When</Th>
                   </THead>
                   <tbody>
-                    {(comments ?? []).slice(0, 6).map((c, i) => (
+                    {(comments ?? [])
+                      .filter((c) => {
+                        const q = commentQuery.trim().toLowerCase();
+                        if (!q) return true;
+                        return [c.content, c.project?.name, c.client?.companyName, c.portalUser?.clientContact?.name]
+                          .filter(Boolean)
+                          .some((v: string) => String(v).toLowerCase().includes(q));
+                      })
+                      .slice(0, 8)
+                      .map((c, i) => (
                       <Tr key={c.id} index={i}>
                         <Td className="max-w-xs truncate">{c.content}</Td>
                         <Td className="text-muted-foreground">
@@ -470,11 +585,16 @@ export default function PortalPage() {
             <div className="flex flex-col gap-3">
               {(approvals ?? []).slice(0, 6).map((a) => (
                 <div key={a.id} className="flex items-center justify-between gap-2 rounded-xl bg-muted/50 p-2.5">
-                  <div>
-                    <p className="text-[12px] font-medium">{a.portalUser.clientContact.client.companyName}</p>
-                    <p className="text-[10.5px] text-muted-foreground">
-                      file v{a.portalUser.clientContact.name.split(" ")[0]} · {timeAgo(a.decidedAt)}
+                  <div className="min-w-0">
+                    <p className="truncate text-[12px] font-medium">{a.projectFile?.fileName ?? "File"}</p>
+                    <p className="truncate text-[10.5px] text-muted-foreground">
+                      {a.projectFile?.project?.name ?? a.portalUser.clientContact.client.companyName} · v
+                      {a.projectFile?.versionNumber ?? 1} · {a.portalUser.clientContact.name.split(" ")[0]} ·{" "}
+                      {timeAgo(a.decidedAt)}
                     </p>
+                    {a.revisionNotes && (
+                      <p className="mt-1 line-clamp-2 text-[10.5px] text-amber-600 dark:text-amber-300">{a.revisionNotes}</p>
+                    )}
                   </div>
                   <StatusBadge status={a.decision === "APPROVED" ? "APPROVED" : "REJECTED"} />
                 </div>
@@ -567,7 +687,24 @@ export default function PortalPage() {
               </p>
             </div>
             <Field label="Password">
-              <Input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" />
+              <div className="relative">
+                <Input
+                  type={showPw ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  aria-label={showPw ? "Hide password" : "Show password"}
+                  title={showPw ? "Hide password" : "Show password"}
+                  onClick={() => setShowPw((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
             </Field>
             {modalError && (
               <p className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-600 dark:text-rose-300">
@@ -580,6 +717,116 @@ export default function PortalPage() {
               </Btn>
               <Btn variant="primary" onClick={submitPassword} className={cn(busy && "pointer-events-none opacity-60")}>
                 {busy ? "Saving…" : passwordModal.mode === "create" ? "Create access" : "Reset password"}
+              </Btn>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!accessFor}
+        onClose={() => { setAccessFor(null); setAccessDraft(null); setAccessError(null); }}
+        title={`Portal access — ${accessFor?.name ?? ""}`}
+        size="lg"
+      >
+        {accessError && (
+          <p className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-600 dark:text-rose-300">
+            {accessError}
+          </p>
+        )}
+        {!accessDraft ? (
+          <SkeletonBlock className="h-40" />
+        ) : (
+          <div className="flex flex-col gap-5">
+            <div>
+              <p className="mb-2 text-[12.5px] font-semibold">Modules</p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {["WORK", "PERFORMANCE", "MESSAGES", "FILES", "BILLING"].map((m) => {
+                  const checked = accessDraft.modules.includes(m);
+                  return (
+                    <label key={m} className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-[12px]">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setAccessDraft((d: any) => ({
+                            ...d,
+                            modules: checked ? d.modules.filter((x: string) => x !== m) : [...d.modules, m],
+                          }))
+                        }
+                      />
+                      {m}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="mt-1.5 text-[10.5px] text-muted-foreground">
+                Unchecking every module locks the contact out of all portal tabs.
+              </p>
+            </div>
+
+            <div>
+              <p className="mb-2 text-[12.5px] font-semibold">Project scope</p>
+              <div className="flex flex-wrap gap-2">
+                {(["ALL", "CUSTOM"] as const).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setAccessDraft((d: any) => ({ ...d, scope: s }))}
+                    className={cn(
+                      "rounded-xl border px-3 py-2 text-[12px] font-semibold",
+                      accessDraft.scope === s
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-border bg-card text-muted-foreground"
+                    )}
+                  >
+                    {s === "ALL" ? "All client projects" : "Selected projects only"}
+                  </button>
+                ))}
+              </div>
+              {accessDraft.scope === "CUSTOM" && (
+                <div className="mt-3 grid max-h-44 gap-1.5 overflow-y-auto rounded-xl border border-border/60 p-2">
+                  {(accessDraft.availableProjects ?? []).map((p: any) => {
+                    const checked = accessDraft.projectIds.includes(p.id);
+                    return (
+                      <label key={p.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] hover:bg-muted/50">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setAccessDraft((d: any) => ({
+                              ...d,
+                              projectIds: checked ? d.projectIds.filter((x: string) => x !== p.id) : [...d.projectIds, p.id],
+                            }))
+                          }
+                        />
+                        {p.name}
+                      </label>
+                    );
+                  })}
+                  {(accessDraft.availableProjects ?? []).length === 0 && (
+                    <p className="px-2 py-1 text-[11.5px] text-muted-foreground">This client has no projects yet.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5">
+              <span>
+                <span className="block text-[12.5px] font-semibold">Advertising spend</span>
+                <span className="block text-[10.5px] text-muted-foreground">Allow this contact to see ad spend and ROAS.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={!!accessDraft.canSeeAdSpend}
+                onChange={(e) => setAccessDraft((d: any) => ({ ...d, canSeeAdSpend: e.target.checked }))}
+              />
+            </label>
+
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" onClick={() => setAccessFor(null)}>Cancel</Btn>
+              <Btn variant="primary" onClick={saveAccess} className={cn(accessBusy && "pointer-events-none opacity-60")}>
+                {accessBusy ? "Saving…" : "Save access"}
               </Btn>
             </div>
           </div>

@@ -869,6 +869,30 @@ async function main() {
     }
   }
 
+  // ── Opening balances ────────────────────────────────────────────────
+  // The bank accounts were created with a starting balance, but the ledger
+  // never received the capital it came from. Post it once so Cash & Bank (1200)
+  // equals the sum of the bank accounts (the statements are derived from the
+  // GL). Mirrors scripts/backfill-opening-balances.mjs for existing databases.
+  const cashAgg = await prisma.journalEntryLine.aggregate({ where: { accountId: acctBank.id }, _sum: { debit: true, credit: true } });
+  const cashGl = Number(cashAgg._sum.debit ?? 0) - Number(cashAgg._sum.credit ?? 0);
+  const bankSum = Number((await prisma.bankAccount.aggregate({ _sum: { currentBalance: true } }))._sum.currentBalance);
+  const acctEquity = await accountByCode("3000");
+  const openingGap = Math.round((bankSum - cashGl) * 100) / 100;
+  if (Math.abs(openingGap) > 0.01) {
+    const openingLines =
+      openingGap > 0
+        ? [
+            { accountId: acctBank.id, debit: openingGap, credit: 0 },
+            { accountId: acctEquity.id, debit: 0, credit: openingGap },
+          ]
+        : [
+            { accountId: acctBank.id, debit: 0, credit: -openingGap },
+            { accountId: acctEquity.id, debit: -openingGap, credit: 0 },
+          ];
+    await postEntry("OPENING", "OPENING-BANK", new Date(Date.UTC(2026, 0, 1)), "OPENING-BANK", "Opening cash to match bank accounts", openingLines);
+  }
+
   // ── Insight: metric snapshots (8 months trend) ───────────────────────
   const trend = [
     { m: 0, inv: 680000, col: 640000, exp: 510000, pv: 900000 },
