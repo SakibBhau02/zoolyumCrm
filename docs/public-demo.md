@@ -74,3 +74,47 @@ npm run build --prefix apps/api
 $env:NEXT_PUBLIC_API_URL = "/api"; $env:API_PROXY_TARGET = "http://127.0.0.1:4000"
 npm run build --prefix apps/web
 ```
+
+## Run the dev server while the demo stays public
+
+The public build owns port **3000** (the tunnel target). Start the dev stack on
+another port so both run at the same time:
+
+```powershell
+$env:WEB_PORT = "3100"
+npm run dev
+```
+
+| What | URL |
+| --- | --- |
+| Web (dev, hot reload) | http://localhost:3100 |
+| Web (public build, tunnel target) | http://localhost:3000 |
+| API (shared by both) | http://localhost:4000/api |
+
+In development the API admits any loopback origin (`http://localhost:<any
+port>`), because `apps/api/src/main.ts` checks `NODE_ENV !== "production"`
+before falling back to the explicit `CORS_ORIGINS` allowlist. A production
+deploy still only accepts the allowlist — no wildcard.
+
+## Troubleshooting: "can't resolve" the trycloudflare URL
+
+Some home/office routers block or negative-cache `*.trycloudflare.com` and
+answer **NXDOMAIN** even though public DNS resolves the name. Check both:
+
+```powershell
+Resolve-DnsName <host>.trycloudflare.com -Server 1.1.1.1 -Type A   # public answer
+Resolve-DnsName <host>.trycloudflare.com -Type A                   # what Windows sees
+```
+
+If only the second one fails, the tunnel is fine and the problem is local DNS:
+
+- open the link from a phone on mobile data — quickest confirmation, or
+- set the machine's DNS to `1.1.1.1` / `1.0.0.1` for **IPv4 and IPv6** (Windows
+  prefers the router's IPv6 DNS from router advertisements), then
+  `ipconfig /flushdns`.
+
+To bypass DNS entirely and prove the tunnel serves:
+
+```powershell
+curl.exe -o NUL -w "%{http_code}`n" --resolve <host>:443:104.16.230.132 https://<host>/login
+```

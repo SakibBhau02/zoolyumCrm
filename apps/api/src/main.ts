@@ -60,8 +60,23 @@ async function bootstrap() {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  // In development the web app can land on any loopback port (e.g. 3100 while
+  // the standalone build owns 3000 for the public tunnel). Admit loopback
+  // origins dynamically so dev never needs an env tweak; production still
+  // uses the explicit allowlist above.
+  const isDev = process.env.NODE_ENV !== "production";
+  const loopbackOrigin = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\]):\d+$/;
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void
+    ) => {
+      // No Origin header: same-origin, curl, or a server-to-server call.
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (isDev && loopbackOrigin.test(origin)) return callback(null, true);
+      return callback(null, false);
+    },
     credentials: true,
     exposedHeaders: ["Content-Disposition"],
   });
