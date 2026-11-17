@@ -5,6 +5,7 @@ import { CacheService } from "../cache/cache.service";
 import { ScoringService } from "../scoring/scoring.service";
 import { isReceivable, invoiceTotals } from "../capital/finance-kernel";
 import { summariseDollarSales } from "../common/dollar-purchases";
+import { mediaDir, removeOptimizedImage, uploadFilename } from "../common/image-pipeline";
 
 interface ClientFinancials {
   totalInvoiced: number;
@@ -81,6 +82,10 @@ export interface ClientUpdateBody {
   paymentDueDays?: number | null;
   retainerInterval?: string | null;
   nextRetainerDate?: string | null;
+  /** Hard cap on outstanding receivables. `null` = no limit. */
+  creditLimit?: number | null;
+  /** Block new invoices until the balance is cleared. */
+  creditHold?: boolean;
   /** Explicit scoring profile id; `null` falls back to the billing-cycle match. */
   scoreProfile?: string | null;
   primaryContact?: {
@@ -448,6 +453,14 @@ export class AccountsService {
       take: 5,
     });
 
+    // Money the client has paid but is not (yet) against a live invoice. It is a
+    // liability to them, not a receivable, so it must be visible on the account.
+    const creditBalances = await this.prisma.creditBalance.findMany({
+      where: { clientId: id },
+      orderBy: { createdAt: "desc" },
+    });
+    const creditTotal = creditBalances.reduce((s, c) => s + Number(c.amount), 0);
+
     // Cost side of the relationship: everything spent for this client, whether
     // the expense was tagged to the client directly or to one of its projects.
     const expenseRows = await this.prisma.expense.findMany({
@@ -492,6 +505,9 @@ export class AccountsService {
       draftAmount,
       draftCount,
       aging,
+      // Customer advances / overpayments held on the client's account.
+      creditBalances,
+      creditTotal: Math.round(creditTotal * 100) / 100,
       // USD the client bought (Dollar Desk), with the agency-side margin — this
       // is an internal view, so profit is included.
       dollar,
@@ -526,6 +542,9 @@ export class AccountsService {
   async create(body: CreateClientBody) {
     if (!body.companyName?.trim()) {
       throw new BadRequestException("companyName is required");
+    }
+    if (body.companyName.trim().length > 200) {
+      throw new BadRequestException("companyName must be 200 characters or fewer");
     }
     assertEnum("industryVertical", body.industryVertical, VERTICALS);
     assertEnum("category", body.category, CATEGORIES);
@@ -605,6 +624,9 @@ export class AccountsService {
     if (body.companyName !== undefined && !body.companyName.trim()) {
       throw new BadRequestException("companyName cannot be empty");
     }
+    if (body.companyName !== undefined && body.companyName.trim().length > 200) {
+      throw new BadRequestException("companyName must be 200 characters or fewer");
+    }
     if (body.scoreProfile !== undefined && body.scoreProfile !== null) {
       const profiles = await this.scoring.profileChoices();
       if (!profiles.some((p) => p.id === body.scoreProfile)) {
@@ -663,6 +685,8 @@ export class AccountsService {
           retainerInterval: body.retainerInterval === null ? null : body.retainerInterval,
           nextRetainerDate: body.nextRetainerDate === null ? null : body.nextRetainerDate ? new Date(body.nextRetainerDate) : undefined,
           scoreProfile: body.scoreProfile === null ? null : body.scoreProfile,
+          creditLimit: body.creditLimit === null ? null : body.creditLimit !== undefined ? body.creditLimit : undefined,
+          creditHold: body.creditHold,
         },
       });
 
@@ -686,8 +710,29 @@ export class AccountsService {
     return this.detail(id);
   }
 
-  async remove(id: string) {
-    const client = await this.prisma.client.findUnique({
+  /**
+   * Store the client's company logo. Both variants are written by the image
+   * pipeline; the previous pair is deleted so uploads never accumulate.
+   */
+  async setLogo(id: string, logoUrl: string, logoJxlUrl: string | null) {
+    const client = await this.prisma.client.findUnique({ where: { id }, select: { logoUrl: true, logoJxlUrl: true } });
+    if (!client) throw new NotFoundException("Client not found");
+    await this.prisma.client.update({ where: { id }, data: { logoUrl, logoJxlUrl } });
+    await removeOptimizedImage(mediaDir("logos"), uploadFilename(client.logoUrl), uploadFilename(client.logoJxlUrl));
+    await this.invalidateClients();
+    return { logoUrl, logoJxlUrl };
+  }
+
+  async removeLogo(id: string) {
+    const client = await this.prisma.client.findUnique({ where: { id }, select: { logoUrl: true, logoJxlUrl: true } });
+    if (!client) throw new NotFoundException("Client not found");
+    await this.prisma.client.update({ where: { id }, data: { logoUrl: null, logoJxlUrl: null } });
+    await removeOptimizedImage(mediaDir("logos"), uploadFilename(client.logoUrl), uploadFilename(client.logoJxlUrl));
+    await this.invalidateClients();
+    return { logoUrl: null, logoJxlUrl: null };
+  }
+
+  async remove(id: string) {    const client = await this.prisma.client.findUnique({
       where: { id },
       include: { _count: { select: { invoices: true, projects: true } } },
     });

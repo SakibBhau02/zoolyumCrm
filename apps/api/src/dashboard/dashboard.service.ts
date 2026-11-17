@@ -5,6 +5,7 @@ import { CacheService } from "../cache/cache.service";
 import { ScoringService } from "../scoring/scoring.service";
 import { dateStrDhaka } from "../people/people-utils";
 import { RECEIPT_PAYMENT_FILTER, invoiceTotals } from "../capital/finance-kernel";
+import { modulePermission } from "../common/module-keys";
 
 /** UTC-midnight labelled with today's Dhaka date — matches `attendance.date`. */
 const dhakaTodayColumn = () => new Date(`${dateStrDhaka(new Date())}T00:00:00.000Z`);
@@ -24,11 +25,62 @@ const ACTIVE_INVOICE_STATUSES = [
   "OVERDUE",
 ];
 
+/* ── Period windows ─────────────────────────────────────────────────────────
+   The dashboard answers "how did we do?" over a window. Balances (outstanding,
+   overdue, cash) stay point-in-time; flows (invoiced, collected, expenses) are
+   scoped to the window. One definition, used by every KPI and panel. */
+export type DashboardPeriod = "month" | "quarter" | "year";
+
+const PERIOD_MONTHS: Record<DashboardPeriod, number> = {
+  month: 1,
+  quarter: 3,
+  year: 12,
+};
+
+const PERIOD_LABEL: Record<DashboardPeriod, string> = {
+  month: "This month",
+  quarter: "Last 3 months",
+  year: "Last 12 months",
+};
+
+function resolvePeriod(raw?: string) {
+  const key: DashboardPeriod =
+    raw === "quarter" || raw === "year" ? raw : "month";
+  const now = new Date();
+  const months = PERIOD_MONTHS[key];
+  const from = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+  const prevFrom = new Date(
+    now.getFullYear(),
+    now.getMonth() - (months * 2 - 1),
+    1
+  );
+  return {
+    key,
+    months,
+    from,
+    prevFrom,
+    prevTo: from,
+    label: PERIOD_LABEL[key],
+    days: Math.max(
+      1,
+      Math.round((now.getTime() - from.getTime()) / 86400000)
+    ),
+  };
+}
+
+const pct = (value: number, total: number) =>
+  total > 0 ? Math.round((value / total) * 1000) / 10 : 0;
+
+const deltaPct = (current: number, previous: number) =>
+  previous > 0 ? Math.round(((current - previous) / previous) * 1000) / 10 : null;
+
 @Injectable()
 export class DashboardService {
   private readonly logger = new Logger(DashboardService.name);
   /** Last successfully computed snapshot (process-local, survives cache flushes). */
   private lastSnapshot: any = null;
+  /** Last time a user actually opened the dashboard (drives cron warming). */
+  private lastAccess = 0;
   private inflight: Promise<any> | null = null;
 
   constructor(
@@ -37,28 +89,109 @@ export class DashboardService {
     private readonly scoring: ScoringService
   ) {}
 
-  async overview() {
-    // Stale-while-revalidate: after a write invalidates the cached snapshot we
-    // keep serving the previous one and refresh in the background. Users never
-    // wait for the ~65-query aggregation; only a cold boot pays for it.
-    const cached = await this.cache.get<any>("dashboard:overview");
-    if (cached) {
-      this.lastSnapshot = cached;
-      return cached;
-    }
-    if (this.lastSnapshot) {
-      void this.refreshSnapshot().catch(() => null);
-      return this.lastSnapshot;
-    }
-    return this.refreshSnapshot();
+  async overview(period?: string, role?: string, permissions?: Record<string, any>) {
+    this.lastAccess = Date.now();
+    const snapshot = await this.overviewSnapshot(period);
+    return this.redactOverview(snapshot, role, permissions);
   }
 
-  private async refreshSnapshot(): Promise<any> {
+  /**
+   * The dashboard used to hand every signed-in role the whole company snapshot:
+   * cash position, receivables, client revenue concentration and pipeline. The
+   * module matrix was enforced everywhere else, so HR / Sales could read finance
+   * numbers they cannot open in Capital (audit SEC-02 / BUG-009).
+   *
+   * Blocks the caller's role cannot view are removed rather than zeroed — a
+   * zeroed card reads as "we earned nothing", which is worse than no card.
+   * The snapshot itself stays cached in full; redaction is per request.
+   */
+  private redactOverview(data: any, role?: string, permissions?: Record<string, any>) {
+    if (!permissions || role === "Owner") return data;
+    const canView = (module: string) => {
+      const m = modulePermission(permissions, module);
+      return !!(m?.view || m?.edit || m?.approve);
+    };
+    const out: any = { ...data };
+    const hidden: string[] = [];
+
+    if (!canView("CAPITAL")) {
+      delete out.capital;
+      delete out.targets;
+      delete out.concentration;
+      if (out.today) {
+        const { payables, approvals, approvalItems, ...rest } = out.today;
+        out.today = { ...rest, approvals: { ...(approvals ?? {}), expenses: 0 }, approvalItems: { ...(approvalItems ?? {}), expenses: [] } };
+      }
+      hidden.push("CAPITAL");
+    }
+    if (!canView("PULSE")) {
+      delete out.pulse;
+      hidden.push("PULSE");
+    }
+    if (!canView("ACCOUNTS")) {
+      delete out.accounts;
+      delete out.topClients;
+      hidden.push("ACCOUNTS");
+    }
+    if (!canView("FLOW")) {
+      delete out.flow;
+      hidden.push("FLOW");
+    }
+    if (!canView("TASKS")) {
+      delete out.tasks;
+      if (out.today) {
+        const { dueTasks, overdueTasks, followUps, ...rest } = out.today;
+        out.today = { ...rest, dueTasks: [], dueTodayCount: 0, overdueTasks: [], overdueCount: 0, followUps: [], followUpsCount: 0 };
+      }
+      hidden.push("TASKS");
+    }
+    if (!canView("PEOPLE")) {
+      delete out.people;
+      hidden.push("PEOPLE");
+    }
+    if (!canView("INSIGHT")) {
+      delete out.insight;
+      hidden.push("INSIGHT");
+    }
+    // Client names are account data even when Capital is readable.
+    if (!canView("ACCOUNTS") && !canView("CAPITAL")) delete out.topClients;
+    return { ...out, hidden };
+  }
+
+  private async overviewSnapshot(period?: string) {
+    const p = resolvePeriod(period);
+    // Two-level cache: Redis for the snapshot (120s) and a process-local copy
+    // used only when a recompute fails mid-request.
+    // Keep the legacy key for the default period so every existing
+    // `cache.del("dashboard:overview")` invalidation still clears it.
+    const cacheKey =
+      p.key === "month" ? "dashboard:overview" : `dashboard:overview:${p.key}`;
+    const cached = await this.cache.get<any>(cacheKey);
+    if (cached) {
+      if (p.key === "month") this.lastSnapshot = cached;
+      return cached;
+    }
+    // A missing cache means a write just invalidated it. Recompute instead of
+    // serving the previous snapshot: approvals and money must reflect the
+    // action the user just took, not the state from thirty seconds ago.
+    try {
+      return await this.refreshSnapshot(p.key);
+    } catch (error) {
+      if (p.key === "month" && this.lastSnapshot) return this.lastSnapshot;
+      throw error;
+    }
+  }
+
+  private async refreshSnapshot(period: DashboardPeriod = "month"): Promise<any> {
     if (this.inflight) return this.inflight;
-    const run = this.computeOverview()
+    const run = this.computeOverview(period)
       .then(async (value) => {
-        this.lastSnapshot = value;
-        await this.cache.set("dashboard:overview", value, 120);
+        if (period === "month") this.lastSnapshot = value;
+        await this.cache.set(
+          period === "month" ? "dashboard:overview" : `dashboard:overview:${period}`,
+          value,
+          120
+        );
         return value;
       })
       .finally(() => {
@@ -78,6 +211,10 @@ export class DashboardService {
   @Cron("0 * * * * *")
   async warmOverview() {
     try {
+      // Warming is only worth 41 queries/minute while someone is actually
+      // looking at the dashboard. On an idle instance this ran forever and was
+      // the single biggest background load in the audit (PERF-01).
+      if (Date.now() - this.lastAccess > 5 * 60_000) return;
       const started = Date.now();
       await this.refreshSnapshot();
       const ms = Date.now() - started;
@@ -153,8 +290,9 @@ export class DashboardService {
     };
   }
 
-  private async computeOverview() {
+  private async computeOverview(period: DashboardPeriod = "month") {
     const now = new Date();
+    const periodWindow = resolvePeriod(period);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const today = this.startOfToday();
     const in7Days = new Date(now.getTime() + 7 * 86400000);
@@ -203,9 +341,13 @@ export class DashboardService {
       adTrendRows,
       vendorEngagements,
       dollarSales,
+      pendingExpenseItems,
+      pendingLeaveItems,
+      pendingDeliverableItems,
+      capacityLogs,
       settingsRow,
     ] = await Promise.all([
-      this.prisma.lead.findMany({ select: { id: true, stage: true, estimatedDealSize: true, name: true, company: true, leadScore: true, assignedToId: true, convertedClientId: true, createdAt: true, nextFollowUpAt: true } }),
+      this.prisma.lead.findMany({ select: { id: true, stage: true, estimatedDealSize: true, name: true, company: true, leadScore: true, assignedToId: true, convertedClientId: true, createdAt: true, lastContactedAt: true, nextFollowUpAt: true } }),
       this.prisma.pipelineStage.findMany({ orderBy: { order: "asc" } }),
       this.prisma.client.findMany({ select: { id: true, companyName: true, healthScore: true, healthLevel: true, renewalDate: true, industryVertical: true } }),
       this.prisma.project.findMany({ select: { id: true, name: true, status: true, healthStatus: true, riskScore: true, riskDriver: true, budgetAmount: true, targetEndDate: true, clientId: true, billingType: true, monthlyRate: true } }),
@@ -222,7 +364,7 @@ export class DashboardService {
       this.prisma.payment.findMany({ where: { ...RECEIPT_PAYMENT_FILTER }, select: { id: true, amount: true, paymentMethod: true, paymentDate: true } }),
       this.prisma.expense.findMany({
         where: { approvalStatus: { in: ["APPROVED", "PENDING"] } },
-        select: { id: true, amount: true, date: true, category: true, description: true, approvalStatus: true, isClientBillable: true, clientId: true, isPayable: true, paidAmount: true, dueDate: true },
+        select: { id: true, amount: true, exchangeRate: true, date: true, category: true, description: true, approvalStatus: true, isClientBillable: true, clientId: true, isPayable: true, paidAmount: true, dueDate: true },
       }),
       this.prisma.bankAccount.findMany({ select: { accountName: true, currentBalance: true } }),
       this.prisma.utilizationLog.groupBy({
@@ -275,7 +417,46 @@ export class DashboardService {
       this.prisma.dollarSale.findMany({
         select: { usdAmount: true, bdtAmount: true, costBdt: true, profit: true, marginPct: true, date: true, clientId: true },
       }),
-      this.prisma.settings.findUnique({ where: { id: "default" }, select: { financeConfig: true } }),
+      // Action Center rows — the counts alone could not be acted on inline.
+      this.prisma.expense.findMany({
+        where: { approvalStatus: "PENDING" },
+        select: {
+          id: true, description: true, amount: true, date: true, category: true,
+          submittedBy: { select: { name: true } },
+          client: { select: { companyName: true } },
+        },
+        orderBy: [{ date: "asc" }],
+        take: 8,
+      }),
+      this.prisma.leaveRequest.findMany({
+        where: { status: "PENDING" },
+        select: {
+          id: true, leaveType: true, startDate: true, endDate: true, appliedAt: true,
+          employee: { select: { name: true } },
+        },
+        orderBy: [{ appliedAt: "asc" }],
+        take: 8,
+      }),
+      this.prisma.projectFile.findMany({
+        where: { approvalStatus: "PENDING" },
+        select: {
+          id: true, fileName: true, uploadedAt: true,
+          project: { select: { id: true, name: true } },
+        },
+        orderBy: [{ uploadedAt: "asc" }],
+        take: 8,
+      }),
+      // Capacity heatmap: six weeks of logged utilisation per employee.
+      this.prisma.utilizationLog.findMany({
+        where: { weekStartDate: { gte: new Date(now.getTime() - 42 * 86400000) } },
+        select: {
+          weekStartDate: true,
+          utilizationRate: true,
+          employee: { select: { id: true, name: true, roleTitle: true } },
+        },
+        orderBy: [{ weekStartDate: "asc" }],
+      }),
+      this.prisma.settings.findUnique({ where: { id: "default" }, select: { financeConfig: true, leadRules: true } }),
     ]);
 
     // ── Pulse ──────────────────────────────────────────────────────────
@@ -295,10 +476,13 @@ export class DashboardService {
         .reduce((s, l) => s + Number(l.estimatedDealSize ?? 0), 0),
     }));
     const hotLeads = activeLeads.filter((l) => (l.leadScore ?? 0) >= 70).length;
+    // Same rule Pulse uses (`LeadRulesService.isStale`): no touch for N days,
+    // anchored on lastContactedAt, not on creation. The old stage-SLA-from-
+    // createdAt rule made the dashboard say 5 while Pulse said 3 (BUG-005).
+    const staleDays = Number(((settingsRow as any)?.leadRules?.sla?.staleDays ?? 7)) || 7;
     const staleLeads = activeLeads.filter((l) => {
-      const createdAt = l.createdAt.getTime();
-      const stageSla = stages.find((s) => s.name.toUpperCase().replace(/\s+/g, "_") === l.stage)?.slaDays ?? 5;
-      return now.getTime() - createdAt > stageSla * 86400000;
+      const anchor = (l as any).lastContactedAt ?? l.createdAt;
+      return now.getTime() - new Date(anchor).getTime() > staleDays * 86_400_000;
     }).length;
 
     // ── Accounts ───────────────────────────────────────────────────────
@@ -339,7 +523,12 @@ export class DashboardService {
 
     // ── Tasks ──────────────────────────────────────────────────────────
     const openTasks = tasks.filter((t) => t.status !== "DONE");
-    const dueToday = openTasks.filter((t) => t.dueDate && t.dueDate <= today && t.dueDate >= new Date(today.getTime() - 86400000)).length;
+    // Window is [today 00:00, tomorrow 00:00). The previous version used
+    // `dueDate <= today`, which is yesterday's window: a task due today was
+    // counted as neither due-today nor overdue, so the card read 0 while the
+    // same response listed 3 due tasks and /tasks/stats said 3 (audit BUG-001).
+    const tomorrow = new Date(today.getTime() + 86_400_000);
+    const dueToday = openTasks.filter((t) => t.dueDate && t.dueDate >= today && t.dueDate < tomorrow).length;
     const overdue = openTasks.filter((t) => t.dueDate && t.dueDate < today).length;
     const blocked = tasks.filter((t) => t.status === "BLOCKED").length;
     const hoursThisWeek = await this.aggregateHoursThisWeek();
@@ -390,14 +579,290 @@ export class DashboardService {
       return bal > 0 && !!i.dueDate && new Date(i.dueDate) < todayStart;
     });
     const overdueAmount = overdueOpen.reduce((s, i) => s + invoiceTotals(i).balance, 0);
+    // Approved only, converted to BDT — the same definition Capital and Insight
+    // use. Including PENDING rows in raw currency made this card disagree with
+    // the finance module by 60,000 BDT (BUG-005).
     const expensesMonth = expenses
-      .filter((e) => e.date >= monthStart)
-      .reduce((s, e) => s + Number(e.amount), 0);
+      .filter((e) => e.date >= monthStart && e.approvalStatus === "APPROVED")
+      .reduce((s, e) => s + Number(e.amount) * (Number((e as any).exchangeRate ?? 1) || 1), 0);
     const pendingExpenses = expenses.filter((e) => e.approvalStatus === "PENDING").length;
     const cashPosition = bankAccounts.reduce((s, b) => s + Number(b.currentBalance), 0);
     const paymentSplit = this.groupByMethod(payments);
 
-    const revenueTrend = this.buildTrend(snapshots);
+    const revenueTrend = await this.buildTrend();
+
+    // ── Period flows, targets and forecasts ────────────────────────────
+    // Everything below is scoped by `periodWindow` so the header switcher and
+    // every KPI tell the same story. Balances (outstanding/overdue/cash) stay
+    // point-in-time on purpose.
+    const revenueOf = (invoice: any) =>
+      invoice.lineItems
+        .filter((l: any) => l.revenueTag !== "PASS_THROUGH")
+        .reduce((x: number, l: any) => x + Number(l.amount), 0);
+    const inWindow = (d: Date | null | undefined, from: Date, to?: Date) => {
+      if (!d) return false;
+      const t = new Date(d).getTime();
+      return t >= from.getTime() && (!to || t < to.getTime());
+    };
+    const sumBy = <T,>(rows: T[], pick: (row: T) => number) =>
+      rows.reduce((s, row) => s + pick(row), 0);
+
+    const periodInvoices = invoiceable.filter((i) =>
+      inWindow(i.issueDate, periodWindow.from)
+    );
+    const prevInvoices = invoiceable.filter((i) =>
+      inWindow(i.issueDate, periodWindow.prevFrom, periodWindow.prevTo)
+    );
+    const periodRevenue = sumBy(periodInvoices, revenueOf);
+    const prevRevenue = sumBy(prevInvoices, revenueOf);
+    const periodInvoiced = sumBy(periodInvoices, (i) => invoiceTotals(i).grand);
+    const prevInvoiced = sumBy(prevInvoices, (i) => invoiceTotals(i).grand);
+    const periodCollected = sumBy(
+      payments.filter((p) => inWindow(p.paymentDate, periodWindow.from)),
+      (p) => Number(p.amount)
+    );
+    const prevCollected = sumBy(
+      payments.filter((p) =>
+        inWindow(p.paymentDate, periodWindow.prevFrom, periodWindow.prevTo)
+      ),
+      (p) => Number(p.amount)
+    );
+    const periodExpenses = sumBy(
+      expenses.filter(
+        (e) =>
+          e.approvalStatus === "APPROVED" &&
+          inWindow(e.date, periodWindow.from)
+      ),
+      (e) => Number(e.amount)
+    );
+    const prevExpenses = sumBy(
+      expenses.filter(
+        (e) =>
+          e.approvalStatus === "APPROVED" &&
+          inWindow(e.date, periodWindow.prevFrom, periodWindow.prevTo)
+      ),
+      (e) => Number(e.amount)
+    );
+    const periodNet = periodRevenue - periodExpenses;
+    const periodMargin = pct(periodNet, periodRevenue);
+
+    const financeConfig: any = (settingsRow?.financeConfig as any) ?? {};
+    const positiveNumber = (v: any) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+    const monthlyRevenueTarget = positiveNumber(financeConfig.monthlyRevenueTarget);
+    const monthlyFixedCost = positiveNumber(financeConfig.monthlyFixedCost);
+    const targetForPeriod = monthlyRevenueTarget
+      ? monthlyRevenueTarget * periodWindow.months
+      : null;
+    const targetProgress = targetForPeriod
+      ? pct(periodRevenue, targetForPeriod)
+      : null;
+
+    // Runway uses cash ÷ average monthly spend (gross outflow, the
+    // conservative number an owner means by "how long can I survive").
+    const burnWindowStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+    const burnRows = expenses.filter(
+      (e) =>
+        e.approvalStatus === "APPROVED" &&
+        new Date(e.date).getTime() >= burnWindowStart.getTime()
+    );
+    const burnMonths = new Set(
+      burnRows.map((e) => {
+        const d = new Date(e.date);
+        return `${d.getFullYear()}-${d.getMonth()}`;
+      })
+    );
+    const avgMonthlySpend = burnMonths.size
+      ? sumBy(burnRows, (e) => Number(e.amount)) / burnMonths.size
+      : 0;
+    const monthlyBurn = Math.max(avgMonthlySpend, monthlyFixedCost ?? 0);
+    const runwayMonths =
+      monthlyBurn > 0
+        ? Math.round((cashPosition / monthlyBurn) * 10) / 10
+        : null;
+
+    // Days sales outstanding: how long the current book takes to collect.
+    const dsoDays =
+      periodRevenue > 0
+        ? Math.round((outstanding / periodRevenue) * periodWindow.days)
+        : null;
+
+    // AR aging — every open balance, bucketed by days past due.
+    const agingBuckets = [
+      { key: "0-30", label: "0–30", amount: 0, count: 0 },
+      { key: "31-60", label: "31–60", amount: 0, count: 0 },
+      { key: "61-90", label: "61–90", amount: 0, count: 0 },
+      { key: "90+", label: "90+", amount: 0, count: 0 },
+    ];
+    let agingNotDue = 0;
+    for (const invoice of invoiceable) {
+      const balance = invoiceTotals(invoice).balance;
+      if (balance <= 0) continue;
+      const due = invoice.dueDate ? new Date(invoice.dueDate) : new Date(invoice.issueDate);
+      const days = Math.floor((now.getTime() - due.getTime()) / 86400000);
+      if (days < 0) {
+        agingNotDue += balance;
+        agingBuckets[0].amount += balance;
+        agingBuckets[0].count += 1;
+        continue;
+      }
+      const index = days <= 30 ? 0 : days <= 60 ? 1 : days <= 90 ? 2 : 3;
+      agingBuckets[index].amount += balance;
+      agingBuckets[index].count += 1;
+    }
+    const agingTotal = sumBy(agingBuckets, (b) => b.amount);
+    const agingWorst = agingBuckets[3];
+
+    // Client concentration — the risk that one relationship is the business.
+    const revenueByClient = new Map<string, number>();
+    for (const invoice of invoiceable) {
+      revenueByClient.set(
+        invoice.clientId,
+        (revenueByClient.get(invoice.clientId) ?? 0) + revenueOf(invoice)
+      );
+    }
+    const clientName = new Map(clients.map((c) => [c.id, c.companyName]));
+    const clientHealth = new Map(clients.map((c) => [c.id, c.healthLevel]));
+    const rankedClients = [...revenueByClient.entries()]
+      .map(([id, revenue]) => ({
+        id,
+        name: clientName.get(id) ?? "Unknown",
+        healthLevel: clientHealth.get(id) ?? null,
+        revenue,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+    const concentrationTotal = sumBy(rankedClients, (c) => c.revenue);
+    const top1Share = pct(rankedClients[0]?.revenue ?? 0, concentrationTotal);
+    const top3Share = pct(
+      sumBy(rankedClients.slice(0, 3), (c) => c.revenue),
+      concentrationTotal
+    );
+    const concentrationWarn = positiveNumber(financeConfig.concentrationWarnPct) ?? 50;
+    const concentrationCritical =
+      positiveNumber(financeConfig.concentrationCriticalPct) ?? 60;
+    const concentration = {
+      top1Share,
+      top3Share,
+      totalRevenue: concentrationTotal,
+      top: rankedClients.slice(0, 5).map((c) => ({
+        ...c,
+        share: pct(c.revenue, concentrationTotal),
+      })),
+      top3: rankedClients.slice(0, 3).map((c) => ({
+        ...c,
+        share: pct(c.revenue, concentrationTotal),
+      })),
+      level:
+        top3Share >= concentrationCritical
+          ? "critical"
+          : top3Share >= concentrationWarn
+            ? "warning"
+            : "ok",
+      warnAt: concentrationWarn,
+      criticalAt: concentrationCritical,
+    };
+
+    // Capacity heatmap — six most recent weeks × employee.
+    const weekKeys = new Map<string, { key: string; label: string; short: string; start: Date }>();
+    for (const log of capacityLogs) {
+      const start = new Date(log.weekStartDate);
+      const key = start.toISOString().slice(0, 10);
+      if (!weekKeys.has(key)) {
+        weekKeys.set(key, {
+          key,
+          label: start.toLocaleDateString("en-GB", { day: "numeric", month: "short" }),
+          short: start.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" }),
+          start,
+        });
+      }
+    }
+    const weeks = [...weekKeys.values()]
+      .sort((a, b) => a.start.getTime() - b.start.getTime())
+      .slice(-6);
+    const capacityRows = new Map<
+      string,
+      { id: string; name: string; role: string; values: Record<string, number | null> }
+    >();
+    for (const log of capacityLogs) {
+      const key = new Date(log.weekStartDate).toISOString().slice(0, 10);
+      if (!weeks.some((w) => w.key === key)) continue;
+      const row =
+        capacityRows.get(log.employee.id) ??
+        {
+          id: log.employee.id,
+          name: log.employee.name,
+          role: log.employee.roleTitle,
+          values: {},
+        };
+      row.values[key] = Math.round(Number(log.utilizationRate) * 100);
+      capacityRows.set(log.employee.id, row);
+    }
+    const capacity = {
+      weeks,
+      rows: [...capacityRows.values()]
+        .map((row) => {
+          const filled = weeks
+            .map((w) => row.values[w.key])
+            .filter((v): v is number => v != null);
+          return {
+            ...row,
+            avg: filled.length
+              ? Math.round(filled.reduce((s, v) => s + v, 0) / filled.length)
+              : null,
+          };
+        })
+        .sort((a, b) => (b.avg ?? -1) - (a.avg ?? -1)),
+      hasData: capacityLogs.length > 0,
+    };
+
+    // Data completeness — a number is only useful if the inputs exist.
+    const activeProjectRows = projects.filter((p) => p.status === "ACTIVE");
+    const openTaskRows = tasks.filter((t) => t.status !== "DONE");
+    const completenessChecks = [
+      {
+        key: "budget",
+        label: "Active projects without a budget",
+        count: activeProjectRows.filter((p) => !Number(p.budgetAmount ?? 0)).length,
+        total: activeProjectRows.length,
+        href: "/flow",
+      },
+      {
+        key: "estimate",
+        label: "Open tasks without an estimate",
+        count: openTaskRows.filter((t) => t.estimatedHours == null).length,
+        total: openTaskRows.length,
+        href: "/tasks",
+      },
+      {
+        key: "next-action",
+        label: "Open leads without a next action",
+        count: activeLeads.filter((l) => !l.nextFollowUpAt).length,
+        total: activeLeads.length,
+        href: "/pulse",
+      },
+      {
+        key: "time",
+        label: hoursThisWeek > 0 ? "Time logged this week" : "No time logged this week",
+        count: hoursThisWeek > 0 ? 0 : 1,
+        total: 1,
+        href: "/tasks",
+      },
+    ];
+    const completenessScore = Math.round(
+      (completenessChecks.reduce(
+        (s, c) => s + (c.total ? 1 - c.count / c.total : 1),
+        0
+      ) /
+        completenessChecks.length) *
+        100
+    );
+    const completeness = {
+      score: completenessScore,
+      checks: completenessChecks,
+    };
+
 
     // ── Today + module insights ────────────────────────────────────────
     const activeEmployees = employees.filter((e) => e.employmentStatus === "ACTIVE").length;
@@ -543,10 +1008,16 @@ export class DashboardService {
     const deliveryScore = activeProjects.length
       ? Math.round((onTrackCount / activeProjects.length) * 100)
       : 100;
+    // Attendance is meaningless on a weekly off (nobody punched), so the Team
+    // driver uses weekly utilisation when it exists and only falls back to
+    // today's attendance. This is why the score used to drop to 0 every Friday.
+    const teamScore = avgUtilization > 0
+      ? Math.min(100, Math.round(avgUtilization))
+      : attendanceRate;
     const overall = await this.scoring.computeOverall({
       finance: collectionRate,
       delivery: deliveryScore,
-      people: attendanceRate,
+      people: teamScore,
       clients: avgHealth,
     });
     const scoreComponents = overall.components.map((c) => ({
@@ -642,7 +1113,7 @@ export class DashboardService {
         label: "Stale leads",
         metric: staleLeads,
         kind: "count",
-        hint: `${followUpsDue} follow-up${followUpsDue === 1 ? "" : "s"} due today or earlier`,
+        hint: `${staleLeads} lead${staleLeads === 1 ? " is" : "s are"} past their stage SLA`,
         action: "Work the pipeline",
         href: "/pulse",
       });
@@ -670,12 +1141,12 @@ export class DashboardService {
         label: "Clients at churn risk",
         metric: churnRiskFlags.length,
         kind: "count",
-        hint: `${renewalsNext30} renewal${renewalsNext30 === 1 ? "" : "s"} in the next 30 days`,
+        hint: "Flagged by the client scoring engine",
         action: "Review accounts",
         href: "/accounts",
       });
     }
-    if (activeEmployees > 0 && attendanceRate < 60) {
+    if (activeEmployees > 0 && todayAttendance.length > 0 && attendanceRate < 60) {
       alerts.push({
         id: "attendance-low",
         severity: "warning",
@@ -980,6 +1451,35 @@ export class DashboardService {
         leave: pendingLeaveCount,
         deliverables: pendingDeliverables,
       },
+      approvalItems: {
+        expenses: pendingExpenseItems.map((e) => ({
+          id: e.id,
+          title: e.description,
+          amount: Number(e.amount),
+          date: e.date,
+          category: e.category,
+          who: e.submittedBy?.name ?? null,
+          client: e.client?.companyName ?? null,
+          href: "/capital/expenses",
+        })),
+        leave: pendingLeaveItems.map((l) => ({
+          id: l.id,
+          title: `${l.employee?.name ?? "Employee"} · ${String(l.leaveType)
+            .replace(/_/g, " ")
+            .toLowerCase()}`,
+          startDate: l.startDate,
+          endDate: l.endDate,
+          appliedAt: l.appliedAt,
+          href: "/people/leave",
+        })),
+        deliverables: pendingDeliverableItems.map((f) => ({
+          id: f.id,
+          title: f.fileName ?? "Deliverable",
+          project: f.project?.name ?? null,
+          uploadedAt: f.uploadedAt,
+          href: f.project?.id ? `/flow?project=${f.project.id}` : "/flow",
+        })),
+      },
       payables: {
         overdueAmount: totalOwedOverdue,
         overdueCount: liabOverdueCount + expenseOverdueCount,
@@ -1039,10 +1539,60 @@ export class DashboardService {
       generatedAt: now.toISOString(),
       pulse: { totalLeads: leads.length, activeLeads: activeLeads.length, pipelineValue, weightedForecast, won, lost, hotLeads, staleLeads, leadsByStage },
       accounts: { totalClients: clients.length, avgHealth, health, renewalsNext30 },
-      flow: { totalProjects: projects.length, activeProjects: activeProjects.length, healthStatusCounts, avgRisk, onTimeRate, atRisk: atRisk.slice(0, 5) },
+      flow: { totalProjects: projects.length, activeProjects: activeProjects.length, healthStatusCounts, avgRisk, onTimeRate, atRisk },
       tasks: { openTasks: openTasks.length, dueToday, overdue, blocked, hoursThisWeek, highPriority },
       people: { totalEmployees: employees.length, presentToday, onLeaveToday, avgUtilization, overloaded },
-      capital: { totalInvoiced, recognizedRevenue, collected, outstanding, overdueAmount, expensesMonth, pendingExpenses, cashPosition, paymentSplit, revenueTrend, overdueInvoices },
+      capital: {
+        totalInvoiced,
+        recognizedRevenue,
+        collected,
+        outstanding,
+        overdueAmount,
+        expensesMonth,
+        pendingExpenses,
+        cashPosition,
+        paymentSplit,
+        revenueTrend,
+        overdueInvoices,
+        // Period-scoped flows (used by the KPI strip and Cash & revenue panel)
+        periodInvoiced,
+        periodRevenue,
+        periodCollected,
+        periodExpenses,
+        periodNet,
+        periodMargin,
+        prevInvoiced,
+        prevRevenue,
+        prevCollected,
+        prevExpenses,
+        revenueDelta: deltaPct(periodRevenue, prevRevenue),
+        collectedDelta: deltaPct(periodCollected, prevCollected),
+        expensesDelta: deltaPct(periodExpenses, prevExpenses),
+        monthlyRevenueTarget,
+        monthlyFixedCost,
+        targetForPeriod,
+        targetProgress,
+        monthlyBurn,
+        runwayMonths,
+        dsoDays,
+        aging: agingBuckets,
+        agingTotal,
+        agingNotDue,
+        agingWorstAmount: agingWorst.amount,
+        agingWorstCount: agingWorst.count,
+      },
+      period: {
+        key: periodWindow.key,
+        label: periodWindow.label,
+        months: periodWindow.months,
+        from: periodWindow.from.toISOString(),
+        to: now.toISOString(),
+        days: periodWindow.days,
+      },
+      targets: { monthlyRevenueTarget, monthlyFixedCost },
+      concentration,
+      capacity,
+      completeness,
       insight: { insights: insights.map((i) => ({ id: i.id, description: i.description, confidenceLevel: i.confidenceLevel, surfacedAt: i.surfacedAt })) },
       nextMilestone,
       moduleInsights,
@@ -1077,18 +1627,63 @@ export class DashboardService {
     return Array.from(map.entries()).map(([method, amount]) => ({ method, amount }));
   }
 
-  private buildTrend(snapshots: { metricName: string; value: number; recordedAt: Date }[]) {
-    const months = new Map<string, { month: string; invoiced: number; collected: number; expenses: number }>();
-    for (const s of snapshots) {
-      const key = `${s.recordedAt.getMonth()}/${s.recordedAt.getFullYear()}`;
-      const label = s.recordedAt.toLocaleString("en-US", { month: "short" });
-      const entry = months.get(key) ?? { month: label, invoiced: 0, collected: 0, expenses: 0 };
-      if (s.metricName === "monthly_invoiced") entry.invoiced = s.value;
-      if (s.metricName === "monthly_collected") entry.collected = s.value;
-      if (s.metricName === "monthly_expenses") entry.expenses = s.value;
-      months.set(key, entry);
+  /**
+   * Revenue / collection / expense trend straight from the ledgers.
+   *
+   * The dashboard used to read `MetricSnapshot`, a demo table. The seed wrote
+   * months of snapshots for periods with no invoices at all, so the board showed
+   * revenue the company never earned. Aggregating the real documents keeps the
+   * dashboard identical to the Capital report (and to the GL).
+   */
+  private async buildTrend() {
+    const now = new Date();
+    const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 7, 1));
+    const [invoiced, collected, expenses] = await Promise.all([
+      this.prisma.$queryRaw<{ month: string; amount: number }[]>`
+        SELECT to_char(i."issueDate", 'YYYY-MM') AS month,
+               COALESCE(SUM(li.amount * COALESCE(i."exchangeRate", 1)), 0)::float8 AS amount
+        FROM "Invoice" i
+        JOIN "InvoiceLineItem" li ON li."invoiceId" = i.id
+        WHERE i.status IN ('SENT','VIEWED','PARTIALLY_PAID','PAID','OVERDUE')
+          AND i."issueDate" >= ${since}
+        GROUP BY 1
+      `,
+      this.prisma.$queryRaw<{ month: string; amount: number }[]>`
+        SELECT to_char(p."paymentDate", 'YYYY-MM') AS month,
+               COALESCE(SUM(CASE WHEN p.type = 'REFUND' THEN -p.amount ELSE p.amount END), 0)::float8 AS amount
+        FROM "Payment" p
+        WHERE p.type IN ('IN','REFUND') AND p."paymentDate" >= ${since}
+        GROUP BY 1
+      `,
+      this.prisma.$queryRaw<{ month: string; amount: number }[]>`
+        SELECT to_char(e.date, 'YYYY-MM') AS month,
+               COALESCE(SUM(e.amount * COALESCE(e."exchangeRate", 1)), 0)::float8 AS amount
+        FROM "Expense" e
+        WHERE e."approvalStatus" = 'APPROVED' AND e.date >= ${since}
+        GROUP BY 1
+      `,
+    ]);
+    const keyOf = (v: string | number) =>
+      typeof v === "number"
+        ? `${v}`
+        : v;
+    const byMonth = {
+      invoiced: new Map(invoiced.map((r) => [keyOf(r.month), Number(r.amount)])),
+      collected: new Map(collected.map((r) => [keyOf(r.month), Number(r.amount)])),
+      expenses: new Map(expenses.map((r) => [keyOf(r.month), Number(r.amount)])),
+    };
+    const rows: { month: string; invoiced: number; collected: number; expenses: number }[] = [];
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      rows.push({
+        month: d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }),
+        invoiced: Math.round((byMonth.invoiced.get(key) ?? 0) * 100) / 100,
+        collected: Math.round((byMonth.collected.get(key) ?? 0) * 100) / 100,
+        expenses: Math.round((byMonth.expenses.get(key) ?? 0) * 100) / 100,
+      });
     }
-    return Array.from(months.values());
+    return rows;
   }
 
   private startOfToday(): Date {
@@ -1115,7 +1710,12 @@ export class DashboardService {
    * including finance figures an employee should never see. This keeps the
    * heavy aggregation cached while narrowing the response per role.
    */
-  async home(roleName?: string, userId?: string, permissions?: Record<string, any>) {
+  async home(
+    roleName?: string,
+    userId?: string,
+    permissions?: Record<string, any>,
+    period?: string
+  ) {
     const role = (roleName ?? "").toLowerCase();
     const controlAdmin = permissions?.CONTROL?.view === true;
     // Order matters: "HR/Admin" must be HR (not admin) and "Team Member" must be
@@ -1138,8 +1738,15 @@ export class DashboardService {
                     ? "manager"
                     : "employee";
 
-    const [full, personal] = await Promise.all([this.overview(), this.myDay(userId)]);
-    const base = { view, generatedAt: full.generatedAt, personal };
+    const [full, personal] = await Promise.all([this.overview(period), this.myDay(userId)]);
+    const base = {
+      view,
+      generatedAt: full.generatedAt,
+      personal,
+      // The period switcher and metric definitions apply to every role.
+      period: full.period,
+      targets: full.targets,
+    };
     const pickModules = (keys: string[]) =>
       Object.fromEntries(
         keys
@@ -1162,7 +1769,10 @@ export class DashboardService {
         moduleAlerts: pickModuleAlerts(["accounts", "capital", "flow", "liabilities", "dollar"]),
         alerts: pickAlerts(["accounts", "capital", "flow", "liabilities", "dollar"]),
         today: full.today,
+        scorecard: full.scorecard,
         capital: full.capital,
+        concentration: full.concentration,
+        completeness: full.completeness,
         topClients: full.topClients,
         accounts: {
           totalClients: full.accounts.totalClients,
@@ -1186,9 +1796,12 @@ export class DashboardService {
         moduleAlerts: pickModuleAlerts(["pulse", "flow", "tasks", "people"]),
         alerts: pickAlerts(["pulse", "flow", "tasks", "people"]),
         today: full.today,
+        scorecard: full.scorecard,
         flow: full.flow,
         tasks: full.tasks,
         people: full.people,
+        capacity: full.capacity,
+        completeness: full.completeness,
         pulse: {
           pipelineValue: full.pulse.pipelineValue,
           weightedForecast: full.pulse.weightedForecast,
@@ -1207,8 +1820,11 @@ export class DashboardService {
         moduleAlerts: pickModuleAlerts(["people", "tasks", "calendar"]),
         alerts: pickAlerts(["people", "tasks", "calendar"]),
         today: full.today,
+        scorecard: full.scorecard,
         people: full.people,
         tasks: full.tasks,
+        capacity: full.capacity,
+        completeness: full.completeness,
         flow: { activeProjects: full.flow.activeProjects, atRisk: full.flow.atRisk },
         recentActivity: full.recentActivity,
       };
@@ -1221,8 +1837,10 @@ export class DashboardService {
         moduleAlerts: pickModuleAlerts(["pulse", "accounts", "tasks", "calendar"]),
         alerts: pickAlerts(["pulse", "accounts", "tasks", "calendar"]),
         today: full.today,
+        scorecard: full.scorecard,
         pulse: full.pulse,
         accounts: { renewalsNext30: full.accounts.renewalsNext30, avgHealth: full.accounts.avgHealth },
+        completeness: full.completeness,
         tasks: { openTasks: full.tasks.openTasks, dueToday: full.tasks.dueToday, overdue: full.tasks.overdue },
         recentActivity: full.recentActivity,
       };

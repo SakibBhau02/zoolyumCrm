@@ -1,29 +1,91 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { ATT_STATUSES, label, todayLocal } from "../constants";
 import { Field, FormActions, Input, Modal, Select, Textarea } from "@/components/ui";
 
+/** Dhaka wall-clock HH:MM for an ISO instant (the API stores true UTC). */
+const hhmm = (v?: string | null) => {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Date(d.getTime() + 6 * 3600_000).toISOString().slice(11, 16);
+};
+
+/**
+ * Record or correct one attendance day.
+ *
+ * Correcting used to be status-only, so "he forgot to punch out" or "the
+ * machine logged 09:14 instead of 09:01" could not be fixed from the UI. Each
+ * changed field is sent as its own correction so the audit trail records what
+ * actually changed and why.
+ */
 export function AttendanceModal({ open, onClose, employees, edit, onSaved }: { open: boolean; onClose: () => void; employees: any[]; edit: any; onSaved: () => void }) {
-  const [f, setF] = useState({ employeeId: "", date: todayLocal(), status: "PRESENT", reason: "" });
+  const blank = { employeeId: "", date: todayLocal(), status: "PRESENT", checkIn: "", checkOut: "", reason: "" };
+  const [f, setF] = useState(blank);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const current = useMemo(
+    () => ({ checkIn: hhmm(edit?.checkIn ?? edit?.checkInTime), checkOut: hhmm(edit?.checkOut ?? edit?.checkOutTime), status: edit?.status ?? "" }),
+    [edit]
+  );
+
   useEffect(() => {
-    if (open) setF(edit ? { employeeId: edit.employee?.id ?? "", date: String(edit.date).slice(0, 10), status: edit.status, reason: "" } : { employeeId: employees[0]?.id ?? "", date: todayLocal(), status: "PRESENT", reason: "" });
+    if (!open) return;
+    setErr(null);
+    setF(
+      edit
+        ? {
+            employeeId: edit.employee?.id ?? "",
+            date: String(edit.date).slice(0, 10),
+            status: edit.status ?? "PRESENT",
+            checkIn: current.checkIn,
+            checkOut: current.checkOut,
+            reason: "",
+          }
+        : { ...blank, employeeId: employees[0]?.id ?? "", date: todayLocal() }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, edit, employees]);
+
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!f.employeeId || !f.date) { setErr("Employee and date are required"); return; }
+    if (f.checkIn && f.checkOut && f.checkOut <= f.checkIn) { setErr("Check-out must be after check-in (use the next day for night shifts)"); return; }
     setBusy(true); setErr(null);
     try {
       if (edit) {
-        await apiFetch(`/people/attendance/${edit.id}/correct`, { method: "PATCH", body: JSON.stringify({ field: "status", value: f.status, reason: f.reason.trim() || undefined }) });
+        const changes: { field: "status" | "checkInTime" | "checkOutTime"; value: string }[] = [];
+        if (f.status !== current.status) changes.push({ field: "status", value: f.status });
+        if (f.checkIn !== current.checkIn) changes.push({ field: "checkInTime", value: f.checkIn });
+        if (f.checkOut !== current.checkOut) changes.push({ field: "checkOutTime", value: f.checkOut });
+        if (!changes.length) { setErr("Nothing changed yet"); setBusy(false); return; }
+        // One PATCH per changed field so each lands in the correction log.
+        for (const c of changes) {
+          await apiFetch(`/people/attendance/${edit.id}/correct`, {
+            method: "PATCH",
+            body: JSON.stringify({ field: c.field, value: c.value, reason: f.reason.trim() || undefined }),
+          });
+        }
       } else {
-        await apiFetch("/people/attendance", { method: "POST", body: JSON.stringify({ employeeId: f.employeeId, date: f.date, status: f.status }) });
+        // "HH:MM" is Dhaka wall time on that date; the API wants an instant.
+        const iso = (t: string) => (t ? new Date(`${f.date}T${t}:00+06:00`).toISOString() : undefined);
+        await apiFetch("/people/attendance", {
+          method: "POST",
+          body: JSON.stringify({
+            employeeId: f.employeeId,
+            date: f.date,
+            status: f.status,
+            checkInTime: iso(f.checkIn),
+            checkOutTime: iso(f.checkOut),
+          }),
+        });
       }
       onSaved(); onClose();
     } catch (e2: any) { setErr(e2.message ?? "Save failed"); } finally { setBusy(false); }
   };
+
   return (
     <Modal closeOnBackdrop={false} open={open} onClose={onClose} title={edit ? "Correct attendance" : "Record attendance"}>
       <form onSubmit={save} className="flex flex-col gap-4">
@@ -42,7 +104,26 @@ export function AttendanceModal({ open, onClose, employees, edit, onSaved }: { o
             </Select>
           </Field>
         </div>
-        {edit && <Field label="Correction reason"><Input value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="e.g. late punch missed - employee informed" /></Field>}
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Check-in" hint="Dhaka time · leave blank if there was no punch">
+            <Input type="time" value={f.checkIn} onChange={(e) => setF({ ...f, checkIn: e.target.value })} />
+          </Field>
+          <Field label="Check-out" hint="Blank means still inside / forgot to punch out">
+            <Input type="time" value={f.checkOut} onChange={(e) => setF({ ...f, checkOut: e.target.value })} />
+          </Field>
+        </div>
+        {edit && (
+          <Field label="Correction reason" hint="Saved against every field you change">
+            <Input value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="e.g. late punch missed - employee informed" />
+          </Field>
+        )}
+        {edit && current.checkIn && (
+          <p className="rounded-lg bg-muted/50 px-2.5 py-1.5 text-meta text-muted-foreground">
+            Current: in <span className="font-semibold tabular-nums text-foreground">{current.checkIn}</span> · out{" "}
+            <span className="font-semibold tabular-nums text-foreground">{current.checkOut || "not punched"}</span>
+            {edit.punchCount != null && <span> · {edit.punchCount} device punch{edit.punchCount === 1 ? "" : "es"}</span>}
+          </p>
+        )}
         {err && <p className="text-body font-medium text-rose-400">{err}</p>}
         <FormActions busy={busy} cancel={onClose} submitLabel={edit ? "Save correction" : "Record attendance"} />
       </form>

@@ -146,16 +146,18 @@ export class DollarService {
       const acctGain = await this.ledger.ensureAccount("4400", "FX Gain on Dollar Sales", "REVENUE", tx);
       const acctLoss = await this.ledger.ensureAccount("6600", "FX Loss on Dollar Sales", "OPEX", tx);
       // You cannot sell USD you never bought. If the inventory account does not
-      // hold enough, book the acquisition first (against opening equity) so the
-      // balance sheet never shows a negative asset. The entry gets its own
-      // sourceId so deleting the sale does not reverse the opening position.
+      // hold enough, record where the dollars came from: an exchanger/supplier
+      // we still owe money to. The old version credited "Retained Earnings"
+      // (opening capital), so every sale of un-bought dollars silently inflated
+      // equity instead of creating a liability. The entry gets its own sourceId
+      // so deleting the sale does not reverse the purchase position.
       const inventory = await this.ledger.accountBalance(acctUsd.id, tx);
       if (inventory < costBdt) {
         const shortfall = Math.round((costBdt - inventory) * 100) / 100;
-        const acctEquity = await this.ledger.accountByCode("3000", tx);
-        await this.ledger.postGL("FX_OPENING", `${created.reference} / opening inventory`, date, `${created.id}:opening`, "USD inventory acquired", [
+        const acctFxPayable = await this.ledger.ensureAccount("2300", "USD Inventory Payable", "LIABILITY", tx);
+        await this.ledger.postGL("FX_OPENING", `${created.reference} / inventory acquired`, date, `${created.id}:opening`, "USD inventory acquired on account", [
           { accountId: acctUsd.id, debit: shortfall, credit: 0, memo: `${usd} USD inventory` },
-          { accountId: acctEquity.id, debit: 0, credit: shortfall, memo: "Opening capital" },
+          { accountId: acctFxPayable.id, debit: 0, credit: shortfall, memo: "Payable to FX supplier" },
         ], actorId, tx);
       }
       const lines: { accountId: string; debit: number; credit: number; memo?: string }[] = [

@@ -10,6 +10,8 @@ import { cn } from "@/components/shared";
 
 export type AttendanceDay = {
   date: string;
+  /** Attendance row id — null when the day was never processed. */
+  id?: string | null;
   kind: string; // present | late | half | absent | leave | off | holiday | future
   status?: string | null;
   checkIn?: string | null;

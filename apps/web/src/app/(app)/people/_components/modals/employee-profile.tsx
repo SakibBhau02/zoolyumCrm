@@ -4,6 +4,7 @@ import { CalendarClock, CalendarDays, GraduationCap, Pencil, Target, Trash2 } fr
 import { formatBDT, formatDate, formatDay } from "@/lib/format";
 import { Avatar, SkeletonBlock, StatusBadge, cn } from "@/components/shared";
 import { Btn } from "@/components/table";
+import { ImagePicker } from "@/components/media/image-picker";
 import { Field, Input, Modal, Select } from "@/components/ui";
 import { DAYS, dayShort, EMPLOYMENT_TYPES, EMPLOYMENT_STATUSES, label, skillsOf, fmtTime } from "../constants";
 
@@ -15,6 +16,7 @@ export default function EmployeeProfileModal({
   onSave,
   onDelete,
   initialEditing,
+  onPhotoChanged,
 }: {
   open: boolean;
   onClose: () => void;
@@ -23,6 +25,8 @@ export default function EmployeeProfileModal({
   onSave: (payload: any) => Promise<void>;
   onDelete: () => Promise<void>;
   initialEditing?: boolean;
+  /** Called after the photo upload/remove so the page can refetch. */
+  onPhotoChanged?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editF, setEditF] = useState<any>(null);
@@ -70,7 +74,7 @@ export default function EmployeeProfileModal({
       size="xl"
       title={loading ? "Loading…" : detail ? (
         <div className="flex items-center gap-2.5">
-          <Avatar name={detail.name} />
+          <Avatar name={detail.name} src={detail.photoUrl} jxlSrc={detail.photoJxlUrl} />
           <div><p className="font-heading text-section font-semibold">{detail.name}</p><p className="text-meta text-muted-foreground">{detail.roleTitle}</p></div>
           <StatusBadge status={detail.employmentStatus} />
         </div>
@@ -80,6 +84,20 @@ export default function EmployeeProfileModal({
         <div className="flex flex-col gap-3">{[...Array(6)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}</div>
       ) : !detail ? null : editing && editF ? (
         <div className="flex flex-col gap-5">
+          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+            <ImagePicker
+              src={detail.photoUrl ?? null}
+              jxlSrc={detail.photoJxlUrl ?? null}
+              name={detail.name}
+              endpoint={`/people/employees/${detail.id}/photo`}
+              removeEndpoint={`/people/employees/${detail.id}/photo`}
+              onDone={() => onPhotoChanged?.()}
+              shape="circle"
+              sizeClass="size-20"
+              title="Profile photo"
+              hint="Shown across People, tasks and the team board"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Name"><Input value={editF.name} onChange={(e) => setEditF({ ...editF, name: e.target.value })} /></Field>
             <Field label="Role"><Input value={editF.roleTitle} onChange={(e) => setEditF({ ...editF, roleTitle: e.target.value })} /></Field>

@@ -1954,10 +1954,10 @@ export function ReportsTab({ reports, aging, forecast, statements, apAging, budg
         </CardShell>
 
         <CardShell>
-          <SectionTitle title="Cash Flow" subtitle={`net ${formatBDT(statements?.cashFlow?.netOperating ?? 0)} operating · closing ${formatBDT(statements?.cashFlow?.closingBalance ?? 0)}`} />
+          <SectionTitle title="Cash Flow" subtitle={`opening ${formatBDT(statements?.cashFlow?.openingBalance ?? 0)} · net ${formatBDT(statements?.cashFlow?.netOperating ?? 0)} operating · closing ${formatBDT(statements?.cashFlow?.closingBalance ?? 0)}`} />
           {statements?.cashFlow && statements.cashFlow.reconciled === false && (
             <p className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-meta text-amber-600 dark:text-amber-400">
-              The GL cash account ({formatBDT(statements.cashFlow.netOperating)}) does not match the bank balances ({formatBDT(statements.cashFlow.closingBalance)}). Post the missing opening balance to reconcile the statements.
+              The cash-flow statement closes at {formatBDT(statements.cashFlow.calculatedClosing ?? 0)} but the bank accounts hold {formatBDT(statements.cashFlow.closingBalance)}. A cash movement is missing from the ledger (or a bank balance was edited by hand) — post the missing entry to reconcile.
             </p>
           )}
           <TableShell>

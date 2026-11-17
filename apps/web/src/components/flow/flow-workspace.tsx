@@ -4,19 +4,22 @@ import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
-  AlertTriangle, ArrowUpRight, Banknote, Calendar, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, ClipboardList, Download, Eye, Facebook, FileArchive,
+  AlertTriangle, ArrowUpRight, Banknote, Calendar, Camera, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, ClipboardList, Download, Eye, Facebook, FileArchive,
   FileSpreadsheet, FileText, Globe, HandCoins, History, Image, Instagram, LayoutGrid, Linkedin, Link2, List, Music2, Pencil, Plus, ReceiptText, RefreshCw,
   Rocket, Search, Send, SlidersHorizontal, SquareKanban, Trash2, Twitter, Upload, UploadCloud, Users, Wallet, X, Youtube,
 } from "lucide-react";
 import { apiFetch, API_URL, getToken } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { formatMoney, formatDate, timeAgo } from "@/lib/format";
-import type { ProjectDeliverable, ProjectReport } from "@/lib/types";
+import type { ProjectDeliverable, ProjectReport, Shoot } from "@/lib/types";
 import { Avatar, EmptyState, FadeIn, PageHeader, SkeletonBlock, StatusBadge, cn } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { ProgressRing } from "@/components/charts";
 import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
 import { TaskFormModal } from "@/components/tasks/task-form-modal";
+import { ShootTab } from "./shoot-tab";
+import { DeliverablesTab } from "./deliverables-tab";
+import { ReportsTab } from "./reports-tab";
 import { useAuth } from "@/lib/auth";
 // The invoice modal pulls jsPDF + qrcode (~170 KB gz). Project management does
 // not need a PDF engine until someone actually opens an invoice.
@@ -39,6 +42,13 @@ const money = (value: unknown, currency?: string | null) =>
 // stored file URLs are API-relative ("/api/flow/uploads/…") — resolve to the API origin
 function absoluteUrl(url: string) {
   return url.startsWith("/api/") ? `${API_URL.replace(/\/api\/?$/, "")}${url}` : url;
+}
+
+/** Pasted links often arrive as "docs.google.com/…" — add the scheme. */
+function withProtocol(raw: string) {
+  const v = raw.trim();
+  if (!v) return "";
+  return /^https?:\/\//i.test(v) ? v : `https://${v.replace(/^\/+/, "")}`;
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -90,6 +100,7 @@ interface ProjectRow {
   billingType?: string | null; recurringInterval?: string | null; nextBillingDate?: string | null;
   monthlyRate?: number | null; totalBilled?: number | null; paymentStatus?: string | null;
   projectLink?: string | null; websiteUrl?: string | null;
+  logoUrl?: string | null; logoJxlUrl?: string | null;
   socialLinks?: {
     facebook?: string; linkedin?: string; instagram?: string;
     youtube?: string; tiktok?: string; x?: string;
@@ -103,6 +114,21 @@ interface ProjectRow {
   _count?: { tasks: number; files: number; milestones: number };
 }
 
+interface ProjectProposal {
+  id: string;
+  title: string;
+  fileUrl: string | null;
+  fileName?: string | null;
+  downloadUrl?: string | null;
+  link: string | null;
+  notes: string | null;
+  amount: number | string | null;
+  status: string;
+  sentDate: string | null;
+  updatedAt: string;
+  updatedBy?: { id: string; name: string } | null;
+}
+
 interface ProjectDetail extends ProjectRow {
   description?: string | null; type?: string;
   sourceLead?: {
@@ -113,6 +139,8 @@ interface ProjectDetail extends ProjectRow {
     id: string; versionNumber: number; status: string;
     fileUrl: string | null; portalLink: string | null; sentDate: string | null;
   } | null;
+  /** The project's one final proposal (PDF and/or shared link). */
+  proposal?: ProjectProposal | null;
   milestones: { id: string; name: string; dueDate: string | null; status: string }[];
   files: {
     id: string; name?: string | null; fileName?: string | null; fileUrl: string;
@@ -125,6 +153,7 @@ interface ProjectDetail extends ProjectRow {
     dueDate: string | null; assignedTo: { name: string } | null;
   }[];
   deliverables: ProjectDeliverable[];
+  shoots: Shoot[];
   reports: ProjectReport[];
   reportFrequency?: string | null;
   reportMode?: string | null;
@@ -579,7 +608,7 @@ function ChannelsModal({
 }
 
 const DETAIL_TABS = [
-  "overview", "deliverables", "tasks", "milestones", "files", "discussions", "finance", "reports", "references",
+  "overview", "proposal", "deliverables", "shoot", "tasks", "milestones", "files", "discussions", "finance", "reports", "references",
 ] as const;
 type DetailTab = (typeof DETAIL_TABS)[number];
 
@@ -656,6 +685,18 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
   const openProject = useCallback((id: string) => { router.push("/flow/" + id); }, [router]);
   const closeProject = useCallback(() => { router.push("/flow"); }, [router]);
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
+  // Campaigns are client-scoped: the report and deliverable forms only offer
+  // campaigns that belong to this project's client.
+  const { data: flowCampaignData } = useApi<any[]>(
+    detail ? `/calendar/campaigns?clientId=${detail.client?.id ?? ""}` : null
+  );
+  const reportsCampaigns = useMemo(
+    () =>
+      (flowCampaignData ?? [])
+        .filter((c) => !detail?.client?.id || c.clientId === detail.client.id)
+        .map((c) => ({ id: c.id, name: c.name })),
+    [flowCampaignData, detail?.client?.id]
+  );
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
   const selectDetailTab = useCallback(
@@ -727,6 +768,17 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
   const [refBusy, setRefBusy] = useState(false);
   const [refUploading, setRefUploading] = useState(false);
   const refFileRef = useRef<HTMLInputElement>(null);
+  // project proposal (one final proposal per project)
+  const [proposalOpen, setProposalOpen] = useState(false);
+  const [propTitle, setPropTitle] = useState("");
+  const [propLink, setPropLink] = useState("");
+  const [propNotes, setPropNotes] = useState("");
+  const [propAmount, setPropAmount] = useState("");
+  const [propFile, setPropFile] = useState<{ fileUrl: string; fileName: string } | null>(null);
+  const [propStatus, setPropStatus] = useState("DRAFT");
+  const [propUploading, setPropUploading] = useState(false);
+  const [propBusy, setPropBusy] = useState(false);
+  const propFileRef = useRef<HTMLInputElement>(null);
   // bulk task assign
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkTasks, setBulkTasks] = useState<any[] | null>(null);
@@ -734,15 +786,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  // deliverables + reports state
-  const [dvTitle, setDvTitle] = useState("");
-  const [dvDesc, setDvDesc] = useState("");
-  const [dvBusy, setDvBusy] = useState(false);
-  const [dvEditId, setDvEditId] = useState<string | null>(null);
-  const [dvEditTasks, setDvEditTasks] = useState<Set<string>>(new Set());
-  const [repBusy, setRepBusy] = useState(false);
-  const [repNotesEdit, setRepNotesEdit] = useState<string | null>(null);
-  const [repNotesDraft, setRepNotesDraft] = useState<string | null>(null);
+  // deliverables + reports live in <DeliverablesTab /> and <ReportsTab />
   // project links & social editor
   const [channelsOpen, setChannelsOpen] = useState(false);
 
@@ -1192,6 +1236,91 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
     } catch (e: any) { notify(e.message ?? "Delete failed"); }
   };
 
+  // ── Project proposal (one final proposal per project) ────────────
+  /** Prefer the shared link (Google Doc / Notion) and fall back to the PDF. */
+  const proposalTarget = (p?: ProjectProposal | null) => {
+    if (!p) return "";
+    if (p.link?.trim()) return p.link.trim();
+    if (p.fileUrl) return p.downloadUrl ?? absoluteUrl(p.fileUrl);
+    return "";
+  };
+
+  useEffect(() => {
+    setPropStatus(detail?.proposal?.status ?? "DRAFT");
+  }, [detail?.proposal?.status]);
+
+  const openProposalForm = () => {
+    const p = detail?.proposal;
+    setPropTitle(p?.title ?? "Final proposal");
+    setPropLink(p?.link ?? "");
+    setPropNotes(p?.notes ?? "");
+    setPropAmount(p?.amount != null ? String(p.amount) : "");
+    setPropFile(p?.fileUrl ? { fileUrl: p.fileUrl, fileName: p.fileName ?? "proposal.pdf" } : null);
+    setProposalOpen(true);
+  };
+
+  /** One click from the project header: open the proposal, or start it. */
+  const viewProposal = () => {
+    const target = proposalTarget(detail?.proposal);
+    if (target) {
+      window.open(target, "_blank", "noopener,noreferrer");
+      return;
+    }
+    selectDetailTab("proposal");
+    openProposalForm();
+  };
+
+  const handleProposalFile = async (file: File) => {
+    setPropUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const token = getToken();
+      const res = await fetch(`${API_URL}/flow/upload`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.fileUrl) throw new Error(body?.message ?? "Upload failed");
+      setPropFile({ fileUrl: body.fileUrl, fileName: body.originalName ?? file.name });
+      notify("PDF attached - save to finish");
+    } catch (e: any) { notify(e.message ?? "Upload failed"); } finally { setPropUploading(false); }
+  };
+
+  const saveProposal = async () => {
+    if (!detail) return;
+    if (!propFile && !propLink.trim() && !propNotes.trim()) {
+      notify("Attach a PDF, paste a link, or write a summary first");
+      return;
+    }
+    setPropBusy(true);
+    try {
+      await apiFetch(`/flow/projects/${detail.id}/proposal`, {
+        method: "PUT",
+        body: JSON.stringify({
+          title: propTitle.trim() || "Final proposal",
+          fileUrl: propFile?.fileUrl ?? undefined,
+          fileName: propFile?.fileName ?? undefined,
+          link: propLink.trim() ? withProtocol(propLink) : undefined,
+          notes: propNotes.trim() || undefined,
+          amount: propAmount.trim() ? Number(propAmount) : undefined,
+          status: propStatus,
+        }),
+      });
+      setProposalOpen(false);
+      reload();
+      notify(detail.proposal ? "Proposal updated" : "Proposal saved");
+    } catch (e: any) { notify(e.message ?? "Save failed"); } finally { setPropBusy(false); }
+  };
+
+  const deleteProposal = async () => {
+    if (!detail?.proposal) return;
+    if (!window.confirm("Remove this project's proposal? You can add a new one afterwards.")) return;
+    try {
+      await apiFetch(`/flow/projects/${detail.id}/proposal`, { method: "DELETE" });
+      setProposalOpen(false);
+      reload();
+      notify("Proposal removed");
+    } catch (e: any) { notify(e.message ?? "Delete failed"); }
+  };
+
   // ── Bulk task assign handlers ────────────────────────────────────
   const toggleBulkSelected = (id: string) => {
     setBulkSelected((prev) => {
@@ -1218,106 +1347,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
     } catch (e: any) { notify(e.message ?? "Bulk assign failed"); } finally { setBulkBusy(false); }
   };
 
-  // ── Deliverables + Reports handlers ──────────────────────────────
-  const addDeliverable = async () => {
-    if (!detail || !dvTitle.trim()) return;
-    setDvBusy(true);
-    try {
-      await apiFetch(`/flow/projects/${detail.id}/deliverables`, {
-        method: "POST",
-        body: JSON.stringify({ title: dvTitle.trim(), description: dvDesc.trim() || undefined }),
-      });
-      setDvTitle("");
-      setDvDesc("");
-      notify("Deliverable added");
-      reload();
-    } catch (e: any) { notify(e.message ?? "Failed"); } finally { setDvBusy(false); }
-  };
-
-  const setDeliverableStatus = async (dv: ProjectDeliverable, status: string) => {
-    if (!detail) return;
-    try {
-      await apiFetch(`/flow/deliverables/${dv.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
-      notify(`Deliverable marked ${label(status)}`);
-      reload();
-    } catch (e: any) { notify(e.message ?? "Failed"); }
-  };
-
-  const saveDeliverableTasks = async (dv: ProjectDeliverable) => {
-    if (!detail) return;
-    setDvBusy(true);
-    try {
-      await apiFetch(`/flow/deliverables/${dv.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ taskIds: Array.from(dvEditTasks) }),
-      });
-      setDvEditId(null);
-      notify("Tasks linked to deliverable");
-      reload();
-    } catch (e: any) { notify(e.message ?? "Failed"); } finally { setDvBusy(false); }
-  };
-
-  const deleteDeliverable = async (dv: ProjectDeliverable) => {
-    if (!detail) return;
-    try {
-      await apiFetch(`/flow/deliverables/${dv.id}`, { method: "DELETE" });
-      notify("Deliverable removed");
-      reload();
-    } catch (e: any) { notify(e.message ?? "Failed"); }
-  };
-
-  const setReportSchedule = async (value: string) => {
-    const body =
-      value === "MANUAL"
-        ? { reportMode: "MANUAL" }
-        : { reportMode: "AUTOMATIC", reportFrequency: value };
-    await patchProject(body);
-    notify(
-      value === "MANUAL"
-        ? "Reports are manual now"
-        : `Reports will be generated every ${value.replace("-days", "")} days`
-    );
-  };
-
-  const generateReportNow = async () => {
-    if (!detail) return;
-    setRepBusy(true);
-    try {
-      await apiFetch(`/flow/projects/${detail.id}/reports/generate`, { method: "POST", body: JSON.stringify({}) });
-      notify("Report generated");
-      reload();
-    } catch (e: any) { notify(e.message ?? "Failed"); } finally { setRepBusy(false); }
-  };
-
-  const saveReportNotes = async (r: ProjectReport) => {
-    if (!detail) return;
-    try {
-      await apiFetch(`/flow/reports/${r.id}`, { method: "PATCH", body: JSON.stringify({ pmNotes: repNotesDraft ?? "" }) });
-      setRepNotesEdit(null);
-      setRepNotesDraft(null);
-      notify("Report notes saved");
-      reload();
-    } catch (e: any) { notify(e.message ?? "Failed"); }
-  };
-
-  const setReportStatus = async (r: ProjectReport, status: string) => {
-    if (!detail) return;
-    try {
-      await apiFetch(`/flow/reports/${r.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
-      notify(status === "SENT" ? "Report sent" : `Report marked ${label(status)}`);
-      reload();
-    } catch (e: any) { notify(e.message ?? "Failed"); }
-  };
-
-  const deleteReport = async (r: ProjectReport) => {
-    if (!detail) return;
-    try {
-      await apiFetch(`/flow/reports/${r.id}`, { method: "DELETE" });
-      notify("Report deleted");
-      reload();
-    } catch (e: any) { notify(e.message ?? "Failed"); }
-  };
-
+  // ── Deliverables + reports live in their own tab components ───────
   const riskBar = (score: number | null) => {
     const s = score ?? 0;
     return (
@@ -1595,10 +1625,11 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   {filtered.length} project{filtered.length === 1 ? "" : "s"}
                 </span>
                 <Segmented
+                  label="Project view"
                   options={[
-                    { value: "table", label: <List className="size-4" /> },
-                    { value: "grid", label: <LayoutGrid className="size-4" /> },
-                    { value: "kanban", label: <SquareKanban className="size-4" /> },
+                    { value: "table", label: <List className="size-4" aria-hidden="true" />, ariaLabel: "Table view" },
+                    { value: "grid", label: <LayoutGrid className="size-4" aria-hidden="true" />, ariaLabel: "Grid view" },
+                    { value: "kanban", label: <SquareKanban className="size-4" aria-hidden="true" />, ariaLabel: "Board view" },
                   ]}
                   value={view}
                   onChange={(v) => setViewWithUrl(v as any)}
@@ -1863,7 +1894,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
         bodyClassName="!px-0"
         title={
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
-            <Avatar name={detail?.client?.companyName ?? "?"} />
+            <Avatar name={detail?.name ?? detail?.client?.companyName ?? "?"} src={detail?.logoUrl} jxlSrc={detail?.logoJxlUrl} rounded="rounded-xl" />
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <h3 className="truncate font-heading text-section font-bold leading-tight">{detail?.name ?? "Project"}</h3>
@@ -1908,8 +1939,13 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     ))}
                   </Select>
                 </div>
-                <Btn variant="primary" onClick={() => setFinInvOpen(true)} className="!px-2.5 !py-1.5 text-meta">
-                  <Plus className="size-3.5" /> Invoice
+                <Btn
+                  variant="outline"
+                  onClick={viewProposal}
+                  className="!px-2.5 !py-1.5 text-meta"
+                  title={detail.proposal ? "Open the final proposal" : "Add the final proposal"}
+                >
+                  <FileText className="size-3.5" /> {detail.proposal ? "Proposal" : "Add proposal"}
                 </Btn>
                 <button
                   onClick={() => setEditTarget(detail)}
@@ -2046,11 +2082,13 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
             </section>
 
             {/* ── workspace: vertical rail + scrollable pane ── */}
-            <div className="flex min-h-0 flex-1 gap-0">
-              <nav className="w-40 shrink-0 overflow-y-auto border-r border-border/60 py-1 pr-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-0 sm:flex-row">
+              <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/60 px-1 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-40 sm:flex-col sm:overflow-y-auto sm:border-b-0 sm:border-r sm:px-0 sm:py-1 sm:pr-2">
                 {([
                   { id: "overview", name: "Overview", icon: LayoutGrid },
+                  { id: "proposal", name: "Proposal", icon: FileText, count: detail.proposal ? 1 : 0 },
                   { id: "deliverables", name: "Deliverables", icon: ClipboardList, count: detail.deliverables?.length ?? 0 },
+                  { id: "shoot", name: "Shoot", icon: Camera, count: detail.shoots?.length ?? 0 },
                   { id: "tasks", name: "Tasks", icon: SquareKanban, count: detail.tasks.length },
                   { id: "milestones", name: "Milestones", icon: Calendar, count: detail.milestones.length },
                   { id: "files", name: "Files", icon: FileText, count: detail.files.length },
@@ -2063,7 +2101,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     key={t.id}
                     onClick={() => selectDetailTab(t.id)}
                     className={cn(
-                      "relative flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-body font-semibold transition-colors",
+                      "relative flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-body font-semibold transition-colors sm:w-full",
                       detailTab === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                     )}
                   >
@@ -2075,7 +2113,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   </button>
                 ))}
               </nav>
-              <div className="min-w-0 flex-1 overflow-y-auto py-3 pl-5 pr-1">
+              <div className="min-w-0 flex-1 overflow-y-auto py-3 pr-1 sm:pl-5">
             {detailTab === "overview" && (
               <div className="flex flex-col gap-5">
                 {/* ── project glimpse — what is this project ── */}
@@ -2394,228 +2432,143 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 )}
               </div>
             )}
-            {/* ── tab: deliverables ── */}
-            {detailTab === "deliverables" && (
+            {/* ── tab: final proposal (limit: one per project) ── */}
+            {detailTab === "proposal" && (
               <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-2 rounded-2xl border border-border/60 p-3 sm:flex-row">
-                  <Input value={dvTitle} onChange={(e) => setDvTitle(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addDeliverable()} placeholder="Deliverable — e.g. 30-sec brand film, 12 social creatives…" className="flex-1" />
-                  <Input value={dvDesc} onChange={(e) => setDvDesc(e.target.value)} placeholder="Detail (optional)" className="flex-1" />
-                  <Btn variant="primary" onClick={addDeliverable} className={dvBusy ? "opacity-50" : ""}>
-                    <Plus className="size-3.5" /> Add
-                  </Btn>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-body font-bold">Final proposal</p>
+                    <p className="text-micro text-muted-foreground">
+                      One proposal per project — the PDF or shared link that carries the scope, price and what shipped.
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-border bg-card px-2.5 py-1 text-micro font-bold tabular-nums text-muted-foreground">
+                    {detail.proposal ? "1 of 1 used" : "0 of 1 used"}
+                  </span>
                 </div>
-                <p className="text-micro text-muted-foreground">
-                  Deliverables are the commitments from the proposal — link tasks to them and completed tasks auto-mark the deliverable delivered. This list feeds Reports.
-                </p>
-                {!detail.deliverables?.length ? (
-                  <EmptyState title="No deliverables yet" hint="Add what was promised in the proposal — reports auto-populate from this list." />
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    {detail.deliverables.map((dv) => (
-                      <div key={dv.id} className="rounded-xl border border-border/60 px-3 py-2">
+
+                {detail.proposal ? (
+                  (() => {
+                    const p = detail.proposal;
+                    const target = proposalTarget(p);
+                    return (
+                      <section className="rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-4">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            dv.status === "DELIVERED" ? "bg-emerald-500" : dv.status === "IN_PROGRESS" ? "bg-amber-400" : "bg-muted-foreground/30"
-                          )} />
-                          <p className="min-w-0 flex-1 truncate text-body font-semibold">{dv.title}</p>
-                          {!!dv.tasks?.length && (
-                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-micro font-bold text-muted-foreground">
-                              {dv.tasks.filter((t) => t.status === "DONE").length}/{dv.tasks.length} tasks
+                          <FileText className="size-4 text-primary" />
+                          <p className="text-body-lg font-bold">{p.title || "Final proposal"}</p>
+                          <StatusBadge status={p.status} />
+                          {p.amount != null && (
+                            <span className="rounded-full border border-border bg-card px-2 py-0.5 text-micro font-bold tabular-nums text-foreground">
+                              {money(p.amount, detail.currency)}
                             </span>
                           )}
-                          {dv.status === "DELIVERED" ? (
-                            <button onClick={() => setDeliverableStatus(dv, "PENDING")} className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-micro font-bold text-emerald-400 transition-colors hover:bg-emerald-500/25" title="Reopen">
-                              delivered
-                            </button>
-                          ) : (
-                            <button onClick={() => setDeliverableStatus(dv, "DELIVERED")} className="rounded-full bg-muted px-2 py-0.5 text-micro font-bold text-muted-foreground transition-colors hover:bg-emerald-500/15 hover:text-emerald-400" title="Mark delivered">
-                              mark delivered
-                            </button>
+                          <span className="text-micro text-muted-foreground">
+                            updated {timeAgo(p.updatedAt)}{p.updatedBy?.name ? ` by ${p.updatedBy.name}` : ""}
+                          </span>
+                        </div>
+                        <p className="mt-1.5 truncate text-meta text-muted-foreground">{target || "No file or link attached"}</p>
+                        {p.notes && (
+                          <p className="mt-2 whitespace-pre-line rounded-xl border border-border/60 bg-card/60 p-2.5 text-meta text-foreground/90">
+                            {p.notes}
+                          </p>
+                        )}
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                          {target && (
+                            <a
+                              href={target}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-brand-gradient px-3 py-1.5 text-meta font-bold text-white transition-transform hover:scale-[1.02]"
+                            >
+                              <ArrowUpRight className="size-3.5" /> View proposal
+                            </a>
+                          )}
+                          {p.fileUrl && (
+                            <a
+                              href={p.downloadUrl ?? absoluteUrl(p.fileUrl)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5 text-meta font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                            >
+                              <Download className="size-3.5" /> PDF
+                            </a>
                           )}
                           <button
-                            onClick={() => {
-                              if (dvEditId === dv.id) { setDvEditId(null); return; }
-                              setDvEditId(dv.id);
-                              setDvEditTasks(new Set((dv.tasks ?? []).map((t) => t.id)));
+                            type="button"
+                            onClick={async () => {
+                              if (!target) return;
+                              try { await navigator.clipboard.writeText(target); notify("Proposal link copied"); }
+                              catch { notify("Copy failed"); }
                             }}
-                            className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                            title="Link tasks"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5 text-meta font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                           >
-                            <Link2 className="size-3.5" />
+                            <Link2 className="size-3.5" /> Copy link
                           </button>
-                          <button onClick={() => deleteDeliverable(dv)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400" title="Delete">
-                            <Trash2 className="size-3.5" />
+                          <button
+                            type="button"
+                            onClick={openProposalForm}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5 text-meta font-bold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          >
+                            <Pencil className="size-3.5" /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={deleteProposal}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5 text-meta font-bold text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400"
+                          >
+                            <Trash2 className="size-3.5" /> Remove
                           </button>
                         </div>
-                        {dv.description && <p className="mt-1 pl-4 text-meta text-muted-foreground">{dv.description}</p>}
-                        {dvEditId === dv.id && (
-                          <div className="mt-2 rounded-lg border border-border/60 bg-muted/30 p-2">
-                            <p className="mb-1.5 text-micro font-bold uppercase tracking-wide text-muted-foreground">Linked tasks (completion auto-updates deliverable)</p>
-                            {!detail.tasks.length ? (
-                              <p className="text-meta text-muted-foreground">No tasks in this project yet — create tasks in the Tasks tab first.</p>
-                            ) : (
-                              <>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {detail.tasks.map((t) => {
-                                    const on = dvEditTasks.has(t.id);
-                                    return (
-                                      <button
-                                        key={t.id}
-                                        onClick={() => setDvEditTasks((prev) => {
-                                          const next = new Set(prev);
-                                          if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
-                                          return next;
-                                        })}
-                                        className={cn(
-                                          "rounded-full border px-2 py-0.5 text-micro font-semibold transition-colors",
-                                          on ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:text-foreground"
-                                        )}
-                                      >
-                                        {t.title}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                                <div className="mt-2 flex justify-end">
-                                  <Btn variant="primary" className="!px-3 !py-1.5 text-meta" onClick={() => saveDeliverableTasks(dv)} disabled={dvBusy}>
-                                    Save links
-                                  </Btn>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      </section>
+                    );
+                  })()
+                ) : (
+                  <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border px-4 py-8 text-center">
+                    <FileText className="size-6 text-muted-foreground/60" />
+                    <p className="text-body font-semibold">No proposal yet</p>
+                    <p className="max-w-md text-meta text-muted-foreground">
+                      Upload the final PDF or paste a Google Doc / Notion link. Each project holds exactly one proposal, so this is the version the client sees.
+                    </p>
+                    <Btn variant="primary" onClick={openProposalForm} className="mt-1">
+                      <Plus className="size-3.5" /> Add proposal
+                    </Btn>
                   </div>
                 )}
               </div>
             )}
+            {/* ── tab: deliverables ── */}
+            {detailTab === "deliverables" && (
+              <DeliverablesTab
+                projectId={detail.id}
+                clientId={detail.client?.id}
+                deliverables={detail.deliverables ?? []}
+                employees={(employees ?? []).map((e: any) => ({ id: e.id, name: e.name, roleTitle: e.roleTitle, employmentStatus: e.employmentStatus }))}
+                onChanged={reload}
+                notify={notify}
+              />
+            )}
+            {/* ── tab: shoot ── */}
+            {detailTab === "shoot" && (
+              <ShootTab
+                projectId={detail.id}
+                clientId={detail.client?.id}
+                shoots={detail.shoots ?? []}
+                employees={(employees ?? []).map((e: any) => ({ id: e.id, name: e.name, roleTitle: e.roleTitle }))}
+                onChanged={reload}
+                notify={notify}
+              />
+            )}
             {/* ── tab: reports ── */}
             {detailTab === "reports" && (
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/60 p-3">
-                  <div>
-                    <p className="text-meta font-bold">Progress reports</p>
-                    <p className="text-micro text-muted-foreground">
-                      Completed deliverables + billing snapshot auto-populate · PM notes editable
-                      {detail.reportMode === "AUTOMATIC" && detail.reportFrequency ? ` · auto ${detail.reportFrequency}` : " · manual"}
-                    </p>
-                  </div>
-                  <Btn variant="primary" onClick={generateReportNow} className={repBusy ? "opacity-50" : ""}>
-                    <Plus className="size-3.5" /> {repBusy ? "Generating…" : "Generate report"}
-                  </Btn>
-                  <Select
-                    value={detail.reportMode === "AUTOMATIC" ? (detail.reportFrequency ?? "30-days") : "MANUAL"}
-                    onChange={(e) => setReportSchedule(e.target.value)}
-                    className="!w-44 !py-1.5 text-meta"
-                    title="Report cadence"
-                  >
-                    <option value="MANUAL">Manual only</option>
-                    <option value="15-days">Auto · every 15 days</option>
-                    <option value="30-days">Auto · every 30 days</option>
-                  </Select>
-                </div>
-                {!detail.reports?.length ? (
-                  <EmptyState title="No reports yet" hint="Generate a report — completed deliverables and pending items are pulled automatically." />
-                ) : (
-                  <div className="flex flex-col gap-2.5">
-                    {detail.reports.map((r) => (
-                      <div
-                        key={r.id}
-                        id={`report-${r.id}`}
-                        className={cn(
-                          "rounded-2xl border border-border/60 p-3.5",
-                          focusReport === r.id && "border-primary/60 ring-2 ring-primary/20"
-                        )}
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="min-w-0 flex-1 truncate text-body font-bold">{r.title}</p>
-                          <span className={cn(
-                            "rounded-full px-2 py-0.5 text-micro font-bold",
-                            r.status === "DRAFT" ? "bg-muted text-muted-foreground"
-                              : r.status === "FINAL" ? "bg-sky-500/15 text-sky-400"
-                                : "bg-emerald-500/15 text-emerald-400"
-                          )}>
-                            {label(r.status)}
-                          </span>
-                          {r.status !== "SENT" && (
-                            <button onClick={() => setReportStatus(r, "SENT")} className="rounded-lg px-2 py-1 text-micro font-bold text-emerald-400 transition-colors hover:bg-emerald-500/10" title="Mark sent to client">
-                              send
-                            </button>
-                          )}
-                          <button onClick={() => deleteReport(r)} className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-400" title="Delete report">
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </div>
-                        <p className="mt-0.5 text-micro text-muted-foreground">
-                          {formatDate(r.periodStart)} – {formatDate(r.periodEnd)} · generated {timeAgo(r.createdAt)}{r.generatedBy?.name ? ` by ${r.generatedBy.name}` : ""}
-                          {r.sentAt ? ` · sent ${timeAgo(r.sentAt)}` : ""}
-                        </p>
-                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2.5">
-                            <p className="text-micro font-bold uppercase tracking-wide text-emerald-400">Delivered ({r.completed.length})</p>
-                            {r.completed.length ? (
-                              <ul className="mt-1 flex flex-col gap-0.5">
-                                {r.completed.map((c) => (
-                                  <li key={c.deliverableId} className="flex items-center gap-1 text-meta">
-                                    <CheckCircle2 className="size-3.5 shrink-0 text-emerald-400" /> {c.title}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="mt-1 text-meta text-muted-foreground">Nothing delivered in this period.</p>
-                            )}
-                          </div>
-                          <div className="rounded-xl border border-border/60 bg-muted/30 p-2.5">
-                            <p className="text-micro font-bold uppercase tracking-wide text-muted-foreground">Pending ({r.pending.length})</p>
-                            {r.pending.length ? (
-                              <ul className="mt-1 flex flex-col gap-0.5">
-                                {r.pending.map((c) => (
-                                  <li key={c.deliverableId} className="flex items-center gap-1 text-meta text-muted-foreground">
-                                    <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/40" /> {c.title}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="mt-1 text-meta text-emerald-400">All deliverables done ✓</p>
-                            )}
-                          </div>
-                        </div>
-                        {r.billing && (
-                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 rounded-xl bg-muted/40 px-2.5 py-1.5 text-micro text-muted-foreground">
-                            <span>Billing — invoiced <span className="font-bold text-foreground">{money(r.billing.invoiced, detail.currency)}</span></span>
-                            <span>collected <span className="font-bold text-emerald-400">{money(r.billing.collected, detail.currency)}</span></span>
-                            <span>outstanding <span className="font-bold text-amber-400">{money(r.billing.outstanding, detail.currency)}</span></span>
-                          </div>
-                        )}
-                        {repNotesEdit === r.id ? (
-                          <div className="mt-2 flex flex-col gap-1.5">
-                            <Textarea value={repNotesEdit === r.id ? (repNotesDraft ?? r.pmNotes ?? "") : ""} onChange={(e) => setRepNotesDraft(e.target.value)} placeholder="PM notes / next steps (client-facing)…" className="min-h-16" />
-                            <div className="flex justify-end gap-1.5">
-                              <button onClick={() => { setRepNotesEdit(null); setRepNotesDraft(null); }} className="rounded-lg px-2 py-1 text-meta font-bold text-muted-foreground hover:bg-muted">Cancel</button>
-                              <button onClick={() => saveReportNotes(r)} className="rounded-lg bg-brand-gradient px-2.5 py-1 text-meta font-bold text-white">Save</button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="mt-2">
-                            {r.pmNotes ? (
-                              <p className="rounded-xl bg-muted/30 px-2.5 py-1.5 text-meta text-muted-foreground whitespace-pre-wrap" title="Click to edit" onClick={() => { setRepNotesEdit(r.id); setRepNotesDraft(r.pmNotes); }}>
-                                <span className="font-bold text-foreground">PM notes: </span>{r.pmNotes}
-                              </p>
-                            ) : (
-                              <button onClick={() => { setRepNotesEdit(r.id); setRepNotesDraft(""); }} className="text-meta font-bold text-primary hover:underline">
-                                + add PM notes
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <ReportsTab
+                projectId={detail.id}
+                project={detail}
+                reports={detail.reports ?? []}
+                campaigns={reportsCampaigns}
+                focusReportId={focusReport}
+                onChanged={reload}
+                notify={notify}
+              />
             )}
             {detailTab === "milestones" && (
               <div className="flex flex-col gap-2">
@@ -2744,7 +2697,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                   detail.tasks.map((t) => (
                     <button
                       key={t.id}
-                      onClick={() => router.push("/tasks")}
+                      onClick={() => router.push(`/tasks?task=${t.id}`)}
                       className="group flex items-center gap-2 rounded-xl border border-border/60 px-3 py-2 text-left transition-colors hover:border-primary/30 hover:bg-muted/40"
                     >
                       <div className="min-w-0 flex-1">
@@ -2924,13 +2877,10 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
               </div>
             )}
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
-              <span className="text-meta text-muted-foreground">{detail.milestones.length} milestones · {detail.files.length} files · {detail.tasks.length} tasks · {detail.deliverables?.length ?? 0} deliverables</span>
+              <span className="text-meta text-muted-foreground">{detail.milestones.length} milestones · {detail.files.length} files · {detail.tasks.length} tasks · {detail.deliverables?.length ?? 0} deliverables · {detail.shoots?.length ?? 0} shoots</span>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Btn variant="outline" onClick={() => setFinExpOpen(true)}>
                   <ReceiptText className="size-3.5" /> Add Expense
-                </Btn>
-                <Btn variant="primary" onClick={() => setFinInvOpen(true)}>
-                  <Plus className="size-3.5" /> Create Invoice
                 </Btn>
                 <Btn variant="ghost" onClick={() => setEditTarget(detail)}>
                   <Pencil className="size-3.5" /> Edit
@@ -2958,6 +2908,86 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
         onClose={() => setFinExpOpen(false)}
         onSaved={() => { setFinExpOpen(false); notify("Expense added"); reload(); }}
       />
+      {/* Final proposal — exactly one per project */}
+      <Modal
+        open={proposalOpen}
+        onClose={() => setProposalOpen(false)}
+        size="md"
+        eyebrow="Project proposal"
+        title={detail?.proposal ? "Edit final proposal" : "Add final proposal"}
+        subtitle="Upload the PDF and/or share a Google Doc / Notion link. Each project keeps one proposal — saving replaces it."
+      >
+        <form
+          onSubmit={(e) => { e.preventDefault(); if (!propBusy) saveProposal(); }}
+          className="flex flex-col gap-3"
+        >
+          <Field label="Title">
+            <Input value={propTitle} onChange={(e) => setPropTitle(e.target.value)} placeholder="Final proposal" maxLength={160} />
+          </Field>
+
+          <Field label="Proposal PDF" hint="Optional — PDF, max 15MB">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={propFileRef}
+                type="file"
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) await handleProposalFile(file);
+                }}
+              />
+              <Btn variant="outline" onClick={() => propFileRef.current?.click()} disabled={propUploading}>
+                <UploadCloud className="size-3.5" /> {propUploading ? "Uploading…" : propFile ? "Replace PDF" : "Upload PDF"}
+              </Btn>
+              {propFile && (
+                <span className="flex min-w-0 items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-micro font-semibold">
+                  <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="max-w-40 truncate" title={propFile.fileName}>{propFile.fileName}</span>
+                  <button type="button" onClick={() => setPropFile(null)} className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-rose-400" title="Remove file">
+                    <X className="size-3" />
+                  </button>
+                </span>
+              )}
+            </div>
+          </Field>
+
+          <Field label="Shared link" hint="Google Doc, Notion, Drive — anything the client can open">
+            <Input value={propLink} onChange={(e) => setPropLink(e.target.value)} placeholder="https://docs.google.com/…" maxLength={500} />
+          </Field>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Amount" hint={`In ${detail?.currency || "BDT"}`}>
+              <Input type="number" min={0} step="0.01" value={propAmount} onChange={(e) => setPropAmount(e.target.value)} placeholder="0" />
+            </Field>
+            <Field label="Status">
+              <Select value={propStatus} onChange={(e) => setPropStatus(e.target.value)}>
+                <option value="DRAFT">Draft</option>
+                <option value="SENT">Sent</option>
+                <option value="APPROVED">Approved</option>
+              </Select>
+            </Field>
+          </div>
+
+          <Field label="Summary" hint="Price, scope, what shipped and what didn't — this is what the client reads first">
+            <Textarea
+              rows={5}
+              value={propNotes}
+              onChange={(e) => setPropNotes(e.target.value)}
+              placeholder={"Scope: …\nDelivered: …\nPending: …\nTotal: …"}
+              maxLength={5000}
+            />
+          </Field>
+
+          <FormActions
+            busy={propBusy}
+            cancel={() => setProposalOpen(false)}
+            submitLabel={detail?.proposal ? "Save changes" : "Save proposal"}
+            hint="Limit: 1 proposal per project"
+          />
+        </form>
+      </Modal>
       <TaskFormModal
         open={taskOpen}
         onClose={() => setTaskOpen(false)}

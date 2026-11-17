@@ -8,6 +8,7 @@ import { ApprovalPolicyService } from "./approval-policy.service";
 import { invalidateFinance, logAudit, notifyRole, toBdt } from "./finance-kernel";
 import { recomputeProjectStats } from "../common/project-stats";
 import { writeSystemAudit } from "../common/system-audit";
+import { parseOptionalDate, parseStrictDate } from "../common/strict-date";
 
 @Injectable()
 export class ExpenseService {
@@ -81,6 +82,9 @@ export class ExpenseService {
     if (!body.description?.trim()) {
       throw new BadRequestException("Expense description is required");
     }
+    if (body.description.trim().length > 2000) {
+      throw new BadRequestException("Expense description must be 2000 characters or fewer");
+    }
     const amount = Number(body.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new BadRequestException("Expense amount must be greater than zero");
@@ -88,6 +92,12 @@ export class ExpenseService {
     if (body.exchangeRate !== undefined && body.exchangeRate !== null && body.exchangeRate !== "") {
       const rate = Number(body.exchangeRate);
       if (!Number.isFinite(rate) || rate <= 0) throw new BadRequestException("exchangeRate must be greater than zero");
+    }
+    // Same rule as invoices: a foreign-currency bill without a rate would be
+    // booked 1:1 against a BDT cash account.
+    const expenseCurrency = body.currency ?? "BDT";
+    if (expenseCurrency !== "BDT" && (body.exchangeRate === undefined || body.exchangeRate === null || body.exchangeRate === "")) {
+      throw new BadRequestException(`An exchange rate is required for ${expenseCurrency} expenses`);
     }
     if (body.markupPct !== undefined && body.markupPct !== null && body.markupPct !== "") {
       const pct = Number(body.markupPct);
@@ -122,8 +132,8 @@ export class ExpenseService {
         exchangeRate: body.exchangeRate ?? 1,
         category: body.category ?? "MISC",
         subcategory: body.subcategory ?? null,
-        date: body.date ? new Date(body.date) : new Date(),
-        dueDate: body.dueDate ? new Date(body.dueDate) : null,
+        date: body.date ? parseStrictDate(body.date, "Expense date") : new Date(),
+        dueDate: parseOptionalDate(body.dueDate, "Due date"),
         isPayable: body.isPayable ?? false,
         // A non-payable expense only becomes "paid" once it is actually
         // approved and the cash leaves the bank.
@@ -137,10 +147,13 @@ export class ExpenseService {
         isRecurring: body.isRecurring ?? false,
         recurrenceSchedule: body.recurrenceSchedule ?? null,
         vendorBillNumber: body.vendorBillNumber ?? null,
-        vendorBillDate: body.vendorBillDate ? new Date(body.vendorBillDate) : null,
+        vendorBillDate: parseOptionalDate(body.vendorBillDate, "Vendor bill date"),
         notes: body.notes ?? null,
         department: body.department ?? null,
         markupPct: body.markupPct != null ? Number(body.markupPct) : 0,
+        vatRate: body.vatRate != null && body.vatRate !== "" ? Number(body.vatRate) : 0,
+        vatRecoverable: Boolean(body.vatRecoverable),
+        inputVatAmount: this.resolveInputVat(body, amount),
         approvalStatus: status,
         submittedById,
         approvedById: isApproved ? submittedById ?? undefined : undefined,
@@ -172,6 +185,55 @@ export class ExpenseService {
   }
 
 
+  /** VAT carried on a vendor bill. An explicit amount wins; otherwise extract
+   *  it from a VAT-inclusive total using the rate. */
+  private resolveInputVat(body: any, gross: number) {
+    const explicit = Number(body.inputVatAmount ?? 0);
+    if (Number.isFinite(explicit) && explicit > 0) return Math.min(explicit, gross);
+    const rate = Number(body.vatRate ?? 0);
+    if (!Number.isFinite(rate) || rate <= 0) return 0;
+    return Math.round(((gross * rate) / (100 + rate)) * 100) / 100;
+  }
+
+  /**
+   * Budget control: an expense may not push its project/department over the
+   * approved budget unless the workspace has turned enforcement off.
+   */
+  private async assertWithinBudget(expenseId: string, projectId: string | null, department: string | null, amount: number) {
+    const settings = await this.prisma.settings.findFirst({ select: { financeConfig: true } }).catch(() => null);
+    const enforce = (settings?.financeConfig as any)?.enforceBudget !== false;
+    if (!enforce) return;
+    const budgets = await this.prisma.budget.findMany({
+      where: {
+        OR: [
+          ...(projectId ? [{ scopeType: "PROJECT" as const, projectId }] : []),
+          ...(department ? [{ scopeType: "DEPARTMENT" as const, departmentId: department }] : []),
+        ],
+      },
+    });
+    if (!budgets.length) return;
+    for (const budget of budgets) {
+      const spent = await this.prisma.expense.aggregate({
+        where: {
+          approvalStatus: "APPROVED",
+          id: { not: expenseId },
+          ...(budget.scopeType === "PROJECT" ? { projectId: budget.projectId } : { department: budget.departmentId }),
+          ...(budget.periodStart || budget.periodEnd
+            ? { date: { ...(budget.periodStart ? { gte: budget.periodStart } : {}), ...(budget.periodEnd ? { lte: budget.periodEnd } : {}) } }
+            : {}),
+        },
+        _sum: { amount: true },
+      });
+      const used = Number(spent._sum.amount ?? 0);
+      const limit = Number(budget.budgetAmount);
+      if (used + amount > limit + 0.01) {
+        throw new BadRequestException(
+          `Budget exceeded: ${budget.scopeType === "PROJECT" ? "project" : "department"} budget is ৳${limit.toLocaleString("en-US")}, already spent ৳${used.toLocaleString("en-US")}. This expense of ৳${amount.toLocaleString("en-US")} would go over by ৳${Math.round(used + amount - limit).toLocaleString("en-US")}.`
+        );
+      }
+    }
+  }
+
   private async postExpenseGL(expense: any, actorId?: string, db: CapitalDb = this.prisma) {
     const [acctExp, acctAP, acctBank] = await Promise.all([
       db.account.findUnique({ where: { id: expense.accountId ?? "" } }).catch(() => null),
@@ -181,16 +243,26 @@ export class ExpenseService {
     const def = await db.expenseCategoryDef.findUnique({ where: { key: expense.category } }).catch(() => null);
     const expenseAcct = acctExp ?? (def?.accountId ? await db.account.findUnique({ where: { id: def.accountId } }).catch(() => null) : null) ?? (await this.ledger.accountByCode("5070", db));
     // Book in BDT so a foreign-currency expense matches the cash it moved.
-    const amount = toBdt(Number(expense.amount), expense);
+    const gross = toBdt(Number(expense.amount), expense);
+    // Recoverable input VAT is not a cost: it sits in a receivable until the
+    // return is filed, so only the net value hits the expense account.
+    const cappedVat = Math.min(Number(expense.inputVatAmount ?? 0), Number(expense.amount));
+    const vat = expense.vatRecoverable ? toBdt(cappedVat, expense) : 0;
+    const net = Math.round((gross - vat) * 100) / 100;
+    const acctVat = vat > 0 ? await this.ledger.ensureAccount("1300", "Input VAT Receivable", "ASSET", db) : null;
+    const debitLegs: { accountId: string; debit: number; credit: number; memo?: string }[] = [
+      { accountId: expenseAcct.id, debit: net, credit: 0, memo: expense.description },
+    ];
+    if (acctVat) debitLegs.push({ accountId: acctVat.id, debit: vat, credit: 0, memo: `Input VAT — ${expense.description}` });
     if (expense.isPayable) {
       await this.ledger.postGL("EXPENSE", `EXP-${expense.id.slice(-8)}`, expense.date, expense.id, null, [
-        { accountId: expenseAcct.id, debit: amount, credit: 0, memo: expense.description },
-        { accountId: acctAP.id, debit: 0, credit: amount },
+        ...debitLegs,
+        { accountId: acctAP.id, debit: 0, credit: gross },
       ], actorId, db);
     } else {
       await this.ledger.postGL("EXPENSE", `EXP-${expense.id.slice(-8)}`, expense.date, expense.id, null, [
-        { accountId: expenseAcct.id, debit: amount, credit: 0, memo: expense.description },
-        { accountId: acctBank.id, debit: 0, credit: amount },
+        ...debitLegs,
+        { accountId: acctBank.id, debit: 0, credit: gross },
       ], actorId, db);
     }
   }
@@ -238,9 +310,9 @@ export class ExpenseService {
       if (body.projectId !== undefined) body.projectId = target.projectId ?? undefined;
     }
     const data: any = {};
-    for (const f of ["description", "date", "dueDate", "isClientBillable", "clientId", "projectId", "paymentMethod", "vendorId", "receiptUrl", "isRecurring", "recurrenceSchedule", "approvalStatus", "amount", "category", "subcategory", "isPayable", "accountId", "currency", "exchangeRate", "vendorBillNumber", "vendorBillDate", "notes", "department", "markupPct"]) {
+    for (const f of ["description", "date", "dueDate", "isClientBillable", "clientId", "projectId", "paymentMethod", "vendorId", "receiptUrl", "isRecurring", "recurrenceSchedule", "approvalStatus", "amount", "category", "subcategory", "isPayable", "accountId", "currency", "exchangeRate", "vendorBillNumber", "vendorBillDate", "notes", "department", "markupPct", "vatRate", "vatRecoverable", "inputVatAmount"]) {
       if (body[f] === undefined || body[f] === null || body[f] === "") continue;
-      data[f] = f === "date" || f === "dueDate" || f === "vendorBillDate" ? new Date(body[f]) : body[f];
+      data[f] = f === "date" || f === "dueDate" || f === "vendorBillDate" ? parseStrictDate(body[f], f) : body[f];
     }
     if (body.approvalStatus === "APPROVED" || body.approvalStatus === "REJECTED") {
       data.approvedBy = actorId ? { connect: { id: actorId } } : undefined;
@@ -274,9 +346,33 @@ export class ExpenseService {
         amount: newAmount,
         submittedById: existing.submittedById,
       });
+      // Approving is the moment the cost becomes real — check the budget here,
+      // not at creation (a PENDING request must not consume budget).
+      await this.assertWithinBudget(
+        id,
+        body.projectId !== undefined ? body.projectId : existing.projectId,
+        body.department !== undefined ? body.department : existing.department,
+        newAmount
+      );
     }
     const ledgerFieldsChanged =
-      amountChanged || body.category !== undefined || body.isPayable !== undefined || body.accountId !== undefined;
+      amountChanged ||
+      body.category !== undefined ||
+      body.isPayable !== undefined ||
+      body.accountId !== undefined ||
+      body.vatRate !== undefined ||
+      body.vatRecoverable !== undefined ||
+      body.inputVatAmount !== undefined;
+    // Keep the VAT component in step with an edited amount / rate.
+    if (ledgerFieldsChanged && (body.amount !== undefined || body.vatRate !== undefined || body.inputVatAmount !== undefined)) {
+      data.inputVatAmount = this.resolveInputVat(
+        {
+          vatRate: body.vatRate !== undefined ? body.vatRate : existing.vatRate,
+          inputVatAmount: body.inputVatAmount !== undefined ? body.inputVatAmount : undefined,
+        },
+        newAmount
+      );
+    }
     // A non-payable expense is settled in cash, so its paid amount follows the
     // (possibly edited) total; a payable one is settled by vendor payments.
     if (willBeApproved && !willBePayable) data.paidAmount = newAmount;
@@ -481,6 +577,34 @@ export class ExpenseService {
 
   async apAging() {
     return this.cache.wrap("capital:aging-ap", 60, () => this.computeApAging());
+  }
+
+  /**
+   * Client-billable expenses that have not been re-billed yet, priced with the
+   * configured markup. This is what the pass-through billing flow needs: the
+   * invoice line stores `linkedExpenseId`, so an expense disappears from this
+   * list the moment it lands on an invoice.
+   */
+  async unbilledExpenses() {
+    const rows = await this.prisma.expense.findMany({
+      where: { isClientBillable: true, approvalStatus: "APPROVED" },
+      include: {
+        client: { select: { id: true, companyName: true } },
+        project: { select: { id: true, name: true } },
+        linkedInvoiceLine: { select: { id: true, invoiceId: true } },
+      },
+      orderBy: { date: "desc" },
+    });
+    return rows
+      .filter((e) => !e.linkedInvoiceLine)
+      .map((e) => {
+        const markup = Number(e.markupPct ?? 0);
+        return {
+          ...e,
+          markupPct: markup,
+          billableAmount: Math.round(Number(e.amount) * (1 + markup / 100) * 100) / 100,
+        };
+      });
   }
 
 

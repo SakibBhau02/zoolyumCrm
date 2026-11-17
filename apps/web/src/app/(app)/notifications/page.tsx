@@ -7,6 +7,7 @@ import {
   Check,
   CheckCheck,
   Clock,
+  ExternalLink,
   Inbox,
   Mail,
   Search,
@@ -176,7 +177,9 @@ export default function NotificationsPage() {
           : s
       );
     }
-    if (n.link) router.push(n.link);
+    // Always land on this notification's own detail page; the "Open related
+    // page" action is what jumps to the linked module.
+    router.push(`/notifications/${n.id}`);
   };
   const removeItem = async (n: Notification) => {
     try {
@@ -373,10 +376,20 @@ export default function NotificationsPage() {
                                 <p className="mt-0.5 line-clamp-2 text-body leading-snug text-muted-foreground">{n.message}</p>
                                 <p className="mt-1 text-micro text-muted-foreground/70">
                                   {timeAgo(n.createdAt)} · {formatDate(n.createdAt)}
-                                  {n.link && <span className="ml-2 font-semibold text-primary">Open →</span>}
+                                  <span className="ml-2 font-semibold text-primary">View →</span>
                                 </p>
                               </button>
-                              <div className="flex shrink-0 flex-col items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                              <div className="flex shrink-0 flex-col items-center gap-1 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+                                {n.link && (
+                                  <button
+                                    onClick={() => router.push(n.link!)}
+                                    title="Open related page"
+                                    aria-label="Open related page"
+                                    className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                  >
+                                    <ExternalLink className="size-3.5" />
+                                  </button>
+                                )}
                                 {!n.isRead && (
                                   <button
                                     onClick={async () => {

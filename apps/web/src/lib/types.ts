@@ -289,6 +289,9 @@ export interface Client {
   retainerInterval?: string | null;
   autoGenerateInvoice?: boolean;
   lastAutoInvoiceCycle?: string | null;
+  /** Company logo (WebP) + its JPEG XL sibling. */
+  logoUrl?: string | null;
+  logoJxlUrl?: string | null;
   accountOwner: { id: string; name: string } | null;
   /** Primary contact, resolved by the list endpoint for quick call/email actions. */
   primaryContact?: {
@@ -500,6 +503,12 @@ export interface Project {
 }
 
 export type DeliverableStatus = "PENDING" | "IN_PROGRESS" | "DELIVERED";
+export type DeliverableKind = "GRAPHIC" | "VIDEO" | "PHOTO" | "COPY" | "OTHER";
+
+export interface DeliverableCampaignRef {
+  id: string;
+  name: string;
+}
 
 export interface ProjectDeliverable {
   id: string;
@@ -508,6 +517,18 @@ export interface ProjectDeliverable {
   description: string | null;
   sortOrder: number;
   status: DeliverableStatus;
+  /** What kind of asset this is — reports group by it. */
+  kind: DeliverableKind | null;
+  /** What the item actually is. */
+  topic: string | null;
+  /** Why it exists (Awareness / Launch / Conversion…). */
+  objective: string | null;
+  campaignId: string | null;
+  campaign?: DeliverableCampaignRef | null;
+  startDate: string | null;
+  dueDate: string | null;
+  clientVisible: boolean;
+  ownerId: string | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -515,6 +536,87 @@ export interface ProjectDeliverable {
 }
 
 export type ReportStatus = "DRAFT" | "FINAL" | "SENT";
+export type ReportGrouping = "CAMPAIGN" | "KIND" | "OWNER" | "NONE";
+
+export interface ReportBucket {
+  delivered: number;
+  deliveredInPeriod: number;
+  pending: number;
+  total: number;
+}
+
+export interface ReportKindBucket extends ReportBucket {}
+
+export interface ReportCampaignBucket extends ReportBucket {
+  campaignId: string | null;
+  name: string;
+}
+
+export interface ReportOwnerBucket extends ReportBucket {
+  employeeId: string | null;
+  name: string;
+}
+
+export interface ReportDeliverableItem {
+  deliverableId: string;
+  title: string;
+  topic: string | null;
+  objective: string | null;
+  kind: DeliverableKind | null;
+  campaignId: string | null;
+  campaignName: string | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  dueDate: string | null;
+  completedAt?: string | null;
+  status?: string;
+  tasksDone?: number;
+  tasksTotal?: number;
+}
+
+export interface ReportShootCrew {
+  role: string;
+  name: string;
+  source: string;
+  phone: string | null;
+  callTime: string | null;
+  isConfirmed: boolean;
+  employeeId: string | null;
+  vendorId: string | null;
+}
+
+export interface ReportShoot {
+  id: string;
+  title: string;
+  date: string;
+  endDate: string | null;
+  duration: "HALF_DAY" | "FULL_DAY";
+  callTime: string | null;
+  wrapTime: string | null;
+  location: string | null;
+  status: string;
+  description: string | null;
+  equipment: string[];
+  crew: ReportShootCrew[];
+}
+
+export interface ReportSummary {
+  delivered: number;
+  deliveredInPeriod: number;
+  pending: number;
+  total: number;
+  byKind: Record<string, ReportKindBucket>;
+  byCampaign: ReportCampaignBucket[];
+  byOwner: ReportOwnerBucket[];
+  shoots: {
+    count: number;
+    fullDays: number;
+    halfDays: number;
+    crewCount: number;
+    equipmentCount: number;
+  };
+  tasksFromDeliverables: { total: number; done: number };
+}
 
 export interface ProjectReport {
   id: string;
@@ -523,13 +625,83 @@ export interface ProjectReport {
   periodStart: string;
   periodEnd: string;
   status: ReportStatus;
-  completed: { deliverableId: string; title: string; completedAt: string; tasksDone?: number; tasksTotal?: number }[];
-  pending: { deliverableId: string; title: string; status?: string }[];
+  completed: ReportDeliverableItem[];
+  pending: ReportDeliverableItem[];
   billing: { invoiced: number; collected: number; outstanding: number } | null;
   pmNotes: string | null;
+  groupBy?: ReportGrouping | null;
+  campaignId?: string | null;
+  campaignLabel?: string | null;
+  summary?: ReportSummary | null;
+  shoots?: ReportShoot[] | null;
   generatedBy: { name: string } | null;
   createdAt: string;
   sentAt: string | null;
+}
+
+// ── Shoots (production call-sheets) ───────────────────────────────────
+export type ShootDuration = "HALF_DAY" | "FULL_DAY";
+export type ShootStatus = "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "WRAPPED" | "CANCELLED";
+export type ShootCrewRole =
+  | "DOP"
+  | "CAMERAMAN"
+  | "ASSISTANT_CAMERA"
+  | "GAFFER"
+  | "GRIP"
+  | "SOUND"
+  | "ART_DIRECTOR"
+  | "STYLIST"
+  | "MAKEUP"
+  | "PRODUCER"
+  | "LINE_PRODUCER"
+  | "PHOTOGRAPHER"
+  | "DRONE_OPERATOR"
+  | "DRIVER"
+  | "TALENT"
+  | "TEAM_MEMBER"
+  | "OTHER";
+export type ShootCrewSource = "EMPLOYEE" | "VENDOR" | "EXTERNAL";
+
+export interface ShootCrewMember {
+  id: string;
+  shootId: string;
+  role: ShootCrewRole;
+  source: ShootCrewSource;
+  employeeId: string | null;
+  vendorId: string | null;
+  name: string;
+  phone: string | null;
+  callTime: string | null;
+  isConfirmed: boolean;
+  fee: number | string | null;
+  notes: string | null;
+  employee?: { id: string; name: string; photoUrl?: string | null; roleTitle?: string } | null;
+  vendor?: { id: string; name: string; phone?: string | null; category?: string | null } | null;
+}
+
+export interface Shoot {
+  id: string;
+  projectId: string;
+  campaignId: string | null;
+  campaign?: DeliverableCampaignRef | null;
+  title: string;
+  shootDate: string;
+  endDate: string | null;
+  durationType: ShootDuration;
+  callTime: string | null;
+  wrapTime: string | null;
+  isDateLocked: boolean;
+  location: string | null;
+  locationUrl: string | null;
+  locationNote: string | null;
+  description: string | null;
+  notes: string | null;
+  equipment: string[];
+  status: ShootStatus;
+  calendarEventId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  crew: ShootCrewMember[];
 }
 
 export interface Task {
@@ -554,6 +726,9 @@ export interface Employee {
   utilizationRate: number | null;
   billableHours: number | null;
   todayStatus: string;
+  /** Profile photo (WebP) + its JPEG XL sibling. */
+  photoUrl?: string | null;
+  photoJxlUrl?: string | null;
 }
 
 export interface Invoice {

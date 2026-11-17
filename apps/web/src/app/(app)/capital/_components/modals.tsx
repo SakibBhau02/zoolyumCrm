@@ -1285,12 +1285,17 @@ export function VendorModal({ open, onClose, onSaved, editing }: { open: boolean
   );
 }
 
-export function ConfirmModal({ open, onClose, title, message, busy, onConfirm }: { open: boolean; onClose: () => void; title: string; message: string; busy: boolean; onConfirm: () => void }) {
+/**
+ * Shared confirmation sheet for destructive/side-effectful actions.
+ * `submitLabel` lets callers name the verb ("Archive", "Revoke") instead of
+ * always showing "Delete" — Tasks reuses this for archive/bulk actions.
+ */
+export function ConfirmModal({ open, onClose, title, message, busy, onConfirm, submitLabel = "Delete" }: { open: boolean; onClose: () => void; title: string; message: string; busy: boolean; onConfirm: () => void; submitLabel?: string }) {
   return (
     <Modal open={open} onClose={onClose} title={title}>
       <form onSubmit={(e) => { e.preventDefault(); onConfirm(); }} className="flex flex-col gap-4">
         <p className="text-body leading-relaxed text-muted-foreground">{message}</p>
-        <FormActions busy={busy} cancel={onClose} submitLabel="Delete" danger />
+        <FormActions busy={busy} cancel={onClose} submitLabel={submitLabel} danger />
       </form>
     </Modal>
   );

@@ -129,7 +129,9 @@ export function Sidebar() {
                       <span
                         className={cn(
                           "rounded-full px-1.5 py-0.5 text-micro font-semibold uppercase tracking-wide",
-                          active ? "bg-white/25 text-white" : "bg-primary/20 text-white/90"
+                          // White at 25% over the violet rail is only 3.25:1 at
+                          // 12px (audit: WCAG 1.4.3). A darker chip clears AA.
+                          active ? "bg-black/25 text-white" : "bg-black/20 text-white"
                         )}
                       >
                         {item.badge}

@@ -383,4 +383,46 @@ export class PayrollService {
     }
     return updated;
   }
+
+  /**
+   * Repair payroll records marked FINALIZED that never produced a salary
+   * expense (imported data, or a finalize that half-failed before the guard
+   * existed). The salary is booked as a **payable** — Dr Salaries / Cr Accounts
+   * Payable — so no cash is invented; paying it later goes through the normal
+   * expense payment flow.
+   */
+  async healFinalizedPayroll(actorId?: string) {
+    const finalized = await this.prisma.payrollRecord.findMany({
+      where: { status: "FINALIZED" },
+      include: { employee: { select: { name: true } }, salaryExpense: { select: { id: true } } },
+    });
+    const broken = finalized.filter((r) => !r.salaryExpense);
+    let healed = 0;
+    for (const rec of broken) {
+      await this.prisma.$transaction(async (tx) => {
+        const created = await tx.expense.create({
+          data: {
+            description: `Salary — ${rec.employee.name} (${rec.period})`,
+            amount: rec.netPay,
+            category: "SALARY",
+            date: new Date(`${rec.period}-28T00:00:00.000Z`),
+            approvalStatus: "APPROVED",
+            submittedById: null,
+            payrollRecordId: rec.id,
+            isPayable: true,
+            paidAmount: 0,
+            balanceDeducted: false,
+          },
+        });
+        await this.capital.postExpenseLedgerWithin(tx, created, actorId);
+      }, { timeout: 20000 });
+      healed += 1;
+    }
+    if (healed) {
+      await this.capital.invalidateFinance();
+      await this.cache.del("capital:overview");
+      await this.cache.del("capital:reports");
+    }
+    return { finalized: finalized.length, missingExpense: broken.length, healed };
+  }
 }

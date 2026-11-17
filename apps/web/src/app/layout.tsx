@@ -5,6 +5,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 import { QueryProvider } from "@/lib/query-provider";
 import { BrandingProvider } from "@/lib/branding-context";
+import { RouteTitle } from "@/components/route-title";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -54,6 +55,7 @@ export default function RootLayout({
       >
         <QueryProvider>
           <BrandingProvider>
+            <RouteTitle />
             <AuthProvider>{children}</AuthProvider>
           </BrandingProvider>
         </QueryProvider>

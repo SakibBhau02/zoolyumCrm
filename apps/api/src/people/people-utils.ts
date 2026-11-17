@@ -135,9 +135,49 @@ export const isWorkingDay = (
   return !weeklyOff.has(wd);
 };
 
+// ── Authorization helpers ───────────────────────────────────────────────
+// People used to gate writes on role *names* (`@Roles("Owner","HR/Admin")`).
+// That broke the moment a workspace created its own role through Control: the
+// role had PEOPLE → Edit in the matrix, the UI showed the Add button, and the
+// API still answered 403 "Insufficient role". The permission matrix is the
+// contract; names are only kept for legacy roles that predate it.
+export type PeopleActor = { role?: string; permissions?: Record<string, any> } | undefined | null;
+
+const moduleMatrix = (user: PeopleActor) => user?.permissions?.PEOPLE;
+const isOwner = (user: PeopleActor) => user?.role === "Owner";
+/** Legacy HR names, still honoured so older tokens keep working. */
+const LEGACY_HR_ROLES = ["Owner", "HR/Admin", "Admin"];
+
+export const canPeople = (user: PeopleActor, level: "view" | "edit" | "approve" = "view"): boolean => {
+  if (isOwner(user)) return true;
+  const m = moduleMatrix(user);
+  if (level === "view") return m?.view === true || m?.edit === true || m?.approve === true;
+  if (level === "edit") return m?.edit === true || m?.approve === true;
+  return m?.approve === true;
+};
+
+/** Compensation (salary, payslips, deductions) needs PEOPLE approve. */
+export const canSeePay = (user: PeopleActor): boolean => {
+  if (canPeople(user, "approve")) return true;
+  // Legacy role names only stand in when the token predates the permission
+  // matrix. If a matrix is present it is authoritative — otherwise revoking
+  // approve in Control would leave pay visible until the token expires.
+  if (user?.permissions) return false;
+  return LEGACY_HR_ROLES.includes(String(user?.role ?? ""));
+};
+
+/** Changing salary / schedule / device mapping is an HR act, not a directory edit. */
+export const canManageHrFields = (user: PeopleActor): boolean => canSeePay(user);
+
+/** Leave decisions: PEOPLE approve, plus Project Manager for legacy installs. */
+export const canDecideLeave = (user: PeopleActor): boolean =>
+  canPeople(user, "approve") || String(user?.role ?? "") === "Project Manager";
+
 export const invalidatePeopleCache = async (cache: CacheService) => {
   await cache.del("people:overview");
   await cache.del("people:employees");
   await cache.del("people:employees:masked");
   await cache.del("people:employees:minimal");
+  await cache.delPattern("people:attendance-report:*");
+  await cache.del("people:attendance-report");
 };

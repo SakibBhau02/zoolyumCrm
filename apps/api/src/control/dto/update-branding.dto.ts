@@ -21,6 +21,22 @@ export class UpdateBrandingDto {
   @Matches(/^(https?:\/\/|\/)[^\s]+$/, { message: "logoUrl must be a valid URL or relative path" })
   logoUrl?: string;
 
+  /// JPEG XL siblings (progressive sources); set together with the WebP URL.
+  @IsOptional()
+  @IsString()
+  @Matches(/^(https?:\/\/|\/)[^\s]+$/, { message: "logoJxlUrl must be a valid URL or relative path" })
+  logoJxlUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^(https?:\/\/|\/)[^\s]+$/, { message: "logoDarkJxlUrl must be a valid URL or relative path" })
+  logoDarkJxlUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^(https?:\/\/|\/)[^\s]+$/, { message: "logoLightJxlUrl must be a valid URL or relative path" })
+  logoLightJxlUrl?: string;
+
   @IsOptional()
   @IsHexColor()
   primaryColor?: string;

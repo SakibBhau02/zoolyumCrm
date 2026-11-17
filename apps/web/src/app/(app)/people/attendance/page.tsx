@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Cpu, Download, Fingerprint, Plus, RotateCcw, TrendingUp, Upload } from "lucide-react";
+import { AlertTriangle, Copy, Cpu, Download, Fingerprint, Plus, RotateCcw, Trash2, TrendingUp, Upload } from "lucide-react";
 import { API_URL, apiFetch } from "@/lib/api";
 import { formatBDT, formatDate, timeAgo } from "@/lib/format";
 import { Avatar, CardShell, SectionTitle, StatusBadge, cn } from "@/components/shared";
@@ -23,11 +23,55 @@ export const fmtDur = (mins?: number | null) => {
   return h > 0 ? `${h}h ${r}m` : `${r}m`;
 };
 
-function DevicesCard({ employees, notify, refreshKey }: { employees: any[]; notify: (m: string) => void; refreshKey: number }) {
-  const { data: devices, error: devicesError } = useList<any[]>("/people/attendance/devices", refreshKey);
+const ONLINE_WINDOW_MS = 5 * 60_000;
+
+function DevicesCard({
+  employees,
+  notify,
+  refreshKey,
+  onChanged,
+  active = true,
+}: {
+  employees: any[];
+  notify: (m: string) => void;
+  refreshKey: number;
+  onChanged?: () => void;
+  active?: boolean;
+}) {
+  // Self-polling: a freshly connected terminal shows up on its first heartbeat,
+  // so an empty list must not require a manual page reload.
+  const [tick, setTick] = useState(0);
+  const { data: devices, error: devicesError } = useList<any[]>("/people/attendance/devices", refreshKey + tick);
   const [drafts, setDrafts] = useState<Record<string, { name: string; location: string; isActive: boolean }>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showGuide, setShowGuide] = useState(false);
+  const [showPins, setShowPins] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [pinQuery, setPinQuery] = useState("");
+  const [pinDrafts, setPinDrafts] = useState<Record<string, string>>({});
+  const [pinSaving, setPinSaving] = useState<string | null>(null);
+
+  // The address printed for the terminal has to be one the *device* can reach.
+  // API_URL is baked in at build time (usually localhost), so when the admin is
+  // browsing from a LAN IP or a domain we reuse that host with the API port.
+  const [serverBase, setServerBase] = useState(() => API_URL.replace(/\/api\/?$/, ""));
+  useEffect(() => {
+    try {
+      const api = new URL(API_URL);
+      const host = window.location.hostname;
+      if (host && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(host)) {
+        setServerBase(`${api.protocol}//${host}${api.port ? `:${api.port}` : ""}`);
+      }
+    } catch {}
+  }, []);
+  const loopbackBase = /\/\/(localhost|127\.0\.0\.1)/.test(serverBase);
+  const isOnline = (d: any) => !!d.lastSeenAt && Date.now() - new Date(d.lastSeenAt).getTime() < ONLINE_WINDOW_MS;
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => setTick((n) => n + 1), 20_000);
+    return () => clearInterval(t);
+  }, [active]);
 
   useEffect(() => {
     const d: Record<string, { name: string; location: string; isActive: boolean }> = {};
@@ -49,74 +93,234 @@ function DevicesCard({ employees, notify, refreshKey }: { employees: any[]; noti
     }
   };
 
+  const remove = async (dev: any) => {
+    if (!window.confirm(`Remove ${dev.name || dev.serialNumber}? Its punches stay in the log, but the device re-registers if it is still pushing.`)) return;
+    setDeletingId(dev.id);
+    try {
+      await apiFetch(`/people/attendance/devices/${dev.id}`, { method: "DELETE" });
+      notify("Device removed");
+      setTick((n) => n + 1);
+    } catch (e: any) {
+      notify(e.message ?? "Remove failed");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const savePin = async (emp: any) => {
+    const raw = pinDrafts[emp.id] ?? emp.deviceId ?? "";
+    setPinSaving(emp.id);
+    try {
+      await apiFetch(`/people/employees/${emp.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ deviceId: raw.trim() || null }),
+      });
+      notify(`${emp.name}: fingerprint PIN ${raw.trim() || "cleared"}`);
+      // Drop the draft so the row reads from the refreshed employee record.
+      setPinDrafts((d) => {
+        const next = { ...d };
+        delete next[emp.id];
+        return next;
+      });
+      onChanged?.();
+    } catch (e: any) {
+      notify(e.message ?? "PIN save failed");
+    } finally {
+      setPinSaving(null);
+    }
+  };
+
+  const copyServer = async () => {
+    try {
+      await navigator.clipboard.writeText(serverBase);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      notify("Copy blocked by the browser — select the URL manually");
+    }
+  };
+
   const unmapped = (employees ?? []).filter((e: any) => !e.deviceId);
-  const serverBase = API_URL.replace(/\/api\/?$/, "");
+  const list = devices ?? [];
+  const onlineCount = list.filter((d: any) => isOnline(d)).length;
+  const pins = (employees ?? [])
+    .filter((e: any) => e.employmentStatus !== "EXITED")
+    .filter((e: any) => !pinQuery || `${e.name} ${e.deviceId ?? ""} ${e.roleTitle ?? ""}`.toLowerCase().includes(pinQuery.toLowerCase()));
 
   return (
     <CardShell className="mb-4">
       <SectionTitle
         title="Fingerprint devices"
-        subtitle="ZKTeco push (ADMS) terminals — auto-registered on first heartbeat"
+        subtitle={
+          list.length
+            ? `ZKTeco push (ADMS) terminals · ${onlineCount} online of ${list.length}`
+            : "ZKTeco push (ADMS) terminals — auto-registered on first heartbeat"
+        }
         action={<Btn variant="ghost" onClick={() => setShowGuide((v) => !v)}>{showGuide ? "Hide setup" : "Setup guide"}</Btn>}
       />
+
       {showGuide && (
         <div className="mb-3 rounded-xl border border-border/60 bg-muted/30 p-3 text-body leading-relaxed text-muted-foreground">
           <p className="font-semibold text-foreground">On the device: Menu → COMM → Cloud Server / ADMS</p>
           <ol className="mt-1.5 list-decimal space-y-1 pl-5">
-            <li>Server address: <span className="font-mono font-semibold text-foreground">{serverBase}</span> (device must reach this over LAN/VPN)</li>
+            <li>
+              Server address:{" "}
+              <button
+                onClick={copyServer}
+                title="Copy server URL"
+                className="inline-flex items-center gap-1 rounded-md bg-card px-1.5 py-0.5 font-mono text-meta font-semibold text-foreground ring-1 ring-inset ring-border transition-colors hover:ring-primary/40"
+              >
+                {serverBase} <Copy className="size-3" /> {copied ? "copied" : "copy"}
+              </button>{" "}
+              — the terminal must reach it over LAN/VPN (port 80 by default).
+              {loopbackBase && (
+                <span className="mt-1 block text-micro">
+                  That is this server's own address. Swap <span className="font-mono">localhost</span> for the machine's
+                  LAN IP (run <span className="font-mono">ipconfig</span> — e.g.{" "}
+                  <span className="font-mono">http://192.168.0.20:4000</span>) so the terminal, which sits on the same
+                  network, can reach it.
+                </span>
+              )}
+            </li>
             <li>Enable ADMS / push mode. The terminal then polls <span className="font-mono text-meta">/iclock/getrequest</span> and pushes punches to <span className="font-mono text-meta">/iclock/cdata</span>.</li>
-            <li>Enroll staff on the device with numeric PINs, then enter the same PIN as <span className="font-semibold text-foreground">Device ID</span> on each employee (Directory → profile).</li>
-            <li>Unknown PINs land below as unmatched punches — map them once, or set the Device ID first.</li>
+            <li>Enroll staff with numeric PINs on the device, then set the same PIN as <span className="font-semibold text-foreground">Device ID</span> below. Punches then match automatically.</li>
+            <li>Unknown PINs still arrive — they show as unmatched punches until mapped.</li>
           </ol>
         </div>
       )}
+
       {devicesError ? (
         <p className="text-body text-rose-500">Could not load devices: {devicesError.includes("role") ? "Owner / HR/Admin only" : devicesError}</p>
-      ) : (devices ?? []).length === 0 ? (
-        <p className="text-body text-muted-foreground">No device has checked in yet. Punches can still be imported manually below.</p>
-      ) : null}
-      <div className="flex flex-col gap-2">
-        {(devices ?? []).map((dev: any) => (
-          <div key={dev.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 px-3 py-2.5">
-            <span className={cn("flex size-8 shrink-0 items-center justify-center rounded-lg", dev.isActive ? "bg-emerald-500/10 text-emerald-500" : "bg-muted text-muted-foreground")}>
-              <Cpu className="size-4" />
+      ) : list.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border/70 bg-muted/20 px-4 py-4">
+          <p className="flex items-center gap-1.5 text-body font-semibold">
+            <Cpu className="size-4 text-primary" /> No device connected yet
+          </p>
+          <p className="mt-1 text-meta leading-relaxed text-muted-foreground">
+            Point the terminal at{" "}
+            <button
+              onClick={copyServer}
+              title="Copy server URL"
+              className="inline-flex items-center gap-1 rounded-md bg-card px-1.5 py-0.5 font-mono text-meta font-semibold text-foreground ring-1 ring-inset ring-border transition-colors hover:ring-primary/40"
+            >
+              {serverBase} <Copy className="size-3" /> {copied ? "copied" : "copy"}
+            </button>{" "}
+            and it will appear here by itself within a minute of its first heartbeat — no IP or serial to type in.
+          </p>
+          <p className="mt-2 flex items-center gap-1.5 text-micro text-muted-foreground">
+            <span className="relative flex size-2">
+              <span className="absolute inline-flex size-2 animate-ping rounded-full bg-emerald-500/60" />
+              <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
             </span>
-            <div className="min-w-0 flex-1 basis-48">
+            Watching for a device… checking every 20 seconds
+          </p>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-2">
+        {list.map((dev: any) => {
+          const online = isOnline(dev);
+          return (
+            <div key={dev.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 px-3 py-2.5">
+              <span className={cn("relative flex size-8 shrink-0 items-center justify-center rounded-lg", online ? "bg-emerald-500/10 text-emerald-500" : "bg-muted text-muted-foreground")}>
+                <Cpu className="size-4" />
+                {online && <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-emerald-500 ring-2 ring-card" />}
+              </span>
+              <div className="min-w-0 flex-1 basis-48">
+                <Input
+                  value={drafts[dev.id]?.name ?? ""}
+                  onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), name: e.target.value } })}
+                  placeholder="Device name — e.g. Main Entrance"
+                  className="!py-1.5 text-body font-semibold"
+                />
+                <p className="mt-0.5 font-mono text-micro text-muted-foreground">
+                  SN {dev.serialNumber} · {dev.punchCount ?? 0} punches{(dev.unmatchedCount ?? 0) > 0 && ` · ${dev.unmatchedCount} unmatched`} ·{" "}
+                  <span className={online ? "font-semibold text-emerald-500" : undefined}>
+                    {online ? "online now" : dev.lastSeenAt ? `seen ${timeAgo(dev.lastSeenAt)}` : "never seen"}
+                  </span>
+                </p>
+              </div>
               <Input
-                value={drafts[dev.id]?.name ?? ""}
-                onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), name: e.target.value } })}
-                placeholder="Device name — e.g. Main Entrance"
-                className="!py-1.5 text-body font-semibold"
+                value={drafts[dev.id]?.location ?? ""}
+                onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), location: e.target.value } })}
+                placeholder="Location"
+                className="!w-36 !py-1.5 text-body"
               />
-              <p className="mt-0.5 font-mono text-micro text-muted-foreground">
-                SN {dev.serialNumber} · {dev.punchCount ?? 0} punches{(dev.unmatchedCount ?? 0) > 0 && ` · ${dev.unmatchedCount} unmatched`} · seen {dev.lastSeenAt ? timeAgo(dev.lastSeenAt) : "never"}
-              </p>
+              <label className="flex cursor-pointer items-center gap-1.5 text-meta font-medium text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={drafts[dev.id]?.isActive ?? true}
+                  onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), isActive: e.target.checked } })}
+                  className="size-3.5 accent-emerald-500"
+                />
+                Active
+              </label>
+              <Btn variant="outline" onClick={() => void save(dev.id)} disabled={savingId === dev.id} className="!px-3 !py-1.5 text-meta">
+                {savingId === dev.id ? "Saving…" : "Save"}
+              </Btn>
+              <Btn variant="ghost" onClick={() => void remove(dev)} disabled={deletingId === dev.id} className="!px-2 !py-1.5 text-meta text-rose-500">
+                {deletingId === dev.id ? "…" : <Trash2 className="size-3.5" />}
+              </Btn>
             </div>
-            <Input
-              value={drafts[dev.id]?.location ?? ""}
-              onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), location: e.target.value } })}
-              placeholder="Location"
-              className="!w-36 !py-1.5 text-body"
-            />
-            <label className="flex cursor-pointer items-center gap-1.5 text-meta font-medium text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={drafts[dev.id]?.isActive ?? true}
-                onChange={(e) => setDrafts({ ...drafts, [dev.id]: { ...(drafts[dev.id] ?? { name: "", location: "", isActive: true }), isActive: e.target.checked } })}
-                className="size-3.5 accent-emerald-500"
-              />
-              Active
-            </label>
-            <Btn variant="outline" onClick={() => void save(dev.id)} disabled={savingId === dev.id} className="!px-3 !py-1.5 text-meta">
-              {savingId === dev.id ? "Saving…" : "Save"}
+          );
+        })}
+      </div>
+
+      {!devicesError && (
+        <>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-3">
+            <p className="text-meta text-muted-foreground">
+              {unmapped.length > 0 ? (
+                <>
+                  <span className="font-bold text-amber-500">{unmapped.length} employee{unmapped.length === 1 ? "" : "s"}</span> need a fingerprint PIN
+                </>
+              ) : (
+                <span className="text-emerald-600 dark:text-emerald-400">Every active employee has a fingerprint PIN</span>
+              )}
+            </p>
+            <Btn variant="ghost" onClick={() => setShowPins((v) => !v)} className="!px-2 !py-1 text-meta">
+              {showPins ? "Hide PINs" : "Map PINs"}
             </Btn>
           </div>
-        ))}
-      </div>
-      {unmapped.length > 0 && (
-        <p className="mt-3 text-meta text-muted-foreground">
-          <span className="font-bold text-amber-500">{unmapped.length} employee{unmapped.length === 1 ? "" : "s"}</span> ({unmapped.slice(0, 4).map((e: any) => e.name).join(", ")}{unmapped.length > 4 ? "…" : ""}) {unmapped.length === 1 ? "has" : "have"} no fingerprint ID — set it in Directory so device punches auto-match.
-        </p>
+          {showPins && (
+            <div className="mt-2 rounded-xl border border-border/60">
+              <div className="border-b border-border/50 p-2">
+                <Input value={pinQuery} onChange={(e) => setPinQuery(e.target.value)} placeholder="Search employee or PIN…" className="!py-1.5 text-body" />
+              </div>
+              <div className="scroll-slim max-h-72 overflow-y-auto">
+                {pins.map((e: any) => {
+                  const value = pinDrafts[e.id] ?? e.deviceId ?? "";
+                  const changed = value !== (e.deviceId ?? "");
+                  return (
+                    <div key={e.id} className="flex items-center gap-2 border-b border-border/40 px-2.5 py-1.5 last:border-0">
+                      <Avatar name={e.name} size="size-6" src={e.photoUrl} jxlSrc={e.photoJxlUrl} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-meta font-semibold">{e.name}</p>
+                        <p className="truncate text-micro text-muted-foreground">{e.roleTitle}</p>
+                      </div>
+                      <Input
+                        value={value}
+                        onChange={(ev) => setPinDrafts({ ...pinDrafts, [e.id]: ev.target.value })}
+                        placeholder="PIN"
+                        inputMode="numeric"
+                        className="!w-24 !py-1 text-center font-mono text-meta"
+                      />
+                      <Btn
+                        variant={changed ? "primary" : "ghost"}
+                        onClick={() => void savePin(e)}
+                        disabled={!changed || pinSaving === e.id}
+                        className="!px-2.5 !py-1 text-meta"
+                      >
+                        {pinSaving === e.id ? "…" : "Save"}
+                      </Btn>
+                    </div>
+                  );
+                })}
+                {!pins.length && <p className="p-3 text-meta text-muted-foreground">No employee matches “{pinQuery}”.</p>}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </CardShell>
   );
@@ -137,7 +341,7 @@ export default function AttendancePage() {
   const { data: live, loading: lvLoading } = useList<any>(`/people/attendance/live`, refresh);
   const { data: trends, error: te } = useList<any>(`/people/attendance/trends?${qs}`, refresh);
   const { data: punches, loading: pl, error: pe } = useList<any[]>(`/people/punches?${qs}`, refresh);
-  const { data: employees, error: empErr } = useList<any[]>("/people/employees");
+  const { data: employees, error: empErr } = useList<any[]>("/people/employees", refresh);
   const [open, setOpen] = useState(false);
   const [edit, setEdit] = useState<any>(null);
   const [importOpen, setImportOpen] = useState(false);
@@ -145,7 +349,7 @@ export default function AttendancePage() {
   const [recompBusy, setRecompBusy] = useState(false);
   const [view, setView] = useState<"live" | "report" | "late" | "trends" | "daily" | "punches" | "devices">("report");
   const { flash, notify } = useToast();
-  const { canEdit } = usePeopleAccess();
+  const { canEdit, isHr } = usePeopleAccess();
   const kiosk = async (action: "in" | "out") => {
     setKioskBusy(true);
     try { await apiFetch("/people/attendance/kiosk", { method: "POST", body: JSON.stringify({ action }) }); notify(action === "in" ? "Checked in - welcome!" : "Checked out - good work!"); reload(); } catch (e: any) { notify(e.message ?? "Kiosk failed"); } finally { setKioskBusy(false); }
@@ -271,7 +475,7 @@ export default function AttendancePage() {
         )}
       </CardShell>
       <div className={view === "devices" ? "mt-2" : "hidden"}>
-        <DevicesCard employees={employees ?? []} notify={notify} refreshKey={refresh} />
+        <DevicesCard employees={employees ?? []} notify={notify} refreshKey={refresh} onChanged={reload} active={view === "devices"} />
       </div>
       <div className={view === "report" ? "mt-2" : "hidden"}>
         <div className="mb-3 flex items-center justify-between">
@@ -371,7 +575,7 @@ export default function AttendancePage() {
         ))}
       </div>
       <div className={view === "daily" ? "mt-2" : "hidden"}>
-        <SectionTitle title="Daily records" subtitle={`Click a row to correct a status with a reason · ${rangeLabel}`} />
+        <SectionTitle title="Daily records" subtitle={`${isHr ? "Click a row to fix the check-in / check-out time, status or reason · " : ""}${rangeLabel}`} />
         <TableToolbar
           q={daily.q}
           onQ={daily.setQ}
@@ -386,14 +590,41 @@ export default function AttendancePage() {
           footer={<Pager page={daily.page} pages={daily.pages} onPage={daily.setPage} total={daily.total} pageSize={7} label="records" />}
           cols={["Employee", "Date", "Status", "Check-in", "Check-out", "Worked"]}
           rows={daily.paged.map((r: any, i: number) => {
-            const worked = r.checkInTime ? Math.max(0, Math.round(((r.checkOutTime ? new Date(r.checkOutTime).getTime() : Date.now()) - new Date(r.checkInTime).getTime()) / 60000)) : null;
+            // `checkIn`/`checkOut` are derived from punches (API-side) — the raw
+            // columns can still hold the legacy in === out value.
+            const cin = r.checkIn ?? r.checkInTime;
+            const cout = r.checkOut ?? r.checkOutTime;
+            const todayKey = new Date(Date.now() + 6 * 3600_000).toISOString().slice(0, 10);
+            const isToday = String(r.date).slice(0, 10) === todayKey;
+            // An unclosed past day is a missing punch, not "still working" —
+            // showing now − check-in there would grow every time the page opens.
+            const worked = !cin
+              ? null
+              : cout
+                ? Math.max(0, Math.round((new Date(cout).getTime() - new Date(cin).getTime()) / 60000))
+                : isToday
+                  ? Math.max(0, Math.round((Date.now() - new Date(cin).getTime()) / 60000))
+                  : null;
             return (
-              <Tr key={r.id} index={i} onClick={() => { setEdit(r); setOpen(true); }} className="cursor-pointer">
-                <Td><div className="flex items-center gap-2.5"><Avatar name={r.employee?.name} size="size-7" /><p className="font-medium">{r.employee?.name}</p></div></Td>
+              <Tr
+                key={r.id}
+                index={i}
+                onClick={isHr ? () => { setEdit(r); setOpen(true); } : undefined}
+                className={isHr ? "cursor-pointer" : undefined}
+              >
+                <Td><div className="flex items-center gap-2.5"><Avatar name={r.employee?.name} size="size-7" /><p className="font-medium">{r.employee?.name}</p>{r.isManuallyCorrected && <span title="Corrected by HR" className="rounded-full bg-violet-500/10 px-1.5 py-0.5 text-micro font-bold uppercase text-violet-500">edited</span>}</div></Td>
                 <Td className="text-muted-foreground">{formatDate(r.date)}</Td>
                 <Td><StatusBadge status={r.status} /></Td>
-                <Td className="tabular-nums text-muted-foreground">{fmtTime(r.checkInTime)}</Td>
-                <Td className="tabular-nums text-muted-foreground">{r.checkOutTime ? fmtTime(r.checkOutTime) : (r.checkInTime ? <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro font-bold text-emerald-500">inside</span> : "—")}</Td>
+                <Td className="tabular-nums text-muted-foreground">{fmtTime(cin)}</Td>
+                <Td className="tabular-nums text-muted-foreground">
+                  {cout
+                    ? fmtTime(cout)
+                    : cin
+                      ? isToday
+                        ? <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro font-bold text-emerald-500">inside</span>
+                        : <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-micro font-bold text-rose-500">no punch-out</span>
+                      : "—"}
+                </Td>
                 <Td className="font-semibold tabular-nums">{fmtDur(worked)}</Td>
               </Tr>
             );

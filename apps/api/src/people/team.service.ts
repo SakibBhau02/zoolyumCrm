@@ -1,10 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { AttendanceService } from "./attendance.service";
-import { dateStrDhaka, dhakaDayRange } from "./people-utils";
-
-/** Compensation is Owner / HR only — same rule as Directory. */
-const PAY_ROLES = ["Owner", "HR/Admin", "Admin"];
+import { canSeePay, dateStrDhaka, dhakaDayRange } from "./people-utils";
 
 /**
  * Employee 360 — one screen that answers "what does this person's month look
@@ -93,7 +90,7 @@ export class TeamService {
     const start = dhakaDayRange(range.from).start;
     const end = dhakaDayRange(range.to).end;
 
-    const [tasks, loggedRaw, meetingRows, leaveBalances, leaveRequests, payroll] = await Promise.all([
+    const [tasks, loggedRaw, meetingRows, leaveBalances, leaveRequests, payroll, shootRows] = await Promise.all([
       this.prisma.task.findMany({
         where: { assignedToId: employeeId },
         select: {
@@ -139,6 +136,28 @@ export class TeamService {
         orderBy: { startDate: "desc" },
       }),
       this.prisma.payrollRecord.findFirst({ where: { employeeId }, orderBy: { period: "desc" } }),
+      this.prisma.shootCrew.findMany({
+        where: {
+          employeeId,
+          shoot: { shootDate: { gte: start, lt: end }, status: { not: "CANCELLED" } },
+        },
+        select: {
+          id: true,
+          role: true,
+          isConfirmed: true,
+          shoot: {
+            select: {
+              id: true,
+              title: true,
+              shootDate: true,
+              status: true,
+              location: true,
+              project: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { shoot: { shootDate: "desc" } },
+      }),
     ]);
 
     // ── Tasks ────────────────────────────────────────────────────────────
@@ -235,6 +254,24 @@ export class TeamService {
       attendance,
       tasks: tasksOut,
       meetings: meetingsOut,
+      shoots: {
+        total: shootRows.length,
+        confirmed: shootRows.filter((s) => s.isConfirmed).length,
+        // Shoots crews are booked per production day, so "days on set" is the
+        // number the manager cares about — not the number of projects.
+        days: new Set(shootRows.map((s) => s.shoot.shootDate.toISOString().slice(0, 10))).size,
+        recent: shootRows.slice(0, 8).map((s) => ({
+          id: s.id,
+          role: s.role,
+          isConfirmed: s.isConfirmed,
+          shootId: s.shoot.id,
+          title: s.shoot.title,
+          shootDate: s.shoot.shootDate.toISOString(),
+          status: s.shoot.status,
+          location: s.shoot.location,
+          project: s.shoot.project?.name ?? null,
+        })),
+      },
       leave: {
         balances: leaveBalances.map((b) => ({ leaveType: b.leaveType, balanceDays: Number(b.balanceDays), period: b.period })),
         requests: leaveRequests.map((l) => ({
@@ -248,7 +285,7 @@ export class TeamService {
       },
       // Compensation is HR-only. Directory already masked this; Team 360 used to
       // hand every PEOPLE viewer (including Team Member) a colleague's net pay.
-      payroll: payroll && PAY_ROLES.includes(user?.role)
+      payroll: payroll && canSeePay(user)
         ? {
             id: payroll.id,
             period: payroll.period,

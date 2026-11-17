@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { writeSystemAudit } from "../common/system-audit";
@@ -16,13 +16,17 @@ export class UsersService {
    * Explicit projection: the old `findMany` + spread returned every column
    * (lastLoginIp, tokenVersion, webauthn handles) to any signed-in role.
    */
-  async list() {
-    return this.cache.wrap("users:list", 300, async () => {
+  async list(includeEmail = false) {
+    // Email is phishing fuel and feeds the account-lockout DoS (SEC-04): only
+    // roles that actually administer people/accounts need the full directory.
+    // The picker payload for everyone else is id + name + role.
+    const cacheKey = includeEmail ? "users:list" : "users:list:basic";
+    return this.cache.wrap(cacheKey, 300, async () => {
       const users = await this.prisma.user.findMany({
         select: {
           id: true,
           name: true,
-          email: true,
+          email: includeEmail,
           isActive: true,
           createdAt: true,
           role: { select: { id: true, name: true } },
@@ -60,7 +64,7 @@ export class UsersService {
       data: { roleId, tokenVersion: { increment: 1 } },
       select: { id: true, name: true, email: true, isActive: true, role: { select: { id: true, name: true } } },
     });
-    await this.cache.del("users:list");
+    await this.cache.del("users:list");await this.cache.del("users:list:basic");
     await writeSystemAudit(this.prisma, {
       actorId,
       action: "user.role_changed",
@@ -88,7 +92,7 @@ export class UsersService {
       data: { isActive, ...(isActive === false ? { tokenVersion: { increment: 1 } } : {}) },
       select: { id: true, name: true, email: true, isActive: true },
     });
-    await this.cache.del("users:list");
+    await this.cache.del("users:list");await this.cache.del("users:list:basic");
     await writeSystemAudit(this.prisma, {
       actorId,
       action: isActive ? "user.activated" : "user.deactivated",
@@ -105,7 +109,7 @@ export class UsersService {
       where: { role: { name: "Owner" }, isActive: true },
     });
     if (owners <= 1) {
-      throw new ForbiddenException(`Cannot ${action} the last active Owner — promote another owner first.`);
+      throw new ForbiddenException(`Cannot ${action} the last active Owner â€” promote another owner first.`);
     }
     return userId;
   }

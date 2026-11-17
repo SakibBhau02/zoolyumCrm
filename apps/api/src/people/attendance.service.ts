@@ -56,13 +56,74 @@ export class AttendanceService {
     return { working, total: days.length };
   }
 
+  /**
+   * Direction-aware pairing of a day's punches.
+   *
+   * PunchLog stores an instant, not a direction — the ZKTeco ADMS feed and the
+   * CSV import both send raw scan times. Pairing them in order (1st = in,
+   * 2nd = out, 3rd = in again for a split shift) is the only honest reading.
+   * A single punch therefore leaves the day *open*. Before this, the last
+   * punch was reused as the check-out, so a clock-in instantly looked like a
+   * clock-out and the dashboard never offered "Clock out".
+   */
+  private punchPairs(punches: { punchTime: Date }[]) {
+    const times = punches.map((p) => p.punchTime).sort((a, b) => a.getTime() - b.getTime());
+    // Duplicate scans (terminal re-send, double tap) would otherwise flip the
+    // in/out parity for the rest of the day.
+    const kept: Date[] = [];
+    for (const t of times) {
+      // Compare against the last punch of the SAME direction (two positions
+      // back). Comparing with the immediately preceding punch would also eat a
+      // genuine in→out pair struck within two minutes, which leaves the day
+      // open even though the employee deliberately clocked out.
+      const sameDirection = kept[kept.length - 2];
+      if (!sameDirection || t.getTime() - sameDirection.getTime() > 120_000) kept.push(t);
+    }
+    const segments: { in: Date; out: Date | null }[] = [];
+    for (let i = 0; i < kept.length; i += 2) segments.push({ in: kept[i], out: kept[i + 1] ?? null });
+    const last = segments[segments.length - 1];
+    const open = !!last && last.out === null;
+    return {
+      checkIn: kept[0] ?? null,
+      checkOut: open ? null : last?.out ?? null,
+      open,
+      segments,
+      punchCount: kept.length,
+    };
+  }
+
+  /** Minutes worked across every completed segment plus the one still open. */
+  private segmentMinutes(segments: { in: Date; out: Date | null }[], now = new Date()): number {
+    const total = segments.reduce((sum, s) => sum + Math.max(0, ((s.out ?? now).getTime() - s.in.getTime()) / 60000), 0);
+    return Math.round(total);
+  }
+
+  /**
+   * The times that belong on the attendance row.
+   *
+   * Punches win over the stored row because rows written before direction-aware
+   * pairing have checkOut === checkIn; a field HR corrected by hand wins over
+   * both. Public so the self-service dashboard reads the same truth.
+   */
+  resolveDayTimes(
+    att: { checkInTime: Date | null; checkOutTime: Date | null; correctedFields?: string[] } | null | undefined,
+    punches: { punchTime: Date }[]
+  ) {
+    const p = this.punchPairs(punches);
+    const corrected = new Set(att?.correctedFields ?? []);
+    let checkIn = corrected.has("checkInTime") ? att!.checkInTime : p.checkIn ?? att?.checkInTime ?? null;
+    let checkOut = corrected.has("checkOutTime") ? att!.checkOutTime : p.checkIn ? p.checkOut : att?.checkOutTime ?? null;
+    // Legacy rows: one punch used to be stored as in === out.
+    if (!corrected.has("checkOutTime") && checkIn && checkOut && checkOut.getTime() <= checkIn.getTime()) checkOut = null;
+    return { checkIn, checkOut, open: !!checkIn && !checkOut, segments: p.segments, punchCount: p.punchCount };
+  }
+
   private computeDayStatus(emp: any, punches: { punchTime: Date }[], policy: any): { status: AttendanceStatus; checkIn: Date | null; checkOut: Date | null; minutesLate: number } {
     const { start: shiftStart, grace } = this.effectiveShift(emp, policy);
     const cutoff = policy.halfDayCutoff;
     if (!punches.length) return { status: "ABSENT", checkIn: null, checkOut: null, minutesLate: 0 };
-    const checkIn = punches[0].punchTime;
-    const checkOut = punches[punches.length - 1].punchTime;
-    const inMin = minutesOf(toHHmmDhaka(checkIn));
+    const { checkIn, checkOut } = this.punchPairs(punches);
+    const inMin = minutesOf(toHHmmDhaka(checkIn!));
     const limitMin = minutesOf(shiftStart) + grace;
     const cutoffMin = minutesOf(cutoff);
     let status: AttendanceStatus = "PRESENT";
@@ -81,12 +142,12 @@ export class AttendanceService {
   }
 
   private dayHours(
-    checkIn: Date | null,
-    checkOut: Date | null,
+    times: { checkIn: Date | null; checkOut: Date | null; segments?: { in: Date; out: Date | null }[] },
     expected: number,
     threshold: number,
     opts: { isToday?: boolean; now?: Date } = {}
   ): { worked: number; overtime: number; undertime: number; open: boolean } {
+    const { checkIn, checkOut } = times;
     if (!checkIn) return { worked: 0, overtime: 0, undertime: 0, open: false };
     // No checkout = still inside. For *today* we report hours-so-far; for a past
     // day the shift is over, so pretending they are still working makes worked
@@ -94,8 +155,12 @@ export class AttendanceService {
     if (!checkOut && opts.isToday === false) {
       return { worked: 0, overtime: 0, undertime: 0, open: true };
     }
-    const end = checkOut ?? opts.now ?? new Date();
-    const worked = Math.max(0, Math.round((end.getTime() - checkIn.getTime()) / 60000));
+    const now = opts.now ?? new Date();
+    // Split shifts: sum each in→out segment instead of first→last, otherwise a
+    // lunch break is billed as work.
+    const worked = times.segments?.length
+      ? this.segmentMinutes(times.segments, now)
+      : Math.max(0, Math.round(((checkOut ?? now).getTime() - checkIn.getTime()) / 60000));
     const extra = worked - expected;
     return {
       worked,
@@ -474,21 +539,26 @@ export class AttendanceService {
     const { start, end } = dhakaDayRange(dstr);
     const todays = await this.prisma.punchLog.findMany({
       where: { employeeId: emp.id, punchTime: { gte: start, lt: end } },
-      orderBy: { punchTime: "desc" },
-      take: 5,
+      orderBy: { punchTime: "asc" },
+      take: 50,
     });
-    const latest = todays[0] ?? null;
-    if (latest && now.getTime() - new Date(latest.punchTime).getTime() < 3 * 60000) {
-      throw new BadRequestException(`Already punched at ${toHHmmDhaka(new Date(latest.punchTime))} — wait a few minutes before punching again`);
-    }
     const att = await this.prisma.attendance.findUnique({
       where: { employeeId_date: { employeeId: emp.id, date: new Date(`${dstr}T00:00:00.000Z`) } },
+      select: { checkInTime: true, checkOutTime: true, correctedFields: true },
     });
-    if (action === "out" && !att?.checkInTime && todays.length === 0) {
-      throw new BadRequestException("You have not checked in today — check in first");
+    // Strict in→out alternation. Allowing "in" while already inside used to
+    // write punches that could not be paired into in/out segments at all.
+    const times = this.resolveDayTimes(att, todays);
+    if (action === "in" && times.open) {
+      throw new BadRequestException(`Already checked in at ${toHHmmDhaka(new Date(times.checkIn!))} — clock out first`);
     }
-    // Note: repeat check-ins are allowed (split shifts) — first punch of the
-    // day stays the check-in; only rapid double-taps are blocked above.
+    if (action === "out" && !times.open) {
+      throw new BadRequestException(
+        times.checkOut
+          ? `Already checked out at ${toHHmmDhaka(new Date(times.checkOut))} — check in again first`
+          : "You have not checked in today — check in first"
+      );
+    }
     const source = mode === "self" ? "SELF" : "KIOSK";
     const punch = await this.prisma.punchLog.create({
       data: { deviceId: emp.deviceId ?? "MANUAL", employeeId: emp.id, punchTime: now, source, unmatched: false },
@@ -498,7 +568,17 @@ export class AttendanceService {
     const fresh = await this.prisma.attendance.findUnique({
       where: { employeeId_date: { employeeId: emp.id, date: new Date(`${dstr}T00:00:00.000Z`) } },
     });
-    return { ok: true, action, employee: emp.name, punch, status: fresh?.status ?? null };
+    const after = this.resolveDayTimes(fresh, [...todays, punch]);
+    return {
+      ok: true,
+      action,
+      employee: emp.name,
+      punch,
+      status: fresh?.status ?? null,
+      checkIn: after.checkIn ? new Date(after.checkIn).toISOString() : null,
+      checkOut: after.checkOut ? new Date(after.checkOut).toISOString() : null,
+      nextAction: after.open ? "out" : "in",
+    };
   }
 
   async recomputeMonth(month: string, opts: { force?: boolean } = {}) {
@@ -612,6 +692,12 @@ export class AttendanceService {
   }
 
   async attendanceReport(query: { month?: string; days?: string; from?: string; to?: string }) {
+    // ~12ms p50 without cache and it is the payroll input as well, so the same
+    // month is recomputed several times per session.
+    return this.cache.wrapQuery("people:attendance-report", query, 30, () => this.computeAttendanceReport(query));
+  }
+
+  private async computeAttendanceReport(query: { month?: string; days?: string; from?: string; to?: string }) {
     const days = this.resolveDays(query);
     if (!days.length) return [];
     const { start, end } = this.rangeBounds(days);
@@ -668,11 +754,10 @@ export class AttendanceService {
         else if (st === "HALF_DAY") halfDay++;
         else if (st === "ABSENT") absent++;
         else present++;
-        // hours: stored times win, otherwise first→last punch of the day
-        const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
-        const co = att?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
-        if (ci) {
-          const h = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, { isToday: dstr === todayStr });
+        // hours: a hand correction wins, then punches, then the stored row
+        const times = this.resolveDayTimes(att, dayPunches);
+        if (times.checkIn) {
+          const h = this.dayHours(times, expected, threshold, { isToday: dstr === todayStr });
           workedMinutes += h.worked;
           expectedMinutes += expected;
           overtimeMinutes += h.overtime;
@@ -784,12 +869,39 @@ export class AttendanceService {
     const days = this.resolveDays(query);
     if (!days.length) return [];
     const { start, end } = this.rangeBounds(days);
-    const records = await this.prisma.attendance.findMany({
-      where: { date: { gte: start, lt: end } },
-      include: { employee: { select: { id: true, name: true, roleTitle: true, department: true } } },
-      orderBy: [{ date: "asc" }, { employee: { name: "asc" } }],
+    const [records, punches] = await Promise.all([
+      this.prisma.attendance.findMany({
+        where: { date: { gte: start, lt: end } },
+        include: { employee: { select: { id: true, name: true, roleTitle: true, department: true } } },
+        orderBy: [{ date: "asc" }, { employee: { name: "asc" } }],
+      }),
+      this.prisma.punchLog.findMany({
+        where: { punchTime: { gte: start, lt: end }, employeeId: { not: null } },
+        select: { employeeId: true, punchTime: true },
+        orderBy: { punchTime: "asc" },
+      }),
+    ]);
+    // Derive the in/out the same way the dashboard and reports do. Stored rows
+    // written before direction-aware pairing carry checkOut === checkIn, so the
+    // raw columns alone would show a bogus "out" time in the daily table.
+    const byEmpDay = new Map<string, { punchTime: Date }[]>();
+    for (const p of punches) {
+      if (!p.employeeId) continue;
+      const key = `${p.employeeId}|${dateStrDhaka(p.punchTime)}`;
+      const day = byEmpDay.get(key);
+      if (day) day.push(p);
+      else byEmpDay.set(key, [p]);
+    }
+    return records.map((r) => {
+      const times = this.resolveDayTimes(r, byEmpDay.get(`${r.employeeId}|${dateStrDhaka(r.date)}`) ?? []);
+      return {
+        ...r,
+        checkIn: times.checkIn ? times.checkIn.toISOString() : null,
+        checkOut: times.checkOut ? times.checkOut.toISOString() : null,
+        stillInside: times.open,
+        punchCount: times.punchCount,
+      };
     });
-    return records;
   }
 
   async attendanceSummary(month: string) {
@@ -909,22 +1021,25 @@ export class AttendanceService {
         } else if (st === "HALF_DAY") { kind = "half"; summary.halfDay++; }
         else if (st === "ABSENT") { kind = "absent"; summary.absent++; }
         else { kind = "present"; summary.present++; }
-        const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
-        const co = att?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
-        if (ci) {
-          hours = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, { isToday: dstr === todayStr });
+        const times = this.resolveDayTimes(att, dayPunches);
+        if (times.checkIn) {
+          hours = this.dayHours(times, expected, threshold, { isToday: dstr === todayStr });
           summary.workedMinutes += hours.worked;
           summary.expectedMinutes += expected;
           summary.overtimeMinutes += hours.overtime;
           summary.undertimeMinutes += hours.undertime;
         }
       }
+      const times = this.resolveDayTimes(att, dayPunches);
       dayList.push({
         date: dstr,
         kind,
+        // The row id lets Owner/HR open "correct attendance" right from the
+        // day list instead of hunting for it in the daily table.
+        id: att?.id ?? null,
         status: att?.status ?? null,
-        checkIn: att?.checkInTime ? new Date(att.checkInTime).toISOString() : (dayPunches[0] ? new Date(dayPunches[0].punchTime).toISOString() : null),
-        checkOut: att?.checkOutTime ? new Date(att.checkOutTime).toISOString() : (dayPunches.length > 1 ? new Date(dayPunches[dayPunches.length - 1].punchTime).toISOString() : null),
+        checkIn: times.checkIn ? new Date(times.checkIn).toISOString() : null,
+        checkOut: times.checkOut ? new Date(times.checkOut).toISOString() : null,
         workedMinutes: hours?.worked ?? null,
         overtimeMinutes: hours?.overtime ?? null,
         undertimeMinutes: hours?.undertime ?? null,
@@ -955,7 +1070,7 @@ export class AttendanceService {
       }),
       this.prisma.attendance.findMany({
         where: { date: new Date(`${dstr}T00:00:00.000Z`) },
-        select: { employeeId: true, status: true, checkInTime: true, checkOutTime: true },
+        select: { employeeId: true, status: true, checkInTime: true, checkOutTime: true, correctedFields: true },
       }),
     ]);
     const attByEmp = new Map(todayAttendance.map((a) => [a.employeeId, a]));
@@ -969,6 +1084,10 @@ export class AttendanceService {
       lastPunchAt: string | null;
       lastSource: string | null;
       minutesLate: number | null;
+      workedMinutes: number | null;
+      /** What the next punch must be. Server-derived so the button can never lie. */
+      nextAction: "in" | "out";
+      inside: boolean;
       punches: { at: string; source: string | null }[];
     } | null = null;
     if (user?.sub) {
@@ -978,30 +1097,34 @@ export class AttendanceService {
         const myPunches = await this.prisma.punchLog.findMany({
           where: { employeeId: emp.id, punchTime: { gte: start, lt: end } },
           orderBy: { punchTime: "desc" },
-          take: 20,
+          take: 50,
           select: { punchTime: true, source: true },
         });
         const last = myPunches[0] ?? null;
-        let minutesLate: number | null = null;
-        if (a?.checkInTime) {
-          const policy = await this.attendancePolicy();
-          const full = await this.prisma.employee.findUnique({ where: { id: emp.id }, select: { shiftStart: true, shiftEnd: true, graceMinutes: true } });
-          const eff = this.effectiveShift(full ?? {}, policy);
-          minutesLate = Math.max(0, minutesOf(toHHmmDhaka(new Date(a.checkInTime))) - (minutesOf(eff.start) + eff.grace));
-        }
-        mine = a
-          ? {
-              status: a.status,
-              checkIn: a.checkInTime?.toISOString() ?? null,
-              checkOut: a.checkOutTime?.toISOString() ?? null,
-              hasDeviceId: !!emp.deviceId,
-              punchCount: myPunches.length,
-              lastPunchAt: last ? new Date(last.punchTime).toISOString() : null,
-              lastSource: last?.source ?? null,
-              minutesLate,
-              punches: myPunches.map((p) => ({ at: new Date(p.punchTime).toISOString(), source: p.source })),
-            }
-          : { status: "NOT_PUNCHED", checkIn: null, checkOut: null, hasDeviceId: !!emp.deviceId, punchCount: myPunches.length, lastPunchAt: last ? new Date(last.punchTime).toISOString() : null, lastSource: last?.source ?? null, minutesLate: null, punches: myPunches.map((p) => ({ at: new Date(p.punchTime).toISOString(), source: p.source })) };
+        const times = this.resolveDayTimes(a, myPunches);
+        const policy = await this.attendancePolicy();
+        const full = await this.prisma.employee.findUnique({ where: { id: emp.id }, select: { shiftStart: true, shiftEnd: true, graceMinutes: true } });
+        const eff = this.effectiveShift(full ?? {}, policy);
+        const minutesLate = times.checkIn
+          ? Math.max(0, minutesOf(toHHmmDhaka(new Date(times.checkIn))) - (minutesOf(eff.start) + eff.grace))
+          : null;
+        const hours = times.checkIn
+          ? this.dayHours(times, this.expectedMinutes(full ?? {}, policy), policy.overtimeThresholdMinutes ?? 30, { isToday: true, now })
+          : null;
+        mine = {
+          status: a?.status ?? "NOT_PUNCHED",
+          checkIn: times.checkIn ? new Date(times.checkIn).toISOString() : null,
+          checkOut: times.checkOut ? new Date(times.checkOut).toISOString() : null,
+          hasDeviceId: !!emp.deviceId,
+          punchCount: times.punchCount,
+          lastPunchAt: last ? new Date(last.punchTime).toISOString() : null,
+          lastSource: last?.source ?? null,
+          minutesLate,
+          workedMinutes: hours?.worked ?? null,
+          nextAction: times.open ? "out" : "in",
+          inside: times.open,
+          punches: myPunches.map((p) => ({ at: new Date(p.punchTime).toISOString(), source: p.source })),
+        };
       }
     }
     const counts = { present: 0, late: 0, halfDay: 0, wfh: 0, absent: 0, notPunched: 0 };
@@ -1043,13 +1166,14 @@ export class AttendanceService {
     const rows = employees.map((emp) => {
       const a = attByEmp.get(emp.id);
       const dayPunches = todaysPunches.filter((p) => p.employeeId === emp.id);
-      const ci = a?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
-      const co = a?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
+      const times = this.resolveDayTimes(a, dayPunches);
+      const ci = times.checkIn;
+      const co = times.checkOut;
       const expected = this.expectedMinutes(emp, policy);
-      const h = ci ? this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, { isToday: true, now }) : null;
+      const h = ci ? this.dayHours(times, expected, threshold, { isToday: true, now }) : null;
       const { start: shiftStart, grace } = this.effectiveShift(emp, policy);
       const minutesLate = ci ? Math.max(0, minutesOf(toHHmmDhaka(new Date(ci))) - (minutesOf(shiftStart) + grace)) : null;
-      const state = !ci ? "not_in" : !co ? "inside" : "left";
+      const state = !ci ? "not_in" : times.open ? "inside" : "left";
       return {
         employeeId: emp.id,
         name: emp.name,
@@ -1062,7 +1186,7 @@ export class AttendanceService {
         hoursSoFarMinutes: h?.worked ?? null,
         overtimeMinutes: h?.overtime ?? 0,
         minutesLate,
-        punches: dayPunches.length,
+        punches: times.punchCount,
       };
     });
     const inside = rows.filter((r) => r.state === "inside").length;
@@ -1132,10 +1256,9 @@ export class AttendanceService {
         }
         if (st === "LATE") late++;
         else if (st === "ABSENT") absent++;
-        const ci = att?.checkInTime ?? dayPunches[0]?.punchTime ?? null;
-        const co = att?.checkOutTime ?? (dayPunches.length > 1 ? dayPunches[dayPunches.length - 1].punchTime : null);
-        if (ci) {
-          const h = this.dayHours(new Date(ci), co ? new Date(co) : null, expected, threshold, { isToday: dstr === dateStrDhaka(new Date()) });
+        const times = this.resolveDayTimes(att, dayPunches);
+        if (times.checkIn) {
+          const h = this.dayHours(times, expected, threshold, { isToday: dstr === dateStrDhaka(new Date()) });
           worked += h.worked;
           overtime += h.overtime;
           counted++;

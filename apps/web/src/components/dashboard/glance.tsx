@@ -86,9 +86,10 @@ export function BusinessHealth({ scorecard, alerts }: { scorecard: any; alerts?:
     warning: (alerts ?? []).filter((a) => a.severity === "warning").length,
     info: (alerts ?? []).filter((a) => a.severity === "info").length,
   };
+  const lowest = [...components].sort((a: any, b: any) => a.value - b.value)[0];
 
   return (
-    <CardShell className="relative overflow-hidden">
+    <CardShell className="relative flex h-full flex-col overflow-hidden">
       <div className="pointer-events-none absolute -right-16 -top-16 size-40 rounded-full bg-primary/5 blur-2xl" />
       <div className="flex items-start justify-between gap-2">
         <div>
@@ -128,6 +129,16 @@ export function BusinessHealth({ scorecard, alerts }: { scorecard: any; alerts?:
           </span>
         ))}
       </div>
+
+      {lowest && (
+        <div className="mt-auto pt-3">
+          <p className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Biggest drag</p>
+          <p className="mt-1 rounded-xl bg-muted/50 px-2.5 py-2 text-meta">
+            <span className="font-semibold text-foreground">{lowest.label}</span>
+            <span className="text-muted-foreground"> is pulling the score down ({Math.round(lowest.value)}/100).</span>
+          </p>
+        </div>
+      )}
     </CardShell>
   );
 }

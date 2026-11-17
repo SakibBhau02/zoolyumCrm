@@ -27,6 +27,7 @@ import { CalendarModule } from "./calendar/calendar.module";
 import { WhatsappModule } from "./whatsapp/whatsapp.module";
 import { TelegramModule } from "./telegram/telegram.module";
 import { SearchModule } from "./search/search.module";
+import { MediaModule } from "./media/media.module";
 import { HealthController } from "./health/health.controller";
 
 @Module({
@@ -55,6 +56,7 @@ import { HealthController } from "./health/health.controller";
     WhatsappModule,
     TelegramModule,
     SearchModule,
+    MediaModule,
   ],
   controllers: [HealthController],
   providers: [

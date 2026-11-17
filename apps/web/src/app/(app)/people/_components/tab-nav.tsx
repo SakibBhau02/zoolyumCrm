@@ -37,7 +37,7 @@ export default function TabNav() {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto rounded-xl border border-border bg-card p-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="scroll-x scroll-x-hint min-w-0 flex-1 items-center gap-1 rounded-xl border border-border bg-card p-0.5">
           {NAV.map((h) => {
             const Icon = HUB_ICON[h.label] ?? Users;
             const active = h.label === activeHub.label;
@@ -71,7 +71,7 @@ export default function TabNav() {
       </div>
 
       {subItems.length > 1 && (
-        <div className="flex items-center gap-4 overflow-x-auto border-b border-border/60 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="scroll-x scroll-x-hint items-center gap-4 border-b border-border/60 px-1">
           {subItems.map((item) => {
             const active = matches(pathname, item.href);
             return (

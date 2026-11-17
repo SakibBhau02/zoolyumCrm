@@ -29,17 +29,21 @@ consumed as Tailwind utilities (`text-body`, `text-meta`, …).
 
 | Utility | px | Line-height | Used for |
 |---|---|---|---|
-| `text-micro` | 10.5 | 1.4 | Badges, uppercase labels, chip text, micro captions |
-| `text-meta` | 11.5 | 1.45 | Secondary/muted text, hints, timestamps, table meta |
+| `text-micro` | **12** | 1.35 | Badges, uppercase labels, chip text, micro captions |
+| `text-meta` | **12** | 1.4 | Secondary/muted text, hints, timestamps, table meta |
 | `text-body` | **12.5** | 1.5 | **Default reading size** — table cells, paragraphs, form values |
 | `text-body-lg` | 13 | 1.45 | Bold values, names, modal body, primary buttons |
 | `text-section` | 15 | 1.4 | Section + card headings (`SectionTitle`, card titles) |
 | `text-title` | 17 | 1.3 | Modal titles, record/detail titles, compact module headers |
-| `text-stat` | 22 | 1.15 | KPI numbers (`StatCard`) |
+| `text-stat` | 24 | 1.15 | Stat numbers inside panels |
+| `text-kpi` | **32** | 1.05 | Dashboard KPI value (one strip per screen) |
 | `text-page` | 24 | 1.2 | Page titles (`PageHeader`) |
-| `text-stat-lg` | 28 | 1.05 | Hero KPI number (one per page at most) |
-| `text-hero` | 30 | 1.15 | Hero/banner headline (Dashboard welcome) |
+| `text-stat-lg` | 30 | 1.05 | Hero KPI number |
+| `text-hero` | 32 | 1.12 | Hero/banner headline (Dashboard welcome) |
 | `text-display` | 42 | 1 | 404 / oversized display numerals |
+
+**Minimum is 12px.** No internal module may render text smaller than
+`text-micro`. Dashboard KPI values use `text-kpi`; nothing else does.
 
 **Rules**
 
@@ -68,7 +72,7 @@ consumed as Tailwind utilities (`text-body`, `text-meta`, …).
 | Badge / status chip | `text-micro font-bold` |
 | Button | `text-body-lg font-semibold` (large) / `text-meta` (small) |
 | Stat label | `text-micro uppercase tracking-wide muted` |
-| Stat value | `text-stat` (hero: `text-stat-lg`) |
+| Stat value | `text-stat` (dashboard KPI: `text-kpi`; hero: `text-stat-lg`) |
 | Modal title | `text-title` |
 | Chart axis tick | 11.5 (inline `fontSize`) |
 | Chart tooltip | 12.5 (inline `fontSize`) |
@@ -162,6 +166,12 @@ Respect `prefers-reduced-motion` for new keyframe animations (see `.animate-pop-
 | File | Exports | Notes |
 |---|---|---|
 | `components/shared.tsx` | `PageHeader`, `SectionTitle`, `StatCard`, `StatusBadge`, `EmptyState`, `Avatar`, `FadeIn`, `SkeletonBlock`, `cn` | `PageHeader` = `text-page` title + `text-body` subtitle + action cluster |
+| `components/dashboard/primitives.tsx` | `KpiCard`, `Panel`, `PanelLink`, `InfoTip`, `Delta`, `Pill`, `Figure` | Card anatomy: title → number + delta → state → spark → CTA |
+| `components/dashboard/panels.tsx` | `CashRevenuePanel`, `ARAgingPanel`, `ConcentrationPanel`, `CapacityPanel`, `CompletenessPanel`, `PipelineFunnelPanel`, `ProjectHealthPanel`, `TodaysWorkPanel` | One question per panel, money through `<Money>` |
+| `components/dashboard/action-center.tsx` | `ActionCenter` | Attention / Approvals / Follow-ups / Overdue, inline actions + snooze |
+| `components/toast.tsx` | `ToastProvider`, `useToast` | Toast + Undo; mounted in `(app)/layout.tsx` |
+| `components/command-palette.tsx` | `CommandPalette` | `Ctrl/⌘+K`, actions + pages + `/search` records |
+| `lib/privacy.tsx` | `PrivacyProvider`, `Money`, `MoneyText`, `MaskAmounts`, `usePrivacy` | Topbar 👁 masks every `.money` value |
 | `components/table.tsx` | `TableShell`, `THead`, `Th`, `Td`, `Tr`, `Btn` | Header `text-micro` uppercase; cells `text-body` |
 | `components/ui.tsx` | `Modal`, `Field`, `FieldLabel`, `ChipGroup`, `FormActions`, `inputCls` | Modal title `text-title`; field labels `text-meta` |
 | `components/charts.tsx` | `SourceBarChart`, `StageBarChart`, others | Shared `tooltipStyle`, `gridStyle` |

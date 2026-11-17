@@ -335,7 +335,7 @@ function FinanceSection({ settings, busy, onSave }: any) {
   return (
     <SectionShell
       title="Finance"
-      subtitle="Payment terms, late fees, accepted methods and tax rates"
+      subtitle="Payment terms, late fees, payment methods, tax rates and dashboard targets"
       busy={busy}
       onSave={(e) => {
         e.preventDefault();
@@ -350,6 +350,54 @@ function FinanceSection({ settings, busy, onSave }: any) {
           </Select>
         </Field>
         <Field label="Late payment fee (%)"><Input type="number" step="0.5" value={draft.latePaymentFee ?? 0} onChange={(e) => patch({ latePaymentFee: Number(e.target.value) })} /></Field>
+      </div>
+
+      <div className="rounded-xl border border-border/60 p-3.5">
+        <p className="text-meta font-semibold text-muted-foreground">Dashboard planning</p>
+        <p className="mb-2.5 text-micro text-muted-foreground">
+          The owner dashboard compares revenue against this target and shows how many months the
+          current cash lasts. Leave a field at 0 to hide that comparison instead of showing a guess.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Monthly revenue target (৳)" hint="Used by “Revenue vs target” on the dashboard.">
+            <Input
+              type="number"
+              step="1000"
+              min="0"
+              value={draft.monthlyRevenueTarget ?? 0}
+              onChange={(e) => patch({ monthlyRevenueTarget: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label="Monthly fixed cost (৳)" hint="Salaries, rent and tools. Sets the floor for the runway calculation.">
+            <Input
+              type="number"
+              step="1000"
+              min="0"
+              value={draft.monthlyFixedCost ?? 0}
+              onChange={(e) => patch({ monthlyFixedCost: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label="Concentration warning (%)" hint="Top-3 client share that raises an amber warning.">
+            <Input
+              type="number"
+              step="5"
+              min="0"
+              max="100"
+              value={draft.concentrationWarnPct ?? 50}
+              onChange={(e) => patch({ concentrationWarnPct: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label="Concentration critical (%)" hint="Top-3 client share that raises a red alert.">
+            <Input
+              type="number"
+              step="5"
+              min="0"
+              max="100"
+              value={draft.concentrationCriticalPct ?? 60}
+              onChange={(e) => patch({ concentrationCriticalPct: Number(e.target.value) })}
+            />
+          </Field>
+        </div>
       </div>
 
       <div className="rounded-xl border border-border/60 p-3.5">
@@ -818,6 +866,8 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
   const [appName, setAppName] = useState("");
   const [logoDarkUrl, setLogoDarkUrl] = useState<string>("");
   const [logoLightUrl, setLogoLightUrl] = useState<string>("");
+  const [logoDarkJxlUrl, setLogoDarkJxlUrl] = useState<string>("");
+  const [logoLightJxlUrl, setLogoLightJxlUrl] = useState<string>("");
   const [primaryColor, setPrimaryColor] = useState("#7C3AED");
   const [secondaryColor, setSecondaryColor] = useState("#38BDF8");
   const [busy, setBusy] = useState(false);
@@ -833,6 +883,8 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
     setAppName(branding.appName ?? "");
     setLogoDarkUrl(branding.logoDarkUrl ?? "");
     setLogoLightUrl(branding.logoLightUrl ?? "");
+    setLogoDarkJxlUrl((branding as any).logoDarkJxlUrl ?? "");
+    setLogoLightJxlUrl((branding as any).logoLightJxlUrl ?? "");
     if (branding.primaryColor) setPrimaryColor(branding.primaryColor);
     if (branding.secondaryColor) setSecondaryColor(branding.secondaryColor);
   }, [branding]);
@@ -852,10 +904,10 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
     const setUploading = variant === "dark" ? setUploadingDark : setUploadingLight;
     setUploading(true);
     try {
-      const res = await apiFetchFormData<{ url: string }>("/control/branding/upload", fd);
+      const res = await apiFetchFormData<{ url: string; jxlUrl?: string | null }>("/control/branding/upload", fd);
       const url = res.url;
-      if (variant === "dark") setLogoDarkUrl(url);
-      else setLogoLightUrl(url);
+      if (variant === "dark") { setLogoDarkUrl(url); setLogoDarkJxlUrl(res.jxlUrl ?? ""); }
+      else { setLogoLightUrl(url); setLogoLightJxlUrl(res.jxlUrl ?? ""); }
       // preview via blob for canvas extraction
       const blobUrl = URL.createObjectURL(file);
       suggestColorsFromImage(blobUrl, (primary, secondary) => {
@@ -883,6 +935,8 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
           appName: appName.trim() || null,
           logoDarkUrl: logoDarkUrl || null,
           logoLightUrl: logoLightUrl || null,
+          logoDarkJxlUrl: logoDarkJxlUrl || null,
+          logoLightJxlUrl: logoLightJxlUrl || null,
           primaryColor,
           secondaryColor,
         }),
@@ -3235,13 +3289,19 @@ function ControlWorkspace() {
           </div>
         }
       />
-      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+      {/* While /control/health (and the roles/integrations lookups) resolve, show
+          em dashes instead of zeros — "ROLES 0" read as a broken config
+          (audit UX-25). aria-busy tells assistive tech why they are empty. */}
+      <div
+        aria-busy={!health || rolesLoading || integLoading}
+        className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6"
+      >
         <HealthCard label="API status" value={health ? (health.ok ? "Operational" : "Degraded") : "—"} tone={health ? (health.ok ? "text-emerald-500" : "text-rose-500") : undefined} icon={<Activity className="size-4" />} />
-        <HealthCard label="Staff users" value={`${health?.counts?.activeUsers ?? "—"} / ${health?.counts?.users ?? "—"}`} icon={<Users className="size-4" />} />
-        <HealthCard label="Roles" value={(roles ?? []).length} icon={<ShieldCheck className="size-4" />} />
-        <HealthCard label="Integrations" value={(integrations ?? []).length} icon={<Plug className="size-4" />} />
+        <HealthCard label="Staff users" value={health?.counts ? `${health.counts.activeUsers ?? "—"} / ${health.counts.users ?? "—"}` : "—"} icon={<Users className="size-4" />} />
+        <HealthCard label="Roles" value={roles ? roles.length : "—"} icon={<ShieldCheck className="size-4" />} />
+        <HealthCard label="Integrations" value={integrations ? integrations.length : "—"} icon={<Plug className="size-4" />} />
         <HealthCard label="Audit events" value={health?.counts?.auditEvents ?? "—"} icon={<ListChecks className="size-4" />} />
-        <HealthCard label="Maintenance" value={health?.maintenanceMode ? "ON" : "Off"} tone={health?.maintenanceMode ? "text-rose-500" : "text-emerald-500"} icon={<Server className="size-4" />} />
+        <HealthCard label="Maintenance" value={health ? (health.maintenanceMode ? "ON" : "Off") : "—"} tone={!health ? undefined : health.maintenanceMode ? "text-rose-500" : "text-emerald-500"} icon={<Server className="size-4" />} />
       </div>
       {tab === "settings" && (
         <SettingsTab

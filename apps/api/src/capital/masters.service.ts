@@ -157,10 +157,23 @@ export class MastersService {
 
 
   async budgets() {
-    const budgets = await this.prisma.budget.findMany({
-      include: { project: { select: { id: true, name: true } } },
-      orderBy: { periodStart: "asc" },
-    });
+    const [budgets, projectBudgetOnly] = await Promise.all([
+      this.prisma.budget.findMany({
+        include: { project: { select: { id: true, name: true } } },
+        orderBy: { periodStart: "asc" },
+      }),
+      // A project carries its own planned amount on `Project.budgetAmount`.
+      // Profitability reads that field while the Reports tab read only the
+      // Budget table, so the two never agreed. Expose the project figure as a
+      // synthetic row when no Budget record exists for it.
+      this.prisma.project.findMany({
+        where: {
+          budgetAmount: { gt: 0 },
+          NOT: { id: { in: (await this.prisma.budget.findMany({ where: { scopeType: "PROJECT", projectId: { not: null } }, select: { projectId: true } })).map((b) => b.projectId as string) } },
+        },
+        select: { id: true, name: true, budgetAmount: true, currency: true, startDate: true, targetEndDate: true },
+      }),
+    ]);
     // Only read expenses inside the budgets' own window instead of every
     // approved expense the workspace has ever recorded.
     const starts = budgets.map((b) => b.periodStart).filter((d): d is Date => !!d);
@@ -176,13 +189,31 @@ export class MastersService {
       },
       select: { category: true, projectId: true, amount: true, date: true },
     });
-    return budgets.map((b) => {
+    const rows = budgets.map((b) => {
       const spent = expenses
         .filter((e) => (b.scopeType === "PROJECT" ? e.projectId === b.projectId : !b.category || e.category === b.category))
         .filter((e) => (b.periodStart && b.periodEnd ? e.date >= b.periodStart && e.date <= b.periodEnd : true))
         .reduce((s, e) => s + Number(e.amount), 0);
       return { ...b, spent: Math.round(spent * 100) / 100 };
     });
+    for (const p of projectBudgetOnly) {
+      const spent = expenses.filter((e) => e.projectId === p.id).reduce((s, e) => s + Number(e.amount), 0);
+      rows.push({
+        id: `project:${p.id}`,
+        scopeType: "PROJECT",
+        projectId: p.id,
+        departmentId: null,
+        category: null,
+        budgetAmount: p.budgetAmount,
+        currency: p.currency ?? "BDT",
+        periodStart: p.startDate ?? null,
+        periodEnd: p.targetEndDate ?? null,
+        project: { id: p.id, name: p.name },
+        spent: Math.round(spent * 100) / 100,
+        source: "project",
+      } as any);
+    }
+    return rows;
   }
 
 

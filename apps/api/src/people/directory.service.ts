@@ -2,16 +2,14 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { OnboardingService } from "./onboarding.service";
-import { dateStrDhaka, invalidatePeopleCache } from "./people-utils";
+import { canManageHrFields, canPeople, canSeePay, dateStrDhaka, invalidatePeopleCache } from "./people-utils";
+import { mediaDir, removeOptimizedImage, uploadFilename } from "../common/image-pipeline";
 
 /** UTC-midnight labelled with today's Dhaka date — matches `attendance.date`. */
 const todayColumn = () => new Date(`${dateStrDhaka(new Date())}T00:00:00.000Z`);
 
-const PAY_ROLES = ["Owner", "HR/Admin", "Admin"];
-/** Compensation is only visible to Owner / HR — enforced on read, not just in the UI. */
-const canSeePay = (user: any) => PAY_ROLES.includes(user?.role);
 /** Full company directory needs PEOPLE view; everyone else gets a picker shape. */
-const canViewPeople = (user: any) => PAY_ROLES.includes(user?.role) || user?.permissions?.PEOPLE?.view === true;
+const canViewPeople = (user: any) => canPeople(user, "view");
 const stripPay = <T extends { salary?: any; costRate?: any }>(e: T, user: any): T =>
   canSeePay(user) ? e : { ...e, salary: null, costRate: null };
 /** Emergency contacts and contract documents are HR-only. */
@@ -124,6 +122,8 @@ export class DirectoryService {
           department: e.department,
           employmentStatus: e.employmentStatus,
           workLocation: e.workLocation,
+          photoUrl: e.photoUrl,
+          photoJxlUrl: e.photoJxlUrl,
         }));
       }
       return employees.map((e) => {
@@ -188,8 +188,8 @@ export class DirectoryService {
     if (!body.roleTitle?.trim()) {
       throw new BadRequestException("roleTitle is required");
     }
-    if (body.salary !== undefined && !PAY_ROLES.includes(user?.role)) {
-      throw new ForbiddenException("Only Owner or HR/Admin can set salary");
+    if (body.salary !== undefined && !canManageHrFields(user)) {
+      throw new ForbiddenException("Only HR roles (People → Approve) can set salary");
     }
     const managerId = await assertManager(this.prisma, body.reportingManagerId);
     const status = assertStatus(body.employmentStatus);
@@ -235,8 +235,8 @@ export class DirectoryService {
     const existing = await this.prisma.employee.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException("Employee not found");
     const sensitive = ["salary", "costRate", "deviceId", "weeklyOffDays", "shiftStart", "shiftEnd", "graceMinutes"];
-    if (sensitive.some((f) => body[f] !== undefined) && !PAY_ROLES.includes(user?.role)) {
-      throw new ForbiddenException("Only Owner or HR/Admin can change salary, device mapping or schedule");
+    if (sensitive.some((f) => body[f] !== undefined) && !canManageHrFields(user)) {
+      throw new ForbiddenException("Only HR roles (People → Approve) can change salary, device mapping or schedule");
     }
     const managerId = await assertManager(this.prisma, body.reportingManagerId, id);
     const status = assertStatus(body.employmentStatus);
@@ -275,6 +275,37 @@ export class DirectoryService {
       await this.onboarding.autoStartOffboarding(id);
     }
     return result;
+  }
+
+  /**
+   * Staff photo. Stored as WebP with an optional JPEG XL sibling; the previous
+   * pair is deleted so the uploads folder stays bounded.
+   */
+  async setPhoto(id: string, photoUrl: string, photoJxlUrl: string | null) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id },
+      select: { photoUrl: true, photoJxlUrl: true },
+    });
+    if (!employee) throw new NotFoundException("Employee not found");
+    const updated = await this.prisma.employee.update({
+      where: { id },
+      data: { photoUrl, photoJxlUrl },
+    });
+    await removeOptimizedImage(mediaDir("people"), uploadFilename(employee.photoUrl), uploadFilename(employee.photoJxlUrl));
+    await invalidatePeopleCache(this.cache);
+    return { id: updated.id, photoUrl, photoJxlUrl };
+  }
+
+  async removePhoto(id: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id },
+      select: { photoUrl: true, photoJxlUrl: true },
+    });
+    if (!employee) throw new NotFoundException("Employee not found");
+    await this.prisma.employee.update({ where: { id }, data: { photoUrl: null, photoJxlUrl: null } });
+    await removeOptimizedImage(mediaDir("people"), uploadFilename(employee.photoUrl), uploadFilename(employee.photoJxlUrl));
+    await invalidatePeopleCache(this.cache);
+    return { id, photoUrl: null, photoJxlUrl: null };
   }
 
   async deleteEmployee(id: string) {

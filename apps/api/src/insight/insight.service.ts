@@ -4,7 +4,8 @@ import { CacheService } from "../cache/cache.service";
 import { RECEIPT_PAYMENT_FILTER, invoiceTotals } from "../capital/finance-kernel";
 
 const ACTIVE_INVOICE_STATUSES = ["SENT", "VIEWED", "PARTIALLY_PAID", "PAID", "OVERDUE"];
-const TAX_RATE = 0.22;
+/** Bangladesh company tax for a non-listed company; override in Settings.financeConfig.corporateTaxRate. */
+const DEFAULT_CORPORATE_TAX_RATE = 0.275;
 
 @Injectable()
 export class InsightService {
@@ -210,31 +211,67 @@ export class InsightService {
 
   async taxReport() {
     return this.cache.wrap("insight:tax", 60, async () => {
-    const [invoices, expenses] = await Promise.all([
+    // Taxable profit is accrual-based accounting profit, not "cash collected
+    // minus expenses". The old formula used collections, so an invoiced-but-
+    // unpaid quarter showed almost no tax while a collection-heavy quarter
+    // showed too much. Read the rate from Settings.financeConfig so the company
+    // can set its own slab instead of a hard-coded 22%.
+    const [settings, invoices, glLines] = await Promise.all([
+      this.prisma.settings.findFirst({ select: { financeConfig: true } }).catch(() => null),
       this.prisma.invoice.findMany({ include: { lineItems: true, payments: true } }),
-      this.prisma.expense.findMany({ where: { approvalStatus: "APPROVED" } }),
+      this.prisma.journalEntryLine.findMany({
+        select: { debit: true, credit: true, account: { select: { category: true } }, entry: { select: { entryDate: true } } },
+      }),
     ]);
+    const configured = Number((settings?.financeConfig as any)?.corporateTaxRate);
+    const taxRate = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_CORPORATE_TAX_RATE;
     const total = (inv: any) => inv.lineItems.reduce((s: number, l: any) => s + Number(l.amount), 0);
-    const quarters = new Map<string, { label: string; invoiced: number; collected: number; expenses: number }>();
-    const add = (d: Date, key: "invoiced" | "collected" | "expenses", amount: number) => {
-      const q = `${d.getFullYear()} Q${Math.floor(d.getMonth() / 3) + 1}`;
-      const entry = quarters.get(q) ?? { label: q, invoiced: 0, collected: 0, expenses: 0 };
+    const quarters = new Map<string, { label: string; invoiced: number; collected: number; expenses: number; revenue: number }>();
+    const qKey = (d: Date) => `${d.getUTCFullYear()} Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
+    const add = (q: string, key: "invoiced" | "collected" | "expenses" | "revenue", amount: number) => {
+      const entry = quarters.get(q) ?? { label: q, invoiced: 0, collected: 0, expenses: 0, revenue: 0 };
       entry[key] += amount;
       quarters.set(q, entry);
     };
     for (const i of invoices) {
-      add(i.issueDate, "invoiced", total(i));
-      for (const p of i.payments) add(p.paymentDate, "collected", p.type === "REFUND" ? -Number(p.amount) : Number(p.amount));
+      add(qKey(i.issueDate), "invoiced", total(i));
+      for (const p of i.payments) add(qKey(p.paymentDate), "collected", p.type === "REFUND" ? -Number(p.amount) : Number(p.amount));
     }
-    for (const e of expenses) add(e.date, "expenses", Number(e.amount));
+    for (const line of glLines) {
+      const q = qKey(line.entry.entryDate);
+      const amount = Number(line.debit) - Number(line.credit);
+      if (line.account.category === "REVENUE") add(q, "revenue", -amount);
+      else if (line.account.category === "DIRECT_COST" || line.account.category === "OPEX") add(q, "expenses", amount);
+    }
     const rows = Array.from(quarters.values())
       .sort((a, b) => a.label.localeCompare(b.label))
       .map((q) => {
-        const net = q.collected - q.expenses;
-        return { ...q, invoiced: Math.round(q.invoiced * 100) / 100, collected: Math.round(q.collected * 100) / 100, expenses: Math.round(q.expenses * 100) / 100, net: Math.round(net * 100) / 100, estimatedTax: Math.round(net * TAX_RATE * 100) / 100 };
+        const net = q.revenue - q.expenses;
+        const taxable = Math.max(net, 0);
+        return {
+          ...q,
+          invoiced: Math.round(q.invoiced * 100) / 100,
+          collected: Math.round(q.collected * 100) / 100,
+          expenses: Math.round(q.expenses * 100) / 100,
+          revenue: Math.round(q.revenue * 100) / 100,
+          net: Math.round(net * 100) / 100,
+          taxableIncome: Math.round(taxable * 100) / 100,
+          estimatedTax: Math.round(taxable * taxRate * 100) / 100,
+        };
       });
-    const totals = rows.reduce((acc, r) => ({ invoiced: acc.invoiced + r.invoiced, collected: acc.collected + r.collected, expenses: acc.expenses + r.expenses, net: acc.net + r.net, estimatedTax: acc.estimatedTax + r.estimatedTax }), { invoiced: 0, collected: 0, expenses: 0, net: 0, estimatedTax: 0 });
-    return { rows, totals, taxRate: TAX_RATE, fiscalYear: new Date().getFullYear() };
+    const totals = rows.reduce(
+      (acc, r) => ({
+        invoiced: acc.invoiced + r.invoiced,
+        collected: acc.collected + r.collected,
+        expenses: acc.expenses + r.expenses,
+        revenue: acc.revenue + r.revenue,
+        net: acc.net + r.net,
+        taxableIncome: acc.taxableIncome + r.taxableIncome,
+        estimatedTax: acc.estimatedTax + r.estimatedTax,
+      }),
+      { invoiced: 0, collected: 0, expenses: 0, revenue: 0, net: 0, taxableIncome: 0, estimatedTax: 0 }
+    );
+    return { rows, totals, taxRate, basis: "accrual", fiscalYear: new Date().getFullYear() };
     });
   }
 

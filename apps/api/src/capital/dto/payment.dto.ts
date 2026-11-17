@@ -47,6 +47,12 @@ export class RecordPaymentDto {
   @IsOptional()
   @IsString()
   installmentId?: string;
+
+  /** Rate the bank actually converted at; the difference is realised FX. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @IsPositive()
+  settlementRate?: number;
 }
 
 export class PayExpenseDto {

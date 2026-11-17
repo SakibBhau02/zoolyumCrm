@@ -9,22 +9,13 @@ import type { NextConfig } from "next";
  *     server, which proxies to `API_PROXY_TARGET` (single-origin deploys,
  *     tunnels, reverse proxies). Same-origin also means no CORS at all.
  *
- * A production build without it would silently ship `http://localhost:4000`
- * and every request would hit the visitor's own machine — fail the build.
+ * Default is the relative form: this app is always served by its own Next
+ * server, and a build that forgot the variable used to ship
+ * `http://localhost:4000`, so every visitor's browser called its own machine.
  */
-const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
-const isRelativeApi = !!apiUrl && apiUrl.startsWith("/");
-// Only the BUILD needs the value (it is inlined into the bundle). `next start`
-// loads this file again with NODE_ENV=production but no build env, so gate the
-// check on the actual build phase instead of NODE_ENV.
-const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
-if (isBuildPhase && !apiUrl) {
-  throw new Error(
-    "NEXT_PUBLIC_API_URL is required for a production build (e.g. https://api.example.com/api or /api). " +
-      "Set it in the build environment (docker build --build-arg) before running `next build`."
-  );
-}
-if (isBuildPhase && apiUrl && !isRelativeApi && !/^https:\/\//.test(apiUrl)) {
+const apiUrl = process.env.NEXT_PUBLIC_API_URL?.trim() || "/api";
+const isRelativeApi = apiUrl.startsWith("/");
+if (!isRelativeApi && !/^https:\/\//.test(apiUrl)) {
   console.warn(`[zoolyum] NEXT_PUBLIC_API_URL is not HTTPS: ${apiUrl}`);
 }
 
@@ -44,6 +35,8 @@ const allowedDevOrigins = (
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Don't advertise the framework (audit SEC-06).
+  poweredByHeader: false,
   // Smaller runtime image and faster cold starts.
   output: "standalone",
   allowedDevOrigins,
@@ -54,12 +47,32 @@ const nextConfig: NextConfig = {
     return [{ source: "/api/:path*", destination: `${proxyTarget}/api/:path*` }];
   },
   async headers() {
+    const isProd = process.env.NODE_ENV === "production";
+    // CSP is the second line of defence the audit found missing (SEC-06). Next
+    // injects a small inline bootstrap and Tailwind writes inline styles, so
+    // 'unsafe-inline' stays for scripts/styles; eval is dev-only (HMR).
+    const csp = [
+      "default-src 'self'",
+      `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https:",
+      "font-src 'self' data:",
+      `connect-src 'self' https:${isProd ? "" : " ws: http://localhost:*"}`,
+      "frame-ancestors 'none'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; ");
     const security = [
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "X-Frame-Options", value: "DENY" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
       { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+      { key: "Content-Security-Policy", value: csp },
+      ...(isProd
+        ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }]
+        : []),
     ];
     return [
       { source: "/:path*", headers: security },

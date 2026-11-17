@@ -70,10 +70,25 @@ Get-NetTCPConnection -State Listen -LocalPort 3000,4000 -ErrorAction SilentlyCon
 To publish again after a code change, rebuild both apps:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scripts/rebuild-public.ps1
+```
+
+That script builds the API, builds the web app with `NEXT_PUBLIC_API_URL=/api`
+(so the browser calls this Next server, which proxies to the API), copies
+`.next/static` and `public` into the standalone output — `next build` does **not**
+do that for you — restarts both servers and checks `/api/health` through the
+proxy. Skipping any of those steps gives the classic "the page loads but the
+database is not connected" symptom.
+
+Doing it by hand is still possible:
+
+```powershell
 npm run build --prefix apps/api
 $env:NEXT_PUBLIC_API_URL = "/api"; $env:API_PROXY_TARGET = "http://127.0.0.1:4000"
 npm run build --prefix apps/web
 ```
+
+…then copy the static assets before starting (see the script).
 
 ## Run the dev server while the demo stays public
 

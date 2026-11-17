@@ -6,6 +6,8 @@ import Link from "next/link";
 import {
   CalendarDays,
   ChevronDown,
+  Eye,
+  EyeOff,
   FileText,
   FolderKanban,
   ListTodo,
@@ -23,8 +25,10 @@ import {
 } from "lucide-react";
 import { Avatar } from "./shared";
 import { NotificationsDropdown } from "./notifications-dropdown";
+import { ClockChip } from "./clock-chip";
 import { useAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
+import { usePrivacy } from "@/lib/privacy";
 
 interface SearchHit {
   type: "lead" | "client" | "project" | "invoice" | "task" | "post" | "event";
@@ -46,6 +50,7 @@ const TYPE_META: Record<SearchHit["type"], { label: string; icon: typeof Zap }> 
 
 export function Topbar() {
   const { user, logout } = useAuth();
+  const { hidden, toggle } = usePrivacy();
   const router = useRouter();
   const [dark, setDark] = useState(false);
   const [now, setNow] = useState(new Date());
@@ -144,13 +149,15 @@ export function Topbar() {
         <Search className="size-4" />
       </button>
 
-      <div className="hidden items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1.5 lg:flex">
+      {/* The date + fiscal chip needs ~200px. It waited for `lg` (1024px) and
+          wrapped the topbar into 4 lines there, so it only appears from `xl`. */}
+      <div className="hidden items-center gap-2 whitespace-nowrap rounded-full border border-border bg-card/60 px-3 py-1.5 xl:flex">
         <span className="text-meta text-muted-foreground">{dateLabel}</span>
         <span className="h-3 w-px bg-border" />
         <span className="text-meta font-medium text-foreground">{fiscalLabel}</span>
       </div>
 
-      <div ref={searchRef} className="relative hidden w-full max-w-xs md:block lg:w-72">
+      <div ref={searchRef} className="relative hidden w-full max-w-xs md:block xl:w-72">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           value={query}
@@ -211,6 +218,16 @@ export function Topbar() {
       </div>
 
       <div className="ml-auto flex items-center gap-1.5 sm:gap-2.5">
+        <ClockChip />
+        <button
+          onClick={toggle}
+          className="flex size-10 items-center justify-center rounded-xl border border-border bg-card/60 text-muted-foreground transition-colors hover:text-foreground sm:size-9"
+          aria-label={hidden ? "Show money amounts" : "Hide money amounts"}
+          aria-pressed={hidden}
+          title={hidden ? "Amounts hidden — click to show" : "Hide ৳ amounts"}
+        >
+          {hidden ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+        </button>
         <button
           onClick={toggleTheme}
           className="flex size-10 items-center justify-center rounded-xl border border-border bg-card/60 text-muted-foreground transition-colors hover:text-foreground sm:size-9"

@@ -12,6 +12,7 @@ export type TabKey =
   | "reports"
   | "profitability"
   | "accounts"
+  | "accounting"
   | "activity";
 
 export const TABS: { value: string; key: TabKey; href: string }[] = [
@@ -25,6 +26,7 @@ export const TABS: { value: string; key: TabKey; href: string }[] = [
   { value: "Reports", key: "reports", href: "/capital/reports" },
   { value: "Profitability", key: "profitability", href: "/capital/profitability" },
   { value: "Accounts", key: "accounts", href: "/capital/accounts" },
+  { value: "Accounting", key: "accounting", href: "/capital/accounting" },
   { value: "Activity", key: "activity", href: "/capital/activity" },
 ];
 
@@ -40,6 +42,7 @@ export const LEGACY_TAB_ROUTE: Record<string, string> = {
   reports: "/capital/reports",
   profitability: "/capital/profitability",
   accounts: "/capital/accounts",
+  accounting: "/capital/accounting",
   activity: "/capital/activity",
 };
 

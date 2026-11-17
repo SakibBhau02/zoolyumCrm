@@ -429,9 +429,9 @@ export function CalendarWorkspace({ fixedClientId }: { fixedClientId?: string })
 
         {view !== "plans" && view !== "settings" && (
           <div className="flex items-center gap-1">
-            <Btn variant="ghost" onClick={() => step(-1)} className="!px-2"><ChevronLeft className="size-4" /></Btn>
+            <Btn variant="ghost" onClick={() => step(-1)} aria-label="Previous period" title="Previous period" className="!px-2"><ChevronLeft className="size-4" /></Btn>
             <span className="min-w-[150px] text-center text-[12px] font-semibold">{periodLabel}</span>
-            <Btn variant="ghost" onClick={() => step(1)} className="!px-2"><ChevronRight className="size-4" /></Btn>
+            <Btn variant="ghost" onClick={() => step(1)} aria-label="Next period" title="Next period" className="!px-2"><ChevronRight className="size-4" /></Btn>
             <Btn variant="outline" onClick={() => goToDate(todayISO())}>Today</Btn>
           </div>
         )}

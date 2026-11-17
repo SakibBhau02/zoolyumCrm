@@ -90,16 +90,17 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
   }, []);
 
   const action: "in" | "out" = useMemo(
-    () => (!mine?.checkIn || mine?.checkOut ? "in" : "out"),
-    [mine?.checkIn, mine?.checkOut]
+    () => (mine?.nextAction === "out" || mine?.nextAction === "in" ? mine.nextAction : !mine?.checkIn || mine?.checkOut ? "in" : "out"),
+    [mine?.nextAction, mine?.checkIn, mine?.checkOut]
   );
 
   const workedMinutes = useMemo(() => {
+    if (mine?.workedMinutes != null) return mine.workedMinutes;
     if (!mine?.checkIn) return null;
     const start = new Date(mine.checkIn).getTime();
     const end = mine.checkOut ? new Date(mine.checkOut).getTime() : Date.now();
     return Math.max(0, Math.round((end - start) / 60_000));
-  }, [mine?.checkIn, mine?.checkOut]);
+  }, [mine?.workedMinutes, mine?.checkIn, mine?.checkOut]);
 
   if (!mine) return null;
 
@@ -216,7 +217,11 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
               <p className="text-meta text-muted-foreground">
                 {new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
                 {" · "}
-                {mine.checkIn ? `working since ${fmtTime(mine.checkIn)}` : "not checked in yet"}
+                {mine.checkIn && !mine.checkOut
+                  ? `checked in at ${fmtTime(mine.checkIn)}`
+                  : mine.checkOut
+                    ? `checked out at ${fmtTime(mine.checkOut)}`
+                    : "not checked in yet"}
               </p>
             </div>
             <div className="ml-auto flex items-center gap-2">
@@ -274,31 +279,51 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
             <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-muted-foreground">
               <span className="inline-flex items-center gap-1">
                 <LogIn className="size-3.5" />
-                Browser login: {loginAt ? `${loginToday ? "" : `${loginAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} `}${fmtTime(loginAt.toISOString())}` : "—"}
+                Signed in at {loginAt ? `${loginToday ? "" : `${loginAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} `}${fmtTime(loginAt.toISOString())}` : "—"}
               </span>
-              <span className="inline-flex items-center gap-1">
-                <RefreshCw className="size-3.5" />
-                Last synced punch: {fmtTime(mine.lastPunchAt)}
-              </span>
+              {mine.punches?.length ? (
+                <span className="inline-flex items-center gap-1">
+                  <RefreshCw className="size-3.5" />
+                  Last punch {fmtTime(mine.lastPunchAt)}
+                </span>
+              ) : null}
             </p>
           </div>
         </div>
 
         {/* actions */}
         <div className="flex w-full shrink-0 flex-col gap-2 lg:w-[248px]">
-          <Btn
-            variant="primary"
-            className="w-full justify-center !py-3"
-            onClick={() => punch(action)}
-            disabled={!!busy}
-          >
-            {action === "in" ? <LogIn className="size-4" /> : <LogOut className="size-3.5" />}
-            {busy === "in" || busy === "out"
-              ? "Saving…"
-              : action === "in"
-                ? "Clock in"
-                : "Clock out"}
-          </Btn>
+          {mine.checkOut ? (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-center">
+              <p className="flex items-center justify-center gap-1.5 text-micro font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="size-3.5" /> Day closed
+              </p>
+              <p className="mt-0.5 text-meta text-emerald-700/80 dark:text-emerald-300/80">
+                {fmtTime(mine.checkIn)} → {fmtTime(mine.checkOut)} · {fmtDur(workedMinutes)}
+              </p>
+            </div>
+          ) : (
+            <Btn
+              variant="primary"
+              className="w-full justify-center !py-3"
+              onClick={() => punch(action)}
+              disabled={!!busy}
+            >
+              {action === "in" ? <LogIn className="size-4" /> : <LogOut className="size-3.5" />}
+              {busy === "in" || busy === "out" ? "Saving…" : action === "in" ? "Clock in" : "Clock out"}
+            </Btn>
+          )}
+
+          {mine.checkOut && (
+            <Btn
+              variant="ghost"
+              className="w-full justify-center !text-meta"
+              onClick={() => punch("in")}
+              disabled={!!busy}
+            >
+              <LogIn className="size-3.5" /> {busy === "in" ? "Saving…" : "Clock in again"}
+            </Btn>
+          )}
 
           <Btn
             variant="outline"
@@ -308,7 +333,13 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
             title={!hasFingerprint ? "Enable fingerprint first" : "Verify with fingerprint then punch"}
           >
             <Fingerprint className="size-3.5" />
-            {busy === "bio" ? "Verifying…" : `Fingerprint ${action === "in" ? "clock in" : "clock out"}`}
+            {busy === "bio"
+              ? "Verifying…"
+              : mine.checkOut
+                ? "Fingerprint clock in"
+                : action === "in"
+                  ? "Fingerprint clock in"
+                  : "Fingerprint clock out"}
           </Btn>
 
           {!hasFingerprint ? (

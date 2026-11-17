@@ -7,6 +7,17 @@ import { ReportingService } from "./reporting.service";
 import { BillingService } from "./billing.service";
 import { MastersService } from "./masters.service";
 import { ApprovalPolicyService } from "./approval-policy.service";
+import { LedgerService } from "./ledger.service";
+import { PeriodsService } from "./periods.service";
+import { ManualJournalService } from "./manual-journal.service";
+import { FixedAssetsService } from "./fixed-assets.service";
+import { VatService } from "./vat.service";
+import { BankReconciliationService } from "./bank-reconciliation.service";
+import { FxRevaluationService } from "./fx-revaluation.service";
+import { RevenueRecognitionService } from "./revenue-recognition.service";
+import { ProvisionService } from "./provision.service";
+import { TreasuryService } from "./treasury.service";
+import { AuditExportService } from "./audit-export.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
 import { invalidateFinance, notifyRole } from "./finance-kernel";
 
@@ -25,6 +36,17 @@ export class CapitalService {
     private readonly billingService: BillingService,
     private readonly mastersService: MastersService,
     private readonly approvalPolicyService: ApprovalPolicyService,
+    private readonly ledgerService: LedgerService,
+    private readonly periodsService: PeriodsService,
+    private readonly manualJournalService: ManualJournalService,
+    private readonly fixedAssetsService: FixedAssetsService,
+    private readonly vatService: VatService,
+    private readonly bankService: BankReconciliationService,
+    private readonly fxService: FxRevaluationService,
+    private readonly revenueService: RevenueRecognitionService,
+    private readonly provisionService: ProvisionService,
+    private readonly treasuryService: TreasuryService,
+    private readonly auditExportService: AuditExportService,
     private readonly cache: CacheService,
     private readonly notifications: NotificationsService,
     private readonly wa: WhatsappTriggersService
@@ -32,6 +54,16 @@ export class CapitalService {
 
   async invalidateFinance() {
     return invalidateFinance(this.cache);
+  }
+
+  /**
+   * Reverse every journal entry whose source document no longer exists.
+   * Safe to re-run: an entry that is already reversed is skipped.
+   */
+  async repairOrphanJournals(actorId?: string) {
+    const result = await this.ledgerService.reverseOrphanJournals(actorId);
+    await invalidateFinance(this.cache);
+    return result;
   }
 
   async notifyRole(role: string, type: string, title: string, message: string, link?: string | null, actorId?: string) {
@@ -63,6 +95,10 @@ export class CapitalService {
 
   async logReminder(invoiceId: string, body: { type: string; channel?: string; recipientEmail?: string; recipientName?: string; subject?: string; notes?: string }, actorId?: string) {
     return this.invoiceService.logReminder(invoiceId, body, actorId);
+  }
+
+  async deleteReminder(invoiceId: string, reminderId: string) {
+    return this.invoiceService.deleteReminder(invoiceId, reminderId);
   }
 
 
@@ -209,6 +245,10 @@ export class CapitalService {
     return this.expenseService.apAging();
   }
 
+  async unbilledExpenses() {
+    return this.expenseService.unbilledExpenses();
+  }
+
 
   async overview() {
     return this.reportingService.overview();
@@ -230,23 +270,23 @@ export class CapitalService {
   }
 
 
-  async trialBalance() {
-    return this.reportingService.trialBalance();
+  async trialBalance(from?: string, to?: string) {
+    return this.reportingService.trialBalance(from, to);
   }
 
 
-  async profitLoss() {
-    return this.reportingService.profitLoss();
+  async profitLoss(from?: string, to?: string) {
+    return this.reportingService.profitLoss(from, to);
   }
 
 
-  async balanceSheet() {
-    return this.reportingService.balanceSheet();
+  async balanceSheet(asOf?: string) {
+    return this.reportingService.balanceSheet(asOf);
   }
 
 
-  async cashFlow() {
-    return this.reportingService.cashFlow();
+  async cashFlow(from?: string, to?: string) {
+    return this.reportingService.cashFlow(from, to);
   }
 
 
@@ -388,5 +428,283 @@ export class CapitalService {
 
   async updateExpenseCategory(id: string, body: any) {
     return this.mastersService.updateExpenseCategory(id, body);
+  }
+
+  // ── Period close ──────────────────────────────────────────────────────
+
+  async periods(year?: string) {
+    return this.periodsService.list(year);
+  }
+
+  async generatePeriods(year: number) {
+    return this.periodsService.generateYear(year);
+  }
+
+  async createPeriod(body: any) {
+    return this.periodsService.create(body);
+  }
+
+  async closePeriod(id: string, actorId?: string) {
+    const result = await this.periodsService.close(id, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async reopenPeriod(id: string, actorId?: string) {
+    const result = await this.periodsService.reopen(id, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async lockPeriod(id: string, actorId?: string) {
+    return this.periodsService.lock(id, actorId);
+  }
+
+  async unlockPeriod(id: string, actorId?: string) {
+    return this.periodsService.unlock(id, actorId);
+  }
+
+  async periodChecklist(id: string) {
+    return this.periodsService.closeChecklist(id);
+  }
+
+  // ── Manual journals ───────────────────────────────────────────────────
+
+  async manualJournals(query: any) {
+    return this.manualJournalService.list(query);
+  }
+
+  async manualJournal(id: string) {
+    return this.manualJournalService.get(id);
+  }
+
+  async manualJournalAccounts() {
+    return this.manualJournalService.accounts();
+  }
+
+  async createManualJournal(body: any, actorId?: string) {
+    return this.manualJournalService.create(body, actorId);
+  }
+
+  async updateManualJournal(id: string, body: any, actorId?: string) {
+    return this.manualJournalService.update(id, body, actorId);
+  }
+
+  async postManualJournal(id: string, actorId?: string) {
+    const result = await this.manualJournalService.post(id, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async voidManualJournal(id: string, actorId?: string) {
+    const result = await this.manualJournalService.void(id, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async deleteManualJournal(id: string, actorId?: string) {
+    return this.manualJournalService.remove(id, actorId);
+  }
+
+  // ── Fixed assets ──────────────────────────────────────────────────────
+
+  async fixedAssets() {
+    return this.fixedAssetsService.list();
+  }
+
+  async fixedAsset(id: string) {
+    return this.fixedAssetsService.get(id);
+  }
+
+  async createFixedAsset(body: any, actorId?: string) {
+    const result = await this.fixedAssetsService.create(body, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async updateFixedAsset(id: string, body: any, actorId?: string) {
+    return this.fixedAssetsService.update(id, body, actorId);
+  }
+
+  async runDepreciation(period: string, actorId?: string) {
+    const result = await this.fixedAssetsService.runDepreciation(period, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async disposeFixedAsset(id: string, body: any, actorId?: string) {
+    const result = await this.fixedAssetsService.dispose(id, body, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  // ── VAT / withholding ─────────────────────────────────────────────────
+
+  async vatSalesRegister(from?: string, to?: string) {
+    return this.vatService.salesRegister(from, to);
+  }
+
+  async vatPurchaseRegister(from?: string, to?: string) {
+    return this.vatService.purchaseRegister(from, to);
+  }
+
+  async vatReturn(from?: string, to?: string) {
+    return this.vatService.returnSummary(from, to);
+  }
+
+  async withholdingRegister(from?: string, to?: string) {
+    return this.vatService.withholdingRegister(from, to);
+  }
+
+  // ── Bank statement import / reconciliation ────────────────────────────
+
+  async importBankStatement(bankAccountId: string, body: any, actorId?: string) {
+    const result = await this.bankService.importStatement(bankAccountId, body, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async bankStatement(bankAccountId: string, status?: string) {
+    return this.bankService.list(bankAccountId, status);
+  }
+
+  async autoMatchBank(bankAccountId: string, actorId?: string) {
+    return this.bankService.autoMatch(bankAccountId, actorId);
+  }
+
+  async matchBankLine(lineId: string, body: any, actorId?: string) {
+    return this.bankService.match(lineId, body, actorId);
+  }
+
+  async unmatchBankLine(lineId: string, actorId?: string) {
+    return this.bankService.unmatch(lineId, actorId);
+  }
+
+  async ignoreBankLine(lineId: string, body: any, actorId?: string) {
+    return this.bankService.ignore(lineId, body, actorId);
+  }
+
+  async deleteBankLine(lineId: string, actorId?: string) {
+    return this.bankService.removeLine(lineId, actorId);
+  }
+
+  // ── FX revaluation ────────────────────────────────────────────────────
+
+  async previewFxRevaluation(asOf: string | undefined, rates: any) {
+    return this.fxService.preview(asOf, rates);
+  }
+
+  async postFxRevaluation(asOf: string | undefined, rates: any, actorId?: string) {
+    const result = await this.fxService.post(asOf, rates, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async fxRevaluationHistory() {
+    return this.fxService.history();
+  }
+
+  // ── Invoice approval ──────────────────────────────────────────────────
+
+  async approveInvoice(id: string, actorId?: string) {
+    const result = await this.invoiceService.approveInvoice(id, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async rejectInvoice(id: string, body: any, actorId?: string) {
+    return this.invoiceService.rejectInvoice(id, body, actorId);
+  }
+
+  // ── Revenue recognition ───────────────────────────────────────────────
+
+  async revenueSchedules(status?: string) {
+    return this.revenueService.list(status);
+  }
+
+  async createRevenueSchedule(body: any, actorId?: string) {
+    const result = await this.revenueService.create(body, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async runRevenueRecognition(period: string, actorId?: string) {
+    const result = await this.revenueService.runRecognition(period, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async cancelRevenueSchedule(id: string, actorId?: string) {
+    const result = await this.revenueService.cancel(id, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  // ── Bad-debt provision ────────────────────────────────────────────────
+
+  async previewProvision(asOf?: string, rates?: Record<string, number>) {
+    return this.provisionService.preview(asOf, rates);
+  }
+
+  async postProvision(asOf: string | undefined, rates: Record<string, number> | undefined, actorId?: string) {
+    const result = await this.provisionService.post(asOf, rates, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async provisionHistory() {
+    return this.provisionService.history();
+  }
+
+  // ── Treasury ──────────────────────────────────────────────────────────
+
+  async treasuryRatios(days?: number) {
+    return this.treasuryService.ratios(days);
+  }
+
+  async cashForecast(weeks?: number) {
+    return this.treasuryService.forecast(weeks);
+  }
+
+  async pettyCash() {
+    return this.treasuryService.pettyCash();
+  }
+
+  async createPettyCash(body: any, actorId?: string) {
+    const result = await this.treasuryService.createPettyCash(body, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async deletePettyCash(id: string, actorId?: string) {
+    const result = await this.treasuryService.deletePettyCash(id, actorId);
+    await invalidateFinance(this.cache);
+    return result;
+  }
+
+  async costByDepartment(from?: string, to?: string) {
+    return this.reportingService.costByDepartment(from, to);
+  }
+
+  // ── Auditor export pack ───────────────────────────────────────────────
+
+  async exportPack(from?: string, to?: string) {
+    return this.auditExportService.pack(from, to);
+  }
+
+  async exportGeneralLedger(from?: string, to?: string) {
+    return this.auditExportService.generalLedger(from, to);
+  }
+
+  async exportJournalListing(from?: string, to?: string) {
+    return this.auditExportService.journalListing(from, to);
+  }
+
+  async exportAccountLedger(accountId: string, from?: string, to?: string) {
+    return this.auditExportService.accountLedger(accountId, from, to);
+  }
+
+  async exportTrialBalance(from?: string, to?: string) {
+    return this.auditExportService.trialBalanceCsv(from, to);
   }
 }

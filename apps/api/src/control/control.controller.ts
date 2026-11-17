@@ -22,6 +22,7 @@ import { Roles } from "../common/decorators/roles.decorator";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { UpdateBrandingDto } from "./dto/update-branding.dto";
 import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
+import { optimizeUploadedImage } from "../common/image-pipeline";
 import { RequirePermission } from "../common/decorators/require-permission.decorator";
 
 const brandingDir = () => uploadsDir("branding");
@@ -94,7 +95,17 @@ export class ControlController {
   )
   async uploadBrandingLogo(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException("No file uploaded");
-    return { url: `/api/control/branding/uploads/${file.filename}` };
+    const image = await optimizeUploadedImage(file, {
+      kind: "logo",
+      urlPrefix: "/api/control/branding/uploads",
+    });
+    return {
+      url: image.url,
+      jxlUrl: image.jxlUrl,
+      width: image.width,
+      height: image.height,
+      size: image.size,
+    };
   }
 
   @Get("branding/uploads/:filename")
@@ -222,9 +233,10 @@ export class ControlController {
   changePassword(
     @Param("id") id: string,
     @Body() body: { oldPassword: string; newPassword: string },
-    @CurrentUser("sub") actorId: string
+    @CurrentUser("sub") actorId: string,
+    @CurrentUser("role") actorRole: string
   ) {
-    return this.control.changePassword(id, body?.oldPassword, body?.newPassword, actorId);
+    return this.control.changePassword(id, body?.oldPassword, body?.newPassword, actorId, actorRole);
   }
 
   @Delete("users/:id")

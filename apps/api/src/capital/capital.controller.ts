@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { basename } from "path";
 import { existsSync } from "fs";
 import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
+import { isConvertibleImage, optimizeUploadedImage } from "../common/image-pipeline";
 import { CapitalService } from "./capital.service";
 import { LiabilitiesService } from "./liabilities.service";
 import { DollarService } from "./dollar.service";
@@ -85,9 +86,27 @@ export class CapitalController {
     return this.liabilities.pay(id, body, user?.sub);
   }
 
+  /** Undo a vendor payment (wrong amount / duplicate) instead of refunding it. */
+  @Delete("engagements/:id/payments/:paymentId")
+  @Roles("Owner", "Finance", "CONTROL")
+  deleteEngagementPayment(
+    @Param("id") id: string,
+    @Param("paymentId") paymentId: string,
+    @CurrentUser("sub") actorId: string
+  ) {
+    return this.liabilities.deletePayment(id, paymentId, actorId);
+  }
+
   @Post("engagements/:id/complete")
   completeEngagement(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     return this.liabilities.complete(id, body, user?.sub);
+  }
+
+  /** Pay the withheld retention on a completed engagement. */
+  @Post("engagements/:id/release-retention")
+  @Roles("Owner", "Finance", "CONTROL")
+  releaseRetention(@Param("id") id: string, @Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.liabilities.releaseRetention(id, body, actorId);
   }
 
   @Post("engagements/:id/cancel")
@@ -169,6 +188,15 @@ export class CapitalController {
     return this.capital.logReminder(id, body, user?.sub);
   }
 
+  /** Undo a reminder logged from the dashboard (logged in error). */
+  @Delete("invoices/:id/reminders/:reminderId")
+  deleteReminder(
+    @Param("id") id: string,
+    @Param("reminderId") reminderId: string
+  ) {
+    return this.capital.deleteReminder(id, reminderId);
+  }
+
   @Get("invoices/:id/share")
   shareInfo(@Param("id") id: string) {
     return this.capital.shareInfo(id);
@@ -202,6 +230,12 @@ export class CapitalController {
   @Get("expenses")
   expenses(@Query() query: any, @CurrentUser() user: any) {
     return this.capital.expenses(query, user?.sub);
+  }
+
+  /** Approved client-billable expenses that are not on an invoice yet. */
+  @Get("expenses/unbilled")
+  unbilledExpenses() {
+    return this.capital.unbilledExpenses();
   }
 
   // ── Expense approval matrix ───────────────────────────────────────────
@@ -258,7 +292,12 @@ export class CapitalController {
   )
   async uploadReceipt(@Param("id") id: string, @UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException("No file uploaded");
-    const url = `/api/capital/receipts/${file.filename}`;
+    // Photos of receipts are the biggest uploads in the app; re-encode images
+    // (WebP + optional JXL). PDFs pass through untouched.
+    const image = isConvertibleImage(file.mimetype)
+      ? await optimizeUploadedImage(file, { kind: "document", urlPrefix: "/api/capital/receipts" })
+      : null;
+    const url = image ? image.url : `/api/capital/receipts/${file.filename}`;
     try {
       await this.capital.updateExpense(id, { receiptUrl: url });
     } catch (error) {
@@ -266,10 +305,10 @@ export class CapitalController {
       // does not exist (or the update fails) remove it instead of leaving an
       // orphan receipt on disk.
       const { unlink } = await import("fs/promises");
-      await unlink(file.path).catch(() => null);
+      await unlink(image ? findUploadedFile("receipts", image.fileName) : file.path).catch(() => null);
       throw error;
     }
-    return { url, name: file.originalname };
+    return { url, jxlUrl: image?.jxlUrl ?? null, name: file.originalname };
   }
 
   @Get("receipts/:filename")
@@ -429,23 +468,23 @@ export class CapitalController {
   }
 
   @Get("statements/trial-balance")
-  trialBalance() {
-    return this.capital.trialBalance();
+  trialBalance(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.trialBalance(from, to);
   }
 
   @Get("statements/profit-loss")
-  profitLoss() {
-    return this.capital.profitLoss();
+  profitLoss(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.profitLoss(from, to);
   }
 
   @Get("statements/balance-sheet")
-  balanceSheet() {
-    return this.capital.balanceSheet();
+  balanceSheet(@Query("asOf") asOf?: string) {
+    return this.capital.balanceSheet(asOf);
   }
 
   @Get("statements/cash-flow")
-  cashFlow() {
-    return this.capital.cashFlow();
+  cashFlow(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.cashFlow(from, to);
   }
 
   @Get("aging/ap")
@@ -497,5 +536,368 @@ export class CapitalController {
   @Get("installments/due")
   installmentsDue() {
     return this.capital.installmentsDue();
+  }
+
+  /**
+   * Maintenance: reverse journal entries whose source document was deleted.
+   * Financial records are never hard-deleted, so this is the only way to bring
+   * AR / VAT / P&L back in line after a bad delete or a reseed.
+   */
+  @Post("maintenance/reverse-orphan-journals")
+  @Roles("Owner", "Finance", "CONTROL")
+  reverseOrphanJournals(@CurrentUser("sub") actorId: string) {
+    return this.capital.repairOrphanJournals(actorId);
+  }
+
+  // ── Fiscal periods ────────────────────────────────────────────────────
+
+  @Get("periods")
+  periods(@Query("year") year?: string) {
+    return this.capital.periods(year);
+  }
+
+  @Post("periods/generate")
+  @Roles("Owner", "Finance", "CONTROL")
+  generatePeriods(@Body() body: { year?: number }) {
+    const year = Number(body?.year ?? new Date().getFullYear());
+    return this.capital.generatePeriods(year);
+  }
+
+  @Post("periods")
+  @Roles("Owner", "Finance", "CONTROL")
+  createPeriod(@Body() body: any) {
+    return this.capital.createPeriod(body);
+  }
+
+  @Get("periods/:id/checklist")
+  periodChecklist(@Param("id") id: string) {
+    return this.capital.periodChecklist(id);
+  }
+
+  @Post("periods/:id/close")
+  @Roles("Owner", "Finance", "CONTROL")
+  closePeriod(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.closePeriod(id, actorId);
+  }
+
+  @Post("periods/:id/reopen")
+  @Roles("Owner", "Finance", "CONTROL")
+  reopenPeriod(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.reopenPeriod(id, actorId);
+  }
+
+  @Post("periods/:id/lock")
+  @Roles("Owner", "CONTROL")
+  lockPeriod(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.lockPeriod(id, actorId);
+  }
+
+  @Post("periods/:id/unlock")
+  @Roles("Owner", "CONTROL")
+  unlockPeriod(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.unlockPeriod(id, actorId);
+  }
+
+  // ── Manual journals ───────────────────────────────────────────────────
+
+  @Get("journals/accounts")
+  journalAccounts() {
+    return this.capital.manualJournalAccounts();
+  }
+
+  @Get("journals")
+  journals(@Query() query: any) {
+    return this.capital.manualJournals(query);
+  }
+
+  @Get("journals/:id")
+  journal(@Param("id") id: string) {
+    return this.capital.manualJournal(id);
+  }
+
+  @Post("journals")
+  @Roles("Owner", "Finance", "CONTROL")
+  createJournal(@Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.createManualJournal(body, actorId);
+  }
+
+  @Patch("journals/:id")
+  @Roles("Owner", "Finance", "CONTROL")
+  updateJournal(@Param("id") id: string, @Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.updateManualJournal(id, body, actorId);
+  }
+
+  @Post("journals/:id/post")
+  @Roles("Owner", "Finance", "CONTROL")
+  postJournal(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.postManualJournal(id, actorId);
+  }
+
+  @Post("journals/:id/void")
+  @Roles("Owner", "Finance", "CONTROL")
+  voidJournal(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.voidManualJournal(id, actorId);
+  }
+
+  @Delete("journals/:id")
+  @Roles("Owner", "Finance", "CONTROL")
+  deleteJournal(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.deleteManualJournal(id, actorId);
+  }
+
+  // ── Fixed assets ──────────────────────────────────────────────────────
+
+  @Get("assets")
+  fixedAssets() {
+    return this.capital.fixedAssets();
+  }
+
+  @Get("assets/:id")
+  fixedAsset(@Param("id") id: string) {
+    return this.capital.fixedAsset(id);
+  }
+
+  @Post("assets")
+  @Roles("Owner", "Finance", "CONTROL")
+  createFixedAsset(@Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.createFixedAsset(body, actorId);
+  }
+
+  @Patch("assets/:id")
+  @Roles("Owner", "Finance", "CONTROL")
+  updateFixedAsset(@Param("id") id: string, @Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.updateFixedAsset(id, body, actorId);
+  }
+
+  @Post("assets/:id/dispose")
+  @Roles("Owner", "Finance", "CONTROL")
+  disposeFixedAsset(@Param("id") id: string, @Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.disposeFixedAsset(id, body, actorId);
+  }
+
+  @Post("depreciation/run")
+  @Roles("Owner", "Finance", "CONTROL")
+  runDepreciation(@Body() body: { period?: string }, @CurrentUser("sub") actorId: string) {
+    const period = body?.period ?? new Date().toISOString().slice(0, 7);
+    return this.capital.runDepreciation(period, actorId);
+  }
+
+  // ── VAT / withholding ─────────────────────────────────────────────────
+
+  @Get("vat/sales-register")
+  vatSalesRegister(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.vatSalesRegister(from, to);
+  }
+
+  @Get("vat/purchase-register")
+  vatPurchaseRegister(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.vatPurchaseRegister(from, to);
+  }
+
+  @Get("vat/return")
+  vatReturn(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.vatReturn(from, to);
+  }
+
+  @Get("vat/withholding")
+  withholdingRegister(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.withholdingRegister(from, to);
+  }
+
+  // ── Bank statement import / reconciliation ────────────────────────────
+
+  @Post("bank-accounts/:id/statement/import")
+  @Roles("Owner", "Finance", "CONTROL")
+  importStatement(@Param("id") id: string, @Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.importBankStatement(id, body, actorId);
+  }
+
+  @Get("bank-accounts/:id/statement")
+  bankStatement(@Param("id") id: string, @Query("status") status?: string) {
+    return this.capital.bankStatement(id, status);
+  }
+
+  @Post("bank-accounts/:id/statement/auto-match")
+  @Roles("Owner", "Finance", "CONTROL")
+  autoMatchBank(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.autoMatchBank(id, actorId);
+  }
+
+  @Patch("statement-lines/:id/match")
+  @Roles("Owner", "Finance", "CONTROL")
+  matchBankLine(@Param("id") id: string, @Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.matchBankLine(id, body, actorId);
+  }
+
+  @Patch("statement-lines/:id/unmatch")
+  @Roles("Owner", "Finance", "CONTROL")
+  unmatchBankLine(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.unmatchBankLine(id, actorId);
+  }
+
+  @Patch("statement-lines/:id/ignore")
+  @Roles("Owner", "Finance", "CONTROL")
+  ignoreBankLine(@Param("id") id: string, @Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.ignoreBankLine(id, body, actorId);
+  }
+
+  @Delete("statement-lines/:id")
+  @Roles("Owner", "Finance", "CONTROL")
+  deleteBankLine(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.deleteBankLine(id, actorId);
+  }
+
+  // ── FX revaluation ────────────────────────────────────────────────────
+
+  @Post("fx/revaluation/preview")
+  previewFxRevaluation(@Body() body: { asOf?: string; rates?: Record<string, number> }) {
+    return this.capital.previewFxRevaluation(body?.asOf, body?.rates);
+  }
+
+  @Post("fx/revaluation")
+  @Roles("Owner", "Finance", "CONTROL")
+  postFxRevaluation(@Body() body: { asOf?: string; rates?: Record<string, number> }, @CurrentUser("sub") actorId: string) {
+    return this.capital.postFxRevaluation(body?.asOf, body?.rates, actorId);
+  }
+
+  @Get("fx/revaluation/history")
+  fxRevaluationHistory() {
+    return this.capital.fxRevaluationHistory();
+  }
+
+  // ── Invoice approval workflow ─────────────────────────────────────────
+
+  @Post("invoices/:id/approve")
+  @Roles("Owner", "Finance", "CONTROL")
+  approveInvoice(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.approveInvoice(id, actorId);
+  }
+
+  @Post("invoices/:id/reject")
+  @Roles("Owner", "Finance", "CONTROL")
+  rejectInvoice(@Param("id") id: string, @Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.rejectInvoice(id, body, actorId);
+  }
+
+  // ── Revenue recognition ───────────────────────────────────────────────
+
+  @Get("revenue-schedules")
+  revenueSchedules(@Query("status") status?: string) {
+    return this.capital.revenueSchedules(status);
+  }
+
+  @Post("revenue-schedules")
+  @Roles("Owner", "Finance", "CONTROL")
+  createRevenueSchedule(@Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.createRevenueSchedule(body, actorId);
+  }
+
+  @Post("revenue-schedules/recognize")
+  @Roles("Owner", "Finance", "CONTROL")
+  runRevenueRecognition(@Body() body: { period?: string }, @CurrentUser("sub") actorId: string) {
+    const period = body?.period ?? new Date().toISOString().slice(0, 7);
+    return this.capital.runRevenueRecognition(period, actorId);
+  }
+
+  @Post("revenue-schedules/:id/cancel")
+  @Roles("Owner", "Finance", "CONTROL")
+  cancelRevenueSchedule(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.cancelRevenueSchedule(id, actorId);
+  }
+
+  // ── Bad-debt provision ────────────────────────────────────────────────
+
+  @Post("provision/preview")
+  previewProvision(@Body() body: { asOf?: string; rates?: Record<string, number> }) {
+    return this.capital.previewProvision(body?.asOf, body?.rates);
+  }
+
+  @Post("provision")
+  @Roles("Owner", "Finance", "CONTROL")
+  postProvision(@Body() body: { asOf?: string; rates?: Record<string, number> }, @CurrentUser("sub") actorId: string) {
+    return this.capital.postProvision(body?.asOf, body?.rates, actorId);
+  }
+
+  @Get("provision/history")
+  provisionHistory() {
+    return this.capital.provisionHistory();
+  }
+
+  // ── Treasury ──────────────────────────────────────────────────────────
+
+  @Get("treasury/ratios")
+  treasuryRatios(@Query("days") days?: string) {
+    return this.capital.treasuryRatios(days ? Number(days) : undefined);
+  }
+
+  @Get("treasury/forecast")
+  cashForecast(@Query("weeks") weeks?: string) {
+    return this.capital.cashForecast(weeks ? Number(weeks) : undefined);
+  }
+
+  @Get("petty-cash")
+  pettyCash() {
+    return this.capital.pettyCash();
+  }
+
+  @Post("petty-cash")
+  @Roles("Owner", "Finance", "CONTROL")
+  createPettyCash(@Body() body: any, @CurrentUser("sub") actorId: string) {
+    return this.capital.createPettyCash(body, actorId);
+  }
+
+  @Delete("petty-cash/:id")
+  @Roles("Owner", "Finance", "CONTROL")
+  deletePettyCash(@Param("id") id: string, @CurrentUser("sub") actorId: string) {
+    return this.capital.deletePettyCash(id, actorId);
+  }
+
+  @Get("reports/by-department")
+  costByDepartment(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.costByDepartment(from, to);
+  }
+
+  // ── Auditor export ────────────────────────────────────────────────────
+
+  @Get("export/pack")
+  exportPack(@Query("from") from?: string, @Query("to") to?: string) {
+    return this.capital.exportPack(from, to);
+  }
+
+  @Get("export/general-ledger")
+  async exportGeneralLedger(@Res() res: any, @Query("from") from?: string, @Query("to") to?: string) {
+    const file = await this.capital.exportGeneralLedger(from, to);
+    res.setHeader("content-type", "text/csv; charset=utf-8");
+    res.setHeader("content-disposition", `attachment; filename="${file.filename}"`);
+    return res.send("\uFEFF" + file.csv);
+  }
+
+  @Get("export/journal-listing")
+  async exportJournalListing(@Res() res: any, @Query("from") from?: string, @Query("to") to?: string) {
+    const file = await this.capital.exportJournalListing(from, to);
+    res.setHeader("content-type", "text/csv; charset=utf-8");
+    res.setHeader("content-disposition", `attachment; filename="${file.filename}"`);
+    return res.send("\uFEFF" + file.csv);
+  }
+
+  @Get("export/trial-balance")
+  async exportTrialBalance(@Res() res: any, @Query("from") from?: string, @Query("to") to?: string) {
+    const file = await this.capital.exportTrialBalance(from, to);
+    res.setHeader("content-type", "text/csv; charset=utf-8");
+    res.setHeader("content-disposition", `attachment; filename="${file.filename}"`);
+    return res.send("\uFEFF" + file.csv);
+  }
+
+  @Get("export/ledger/:accountId")
+  async exportAccountLedger(
+    @Res() res: any,
+    @Param("accountId") accountId: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string
+  ) {
+    const file = await this.capital.exportAccountLedger(accountId, from, to);
+    res.setHeader("content-type", "text/csv; charset=utf-8");
+    res.setHeader("content-disposition", `attachment; filename="${file.filename}"`);
+    return res.send("\uFEFF" + file.csv);
   }
 }

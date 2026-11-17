@@ -42,6 +42,20 @@ export class BillingService {
     }
   }
 
+  /**
+   * Nightly guard against ledger drift: any journal whose source document no
+   * longer exists is reversed. This should never find anything now that every
+   * delete path reverses its own journal, but it is the safety net that would
+   * have caught the ৳1.1 lakh of phantom AR.
+   */
+  @Cron("30 3 * * *")
+  async handleOrphanJournalSweep() {
+    const result = await this.ledger.reverseOrphanJournals().catch(() => null);
+    if (result?.reversed) {
+      await invalidateFinance(this.cache).catch(() => null);
+    }
+  }
+
 
   async runRecurringBilling() {
     const projects = await this.prisma.project.findMany({

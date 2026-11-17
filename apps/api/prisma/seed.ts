@@ -31,68 +31,22 @@ async function main() {
   }
   console.log("Seeding Zoolyum OS...");
 
-  // ── wipe in dependency order ─────────────────────────────────────────
-  await prisma.$transaction([
-    prisma.deliverableApproval.deleteMany(),
-    prisma.clientComment.deleteMany(),
-    prisma.portalActivityLog.deleteMany(),
-    prisma.portalUser.deleteMany(),
-    prisma.financeAuditLog.deleteMany(),
-    prisma.reconciliationRecord.deleteMany(),
-    prisma.bankAccount.deleteMany(),
-    prisma.creditBalance.deleteMany(),
-    prisma.budget.deleteMany(),
-    prisma.payment.deleteMany(),
-    prisma.invoiceLineItem.deleteMany(),
-    prisma.invoice.deleteMany(),
-    prisma.expense.deleteMany(),
-    prisma.vendor.deleteMany(),
-    prisma.account.deleteMany(),
-    prisma.estimateAccuracyLog.deleteMany(),
-    prisma.taskComment.deleteMany(),
-    prisma.timeLog.deleteMany(),
-    prisma.taskDependency.deleteMany(),
-    prisma.task.deleteMany(),
-    prisma.projectRiskLog.deleteMany(),
-    prisma.projectFile.deleteMany(),
-    prisma.milestone.deleteMany(),
-    prisma.project.deleteMany(),
-    prisma.projectTemplate.deleteMany(),
-    prisma.churnRiskFlag.deleteMany(),
-    prisma.clientHealthLog.deleteMany(),
-    prisma.clientDocument.deleteMany(),
-    prisma.clientContact.deleteMany(),
-    prisma.client.deleteMany(),
-    prisma.lostReason.deleteMany(),
-    prisma.proposal.deleteMany(),
-    prisma.leadActivity.deleteMany(),
-    prisma.leadFollowUp.deleteMany(),
-    prisma.leadNote.deleteMany(),
-    prisma.lead.deleteMany(),
-    prisma.leadCategory.deleteMany(),
-    prisma.pipelineStage.deleteMany(),
-    prisma.attritionRiskFlag.deleteMany(),
-    prisma.utilizationLog.deleteMany(),
-    prisma.performanceReview.deleteMany(),
-    prisma.payrollRecord.deleteMany(),
-    prisma.leaveBalance.deleteMany(),
-    prisma.leaveRequest.deleteMany(),
-    prisma.attendanceCorrection.deleteMany(),
-    prisma.attendance.deleteMany(),
-    prisma.punchLog.deleteMany(),
-    prisma.employee.deleteMany(),
-    prisma.holiday.deleteMany(),
-    prisma.attendancePolicy.deleteMany(),
-    prisma.metricSnapshot.deleteMany(),
-    prisma.correlationInsight.deleteMany(),
-    prisma.executiveDigestLog.deleteMany(),
-    prisma.reportDefinition.deleteMany(),
-    prisma.systemAuditLog.deleteMany(),
-    prisma.brandingConfig.deleteMany(),
-    prisma.integration.deleteMany(),
-    prisma.user.deleteMany(),
-    prisma.role.deleteMany(),
-  ]);
+  // ── wipe ────────────────────────────────────────────────────
+  // A hand-ordered list of deleteMany() calls kept missing new tables (the
+  // calendar/campaign FKs broke the seed). TRUNCATE ... CASCADE removes every
+  // demo table in one statement and cannot get the order wrong. Settings and
+  // branding are kept so a re-seed does not throw away workspace configuration.
+  const KEEP = new Set(["Settings", "BrandingConfig", "_prisma_migrations"]);
+  const tables = await prisma.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+  `;
+  const targets = tables
+    .map((t) => t.tablename)
+    .filter((name) => !KEEP.has(name))
+    .map((name) => `"${name.replace(/"/g, '""')}"`);
+  if (targets.length) {
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${targets.join(", ")} RESTART IDENTITY CASCADE`);
+  }
 
   // ── Roles ────────────────────────────────────────────────────────────
   const perm = (
@@ -298,7 +252,10 @@ async function main() {
         deductions: bdt(Math.round(base * 0.05)), unpaidLeaveDeduction: bdt(0),
         bonus: e.id === empFahim.id ? bdt(5000) : bdt(0),
         netPay: bdt(Math.round(base * 1.2 - base * 0.05) + (e.id === empFahim.id ? 5000 : 0)),
-        status: "FINALIZED",
+        // DRAFT, not FINALIZED: a finalized record is expected to carry a posted
+        // salary expense (Dr Salaries / Cr AP or Bank). The seed used to stamp
+        // FINALIZED directly, so ৳9.6 lakh of salary was never in the ledger.
+        status: "DRAFT",
         auditTrail: [{ source: "attendance_auto_draft", period: "2026-07" }],
       },
     });
@@ -701,6 +658,25 @@ async function main() {
   });
 
   // ── Capital ──────────────────────────────────────────────────────────
+  // Fiscal calendar first: the ledger refuses to post into CLOSED/LOCKED months,
+  // and the close control needs a period row per month to mean anything.
+  {
+    const year = new Date().getUTCFullYear();
+    for (let m = 0; m < 12; m++) {
+      const startDate = new Date(Date.UTC(year, m, 1));
+      const endDate = new Date(Date.UTC(year, m + 1, 0));
+      const clash = await prisma.fiscalPeriod.findFirst({ where: { startDate, endDate }, select: { id: true } });
+      if (clash) continue;
+      await prisma.fiscalPeriod.create({
+        data: {
+          name: startDate.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
+          periodType: "MONTH",
+          startDate,
+          endDate,
+        },
+      });
+    }
+  }
   const acctReceivables = await prisma.account.create({ data: { code: "1100", name: "Accounts Receivable", category: "ASSET" } });
   const acctCash = await prisma.account.create({ data: { code: "1200", name: "Cash & Bank", category: "ASSET" } });
   const acctPayables = await prisma.account.create({ data: { code: "2000", name: "Accounts Payable", category: "LIABILITY" } });
@@ -752,7 +728,7 @@ async function main() {
 
   const vendorFb = await prisma.vendor.create({ data: { name: "Meta Platforms", category: "Ad Spend", email: "billing@meta.com", phone: "+1 650 543 4800", paymentTerms: "Net 15" } });
   await prisma.vendor.create({ data: { name: "Fiverr Freelancers", category: "Freelancer", email: "support@fiverr.com", paymentTerms: "Net 7" } });
-  await prisma.vendor.create({ data: { name: "Cameraman Rafi", category: "Production", phone: "+8801711223344", paymentTerms: "On delivery" } });
+  const vendorCameraman = await prisma.vendor.create({ data: { name: "Cameraman Rafi", category: "Production", phone: "+8801711223344", paymentTerms: "On delivery" } });
   await prisma.vendor.create({ data: { name: "Adobe", category: "Software", email: "billing@adobe.com", paymentTerms: "Net 30" } });
 
   // expenses
@@ -808,9 +784,10 @@ async function main() {
     }
   }
 
-  await prisma.creditBalance.create({
-    data: { clientId: clients.get("GlowSkin Beauty").id, amount: bdt(12500), source: "Overpayment" },
-  });
+  // NOTE: the seed used to invent a ৳12,500 "Overpayment" credit balance with no
+  // journal behind it, so the client board showed money the ledger never had.
+  // Customer advances are only created by a real overpayment (see
+  // InvoiceService.applyOverpayment, which posts Dr AR / Cr 2400).
   await prisma.budget.createMany({
     data: [
       { scopeType: "PROJECT", projectId: projects.get("Admission Campaign Video").id, budgetAmount: bdt(320000) },
@@ -899,7 +876,7 @@ async function main() {
             { accountId: acctBank.id, debit: 0, credit: -openingGap },
             { accountId: acctEquity.id, debit: -openingGap, credit: 0 },
           ];
-    await postEntry("OPENING", "OPENING-BANK", new Date(Date.UTC(2026, 0, 1)), "OPENING-BANK", "Opening cash to match bank accounts", openingLines);
+    await postEntry("OPENING", "OPENING-BANK", new Date(Date.UTC(2026, 0, 1)), null, "Opening cash to match bank accounts", openingLines);
   }
 
   // ── Insight: metric snapshots (8 months trend) ───────────────────────
@@ -1071,6 +1048,223 @@ async function main() {
       color: "#8B5CF6",
     },
   });
+
+  // ── Flow: committed deliverables (8 graphics + 4 videos) + shoots ────
+  // The deliverable list is what the reports slice by kind, campaign and owner.
+  const admissionProject = projects.get("Admission Campaign Video");
+  const glowProject = projects.get("Brand Film Series");
+
+  const deliverableDefs: {
+    projectId: string;
+    kind: "GRAPHIC" | "VIDEO" | "PHOTO" | "COPY" | "OTHER";
+    title: string;
+    topic: string;
+    objective: string;
+    campaignId?: string;
+    ownerId?: string;
+    due: number;
+    status?: "PENDING" | "IN_PROGRESS" | "DELIVERED";
+    deliveredDaysAgo?: number;
+    clientVisible?: boolean;
+  }[] = [
+    { projectId: admissionProject.id, kind: "GRAPHIC", title: "Admission post — campus hero", topic: "Campus hero — main building at golden hour", objective: "Awareness", campaignId: campaignGvs.id, ownerId: empMitu.id, due: 3, status: "DELIVERED", deliveredDaysAgo: 2, clientVisible: true },
+    { projectId: admissionProject.id, kind: "GRAPHIC", title: "Admission post — science lab", topic: "Science lab — students mid-experiment", objective: "Awareness", campaignId: campaignGvs.id, ownerId: empMitu.id, due: 4, status: "DELIVERED", deliveredDaysAgo: 6, clientVisible: true },
+    { projectId: admissionProject.id, kind: "GRAPHIC", title: "Admission post — library", topic: "Library reading corner, warm light", objective: "Awareness", campaignId: campaignGvs.id, ownerId: empMitu.id, due: 5, status: "IN_PROGRESS" },
+    { projectId: admissionProject.id, kind: "GRAPHIC", title: "Admission post — sports day", topic: "Sports day action frame, motion blur", objective: "Engagement", campaignId: campaignGvs.id, ownerId: empMitu.id, due: 6 },
+    { projectId: admissionProject.id, kind: "GRAPHIC", title: "Admission post — principal quote", topic: "Principal portrait with pull quote", objective: "Trust", campaignId: campaignGvs.id, ownerId: empMitu.id, due: 7 },
+    { projectId: admissionProject.id, kind: "GRAPHIC", title: "Admission carousel — 5 reasons", topic: "Five reasons to choose GVS (carousel)", objective: "Consideration", campaignId: campaignGvs.id, ownerId: empMitu.id, due: 8 },
+    { projectId: admissionProject.id, kind: "GRAPHIC", title: "Admission story — day in the life", topic: "Day-in-the-life story frames ×5", objective: "Engagement", campaignId: campaignGvs.id, ownerId: empMitu.id, due: 9 },
+    { projectId: admissionProject.id, kind: "GRAPHIC", title: "Admission print — brochure cover", topic: "Brochure cover, A4 print-ready", objective: "Awareness", campaignId: campaignGvs.id, ownerId: empMitu.id, due: 10 },
+    { projectId: admissionProject.id, kind: "VIDEO", title: "Hero film — 60s", topic: "60-second campus film with Bangla VO", objective: "Awareness", campaignId: campaignGvs.id, ownerId: empFahim.id, due: 12, clientVisible: true },
+    { projectId: admissionProject.id, kind: "VIDEO", title: "Testimonial film — parent", topic: "Parent testimonial, 45s, subtitled", objective: "Trust", campaignId: campaignGvs.id, ownerId: empFahim.id, due: 14 },
+    { projectId: admissionProject.id, kind: "VIDEO", title: "Reel — admission countdown", topic: "15s vertical countdown reel", objective: "Urgency", campaignId: campaignGvs.id, ownerId: empFahim.id, due: 11, status: "IN_PROGRESS" },
+    { projectId: admissionProject.id, kind: "VIDEO", title: "Principal message — 90s", topic: "Principal message to camera", objective: "Trust", campaignId: campaignGvs.id, ownerId: empFahim.id, due: 16 },
+    { projectId: glowProject.id, kind: "GRAPHIC", title: "Winter Glow — hero visual", topic: "Hero visual, product on ice", objective: "Launch", campaignId: campaignGlow.id, ownerId: empMitu.id, due: 9 },
+    { projectId: glowProject.id, kind: "VIDEO", title: "Winter Glow — 30s film", topic: "30s launch film, slow-motion pour", objective: "Launch", campaignId: campaignGlow.id, ownerId: empFahim.id, due: 18 },
+    { projectId: glowProject.id, kind: "PHOTO", title: "Winter Glow — product stills", topic: "Product stills set, 12 frames", objective: "Conversion", campaignId: campaignGlow.id, ownerId: empMitu.id, due: 20 },
+  ];
+
+  for (let i = 0; i < deliverableDefs.length; i++) {
+    const d = deliverableDefs[i];
+    await prisma.projectDeliverable.create({
+      data: {
+        projectId: d.projectId,
+        title: d.title,
+        kind: d.kind,
+        topic: d.topic,
+        objective: d.objective,
+        campaignId: d.campaignId ?? null,
+        ownerId: d.ownerId ?? null,
+        sortOrder: i + 1,
+        status: d.status ?? "PENDING",
+        dueDate: daysFromNow(d.due),
+        startDate: daysAgo(1),
+        completedAt: d.status === "DELIVERED" ? daysAgo(d.deliveredDaysAgo ?? 1) : null,
+        clientVisible: d.clientVisible ?? false,
+      },
+    });
+  }
+
+  // Two production days for the admission film + one for the winter launch.
+  const shootDefs: {
+    projectId: string;
+    campaignId: string;
+    title: string;
+    day: number;
+    end?: number;
+    duration: "HALF_DAY" | "FULL_DAY";
+    call: string;
+    wrap: string;
+    location: string;
+    note: string;
+    description: string;
+    equipment: string[];
+    status: "PLANNED" | "CONFIRMED" | "IN_PROGRESS" | "WRAPPED" | "CANCELLED";
+    crew: {
+      role: string;
+      source: "EMPLOYEE" | "VENDOR" | "EXTERNAL";
+      employeeId?: string;
+      vendorId?: string;
+      name?: string;
+      phone?: string;
+      fee?: number;
+      isConfirmed?: boolean;
+      callTime?: string;
+    }[];
+  }[] = [
+    {
+      projectId: admissionProject.id,
+      campaignId: campaignGvs.id,
+      title: "TVC Day 1 — Banani Studio",
+      day: 4,
+      duration: "FULL_DAY",
+      call: "09:30",
+      wrap: "18:00",
+      location: "Studio 4, Banani",
+      note: "3rd floor, service lift on the left",
+      description: "Main film: classroom, library and principal soundbite. Three setups.",
+      equipment: ["Sony FX3 ×2", "24-70mm f/2.8", "70-200mm f/2.8", "Aputure 300D ×2", "DJI RS4 gimbal", "Rode Wireless Go II ×2"],
+      status: "CONFIRMED",
+      crew: [
+        { role: "DOP", source: "EXTERNAL", name: "Imran Hossain", phone: "+8801811223344", fee: 12000, isConfirmed: true, callTime: "09:00" },
+        { role: "CAMERAMAN", source: "VENDOR", vendorId: vendorCameraman.id, isConfirmed: true },
+        { role: "PRODUCER", source: "EMPLOYEE", employeeId: empKarim.id, isConfirmed: true, callTime: "08:30" },
+        { role: "TEAM_MEMBER", source: "EMPLOYEE", employeeId: empLamia.id, isConfirmed: true },
+      ],
+    },
+    {
+      projectId: admissionProject.id,
+      campaignId: campaignGvs.id,
+      title: "TVC Day 2 — Campus",
+      day: 8,
+      duration: "FULL_DAY",
+      call: "08:00",
+      wrap: "14:00",
+      location: "Green Valley School, Uttara",
+      note: "Report to the admin block; gate pass at reception",
+      description: "Campus B-roll, sports day sequence and student interviews.",
+      equipment: ["Sony FX3", "16-35mm f/2.8", "DJI Mini 4 Pro", "Rode Wireless Go II", "Reflector 5-in-1"],
+      status: "PLANNED",
+      crew: [
+        { role: "CAMERAMAN", source: "EMPLOYEE", employeeId: empFahim.id },
+        { role: "DRONE_OPERATOR", source: "EXTERNAL", name: "Shuvo Das", phone: "+8801911002233", fee: 6000 },
+        { role: "TEAM_MEMBER", source: "EMPLOYEE", employeeId: empKarim.id },
+      ],
+    },
+    {
+      projectId: glowProject.id,
+      campaignId: campaignGlow.id,
+      title: "Winter Glow — product stills",
+      day: 12,
+      end: 13,
+      duration: "HALF_DAY",
+      call: "10:00",
+      wrap: "14:00",
+      location: "In-house studio, Gulshan",
+      note: "Ice blocks arrive 09:00 — shoot window is short",
+      description: "Tabletop stills and the slow-motion pour for the 30s film.",
+      equipment: ["Canon R5", "100mm macro", "Godox AD600 ×2", "Ice rig + drip tray"],
+      status: "PLANNED",
+      crew: [
+        { role: "DOP", source: "EMPLOYEE", employeeId: empFahim.id },
+        { role: "PHOTOGRAPHER", source: "EXTERNAL", name: "Tania Rahman", phone: "+8801712004455", fee: 8000 },
+        { role: "STYLIST", source: "EXTERNAL", name: "Rupa Akter", fee: 3500 },
+      ],
+    },
+  ];
+
+  for (const s of shootDefs) {
+    const created = await prisma.shoot.create({
+      data: {
+        projectId: s.projectId,
+        campaignId: s.campaignId,
+        title: s.title,
+        shootDate: daysFromNow(s.day),
+        endDate: s.end ? daysFromNow(s.end) : null,
+        durationType: s.duration,
+        callTime: s.call,
+        wrapTime: s.wrap,
+        location: s.location,
+        locationNote: s.note,
+        description: s.description,
+        equipment: s.equipment,
+        status: s.status,
+        createdById: uKarim.id,
+        crew: {
+          create: s.crew.map((c) => {
+            // The schema stores a name snapshot, so the seed must resolve it the
+            // same way the API does for team members and vendors.
+            const employee = c.employeeId
+              ? employees.find((e) => e.id === c.employeeId)
+              : undefined;
+            const name =
+              c.name ??
+              employee?.name ??
+              (c.vendorId === vendorCameraman.id ? vendorCameraman.name : undefined) ??
+              "Crew";
+            return {
+              role: c.role as any,
+              source: c.source as any,
+              employeeId: c.employeeId ?? null,
+              vendorId: c.vendorId ?? null,
+              name,
+              phone: c.phone ?? employee?.phone ?? null,
+              callTime: c.callTime ?? s.call,
+              isConfirmed: c.isConfirmed ?? false,
+              fee: c.fee ? bdt(c.fee) : null,
+            };
+          }),
+        },
+      },
+      include: { crew: true },
+    });
+
+    // Mirror the call-sheet onto the calendar (same contract the API uses).
+    const dayKey = new Date(created.shootDate).toISOString().slice(0, 10);
+    const event = await prisma.calendarEvent.create({
+      data: {
+        title: created.title,
+        type: "SHOOT",
+        date: dayKey,
+        endDate: created.endDate ? new Date(created.endDate).toISOString().slice(0, 10) : null,
+        startTime: created.callTime,
+        endTime: created.wrapTime,
+        allDay: !created.callTime,
+        location: created.location,
+        notes: created.description,
+        attendeeIds: created.crew.map((c) => c.employeeId).filter((id): id is string => !!id),
+        projectId: created.projectId,
+        clientId: s.projectId === glowProject.id ? glow.id : gvs.id,
+        campaignId: created.campaignId,
+        visibility: "INTERNAL",
+        createdById: uKarim.id,
+      },
+    });
+    await prisma.shoot.update({
+      where: { id: created.id },
+      data: { calendarEventId: event.id },
+    });
+  }
 
   await prisma.adFlight.createMany({
     data: [

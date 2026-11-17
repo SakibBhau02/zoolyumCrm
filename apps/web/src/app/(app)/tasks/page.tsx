@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  AlarmClock, Archive, ArrowRight, ArrowUp, Building2, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
+  AlarmClock, Archive, ArrowDown, ArrowRight, ArrowUp, Building2, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight,
   Copy, ExternalLink, FileText, Flame, FolderKanban, GitBranch, Link2, ListTodo, MessageSquare, MoreHorizontal, Paperclip, Play,
   Plus, Pencil, RefreshCw, Search, Save, Settings2, ShieldAlert, SlidersHorizontal, Smile, Timer, Trash2, Upload, UserRound, X, Zap,
 } from "lucide-react";
@@ -22,6 +22,9 @@ import { TaskTimerProvider } from "@/components/tasks/timer-context";
 import { TaskContextSidebar } from "@/components/tasks/task-context-sidebar";
 import { SprintBurndownCard, SprintPicker, type Sprint } from "@/components/tasks/sprint";
 import { SavedViewBar, type SavedView } from "@/components/tasks/saved-views";
+// The app already ships an in-app confirm (capital uses it for every destructive
+// action); native window.confirm() here was the odd one out (audit UX-20).
+import { ConfirmModal } from "@/app/(app)/capital/_components/modals";
 import {
   BOARD_COLUMNS,
   GANTT_BAR,
@@ -265,6 +268,61 @@ function CommentItem({ c, replyTo, replyText, setReplyTo, setReplyText, onPostRe
   );
 }
 
+/** How each server sort orders rows — used for aria-sort on the header (UX-12). */
+const SORT_DIRECTION: Record<string, "ascending" | "descending"> = {
+  due: "ascending",
+  priority: "descending",
+  title: "ascending",
+  status: "ascending",
+  created: "descending",
+};
+
+/**
+ * Sortable column header. The list is sorted server-side (`?sort=`), so the
+ * header only needs to set the key and expose the resulting order. A raw <th>
+ * is used because the shared <Th> cannot carry `aria-sort`; the classes mirror
+ * it so the header row is unchanged visually.
+ */
+function TaskSortTh({
+  text,
+  sortKey,
+  current,
+  onSort,
+  className,
+}: {
+  text: string;
+  sortKey: string;
+  current: string;
+  onSort: (k: string) => void;
+  className?: string;
+}) {
+  const active = current === sortKey;
+  const dir = SORT_DIRECTION[sortKey] ?? "ascending";
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? dir : "none"}
+      className={cn(
+        "whitespace-nowrap px-3 py-2.5 text-left text-micro font-semibold uppercase tracking-wider text-muted-foreground sm:px-5",
+        className
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        aria-label={`Sort by ${text}${active ? `, currently ${dir}` : ""}`}
+        className={cn(
+          "inline-flex items-center gap-1 uppercase tracking-wider transition-colors",
+          active ? "text-foreground" : "hover:text-foreground"
+        )}
+      >
+        {text}
+        {active && (dir === "ascending" ? <ArrowUp className="size-3 opacity-70" /> : <ArrowDown className="size-3 opacity-70" />)}
+      </button>
+    </th>
+  );
+}
+
 function FragmentRow({ t, i, expanded, hasChildren, childrenList, onToggleExpand, selected, onSelect, onOpen, onChanged, renderChild }: {
   t: TaskRow; i: number; expanded: boolean; hasChildren: boolean; childrenList: TaskRow[];
   onToggleExpand: () => void; selected: boolean; onSelect: () => void; onOpen: () => void; onChanged: () => void;
@@ -287,10 +345,10 @@ function FragmentRow({ t, i, expanded, hasChildren, childrenList, onToggleExpand
             )}
           </div>
         </Td>
-        <Td className="max-w-[190px] whitespace-normal">
+        <Td className="min-w-[220px] whitespace-normal">
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-1.5">
-              <p className="max-w-44 truncate font-semibold leading-none">{t.title}</p>
+              <p className="min-w-0 max-w-[340px] truncate font-semibold leading-none">{t.title}</p>
               {t.isBlocked && <span className="shrink-0 rounded-full bg-rose-500/15 px-1.5 py-0.5 text-micro font-bold text-rose-400">BLOCKED</span>}
               {t.parentTaskId && <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-micro font-semibold text-muted-foreground">subtask</span>}
               {t.isClientVisible && <span className="shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-micro font-bold text-sky-400">client</span>}
@@ -320,7 +378,14 @@ function FragmentRow({ t, i, expanded, hasChildren, childrenList, onToggleExpand
           </div>
         </Td>
         <Td className="hidden lg:table-cell">
-          {t.project?.name ? <span className="inline-flex max-w-20 items-center gap-1.5 truncate rounded-full border border-border/60 bg-card px-2.5 py-1 text-meta font-semibold"><FolderKanban className="size-4 shrink-0 text-muted-foreground" />{t.project.name}</span> : <span className="text-muted-foreground">—</span>}
+          {t.project?.name ? (
+            <span className="inline-flex max-w-[150px] items-center gap-1.5 rounded-full border border-border/60 bg-card px-2.5 py-1 text-meta font-semibold">
+              <FolderKanban className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{t.project.name}</span>
+            </span>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
         </Td>
       </Tr>
       {expanded && hasChildren && childrenList.map((c, ci) => renderChild(c, ci))}
@@ -357,6 +422,8 @@ function TasksPageInner() {
   const [activeViewId, setActiveViewId] = useState("");
   /** Advanced filters are collapsed by default — see the filter-bar notes below. */
   const [advanced, setAdvanced] = useState(false);
+  /** Phones fold saved views/stats/group-by behind one Filters toggle (UX-09). */
+  const [mobileFilters, setMobileFilters] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const { data: stats } = useApi<Stats>("/tasks/stats");
@@ -409,8 +476,7 @@ function TasksPageInner() {
       }
       if (e.key === "c" || e.key === "n") {
         e.preventDefault();
-        setEditTask(null);
-        setFormOpen(true);
+        openTaskForm(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -486,6 +552,43 @@ function TasksPageInner() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editTask, setEditTask] = useState<TaskRow | null>(null);
+  /** Set by anything that opens the New/Edit task sheet so focus can go back there. */
+  const formTrigger = useRef<HTMLElement | null>(null);
+  const openTaskForm = (task: TaskRow | null, trigger?: HTMLElement | null) => {
+    formTrigger.current =
+      trigger ?? (typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null);
+    setEditTask(task);
+    setFormOpen(true);
+  };
+  const closeTaskForm = () => {
+    setFormOpen(false);
+    // Escape/close must not drop the caret on <body> (audit UX-23).
+    window.requestAnimationFrame(() => {
+      const el = formTrigger.current;
+      if (el?.isConnected) el.focus({ preventScroll: true });
+    });
+  };
+
+  /**
+   * Destructive actions ask through the in-app confirm sheet, not window.confirm
+   * (audit UX-20). `run` is stored, so the API call only fires on confirm.
+   */
+  const [confirmReq, setConfirmReq] = useState<
+    { title: string; message: string; label?: string; run: () => void | Promise<void> } | null
+  >(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const askConfirm = (req: { title: string; message: string; label?: string; run: () => void | Promise<void> }) =>
+    setConfirmReq(req);
+  const runConfirmed = async () => {
+    if (!confirmReq) return;
+    setConfirmBusy(true);
+    try {
+      await confirmReq.run();
+    } finally {
+      setConfirmBusy(false);
+      setConfirmReq(null);
+    }
+  };
 
   const patchDetail = async (patch: any, msg?: string) => {
     if (!selectedId) return;
@@ -515,10 +618,16 @@ function TasksPageInner() {
   };
   const archiveTask = () => {
     if (!selectedId) return;
-    if (!window.confirm("Archive this task? It will disappear from the board.")) return;
-    apiFetch(`/tasks/${selectedId}`, { method: "PATCH", body: JSON.stringify({ archivedAt: true }) })
-      .then(() => { notify("Task archived"); setSelectedId(null); reload(); })
-      .catch((e: any) => notify(e.message ?? "Archive failed"));
+    const id = selectedId;
+    askConfirm({
+      title: "Archive task",
+      message: "Archive this task? It will disappear from the board.",
+      label: "Archive",
+      run: () =>
+        apiFetch(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ archivedAt: true }) })
+          .then(() => { notify("Task archived"); setSelectedId(null); reload(); })
+          .catch((e: any) => notify(e.message ?? "Archive failed")),
+    });
   };
   const copyLink = (id: string) => {
     navigator.clipboard.writeText(`${window.location.origin}/tasks?task=${id}`)
@@ -526,10 +635,14 @@ function TasksPageInner() {
       .catch(() => notify("Copy failed"));
   };
   const deleteTask = (id: string) => {
-    if (!window.confirm("Delete this task and its children?")) return;
-    apiFetch(`/tasks/${id}`, { method: "DELETE" })
-      .then(() => { notify("Task deleted"); if (selectedId === id) setSelectedId(null); reload(); })
-      .catch((e: any) => notify(e.message ?? "Delete failed"));
+    askConfirm({
+      title: "Delete task",
+      message: "Delete this task and its children? This cannot be undone.",
+      run: () =>
+        apiFetch(`/tasks/${id}`, { method: "DELETE" })
+          .then(() => { notify("Task deleted"); if (selectedId === id) setSelectedId(null); reload(); })
+          .catch((e: any) => notify(e.message ?? "Delete failed")),
+    });
   };
 
   const [commentText, setCommentText] = useState("");
@@ -549,10 +662,14 @@ function TasksPageInner() {
     catch (e: any) { notify(e.message ?? "Failed"); }
   };
   const deleteComment = (commentId: string) => {
-    if (!window.confirm("Delete this comment?")) return;
-    apiFetch(`/tasks/${selectedId}/comments/${commentId}`, { method: "DELETE" })
-      .then(() => { notify("Comment deleted"); reload(); })
-      .catch((e: any) => notify(e.message ?? "Failed"));
+    askConfirm({
+      title: "Delete comment",
+      message: "Delete this comment? This cannot be undone.",
+      run: () =>
+        apiFetch(`/tasks/${selectedId}/comments/${commentId}`, { method: "DELETE" })
+          .then(() => { notify("Comment deleted"); reload(); })
+          .catch((e: any) => notify(e.message ?? "Failed")),
+    });
   };
 
   const [subTitle, setSubTitle] = useState("");
@@ -765,9 +882,14 @@ function TasksPageInner() {
       setBulkBusy(false);
     }
   };
-  const bulkDelete = async () => {
-    if (!selected.length || !window.confirm(`Delete ${selected.length} task(s)? This cannot be undone.`)) return;
-    await bulkRun("delete", null, "Tasks deleted");
+  const bulkDelete = () => {
+    if (!selected.length) return;
+    const count = selected.length;
+    askConfirm({
+      title: "Delete tasks",
+      message: `Delete ${count} task(s)? This cannot be undone.`,
+      run: () => bulkRun("delete", null, "Tasks deleted"),
+    });
   };
   const childMap = useMemo(() => {
     const m: Record<string, TaskRow[]> = {};
@@ -1055,7 +1177,14 @@ function TasksPageInner() {
           <Btn
             variant="outline"
             disabled={bulkBusy}
-            onClick={() => { if (window.confirm(`Archive ${selected.length} task(s)? They will leave the board.`)) bulkRun("archive", null, "Archived"); }}
+            onClick={() =>
+              askConfirm({
+                title: "Archive tasks",
+                message: `Archive ${selected.length} task(s)? They will leave the board.`,
+                label: "Archive",
+                run: () => bulkRun("archive", null, "Archived"),
+              })
+            }
             className="!py-1.5"
           >
             Archive
@@ -1064,11 +1193,19 @@ function TasksPageInner() {
           <button onClick={() => setSelected([])} className="flex items-center gap-1 text-meta font-bold text-primary hover:text-primary"><X className="size-3.5" /> clear</button>
         </div>
       )}
-      <TableShell footer={shownTasks.length > 0 ? <span className="text-meta text-muted-foreground">{shownTasks.length} tasks</span> : undefined}>
+      <TableShell scrollY footer={shownTasks.length > 0 ? <span className="text-meta text-muted-foreground">{shownTasks.length} tasks</span> : undefined}>
         <table className="w-full">
           <THead>
             <Th><span className="flex size-6 items-center justify-center"><input type="checkbox" aria-label="Select all tasks" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? (shownTasks ?? []).filter((t) => !t.parentTaskId).map((t) => t.id) : [])} className="size-4 accent-primary" /></span></Th>
-            <Th className="max-w-[190px] whitespace-normal">Title</Th><Th className="hidden md:table-cell">Type</Th><Th>Status</Th><Th className="hidden sm:table-cell">Priority</Th><Th className="hidden sm:table-cell">Due</Th><Th className="hidden sm:table-cell">Assignee</Th><Th className="hidden lg:table-cell">Project</Th>
+            {/* Title gets the room it needs; PROJECT no longer eats ~280px of
+                whitespace when a task has no project (audit UX-11). */}
+            <TaskSortTh text="Title" sortKey="title" current={sort} onSort={setSort} className="min-w-[220px] whitespace-normal" />
+            <Th className="hidden md:table-cell">Type</Th>
+            <TaskSortTh text="Status" sortKey="status" current={sort} onSort={setSort} />
+            <TaskSortTh text="Priority" sortKey="priority" current={sort} onSort={setSort} className="hidden sm:table-cell" />
+            <TaskSortTh text="Due" sortKey="due" current={sort} onSort={setSort} className="hidden sm:table-cell" />
+            <Th className="hidden sm:table-cell">Assignee</Th>
+            <Th className="hidden w-[150px] lg:table-cell">Project</Th>
           </THead>
           <tbody>
             {shownTasks.length === 0 && (
@@ -1077,7 +1214,7 @@ function TasksPageInner() {
                   <p className="text-body-lg font-bold">No tasks match</p>
                   <p className="mt-1 text-meta text-muted-foreground">
                     Loosen a filter, or{" "}
-                    <button onClick={() => { setEditTask(null); setFormOpen(true); }} className="font-bold text-primary hover:underline">
+                    <button onClick={(e) => openTaskForm(null, e.currentTarget)} className="font-bold text-primary hover:underline">
                       create a task
                     </button>
                     .
@@ -1297,7 +1434,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
               >
                 <Settings2 className="size-3.5" /> Setup
               </Link>
-              <Btn variant="primary" onClick={() => { setEditTask(null); setFormOpen(true); }}><Plus className="size-3.5" /> New Task</Btn>
+              <Btn variant="primary" onClick={() => openTaskForm(null)}><Plus className="size-3.5" /> New Task</Btn>
             </>
           }
       />
@@ -1308,7 +1445,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
         "what is late, what is due today, what is waiting on me". Detailed
         numbers live on /tasks/setup (workload) and in the board itself.
       */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border/60 bg-card px-3.5 py-2">
+      <div className="hidden flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border/60 bg-card px-3.5 py-2 sm:flex">
         <SummaryStat label="Open" value={stats?.open} tone="text-foreground" />
         <span className="text-border">·</span>
         <SummaryStat label="Due today" value={stats?.dueToday} tone="text-sky-500" />
@@ -1325,7 +1462,43 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
       </div>
 
       {(view === "board" || view === "list") && (
-        <div className="mt-4 mb-3 flex flex-col gap-2">
+        <div className="mt-3 mb-3 flex flex-col gap-2 sm:mt-4">
+          {/* Phones: one row — search + a Filters disclosure. Saved views,
+              scope, avatars, group-by and stats fold away so the first task is
+              visible without ~645px of chrome (audit UX-09). */}
+          <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1 sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                ref={searchRef}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search tasks…  ( / )"
+                className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <Btn
+              variant="outline"
+              onClick={() => setMobileFilters((v) => !v)}
+              aria-expanded={mobileFilters}
+              aria-controls="tasks-tools"
+              className="!px-3 !py-2 text-meta sm:hidden"
+            >
+              <SlidersHorizontal className="size-3.5" /> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+            </Btn>
+            <span className="ml-auto hidden text-meta font-semibold tabular-nums text-muted-foreground sm:inline">
+              {tasks ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}` : "…"}
+              {tasks && tasks.length >= 500 ? " (first 500 — narrow the filters)" : ""}
+            </span>
+          </div>
+          <div id="tasks-tools" className={cn("flex-col gap-2 sm:flex", mobileFilters ? "flex" : "hidden")}>
+            {/* Compact counters for phones, inside the disclosure. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border/60 bg-card px-3 py-1.5 sm:hidden">
+              <SummaryStat label="Open" value={stats?.open} tone="text-foreground" />
+              <SummaryStat label="Due" value={stats?.dueToday} tone="text-sky-500" />
+              <SummaryStat label="Overdue" value={stats?.overdue} tone="text-rose-500" strong />
+              <span className="ml-auto text-micro tabular-nums text-muted-foreground">{stats?.total ?? 0} total</span>
+            </div>
           <SavedViewBar
             views={savedViews}
             activeId={activeViewId}
@@ -1375,10 +1548,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
               </button>
             </div>
 
-            <div className="relative min-w-44 max-w-sm flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tasks…  ( / )" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
-            </div>
+            {/* Search lives in the row above at every breakpoint. */}
 
             {/* People filter — faces beat a dropdown for the most-used slice. */}
             <div className="flex items-center gap-1">
@@ -1407,8 +1577,15 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
               )}
             </div>
 
-            <Btn variant="outline" onClick={() => setAdvanced((v) => !v)} className="!px-3 !py-1.5 text-meta">
-              <SlidersHorizontal className="size-3.5" /> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+            <Btn
+              variant="outline"
+              onClick={() => setAdvanced((v) => !v)}
+              aria-expanded={advanced}
+              aria-controls="tasks-advanced"
+              className="!px-3 !py-1.5 text-meta"
+            >
+              <SlidersHorizontal className="size-3.5" /> {mobileFilters ? "More filters" : "Filters"}
+              {activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
             </Btn>
 
             {activeFilterCount > 0 && (
@@ -1425,11 +1602,6 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
               onClick={() => setMyDayOnly((v) => !v)}
               label={`My Day (${myDay?.length ?? 0})`}
             />
-
-            <span className="ml-auto text-meta font-semibold tabular-nums text-muted-foreground">
-              {tasks ? `${tasks.length} task${tasks.length === 1 ? "" : "s"}` : "…"}
-              {tasks && tasks.length >= 500 ? " (first 500 — narrow the filters)" : ""}
-            </span>
           </div>
 
           {/* Active filter chips — filters must never be silently applied. */}
@@ -1446,7 +1618,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
 
           {/* Advanced filters — collapsed until asked for. */}
           {advanced && (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 p-2">
+            <div id="tasks-advanced" className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 p-2">
               <Select aria-label="Filter by status" value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="!w-36"><option value="">All statuses</option>{TASK_STATUS_OPTS.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}</Select>
               <Select aria-label="Filter by priority" value={fPriority} onChange={(e) => setFPriority(e.target.value)} className="!w-32"><option value="">All priorities</option>{PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}</Select>
               <Select aria-label="Filter by type" value={fType} onChange={(e) => setFType(e.target.value)} className="!w-36"><option value="">All types</option>{TASK_TYPES.map((t) => (<option key={t} value={t}>{t}</option>))}</Select>
@@ -1469,6 +1641,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
               )}
             </div>
           )}
+          </div>
         </div>
       )}
 
@@ -1644,7 +1817,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                       </Select>
                       <div className="ml-auto flex items-center gap-1.5">
                         {canFull && (
-                          <button onClick={() => { setEditTask(detail); setSelectedId(null); setFormOpen(true); }} title="Edit full task" aria-label="Edit task" className="flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Pencil className="size-3.5" /></button>
+                          <button onClick={(e) => { setSelectedId(null); openTaskForm(detail, e.currentTarget); }} title="Edit full task" aria-label="Edit task" className="flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Pencil className="size-3.5" /></button>
                         )}
                         <button onClick={() => copyLink(detail.id)} title="Copy task link" aria-label="Copy task link" className="flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"><Link2 className="size-3.5" /></button>
                         <button onClick={canFull ? cloneTask : undefined} disabled={!canFull} title={canFull ? "Clone task" : "Only creator/PM can clone"} aria-label="Clone task" className={cn("flex size-8 items-center justify-center rounded-xl border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", !canFull && "cursor-not-allowed opacity-40")}><Copy className="size-3.5" /></button>
@@ -2019,7 +2192,17 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
         )}
       </Modal>
 
-      <TaskFormModal open={formOpen} onClose={() => setFormOpen(false)} initial={editTask} tasks={tasks ?? []} users={users} projects={projects ?? []} onSaved={() => { notify(editTask ? "Task updated" : "Task created"); reload(); }} />
+      <TaskFormModal open={formOpen} onClose={closeTaskForm} initial={editTask} tasks={tasks ?? []} users={users} projects={projects ?? []} onSaved={() => { notify(editTask ? "Task updated" : "Task created"); reload(); }} />
+
+      <ConfirmModal
+        open={!!confirmReq}
+        onClose={() => !confirmBusy && setConfirmReq(null)}
+        title={confirmReq?.title ?? ""}
+        message={confirmReq?.message ?? ""}
+        submitLabel={confirmReq?.label}
+        busy={confirmBusy}
+        onConfirm={() => void runConfirmed()}
+      />
     </div>
   );
 }

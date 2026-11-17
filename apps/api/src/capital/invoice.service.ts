@@ -79,15 +79,56 @@ export class InvoiceService {
   }
 
 
-  private async applyOverpayment(invoice: any, db: CapitalDb = this.prisma) {
-    if (!invoice) return;
+  /**
+   * Park money received above the invoice total in a real liability.
+   *
+   * The old version only wrote a `CreditBalance` memo row: the excess stayed as
+   * a negative receivable (AR understated, no liability anywhere, invisible on
+   * the client record), and every extra payment created another duplicate row.
+   * Now the excess moves AR → Customer Advances (2400) and the journal is
+   * re-posted from scratch on every call, so it is idempotent.
+   */
+  private async applyOverpayment(invoice: any, db: CapitalDb = this.prisma, actorId?: string) {
+    if (!invoice?.invoiceNumber) return;
     const t = invoiceTotals(invoice);
-    // Credits also settle the invoice, so only the excess of paid+credits over
-    // the grand total is a real overpayment.
     const excess = Math.round((t.paid + t.credits - t.grand) * 100) / 100;
-    if (excess > 0) {
-      await db.creditBalance.create({ data: { clientId: invoice.clientId, amount: excess, currency: invoice.currency, source: `Overpayment on ${invoice.invoiceNumber}` } });
+    const marker = `Overpayment on ${invoice.invoiceNumber}`;
+
+    // Always clear the previous advance posting before recomputing: a deleted
+    // payment or a later credit note can wipe the excess out entirely.
+    await this.ledger.reverseGL(invoice.id, actorId, db, ["OVERPAYMENT"]);
+    const existing = await db.creditBalance.findMany({ where: { clientId: invoice.clientId, source: marker } });
+
+    if (excess <= 0) {
+      if (existing.length) await db.creditBalance.deleteMany({ where: { id: { in: existing.map((e) => e.id) } } });
+      return;
     }
+    if (existing.length) {
+      await db.creditBalance.update({ where: { id: existing[0].id }, data: { amount: excess } });
+      if (existing.length > 1) await db.creditBalance.deleteMany({ where: { id: { in: existing.slice(1).map((e) => e.id) } } });
+    } else {
+      await db.creditBalance.create({
+        data: { clientId: invoice.clientId, amount: excess, currency: invoice.currency, source: marker },
+      });
+    }
+    const [acctAR, acctAdvance] = await Promise.all([
+      this.ledger.accountByCode("1100", db),
+      this.ledger.ensureAccount("2400", "Customer Advances", "LIABILITY", db),
+    ]);
+    const bdt = toBdt(excess, invoice);
+    await this.ledger.postGL(
+      "OVERPAYMENT",
+      `${invoice.invoiceNumber} / client advance`,
+      startOfTodayUtc(),
+      invoice.id,
+      "Client overpayment held as an advance",
+      [
+        { accountId: acctAR.id, debit: bdt, credit: 0, memo: marker },
+        { accountId: acctAdvance.id, debit: 0, credit: bdt, memo: marker },
+      ],
+      actorId,
+      db
+    );
   }
 
   // ── Project billing sync ─────────────────────────────────────────────
@@ -150,6 +191,23 @@ export class InvoiceService {
    * query itself is still narrowed by status / client / text search.
    */
   async invoicesPage(query: {
+    page?: string;
+    pageSize?: string;
+    status?: string;
+    clientId?: string;
+    q?: string;
+    quick?: string;
+    min?: string;
+    max?: string;
+  }) {
+    // Every keystroke in the invoice search used to re-read the whole invoice
+    // book (line items + payments + credit notes) to compute chips and totals.
+    // A 20s query-keyed cache keeps the numbers identical while removing the
+    // repeat reads; writes invalidate `capital:invoices*` immediately.
+    return this.cache.wrapQuery("capital:invoices", query, 20, () => this.computeInvoicesPage(query));
+  }
+
+  private async computeInvoicesPage(query: {
     page?: string;
     pageSize?: string;
     status?: string;
@@ -350,6 +408,16 @@ export class InvoiceService {
     return reminder;
   }
 
+  /** Undo a reminder that was logged by mistake (dashboard Undo toast). */
+  async deleteReminder(invoiceId: string, reminderId: string) {
+    const row = await this.prisma.invoiceReminder.findUnique({ where: { id: reminderId } });
+    if (!row || row.invoiceId !== invoiceId) {
+      throw new NotFoundException("Reminder not found");
+    }
+    await this.prisma.invoiceReminder.delete({ where: { id: reminderId } });
+    return { ok: true };
+  }
+
 
   async nextInvoiceNumberPreview() {
     return { invoiceNumber: await this.ledger.nextInvoiceNumber() };
@@ -411,13 +479,66 @@ export class InvoiceService {
         unitPrice,
         amount: Math.round(unitPrice * quantity * 100) / 100,
         revenueTag: (l?.revenueTag as RevenueTag) ?? "AGENCY_REVENUE",
+        // Links the line back to the pass-through expense it re-bills. Without
+        // this the field could never be written through the API, so the
+        // "billable expense → invoice" flow did not exist in practice.
+        ...(l?.linkedExpenseId ? { linkedExpenseId: String(l.linkedExpenseId) } : {}),
       };
     });
   }
 
+  /** Is the invoice-approval workflow switched on for this workspace? */
+  private async invoiceApprovalRequired(): Promise<boolean> {
+    const settings = await this.prisma.settings
+      .findFirst({ select: { financeConfig: true } })
+      .catch(() => null);
+    return Boolean((settings?.financeConfig as any)?.invoiceApprovalRequired);
+  }
+
+  /**
+   * Approve a pending invoice. If it was already issued it posts the journal
+   * now, because the receivable only becomes real at approval.
+   */
+  async approveInvoice(id: string, actorId?: string) {
+    const invoice = await this.prisma.invoice.findUnique({
+      where: { id },
+      include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE },
+    });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    if (invoice.approvalStatus === "APPROVED") return invoice;
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.invoice.update({
+        where: { id },
+        data: { approvalStatus: "APPROVED", approvedById: actorId ?? null, approvedAt: new Date(), rejectionNote: null },
+        include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE },
+      });
+      const live = await tx.journalEntry.findFirst({ where: { sourceId: id, entryType: "INVOICE", reversedEntryId: null } });
+      if (!live && POSTABLE_STATUSES.includes(updated.status)) await this.ledger.postInvoiceGL(updated, actorId, tx);
+      await logAudit(tx, "Invoice", id, "approved", { invoiceNumber: invoice.invoiceNumber }, actorId);
+    }, { timeout: 15000 });
+    await invalidateFinance(this.cache);
+    await this.syncProjectBilling(invoice.projectId);
+    return this.prisma.invoice.findUnique({ where: { id } });
+  }
+
+  /** Reject a pending invoice — nothing may post to the ledger. */
+  async rejectInvoice(id: string, body: any, actorId?: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id }, select: { id: true, invoiceNumber: true } });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    await this.prisma.$transaction(async (tx) => {
+      await this.ledger.reverseGL(id, actorId, tx, ["INVOICE"]);
+      await tx.invoice.update({
+        where: { id },
+        data: { approvalStatus: "REJECTED", rejectionNote: body?.note ?? null, status: "DRAFT" },
+      });
+      await logAudit(tx, "Invoice", id, "rejected", { invoiceNumber: invoice.invoiceNumber, note: body?.note ?? null }, actorId);
+    }, { timeout: 15000 });
+    await invalidateFinance(this.cache);
+    return { ok: true };
+  }
+
   /** Rates that feed tax/discount math must be finite and within 0–100 %. */
-  private assertRates(body: any) {
-    for (const key of ["taxRate", "discountRate"] as const) {
+  private assertRates(body: any) {    for (const key of ["taxRate", "discountRate"] as const) {
       const raw = body?.[key];
       if (raw === undefined || raw === null || raw === "") continue;
       const n = Number(raw);
@@ -444,14 +565,55 @@ export class InvoiceService {
     const rawLines = body.lines ?? body.lineItems;
     const lines = this.normalizeLines(rawLines);
     const currency = body.currency ?? "BDT";
-    const exchangeRate = Number(body.exchangeRate ?? 1);
-    if (currency !== "BDT" && (!Number.isFinite(exchangeRate) || exchangeRate <= 0)) {
-      throw new BadRequestException(`An exchange rate is required for ${currency} invoices`);
+    // A missing rate must never default to 1 for a foreign invoice: that books
+    // USD 100 as ৳100 and silently understates revenue by the whole FX factor.
+    const rawRate = body.exchangeRate;
+    const hasRate = rawRate !== undefined && rawRate !== null && rawRate !== "";
+    const exchangeRate = hasRate ? Number(rawRate) : currency === "BDT" ? 1 : NaN;
+    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+      throw new BadRequestException(
+        currency === "BDT"
+          ? "exchangeRate must be greater than zero"
+          : `An exchange rate is required for ${currency} invoices`
+      );
     }
     const target = await this.resolveBillingTarget(body.clientId, body.projectId);
-    const client = await this.prisma.client.findUnique({ where: { id: target.clientId }, select: { id: true } }).catch(() => null);
+    const client = await this.prisma.client
+      .findUnique({
+        where: { id: target.clientId },
+        select: { id: true, companyName: true, creditLimit: true, creditHold: true },
+      })
+      .catch(() => null);
     if (!client) throw new NotFoundException("Client not found");
     body = { ...body, clientId: target.clientId, projectId: target.projectId };
+    // ── Credit control ────────────────────────────────────────────────
+    const requestedStatus = body.status ?? "DRAFT";
+    if (POSTABLE_STATUSES.includes(requestedStatus)) {
+      if (client.creditHold) {
+        throw new BadRequestException(
+          `${client.companyName} is on credit hold. Clear the outstanding balance before issuing a new invoice.`
+        );
+      }
+      if (client.creditLimit != null && Number(client.creditLimit) > 0) {
+        const subtotalForLimit = lines.reduce((s: number, l: any) => s + l.amount, 0);
+        const taxForLimit = body.taxApplicable && body.taxRate ? (subtotalForLimit * Number(body.taxRate)) / 100 : 0;
+        const discountForLimit = body.discountRate ? (subtotalForLimit * Number(body.discountRate)) / 100 : 0;
+        const newGrand = Math.max(0, subtotalForLimit + taxForLimit - discountForLimit + Number(body.shippingFee ?? 0));
+        const openInvoices = await this.prisma.invoice.findMany({
+          where: { clientId: target.clientId, status: { in: ACTIVE_STATUSES as InvoiceStatus[] } },
+          include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE },
+        });
+        const outstanding = openInvoices.reduce((s, inv) => s + invoiceTotals(inv).balanceBdt, 0);
+        const limit = Number(client.creditLimit);
+        if (outstanding + newGrand * exchangeRate > limit + 0.01) {
+          throw new BadRequestException(
+            `${client.companyName} is over its credit limit: outstanding ৳${Math.round(outstanding).toLocaleString("en-US")} + this invoice ৳${Math.round(newGrand * exchangeRate).toLocaleString("en-US")} exceeds ৳${limit.toLocaleString("en-US")}. Raise the limit or collect first.`
+          );
+        }
+      }
+    }
+    // ── Approval workflow (opt-in) ────────────────────────────────────
+    const approvalRequired = await this.invoiceApprovalRequired();
     let invoiceNumber: string = (body.invoiceNumber ?? "").trim() || (await this.ledger.nextInvoiceNumber());
     const clash = await this.prisma.invoice.findUnique({ where: { invoiceNumber } }).catch(() => null);
     if (clash) invoiceNumber = await this.ledger.nextInvoiceNumber();
@@ -472,7 +634,8 @@ export class InvoiceService {
           exchangeRate,
           issueDate: body.issueDate ? new Date(body.issueDate) : new Date(),
           dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
-          status: body.status ?? "DRAFT",
+          status: requestedStatus,
+          approvalStatus: approvalRequired && POSTABLE_STATUSES.includes(requestedStatus) ? "PENDING" : "APPROVED",
           taxApplicable: body.taxApplicable ?? false,
           taxRate: body.taxRate ?? null,
           discountRate,
@@ -504,7 +667,7 @@ export class InvoiceService {
           })),
         });
       }
-      if (POSTABLE_STATUSES.includes(created.status)) await this.ledger.postInvoiceGL(created, createdById, tx);
+      if (POSTABLE_STATUSES.includes(created.status) && created.approvalStatus === "APPROVED") await this.ledger.postInvoiceGL(created, createdById, tx);
       await logAudit(tx, "Invoice", created.id, "created", { invoiceNumber });
       return created;
           }, { timeout: 15000 });
@@ -541,9 +704,31 @@ export class InvoiceService {
 
 
   async updateInvoice(id: string, body: any, actorId?: string) {
-    const existing = await this.prisma.invoice.findUnique({ where: { id }, include: { lineItems: true } });
+    const existing = await this.prisma.invoice.findUnique({
+      where: { id },
+      include: { lineItems: true, payments: true, creditNotes: { select: { id: true, status: true } } },
+    });
     if (!existing) throw new NotFoundException("Invoice not found");
     this.assertRates(body);
+    // Voiding is its own flow: it has to reverse the invoice journal *and* every
+    // credit note attached to it, otherwise AR keeps a phantom credit. It is
+    // idempotent, so re-running it on an already-void invoice repairs historical
+    // bad voids instead of silently doing nothing.
+    if (body.status === "VOID") {
+      if (existing.payments.length) {
+        throw new BadRequestException(
+          `Invoice ${existing.invoiceNumber} has ${existing.payments.length} payment(s). Refund or credit them first, then void the invoice.`
+        );
+      }
+      const voided = await this.prisma.$transaction(async (tx) => {
+        await this.voidInvoiceWithin(tx, id, actorId);
+        return tx.invoice.findUnique({ where: { id }, include: { client: { select: { id: true, companyName: true } }, lineItems: true, payments: true } });
+      }, { timeout: 15000 });
+      await this.syncProjectBilling(existing.projectId);
+      await invalidateFinance(this.cache);
+      await this.refreshClientHealth(existing.clientId);
+      return voided;
+    }
     const nextLines = body.lines ?? body.lineItems;
     const lines = nextLines !== undefined ? this.normalizeLines(nextLines) : null;
     if (body.projectId !== undefined || body.clientId !== undefined) {
@@ -560,8 +745,30 @@ export class InvoiceService {
       data[f] = f.includes("Date") && body[f] ? new Date(body[f]) : body[f];
     }
     if (body.dueDate === null) data.dueDate = null;
+    // Changing the currency without a rate would keep a 1:1 conversion and
+    // silently re-book the receivable at face value.
+    const nextCurrency = (data.currency ?? existing.currency) as string;
+    if (nextCurrency !== "BDT") {
+      const effectiveRate =
+        data.exchangeRate !== undefined
+          ? Number(data.exchangeRate)
+          : existing.currency === nextCurrency
+            ? Number(existing.exchangeRate ?? 1)
+            : NaN;
+      if (!Number.isFinite(effectiveRate) || effectiveRate <= 0) {
+        throw new BadRequestException(`An exchange rate is required for ${nextCurrency} invoices`);
+      }
+      if (existing.currency !== nextCurrency && !(effectiveRate > 1)) {
+        throw new BadRequestException(`An exchange rate greater than 1 is required for ${nextCurrency} invoices`);
+      }
+    }
     const wasPosted = POSTABLE_STATUSES.includes(existing.status);
     const willPost = body.status !== undefined ? POSTABLE_STATUSES.includes(body.status) : wasPosted;
+    if (willPost && !wasPosted && (existing as any).approvalStatus === "PENDING") {
+      throw new BadRequestException(
+        `Invoice ${existing.invoiceNumber} is waiting for approval — approve it before issuing.`
+      );
+    }
     // Only these fields can change what the ledger should say. Editing notes,
     // terms, due date, payment details or installments must NOT reverse and
     // re-post the journal (that used to double-book revenue on a notes edit).
@@ -605,7 +812,7 @@ export class InvoiceService {
       }
       // Re-post only when something actually changed (or the document just
       // became postable). A pure metadata edit leaves the ledger untouched.
-      if (willPost && (!wasPosted || ledgerFieldsChanged)) await this.ledger.postInvoiceGL(next, actorId, tx);
+      if (willPost && (!wasPosted || ledgerFieldsChanged) && (next as any).approvalStatus === "APPROVED") await this.ledger.postInvoiceGL(next, actorId, tx);
       await logAudit(tx, "Invoice", id, "updated", { from: existing.status, to: body.status ?? existing.status }, actorId);
       return next;
     }, { timeout: 15000 });
@@ -676,13 +883,6 @@ export class InvoiceService {
   async deleteInvoice(id: string, actorId?: string) {
     const inv = await this.prisma.invoice.findUnique({ where: { id }, include: { payments: true, creditNotes: { select: { referenceNumber: true } } } }).catch(() => null);
     if (!inv) throw new NotFoundException("Invoice not found");
-    // Credit notes are accounting records with their own journals - deleting
-    // the invoice underneath them would orphan the ledger.
-    if (inv.creditNotes.length) {
-      throw new BadRequestException(
-        `Invoice ${inv.invoiceNumber} has ${inv.creditNotes.length} credit note(s) (${inv.creditNotes.map((c) => c.referenceNumber).join(", ")}). Void the invoice instead of deleting it.`
-      );
-    }
     // Financial records are never hard-deleted (PRD §14). A draft with no cash
     // against it is not a financial record yet, so it may be removed; anything
     // issued is voided and kept for the ledger and the audit trail.
@@ -693,9 +893,19 @@ export class InvoiceService {
         );
       }
       await this.prisma.$transaction(async (tx) => {
-        await this.ledger.reverseGL(id, actorId, tx, ["INVOICE"]);
-        await tx.invoice.update({ where: { id }, data: { status: "VOID", shareEnabled: false } });
-        await logAudit(tx, "Invoice", id, "voided", { invoiceNumber: inv.invoiceNumber, previousStatus: inv.status }, actorId);
+        await this.voidInvoiceWithin(tx, id, actorId);
+      }, { timeout: 15000 });
+      await this.syncProjectBilling(inv.projectId);
+      await invalidateFinance(this.cache);
+      await this.refreshClientHealth(inv.clientId);
+      return { ok: true, voided: true };
+    }
+    // A draft can only be hard-deleted when nothing financial hangs off it. A
+    // credit note is an issued accounting document with its own journal, so a
+    // draft carrying one is voided instead (which reverses that journal too).
+    if (inv.creditNotes.length) {
+      await this.prisma.$transaction(async (tx) => {
+        await this.voidInvoiceWithin(tx, id, actorId);
       }, { timeout: 15000 });
       await this.syncProjectBilling(inv.projectId);
       await invalidateFinance(this.cache);
@@ -721,8 +931,45 @@ export class InvoiceService {
     return { ok: true, voided: false };
   }
 
+  /**
+   * Void an issued invoice **and everything attached to it**.
+   *
+   * Voiding used to reverse only the INVOICE journal, so an issued credit note
+   * (or write-off, or refund) kept its AR movement alive and left a permanent
+   * phantom credit on the customer's account. Every attached credit document is
+   * now reversed and marked VOID in the same transaction.
+   */
+  private async voidInvoiceWithin(tx: CapitalDb, invoiceId: string, actorId?: string) {
+    const invoice = await tx.invoice.findUnique({ where: { id: invoiceId }, select: { invoiceNumber: true } });
+    const notes = await tx.creditNote.findMany({
+      where: { invoiceId, status: { not: "VOID" } },
+      select: { id: true, referenceNumber: true },
+    });
+    for (const note of notes) {
+      for (let guard = 0; guard < 5; guard++) {
+        const reversal = await this.ledger.reverseGL(note.id, actorId, tx, ["CREDIT_NOTE", "REFUND", "WRITE_OFF"]);
+        if (!reversal) break;
+      }
+    }
+    if (notes.length) {
+      await tx.creditNote.updateMany({ where: { invoiceId, status: { not: "VOID" } }, data: { status: "VOID" } });
+    }
+    await this.ledger.reverseGL(invoiceId, actorId, tx, ["INVOICE"]);
+    // A voided invoice cannot hold a customer advance: the money either belongs
+    // to another invoice or must be refunded, but it is not a receivable.
+    await this.ledger.reverseGL(invoiceId, actorId, tx, ["OVERPAYMENT"]);
+    if (invoice?.invoiceNumber) {
+      await tx.creditBalance.deleteMany({ where: { source: `Overpayment on ${invoice.invoiceNumber}` } });
+    }
+    await tx.invoice.update({ where: { id: invoiceId }, data: { status: "VOID", shareEnabled: false } });
+    await logAudit(tx, "Invoice", invoiceId, "voided", {
+      creditNotesVoided: notes.map((n) => n.referenceNumber),
+    }, actorId);
+    return notes.length;
+  }
 
-  async recordPayment(invoiceId: string, body: { amount: number; paymentMethod: string; referenceId?: string; paymentDate?: string; notes?: string; bankAccountId?: string; installmentId?: string }, recordedById?: string) {
+
+  async recordPayment(invoiceId: string, body: { amount: number; paymentMethod: string; referenceId?: string; paymentDate?: string; notes?: string; bankAccountId?: string; installmentId?: string; settlementRate?: number | string }, recordedById?: string) {
     if (body.amount === undefined || body.amount === null || Number.isNaN(Number(body.amount)) || Number(body.amount) <= 0) {
       throw new BadRequestException("Payment amount must be greater than zero");
     }
@@ -784,23 +1031,53 @@ export class InvoiceService {
         },
       });
       const bankId = body.bankAccountId ?? (await this.ledger.defaultBankAccount(tx));
-      // Cash actually received is in BDT; foreign invoices convert at their rate.
-      const bdtAmount = toBdt(Number(body.amount), invoice);
+      // Cash actually received is in BDT. A foreign invoice is cleared at its own
+      // rate; when the bank converted at a different rate the difference is a
+      // realised FX gain/loss, not part of the receivable.
+      const invoiceRate = Number(invoice.exchangeRate ?? 1) || 1;
+      const settlementRate =
+        body.settlementRate !== undefined && body.settlementRate !== null && body.settlementRate !== ""
+          ? Number(body.settlementRate)
+          : invoiceRate;
+      if (!Number.isFinite(settlementRate) || settlementRate <= 0) {
+        throw new BadRequestException("settlementRate must be greater than zero");
+      }
+      const bdtAmount = Math.round(Number(body.amount) * settlementRate * 100) / 100; // cash received
+      const bdtInvoice = toBdt(Number(body.amount), invoice); // receivable cleared
+      const realizedFx = Math.round((bdtAmount - bdtInvoice) * 100) / 100;
       if (bankId) {
         await this.ledger.creditBankAccount(bankId, bdtAmount, tx);
-        await tx.payment.update({ where: { id: payment.id }, data: { bankAccountId: bankId, balanceCredited: true } });
+        await tx.payment.update({
+          where: { id: payment.id },
+          data: {
+            bankAccountId: bankId,
+            balanceCredited: true,
+            settlementRate,
+            realizedFx,
+          },
+        });
       }
       const [acctBank, acctAR] = await Promise.all([this.ledger.accountByCode("1200", tx), this.ledger.accountByCode("1100", tx)]);
+      const paymentLines: { accountId: string; debit: number; credit: number; memo?: string }[] = [
+        { accountId: acctBank.id, debit: bdtAmount, credit: 0 },
+        { accountId: acctAR.id, debit: 0, credit: bdtInvoice },
+      ];
+      if (Math.abs(realizedFx) > 0.005) {
+        if (realizedFx > 0) {
+          const acctGain = await this.ledger.ensureAccount("4470", "Realized FX Gain", "REVENUE", tx);
+          paymentLines.push({ accountId: acctGain.id, debit: 0, credit: realizedFx, memo: "Realized FX on settlement" });
+        } else {
+          const acctLoss = await this.ledger.ensureAccount("6670", "Realized FX Loss", "OPEX", tx);
+          paymentLines.push({ accountId: acctLoss.id, debit: Math.abs(realizedFx), credit: 0, memo: "Realized FX on settlement" });
+        }
+      }
       await this.ledger.postGL(
         "PAYMENT",
         `${invoice.invoiceNumber} / ${referenceId ?? payment.id}`,
         body.paymentDate ? new Date(body.paymentDate) : new Date(),
         payment.id,
         null,
-        [
-          { accountId: acctBank.id, debit: bdtAmount, credit: 0 },
-          { accountId: acctAR.id, debit: 0, credit: bdtAmount },
-        ],
+        paymentLines,
         recordedById,
         tx
       );
@@ -816,7 +1093,7 @@ export class InvoiceService {
       await tx.invoice.update({ where: { id: invoiceId }, data: { status } });
       await logAudit(tx, "Invoice", invoiceId, "payment_recorded", { amount: body.amount, status, installment: installmentId ?? null });
       const updatedInvoice = await tx.invoice.findUnique({ where: { id: invoiceId }, include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE, client: { select: { id: true } } } });
-      if (updatedInvoice) await this.applyOverpayment(updatedInvoice, tx);
+      if (updatedInvoice) await this.applyOverpayment(updatedInvoice, tx, recordedById);
       return tx.payment.findUnique({ where: { id: payment.id } });
     }, { timeout: 15000 });
     try {
@@ -894,6 +1171,11 @@ export class InvoiceService {
         await tx.invoice.update({ where: { id: invoiceId }, data: { status } });
       }
       await logAudit(tx, "Invoice", invoiceId, "payment_deleted", { paymentId: payment.id, amount: Number(payment.amount) }, actorId);
+      // Removing a payment can turn an advance back into a normal balance.
+      const afterDelete = await tx.invoice.findUnique({ where: { id: invoiceId }, include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE } });
+      if (afterDelete && !["DRAFT", "CANCELLED", "VOID"].includes(afterDelete.status)) {
+        await this.applyOverpayment(afterDelete, tx, actorId);
+      }
     }, { timeout: 15000 });
     await this.syncProjectBilling(invoice.projectId);
     await invalidateFinance(this.cache);

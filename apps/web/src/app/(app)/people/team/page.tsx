@@ -14,7 +14,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import {
-  CalendarDays, CheckCircle2, Clock, Fingerprint, ListTodo, Search, Timer, Users, Video,
+  CalendarDays, CheckCircle2, Clock, Fingerprint, ListTodo, Plus, Search, Timer, Users, Video,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
@@ -29,6 +29,8 @@ import { Pager } from "../_components/table-kit";
 import { useToast, Toast } from "../_components/hooks";
 import { monthNow } from "../_components/constants";
 import { usePeopleAccess } from "../_components/permissions";
+import { AttendanceModal } from "../_components/modals/attendance-modals";
+import { EmployeeModal } from "../_components/modals/employee-form";
 
 const fmtDur = (mins?: number | null) => {
   if (mins == null) return "—";
@@ -49,7 +51,7 @@ type RosterRow = {
 
 type Range = { type: "month" | "days"; month: string; days: number };
 
-const TABS = ["Attendance", "Days", "Tasks", "Meetings", "Leave"] as const;
+const TABS = ["Attendance", "Days", "Tasks", "Meetings", "Shoots", "Leave"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function TeamPage() {
@@ -57,7 +59,7 @@ export default function TeamPage() {
   const params = useSearchParams();
   const selectedId = params.get("id");
   const { flash, notify } = useToast();
-  const { canManagePulse } = usePeopleAccess();
+  const { canManagePulse, canEdit, isHr } = usePeopleAccess();
 
   const [q, setQ] = useState("");
   const [dept, setDept] = useState("");
@@ -65,7 +67,9 @@ export default function TeamPage() {
   const [range, setRange] = useState<Range>({ type: "days", month: monthNow(), days: 30 });
   const [tab, setTab] = useState<Tab>("Attendance");
   const [dayPage, setDayPage] = useState(0);
+  const [attDay, setAttDay] = useState<any>(null);
   const [refresh, setRefresh] = useState(0);
+  const [addOpen, setAddOpen] = useState(false);
   const reload = useCallback(() => setRefresh((r) => r + 1), []);
 
   const qs = range.type === "days" ? `days=${range.days}` : `month=${range.month}`;
@@ -103,6 +107,21 @@ export default function TeamPage() {
   return (
     <div>
       <Toast flash={flash} />
+      <AttendanceModal
+        open={!!attDay}
+        onClose={() => setAttDay(null)}
+        employees={detail?.employee ? [{ id: detail.employee.id, name: detail.employee.name }] : []}
+        edit={attDay}
+        onSaved={() => { notify("Attendance corrected"); setDayPage(0); reload(); }}
+      />
+      <EmployeeModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onSaved={(employee) => {
+          notify(employee?.name ? `Employee added — ${employee.name}` : "Employee added");
+          reload();
+        }}
+      />
       <PeopleHero
         icon={<Users className="size-4" />}
         title="Team 360"
@@ -134,6 +153,11 @@ export default function TeamPage() {
               onChange={(e) => setRange({ type: "month", month: e.target.value, days: 30 })}
               className="rounded-lg border border-border bg-card px-2 py-1 text-micro font-semibold outline-none focus:border-primary/40"
             />
+            {canEdit && (
+              <Btn variant="primary" onClick={() => setAddOpen(true)} className="!px-2 !py-1 text-micro">
+                <Plus className="size-3.5" /> Add
+              </Btn>
+            )}
           </div>
         }
       />
@@ -233,7 +257,7 @@ export default function TeamPage() {
               {/* Identity */}
               <CardShell className="!p-3">
                 <div className="flex flex-wrap items-start gap-3">
-                  <Avatar name={detail.employee.name} size="size-10" />
+                  <Avatar name={detail.employee.name} size="size-10" src={detail.employee.photoUrl} jxlSrc={detail.employee.photoJxlUrl} />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-heading text-title font-bold">{detail.employee.name}</p>
@@ -288,6 +312,7 @@ export default function TeamPage() {
                     {t}
                     {t === "Tasks" && detail.tasks ? ` (${detail.tasks.doneInRange})` : ""}
                     {t === "Meetings" && detail.meetings ? ` (${detail.meetings.attended})` : ""}
+                    {t === "Shoots" && detail.shoots ? ` (${detail.shoots.days})` : ""}
                   </button>
                 ))}
               </div>
@@ -323,7 +348,7 @@ export default function TeamPage() {
                       }
                     >
                       <table className="w-full">
-                        <THead><Th>Date</Th><Th>Status</Th><Th>In</Th><Th>Out</Th><Th>Worked</Th><Th>OT</Th><Th>Note</Th></THead>
+                        <THead><Th>Date</Th><Th>Status</Th><Th>In</Th><Th>Out</Th><Th>Worked</Th><Th>OT</Th><Th>Note</Th>{isHr && <Th> </Th>}</THead>
                         <tbody>
                           {paged.map((d, i) => (
                             <Tr key={d.date} index={i}>
@@ -348,6 +373,30 @@ export default function TeamPage() {
                               <Td className="text-meta text-muted-foreground">
                                 {d.leave ? "on leave" : typeof d.holiday === "string" ? d.holiday : (d.punches ?? 0) > 2 ? `${d.punches} punches` : ""}
                               </Td>
+                              {isHr && (
+                                <Td>
+                                  {d.id ? (
+                                    <button
+                                      onClick={() =>
+                                        setAttDay({
+                                          id: d.id,
+                                          date: d.date,
+                                          status: d.status ?? "PRESENT",
+                                          checkIn: d.checkIn,
+                                          checkOut: d.checkOut,
+                                          punchCount: d.punches,
+                                          employee: { id: selectedId ?? "", name: detail?.employee?.name ?? "" },
+                                        })
+                                      }
+                                      className="rounded-lg border border-border px-2 py-0.5 text-micro font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                                    >
+                                      Fix
+                                    </button>
+                                  ) : (
+                                    <Link href="/people/attendance" className="text-micro font-semibold text-primary hover:underline">Record</Link>
+                                  )}
+                                </Td>
+                              )}
                             </Tr>
                           ))}
                         </tbody>
@@ -500,6 +549,45 @@ export default function TeamPage() {
                 </>
               ) : (
                 <CardShell><p className="text-body text-muted-foreground">No meeting data.</p></CardShell>
+              ))}
+
+              {tab === "Shoots" && (detail?.shoots ? (
+                <>
+                  <CardShell className="!p-3">
+                    <SectionTitle title="On set" subtitle="Production days this person was crewed for" icon={<Video className="size-4" />} />
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      <Kpi label="Shoot days" value={detail.shoots.days} sub="distinct dates in window" tone="emerald" />
+                      <Kpi label="Bookings" value={detail.shoots.total} sub="crew rows" />
+                      <Kpi label="Confirmed" value={detail.shoots.confirmed} sub={`${detail.shoots.total - detail.shoots.confirmed} pending`} tone="amber" />
+                    </div>
+                  </CardShell>
+
+                  <CardShell className="!p-3">
+                    <SectionTitle title="Recent shoots" subtitle="Newest first" />
+                    {(detail.shoots.recent ?? []).length === 0 ? (
+                      <p className="text-meta text-muted-foreground">Not crewed on any shoot in this window.</p>
+                    ) : (
+                      <TableShell footer={<span className="text-meta text-muted-foreground">{Math.min(detail.shoots.recent.length, 6)} of {detail.shoots.recent.length} shown</span>}>
+                        <table className="w-full">
+                          <THead><Th>Shoot</Th><Th>Project</Th><Th>Date</Th><Th>Role</Th><Th>Status</Th></THead>
+                          <tbody>
+                            {detail.shoots.recent.slice(0, 6).map((s: any, i: number) => (
+                              <Tr key={s.id} index={i}>
+                                <Td className="font-medium">{s.title}{s.location ? <span className="text-meta text-muted-foreground"> · {s.location}</span> : null}</Td>
+                                <Td className="text-muted-foreground">{s.project ?? "—"}</Td>
+                                <Td className="whitespace-nowrap text-muted-foreground">{formatDate(s.shootDate)}</Td>
+                                <Td className="text-muted-foreground">{s.role.toLowerCase().replace(/_/g, " ")}</Td>
+                                <Td><StatusBadge status={s.isConfirmed ? "CONFIRMED" : s.status} /></Td>
+                              </Tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </TableShell>
+                    )}
+                  </CardShell>
+                </>
+              ) : (
+                <CardShell><p className="text-body text-muted-foreground">No shoot data in this window.</p></CardShell>
               ))}
 
               {tab === "Leave" && (detail?.leave ? (

@@ -13,7 +13,11 @@ export class AuthController {
   @RateLimit({ limit: 30, windowSec: 60, name: "auth.login" })
   @Post("login")
   login(@Body() dto: LoginDto, @Req() req: any) {
-    const forwarded = String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim();
+    // Only trust X-Forwarded-For when the deployment says it is behind a proxy
+    // (TRUST_PROXY=1). Otherwise any client can spoof its own IP, which feeds
+    // the login lockout key and lastLoginIp (audit SEC-10).
+    const trustProxy = String(process.env.TRUST_PROXY ?? "0") === "1";
+    const forwarded = trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim() : "";
     const ip = forwarded || req.ip || req.socket?.remoteAddress;
     return this.auth.login(dto, ip);
   }

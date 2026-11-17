@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Globe2, KeyRound, MessageSquareText, Power, Send, Settings2, ThumbsUp, UserPlus } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -269,6 +270,7 @@ export default function PortalPage() {
 
       <div className="mt-8">
         <PageHeader
+          level={2}
           title="What clients can see"
           subtitle="The portal only shows tasks flagged as client-visible. Share a project's tasks before your client logs in."
         />
@@ -340,6 +342,7 @@ export default function PortalPage() {
 
       <div className="mt-8">
         <PageHeader
+          level={2}
           title="Client Access"
           subtitle="Enable portal login for client contacts, reset passwords, and control access."
         />
@@ -358,10 +361,31 @@ export default function PortalPage() {
                     <p className="text-[13px] font-heading font-semibold">{c.companyName}</p>
                     <span className="text-[11px] text-muted-foreground">
                       {c.accountOwner ? `Owner: ${c.accountOwner.name}` : "No account owner"} ·{" "}
-                      {c.contacts.filter((ct) => ct.portalUser).length}/{c.contacts.length} contacts with access
+                      {c.contacts.length === 0
+                        ? "no contacts yet"
+                        : `${c.contacts.filter((ct) => ct.portalUser).length}/${c.contacts.length} contacts with access`}
                     </span>
                   </div>
                   <div className="flex flex-col divide-y divide-border/40">
+                    {c.contacts.length === 0 && (
+                      <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground">
+                          <UserPlus className="size-3.5" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12.5px] font-semibold">No contacts yet</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            Portal access is granted per contact — add one in Accounts, then create their login here.
+                          </p>
+                        </div>
+                        <Link
+                          href="/accounts"
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1 text-[11px] font-semibold transition-colors hover:border-primary/30 hover:bg-muted/50"
+                        >
+                          <UserPlus className="size-3.5" /> Invite contact
+                        </Link>
+                      </div>
+                    )}
                     {c.contacts.map((ct) => (
                       <div key={ct.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
                         <Avatar name={ct.name} size="size-8" />
@@ -472,7 +496,15 @@ export default function PortalPage() {
                   className="max-w-sm"
                 />
               </div>
-              <TableShell>
+              {/* The scroll box is focusable and the cells are capped so the last
+                  column never sits outside the card (audit UX-13). */}
+              <div className="card-lift overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
+                <div
+                  role="region"
+                  aria-label="Recent client messages"
+                  tabIndex={0}
+                  className="relative overflow-x-auto overscroll-x-contain outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/50"
+                >
                 <table className="w-full">
                   <THead>
                     <Th>Comment</Th>
@@ -493,11 +525,11 @@ export default function PortalPage() {
                       .slice(0, 8)
                       .map((c, i) => (
                       <Tr key={c.id} index={i}>
-                        <Td className="max-w-xs truncate">{c.content}</Td>
-                        <Td className="text-muted-foreground">
+                        <Td className="max-w-[180px] truncate">{c.content}</Td>
+                        <Td className="max-w-[150px] truncate text-muted-foreground">
                           {c.project?.name ?? (c.threadKey === "general" ? `General · ${c.client?.companyName ?? "—"}` : "—")}
                         </Td>
-                        <Td className="text-muted-foreground">
+                        <Td className="max-w-[120px] truncate text-muted-foreground">
                           {c.portalUser?.clientContact?.name ?? c.author?.name ?? "—"}
                         </Td>
                         <Td>
@@ -512,7 +544,8 @@ export default function PortalPage() {
                     ))}
                   </tbody>
                 </table>
-              </TableShell>
+                </div>
+              </div>
             </FadeIn>
 
             <FadeIn delay={0.05}>
@@ -532,6 +565,7 @@ export default function PortalPage() {
                   <select
                     value={replyTarget}
                     onChange={(e) => setReplyTarget(e.target.value)}
+                    aria-label="Conversation to reply to"
                     className="rounded-lg border border-border bg-background px-3 py-2 text-[12px]"
                   >
                     <option value="">Choose a conversation…</option>
@@ -557,6 +591,7 @@ export default function PortalPage() {
                   value={replyBody}
                   onChange={(e) => setReplyBody(e.target.value)}
                   rows={3}
+                  aria-label="Reply to the client"
                   placeholder="Write a reply to your client…"
                   className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-[12.5px]"
                 />

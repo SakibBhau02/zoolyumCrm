@@ -67,7 +67,13 @@ export class AuthService {
   async login(dto: LoginDto, ip?: string) {
     const email = dto.email.toLowerCase().trim();
     const policy = await this.securityPolicy();
-    const rec = this.attempts.get(email);
+    // Lockout is keyed by (email, IP), not email alone: the audit showed that
+    // anyone who knows a staff email could keep the Owner locked out forever by
+    // sending 6 wrong passwords every 15 minutes (SEC-04). Per-IP keying still
+    // stops password grinding from one place, while the route limiter
+    // (30/min/IP) bounds a distributed attempt.
+    const key = this.attemptKey(email, ip);
+    const rec = this.attempts.get(key);
     if (rec?.lockedUntil && rec.lockedUntil > Date.now()) {
       const mins = Math.ceil((rec.lockedUntil - Date.now()) / 60_000);
       throw new UnauthorizedException(`Too many failed attempts. Try again in ${mins} minute(s).`);
@@ -78,20 +84,24 @@ export class AuthService {
       include: { role: true },
     });
     if (!user) {
-      this.trackFailure(email, policy);
+      this.trackFailure(key, policy);
       throw new UnauthorizedException("Invalid credentials");
     }
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {
-      this.trackFailure(email, policy);
+      this.trackFailure(key, policy);
       throw new UnauthorizedException("Invalid credentials");
     }
     if (!user.isActive) {
       throw new UnauthorizedException("This account is disabled. Contact your administrator.");
     }
 
-    this.attempts.delete(email);
+    this.attempts.delete(key);
     return this.issueSession(user.id, ip);
+  }
+
+  private attemptKey(email: string, ip?: string) {
+    return `${email}|${ip ?? "unknown"}`;
   }
 
   /** Sign a staff session for an already-authenticated user (password or WebAuthn). */

@@ -79,6 +79,40 @@ function useReload() {
   return { key, retry: () => setKey((k) => k + 1) };
 }
 
+const MONTH_RANK: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+function monthRank(label: unknown): number {
+  return MONTH_RANK[String(label ?? "").slice(0, 3).toLowerCase()] ?? -1;
+}
+
+/**
+ * The insight endpoints bucket the trend in a Map and then sort the *labels*
+ * (`month.localeCompare`) before slicing, so the series arrives as
+ * Nov → Oct → Sep (audit UX-15). Labels carry no year, so we rebuild the
+ * chronological order from the month ranks and rotate at the largest gap —
+ * that gap is the year boundary — instead of trusting the server order.
+ */
+function orderTrend<T extends { month?: string | null }>(rows: T[] | null | undefined): T[] {
+  const list = rows ?? [];
+  const ranked = list.filter((r) => monthRank(r.month) >= 0);
+  if (ranked.length < 2) return [...list];
+  const sorted = [...ranked].sort((a, b) => monthRank(a.month) - monthRank(b.month));
+  let wrapAt = sorted.length - 1;
+  let widest = -1;
+  for (let i = 0; i < sorted.length; i++) {
+    const next = sorted[(i + 1) % sorted.length];
+    const gap = (monthRank(next.month) - monthRank(sorted[i].month) + 12) % 12 || 12;
+    if (gap > widest) {
+      widest = gap;
+      wrapAt = i;
+    }
+  }
+  return [...sorted.slice(wrapAt + 1), ...sorted.slice(0, wrapAt + 1)];
+}
+
 function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-border/60 bg-muted/30 p-3">
@@ -320,7 +354,7 @@ export default function ReportsPage() {
                 <FadeIn className="xl:col-span-2">
                   <CardShell>
                     <SectionTitle title="Revenue Trend" subtitle="Invoiced vs collected over time" />
-                    <RevenueAreaChart data={ov.trend} />
+                    <RevenueAreaChart data={orderTrend(ov.trend)} />
                   </CardShell>
                 </FadeIn>
                 <FadeIn delay={0.1}>
@@ -789,7 +823,7 @@ export default function ReportsPage() {
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <div>
                 <p className="mb-2 text-body font-semibold text-muted-foreground">Revenue Trend</p>
-                <RevenueAreaChart data={r.trend} height={200} />
+                <RevenueAreaChart data={orderTrend(r.trend)} height={200} />
               </div>
               <div>
                 <p className="mb-2 text-body font-semibold text-muted-foreground">Payment Methods</p>

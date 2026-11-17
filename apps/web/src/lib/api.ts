@@ -1,6 +1,13 @@
 "use client";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+/**
+ * Same-origin by default: the Next server proxies `/api/*` to the API
+ * (`API_PROXY_TARGET`), which works on localhost, behind the Cloudflare tunnel
+ * and in any single-origin deploy. Without this default a build that forgot to
+ * set NEXT_PUBLIC_API_URL shipped `http://localhost:4000` and every visitor's
+ * browser called *their own machine* — the page loaded, the data never did.
+ */
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
 /**
  * Error carrying the HTTP status so callers can tell "your session is invalid"

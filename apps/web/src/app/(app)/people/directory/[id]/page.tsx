@@ -4,17 +4,15 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { ArrowLeft, Briefcase, CalendarClock, FileText, Fingerprint, GraduationCap, ListTodo, Pencil, Phone, Target, Trash2, Users, Wallet } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
 import { formatBDT, formatDate, formatDay } from "@/lib/format";
 import { Avatar, CardShell, EmptyState, SectionTitle, SkeletonBlock, StatusBadge, cn } from "@/components/shared";
 import { Btn } from "@/components/table";
 import { label, monthNow, skillsOf, fmtTime } from "../../_components/constants";
 import { LoadOrError, Toast, useList, useToast } from "../../_components/hooks";
+import { usePeopleAccess } from "../../_components/permissions";
 import EmployeeProfileModal from "../../_components/modals/employee-profile";
 import { TelegramConnect } from "../../_components/telegram-connect";
 import { EmployeeDocuments } from "../../_components/employee-documents";
-
-const isHr = (user: any) => /owner|hr|admin/i.test(`${user?.role ?? ""} ${user?.roleName ?? ""}`);
 
 function Fact({ label: l, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
@@ -38,14 +36,13 @@ function tenure(joinDate?: string | null) {
 export default function EmployeeProfilePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { user } = useAuth();
   const [refresh, setRefresh] = useState(0);
   const reload = useCallback(() => setRefresh((r) => r + 1), []);
   const { data: detail, loading, error } = useList<any>(`/people/employees/${params.id}`, refresh);
   const [editOpen, setEditOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { flash, notify } = useToast();
-  const canSeePay = isHr(user);
+  const { canSeePay } = usePeopleAccess();
 
   const doDelete = async () => {
     if (!detail) return;
@@ -86,7 +83,7 @@ export default function EmployeeProfilePage() {
           {/* Header */}
           <CardShell>
             <div className="flex flex-wrap items-center gap-3">
-              <Avatar name={detail.name} size="size-12" />
+              <Avatar name={detail.name} size="size-12" src={detail.photoUrl} jxlSrc={detail.photoJxlUrl} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-heading text-title font-bold">{detail.name}</p>
@@ -368,6 +365,7 @@ export default function EmployeeProfilePage() {
         detail={detail}
         loading={loading}
         initialEditing
+        onPhotoChanged={reload}
         onSave={async (payload) => {
           // Errors must surface: the modal used to swallow them and the page
           // awaited without a catch, so a 403/409 looked like a successful save.

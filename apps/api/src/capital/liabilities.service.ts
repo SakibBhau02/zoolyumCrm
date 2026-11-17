@@ -248,7 +248,9 @@ export class LiabilitiesService {
     });
     if (!existing) throw new NotFoundException("Engagement not found");
     if (existing.payments.length > 0) {
-      throw new BadRequestException("This engagement has payments. Record a refund before deleting it, so the cash trail stays intact.");
+      throw new BadRequestException(
+        "This engagement has payment rows. Undo each payment (or record a refund) before deleting it, so the cash trail stays intact."
+      );
     }
     if (existing.status === "COMPLETED") {
       throw new BadRequestException("Completed engagements are part of the ledger and cannot be deleted.");
@@ -362,9 +364,54 @@ export class LiabilitiesService {
     return { ...payment, engagement: await this.get(id) };
   }
 
+  /**
+   * Undo a single vendor payment (wrong amount, duplicate entry).
+   *
+   * Refunding is not the same thing: a refund is a second cash movement that
+   * leaves both rows behind and the commitment still blocked. This removes the
+   * payment, reverses its journal and puts the cash back where it came from.
+   */
+  async deletePayment(id: string, paymentId: string, actorId?: string) {
+    const payment = await this.prisma.vendorPayment.findFirst({ where: { id: paymentId, engagementId: id } });
+    if (!payment) throw new NotFoundException("Payment not found");
+    const amount = Number(payment.amount);
+    const taxWithheld = Number(payment.taxWithheld ?? 0);
+    const net = Math.round((amount - taxWithheld) * 100) / 100;
+    await this.prisma.$transaction(async (tx) => {
+      for (let guard = 0; guard < 5; guard++) {
+        const reversal = await this.ledger.reverseGL(paymentId, actorId, tx, ["VENDOR_PAYMENT", "VENDOR_REFUND"]);
+        if (!reversal) break;
+      }
+      const bankId = payment.bankAccountId ?? (await this.ledger.defaultBankAccount(tx));
+      if (bankId) {
+        if (payment.type === "REFUND") await this.ledger.debitBankAccount(bankId, amount, tx);
+        else if (net > 0) await this.ledger.creditBankAccount(bankId, net, tx);
+      }
+      await tx.vendorPayment.delete({ where: { id: paymentId } });
+      await logAudit(tx, "VendorPayment", paymentId, "deleted", { engagement: id, amount, type: payment.type }, actorId);
+    }, { timeout: 15000 });
+    await this.invalidate();
+    return { ok: true, engagement: await this.get(id) };
+  }
+
+  /** Pay the withheld retention once the work is delivered and settled. */
+  async releaseRetention(id: string, body: any, actorId?: string) {
+    const engagement = await this.prisma.vendorEngagement.findUnique({ where: { id }, include: { payments: true } });
+    if (!engagement) throw new NotFoundException("Engagement not found");
+    if (engagement.status !== "COMPLETED") {
+      throw new BadRequestException("Complete the engagement before releasing retention.");
+    }
+    const paid = this.paidOf(engagement.payments);
+    const remaining = Math.round((Number(engagement.totalAmount) - paid) * 100) / 100;
+    if (remaining <= 0.01) return { ok: true, released: 0, message: "Nothing outstanding on this engagement" };
+    const pct = Number(engagement.retentionPct ?? 0);
+    const retained = pct > 0 ? Math.round((Number(engagement.totalAmount) * pct) / 100 * 100) / 100 : remaining;
+    const amount = Math.min(remaining, retained);
+    return this.pay(id, { paymentMethod: "BANK_TRANSFER", ...body, amount, notes: body?.notes ?? "Retention release" }, actorId);
+  }
+
   /** Mark work delivered / bill received — the moment a commitment becomes AP. */
-  async complete(id: string, body: any, actorId?: string) {
-    const engagement = await this.prisma.vendorEngagement.findUnique({
+  async complete(id: string, body: any, actorId?: string) {    const engagement = await this.prisma.vendorEngagement.findUnique({
       where: { id },
       include: { payments: true },
     });
@@ -439,7 +486,7 @@ export class LiabilitiesService {
       include: { payments: true },
     });
     if (!engagement) throw new NotFoundException("Engagement not found");
-    if (engagement.payments.length > 0 || engagement.status === "COMPLETED") {
+    if (Math.abs(this.paidOf(engagement.payments)) > 0.01 || engagement.status === "COMPLETED") {
       throw new BadRequestException(
         "This engagement has money or costs attached. Refund the payments (and reverse the accrual) before cancelling."
       );

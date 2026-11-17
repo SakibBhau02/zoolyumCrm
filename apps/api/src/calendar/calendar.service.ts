@@ -353,16 +353,25 @@ export class CalendarService {
   // ── events ───────────────────────────────────────────────────────────
   async createEvent(dto: any, userId?: string) {
     if (!String(dto.title ?? "").trim()) throw new BadRequestException("Title is required");
-    if (!isDayKey(dto.date)) throw new BadRequestException("A valid date is required");
+    if (!isRealDay(dto.date)) throw new BadRequestException("A valid date is required");
     const allDay = !!dto.allDay;
+    const endDate = isRealDay(dto.endDate) ? dto.endDate : null;
+    if (endDate && endDate < dto.date) {
+      throw new BadRequestException("End date cannot be before the start date");
+    }
+    const startTime = allDay ? null : normalizeTime(dto.startTime ?? dto.time, "10:00");
+    const endTime = allDay ? null : normalizeTime(dto.endTime, "11:00");
+    if (startTime && endTime && endTime <= startTime && !endDate) {
+      throw new BadRequestException("End time must be after the start time");
+    }
     const created = await this.prisma.calendarEvent.create({
       data: {
         title: String(dto.title).trim(),
         type: dto.type ?? "MEETING",
         date: dto.date,
-        endDate: isDayKey(dto.endDate) ? dto.endDate : null,
-        startTime: allDay ? null : normalizeTime(dto.startTime ?? dto.time, "10:00"),
-        endTime: allDay ? null : normalizeTime(dto.endTime, "11:00"),
+        endDate,
+        startTime,
+        endTime,
         allDay,
         location: dto.location ?? null,
         meetingUrl: safeHttpUrl(dto.meetingUrl),
@@ -410,7 +419,29 @@ export class CalendarService {
     ];
     for (const k of fields) if (dto[k] !== undefined) data[k] = dto[k] === "" ? null : dto[k];
     if (data.meetingUrl !== undefined) data.meetingUrl = safeHttpUrl(data.meetingUrl);
-    if (data.date && !isDayKey(data.date)) throw new BadRequestException("Invalid date");
+    if (data.date !== undefined && !isRealDay(data.date)) throw new BadRequestException("Invalid date");
+    if (data.endDate !== undefined && data.endDate !== null && !isRealDay(data.endDate)) {
+      throw new BadRequestException("Invalid end date");
+    }
+    // Validate the merged state, not just the submitted fields: moving only
+    // `date` past `endDate` must fail even though endDate was not in the body.
+    const nextDate = (data.date !== undefined ? data.date : existing.date) as string;
+    const nextEndDate = (data.endDate !== undefined ? data.endDate : existing.endDate) as string | null;
+    if (nextEndDate && nextEndDate < nextDate) {
+      throw new BadRequestException("End date cannot be before the start date");
+    }
+    const nextStart = data.startTime !== undefined ? data.startTime : existing.startTime;
+    const nextEnd = data.endTime !== undefined ? data.endTime : existing.endTime;
+    const nextAllDay = data.allDay !== undefined ? !!data.allDay : existing.allDay;
+    if (!nextAllDay && nextStart && nextEnd && nextEnd <= nextStart && !nextEndDate) {
+      throw new BadRequestException("End time must be after the start time");
+    }
+    if (data.startTime !== undefined && data.startTime !== null && !isValidTime(data.startTime)) {
+      throw new BadRequestException("Invalid start time (expected HH:MM)");
+    }
+    if (data.endTime !== undefined && data.endTime !== null && !isValidTime(data.endTime)) {
+      throw new BadRequestException("Invalid end time (expected HH:MM)");
+    }
     const updated = await this.prisma.calendarEvent.update({ where: { id }, data, include: this.eventInclude });
     await this.audit("EVENT", id, "update", existing, data, userId);
     await this.invalidate();

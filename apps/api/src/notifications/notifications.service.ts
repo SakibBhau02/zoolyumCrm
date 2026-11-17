@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import { Subject } from "rxjs";
@@ -158,6 +158,13 @@ export class NotificationsService {
     return this.cache.wrap(`notif:count:${userId}`, 5, () =>
       this.prisma.notification.count({ where: { userId, isRead: false } })
     );
+  }
+
+  /** One notification, scoped to its owner so ids cannot be probed. */
+  async getOne(userId: string, id: string) {
+    const row = await this.prisma.notification.findFirst({ where: { id, userId } });
+    if (!row) throw new NotFoundException("Notification not found");
+    return row;
   }
 
   private async invalidateUser(userId: string) {

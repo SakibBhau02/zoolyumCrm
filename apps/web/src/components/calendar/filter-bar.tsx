@@ -39,6 +39,7 @@ export function FilterBar({
         <Select
           value={filters.clientId}
           onChange={(e) => onChange({ ...filters, clientId: e.target.value })}
+          aria-label="Filter by client"
           className="!w-52 !py-1.5 text-[12px]"
         >
           <option value="">All clients</option>
@@ -75,6 +76,7 @@ export function FilterBar({
         <Select
           value={filters.approval}
           onChange={(e) => onChange({ ...filters, approval: e.target.value })}
+          aria-label="Filter by approval status"
           className="!w-40 !py-1.5 text-[11px]"
         >
           <option value="">Any approval</option>
@@ -87,6 +89,7 @@ export function FilterBar({
         <Select
           value={filters.platforms}
           onChange={(e) => onChange({ ...filters, platforms: e.target.value })}
+          aria-label="Filter by platform"
           className="!w-36 !py-1.5 text-[11px]"
         >
           <option value="">All platforms</option>

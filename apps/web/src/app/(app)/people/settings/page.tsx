@@ -7,9 +7,11 @@ import { Btn } from "@/components/table";
 import { Field, Input, Select } from "@/components/ui";
 import { DAYS, dayShort, monthNow } from "../_components/constants";
 import { Toast, useList, useToast } from "../_components/hooks";
+import { usePeopleAccess } from "../_components/permissions";
 import { PeopleHero, PeopleTabs } from "../_components/hero";
 
 export default function SettingsPage() {
+  const { canApprove } = usePeopleAccess();
   const [refresh, setRefresh] = useState(0);
   const reload = useCallback(() => setRefresh((r) => r + 1), []);
   const { data: policy, loading, error } = useList<any>("/people/attendance-policy", refresh);
@@ -49,7 +51,11 @@ export default function SettingsPage() {
     setF({ ...f, lateLadder: ladder });
   };
   if (loading) return <div className="flex flex-col gap-2">{[...Array(5)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}</div>;
-  if (error) return <EmptyState title={error.includes("role") ? "Owner / HR/Admin only" : error} hint="Attendance policy is managed by the Owner or HR/Admin" />;
+  // Policy is approve-level: gate on the permission, not on the error string.
+  // The old `error.includes("role")` check broke the moment the API started
+  // answering with a permission message instead of a role one.
+  if (!canApprove) return <EmptyState title="Owner / HR/Admin only" hint="Attendance policy is managed by the Owner or HR/Admin" />;
+  if (error) return <EmptyState title={error} hint="Attendance policy is managed by the Owner or HR/Admin" />;
   if (!f) return null;
   const ladderSummary = f.lateLadder.filter((r: any) => Number(r.lates) > 0).sort((a: any, b: any) => a.lates - b.lates).map((r: any) => `${r.lates} lates → ${r.days} day(s)`).join(", ");
   return (

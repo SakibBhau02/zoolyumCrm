@@ -60,7 +60,7 @@ export function ApprovalBadge({ approval }: { approval?: string }) {
   );
 }
 
-/** One calendar chip. Kept tiny — four fit in a month cell at 1280px. */
+/** One calendar chip. Min 24px tall — WCAG 2.2 2.5.8 target size (audit UX-06). */
 export function CalChip({
   item,
   onClick,
@@ -85,15 +85,17 @@ export function CalChip({
       title={`${item.title}${item.subtitle ? ` · ${item.subtitle}` : ""} · ${label(item.status)}`}
       style={{ borderLeftColor: color }}
       className={cn(
-        "group flex w-full min-w-0 items-center gap-1 rounded-md border-l-2 bg-muted/50 px-1.5 text-left transition-colors hover:bg-muted",
-        compact ? "py-0 text-[10px]" : "py-0.5 text-[10.5px]",
-        item.isDone && "opacity-60",
+        "group flex min-h-6 w-full min-w-0 items-center gap-1 rounded-md border-l-2 bg-muted/50 px-1.5 py-0.5 text-left text-[11px] leading-tight transition-colors hover:bg-muted",
+        compact && "gap-0.5 px-1",
+        // Opacity is a contrast multiplier: done items at 60% fell to ~2:1.
+        // Fade the surface instead and keep the label legible.
+        item.isDone && "bg-muted/30 text-muted-foreground line-through",
         item.draggable && "cursor-grab active:cursor-grabbing"
       )}
     >
       <span className={cn("size-1.5 shrink-0 rounded-full", SOURCE_DOT[item.source] ?? "bg-primary")} />
       {!item.allDay && item.startTime && (
-        <span className="shrink-0 tabular-nums text-[9px] font-semibold text-muted-foreground">
+        <span className="shrink-0 tabular-nums text-[11px] font-semibold text-muted-foreground">
           {humanTime(item.startTime).replace(":00", "").replace(" ", "")}
         </span>
       )}

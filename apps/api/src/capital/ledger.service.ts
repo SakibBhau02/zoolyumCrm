@@ -1,6 +1,5 @@
-import { Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-import { PrismaService } from "../prisma/prisma.service";
+import { Injectable, BadRequestException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";import { PrismaService } from "../prisma/prisma.service";
 import { POSTABLE_STATUSES, invoiceTotals, toBdt } from "./finance-kernel";
 
 /** Database handle: the shared client, or a transaction client inside $transaction. */
@@ -74,6 +73,18 @@ export class LedgerService {
     const rounded = lines.map((l) => ({ ...l, debit: Math.round(l.debit * 100) / 100, credit: Math.round(l.credit * 100) / 100 }));
     if (!rounded.length) return;
     if (Math.abs(rounded.reduce((s, l) => s + l.debit - l.credit, 0)) > 0.01) throw new Error("Unbalanced journal entry");
+    // Period lock: a closed or locked month must never receive a new posting,
+    // otherwise last month's P&L / VAT return keeps changing after it was filed.
+    const day = new Date(Date.UTC(entryDate.getUTCFullYear(), entryDate.getUTCMonth(), entryDate.getUTCDate()));
+    const period = await db.fiscalPeriod.findFirst({
+      where: { startDate: { lte: day }, endDate: { gte: day } },
+      select: { name: true, status: true },
+    });
+    if (period && period.status !== "OPEN") {
+      throw new BadRequestException(
+        `${period.name} is ${period.status.toLowerCase()} — ${reference} cannot be posted into it.`
+      );
+    }
     return db.journalEntry.create({
       data: { entryType, reference, entryDate, sourceId, notes, createdById: actorId, lines: { create: rounded.map((l) => ({ accountId: l.accountId, debit: l.debit, credit: l.credit, memo: l.memo })) } },
     });
@@ -115,8 +126,7 @@ export class LedgerService {
   }
 
   /** Reverse one specific journal entry (used when a single payment is undone). */
-  async reverseJournalEntry(entryId: string, actorId?: string, db: CapitalDb = this.prisma) {
-    const entry = await db.journalEntry.findUnique({ where: { id: entryId }, include: { lines: true } });
+  async reverseJournalEntry(entryId: string, actorId?: string, db: CapitalDb = this.prisma) {    const entry = await db.journalEntry.findUnique({ where: { id: entryId }, include: { lines: true } });
     if (!entry || entry.reversedEntryId) return;
     const existing = await db.journalEntry.findFirst({ where: { reversedEntryId: entry.id }, select: { id: true } });
     if (existing) return;
@@ -132,6 +142,79 @@ export class LedgerService {
     );
     if (reversal) await db.journalEntry.update({ where: { id: reversal.id }, data: { reversedEntryId: entry.id } });
     return reversal;
+  }
+
+  /**
+   * Find journal entries whose source document no longer exists and reverse
+   * them.
+   *
+   * `JournalEntry.sourceId` is a plain string — there is no foreign key — so any
+   * delete path that misses its reversal (or a database reseed) leaves entries
+   * behind that no report can trace to a document. They distort AR, VAT and the
+   * P&L silently. This sweep reverses them so the books self-correct while the
+   * originals stay for the audit trail.
+   *
+   * Bank balances are a denormalised mirror of the GL cash account, so any cash
+   * movement undone here is mirrored onto the default bank account too — that
+   * keeps `GL 1200 == Σ BankAccount.currentBalance` true after the repair.
+   */
+  async reverseOrphanJournals(actorId?: string) {
+    const db = this.prisma;
+    const entries = await db.journalEntry.findMany({
+      select: { id: true, entryType: true, sourceId: true, reversedEntryId: true },
+    });
+    const [invoices, payments, expenses, creditNotes, manualIncome, engagements, vendorPayments, dollarSales, payrolls, manualJournals, fixedAssets, depreciationRuns, fxRevaluations] = await Promise.all([
+      db.invoice.findMany({ select: { id: true } }),
+      db.payment.findMany({ select: { id: true } }),
+      db.expense.findMany({ select: { id: true } }),
+      db.creditNote.findMany({ select: { id: true } }),
+      db.manualIncome.findMany({ select: { id: true } }),
+      db.vendorEngagement.findMany({ select: { id: true } }),
+      db.vendorPayment.findMany({ select: { id: true } }),
+      db.dollarSale.findMany({ select: { id: true } }),
+      db.payrollRecord.findMany({ select: { id: true } }),
+      db.manualJournal.findMany({ select: { id: true } }),
+      db.fixedAsset.findMany({ select: { id: true } }),
+      db.depreciationRun.findMany({ select: { id: true } }),
+      db.fxRevaluation.findMany({ select: { id: true } }),
+    ]);
+    const known = new Set<string>();
+    for (const rows of [invoices, payments, expenses, creditNotes, manualIncome, engagements, vendorPayments, dollarSales, payrolls, manualJournals, fixedAssets, depreciationRuns, fxRevaluations]) {
+      for (const row of rows) known.add(row.id);
+    }
+    // A reversal entry points at the entry it reverses; that entry must not be
+    // reversed a second time.
+    const alreadyReversed = new Set(entries.filter((e) => e.reversedEntryId).map((e) => e.reversedEntryId as string));
+    const targets = entries.filter((e) => {
+      if (!e.sourceId || e.reversedEntryId) return false;
+      if (alreadyReversed.has(e.id)) return false;
+      // Dollar-desk opening entries use `<saleId>:opening` as their source.
+      // `OPENING-*` / `SYSTEM-*` are reserved synthetic references with no document.
+      const base = e.sourceId.replace(/:opening$/, "");
+      if (/^(OPENING|SYSTEM)[-_]/i.test(base)) return false;
+      return !known.has(base);
+    });
+
+    const details: { entryType: string; sourceId: string; cash: number }[] = [];
+    let reversed = 0;
+    let cashAdjusted = 0;
+    for (const target of targets) {
+      const lines = await db.journalEntryLine.findMany({ where: { entryId: target.id }, include: { account: { select: { code: true } } } });
+      const cash = Math.round(lines.filter((l) => l.account.code === "1200").reduce((s, l) => s + Number(l.debit) - Number(l.credit), 0) * 100) / 100;
+      const reversal = await this.reverseJournalEntry(target.id, actorId);
+      if (!reversal) continue;
+      reversed += 1;
+      if (Math.abs(cash) > 0.005) {
+        const bankId = await this.defaultBankAccount();
+        if (bankId) {
+          if (cash > 0) await this.debitBankAccount(bankId, cash);
+          else await this.creditBankAccount(bankId, Math.abs(cash));
+          cashAdjusted = Math.round((cashAdjusted + cash) * 100) / 100;
+        }
+      }
+      details.push({ entryType: target.entryType, sourceId: target.sourceId as string, cash });
+    }
+    return { checked: entries.length, orphans: targets.length, reversed, cashAdjusted, details };
   }
 
   /**

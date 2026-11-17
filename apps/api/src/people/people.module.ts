@@ -13,6 +13,7 @@ import { UtilizationService } from "./utilization.service";
 import { MeService } from "./me.service";
 import { OnboardingService } from "./onboarding.service";
 import { AssetsService } from "./assets.service";
+import { PeopleAnalyticsService } from "./analytics.service";
 import { PeopleController } from "./people.controller";
 import { IclockController } from "./iclock.controller";
 import { CapitalModule } from "../capital/capital.module";
@@ -35,6 +36,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
     MeService,
     OnboardingService,
     AssetsService,
+    PeopleAnalyticsService,
   ],
   // The Telegram bot commands need attendance punching and leave decisions;
   // exporting keeps that logic in one place instead of duplicating rules.

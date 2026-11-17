@@ -9,6 +9,7 @@ import {
   CheckCheck,
   ChevronRight,
   Clock,
+  ExternalLink,
   FileText,
   HandCoins,
   Inbox,
@@ -145,6 +146,8 @@ export function NotificationsDropdown() {
   const [prefs, setPrefs] = useState<Pref[]>([]);
   const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     refresh();
@@ -203,6 +206,25 @@ export function NotificationsDropdown() {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
+
+  // A popover is a dialog: focus moves in when it opens (audit UX-22) and
+  // Escape closes it, handing focus back to the bell.
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => panelRef.current?.focus({ preventScroll: true }), 0);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      setOpen(false);
+      setShowPrefs(false);
+      bellRef.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   const query = useMemo(() => {
     const p = new URLSearchParams({ limit: "20" });
@@ -282,8 +304,9 @@ export function NotificationsDropdown() {
   const openItem = async (n: Notification) => {
     await markRead(n);
     setOpen(false);
-    if (n.link) router.push(n.link);
-    else router.push("/notifications");
+    // The row always opens this notification; the arrow button beside it is
+    // what jumps straight to the linked module.
+    router.push(`/notifications/${n.id}`);
   };
 
   const grouped = useMemo(() => {
@@ -304,10 +327,22 @@ export function NotificationsDropdown() {
   return (
     <div ref={ref} className="relative">
       <button
+        ref={bellRef}
         onClick={() => {
-          setOpen((o) => !o);
-          if (!open) refresh();
+          if (open) {
+            // Closing returns the caret to the bell instead of dropping it on
+            // <body> (audit UX-22).
+            setOpen(false);
+            setShowPrefs(false);
+            bellRef.current?.focus({ preventScroll: true });
+            return;
+          }
+          setOpen(true);
+          refresh();
         }}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls="notifications-popover"
         className="relative flex size-9 items-center justify-center rounded-xl border border-border bg-card/60 text-muted-foreground transition-colors hover:text-foreground"
         aria-label={unread > 0 ? `Notifications, ${unread > 99 ? "99+" : unread} unread` : "Notifications"}
       >
@@ -323,7 +358,14 @@ export function NotificationsDropdown() {
       </button>
 
       {open && (
-        <div className="animate-pop-in fixed inset-x-2 top-16 z-50 flex max-h-[min(38rem,calc(100dvh-5.5rem))] flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-2xl shadow-black/15 ring-1 ring-black/[0.03] sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-[min(30rem,calc(100vw-1rem))]">
+        <div
+          ref={panelRef}
+          id="notifications-popover"
+          role="dialog"
+          aria-label="Notifications"
+          tabIndex={-1}
+          className="animate-pop-in fixed inset-x-2 top-16 z-50 flex max-h-[min(38rem,calc(100dvh-5.5rem))] flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-2xl shadow-black/15 ring-1 ring-black/[0.03] outline-none sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-[min(30rem,calc(100vw-1rem))]"
+        >
           {/* header */}
           <div className="relative shrink-0 overflow-hidden border-b border-border/60">
             <div aria-hidden className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/10 via-primary/[0.04] to-transparent" />
@@ -538,15 +580,24 @@ export function NotificationsDropdown() {
                                 <span>{timeAgo(n.createdAt)}</span>
                                 <span className="size-0.5 rounded-full bg-current" />
                                 <span className="font-semibold uppercase tracking-wide">{m.label}</span>
-                                {n.link && (
-                                  <>
-                                    <span className="size-0.5 rounded-full bg-current" />
-                                    <span className="font-semibold text-primary/80 opacity-0 transition-opacity group-hover:opacity-100">Open →</span>
-                                  </>
-                                )}
+                                <span className="size-0.5 rounded-full bg-current" />
+                                <span className="font-semibold text-primary/80 opacity-0 transition-opacity group-hover:opacity-100">View →</span>
                               </p>
                             </button>
-                            <div className="flex shrink-0 flex-col items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                            <div className="flex shrink-0 flex-col items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+                              {n.link && (
+                                <button
+                                  onClick={() => {
+                                    setOpen(false);
+                                    router.push(n.link!);
+                                  }}
+                                  title="Open related page"
+                                  aria-label="Open related page"
+                                  className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                >
+                                  <ExternalLink className="size-3.5" />
+                                </button>
+                              )}
                               {!n.isRead && (
                                 <button
                                   onClick={() => markRead(n)}

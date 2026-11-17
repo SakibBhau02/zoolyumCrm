@@ -91,4 +91,13 @@ export class NotificationsController {
   ) {
     return this.service.updatePreference(userId, dto.type, dto.channel, dto.enabled);
   }
+
+  /**
+   * Single notification detail. Declared last on purpose: `:id` would otherwise
+   * swallow `/summary`, `/count`, `/preferences` and `/sse-token`.
+   */
+  @Get(":id")
+  detail(@CurrentUser("sub") userId: string, @Param("id") id: string) {
+    return this.service.getOne(userId, id);
+  }
 }

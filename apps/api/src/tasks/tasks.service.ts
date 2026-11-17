@@ -7,6 +7,7 @@ import { CacheService } from "../cache/cache.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
 import { ScoringService } from "../scoring/scoring.service";
 import { recomputeProjectStats } from "../common/project-stats";
+import { modulePermission } from "../common/module-keys";
 
 /**
  * Strict counterpart of `normalizeTaskStatus`: known aliases fold onto the enum,
@@ -151,6 +152,26 @@ export class TasksService {
   }
 
   /**
+   * Module gate for content edits.
+   *
+   * The role *names* above are an object-level hint ("is this person a lead?"),
+   * not an authorization source: the permission matrix is. A role such as
+   * HR/Admin is treated as admin for task content but has `TASKS: {edit:false}`
+   * in the matrix, so it used to be able to PATCH any task while `GET` on the
+   * same task returned 403 (see audit SEC-01).
+   *
+   * Internal/system callers pass no permissions object — those keep the legacy
+   * behaviour so automation and cron writes still work.
+   */
+  private hasTasksEdit(user?: { role?: string; permissions?: Record<string, any> }): boolean {
+    if (!user) return false;
+    if (user.role === "Owner") return true;
+    if (!user.permissions) return true;
+    const m = modulePermission(user.permissions as any, "TASKS");
+    return !!(m?.edit || m?.approve);
+  }
+
+  /**
    * Departments can restrict which task types their people may file
    * (`Settings.departmentTaskTypes`, edited at /tasks/setup).
    *
@@ -211,8 +232,11 @@ export class TasksService {
     return false;
   }
   /** Content edits (title/description/project/assignee/dates/links). */
-  private async canEditFull(task: any, user?: { sub?: string; role?: string }, empId?: string | null): Promise<boolean> {
+  private async canEditFull(task: any, user?: { sub?: string; role?: string; permissions?: Record<string, any> }, empId?: string | null): Promise<boolean> {
     if (!user?.sub) return false;
+    // No TASKS.edit in the role matrix => no content edits, whatever the role
+    // name says. Progress actions still work through canWorkOnTask().
+    if (!this.hasTasksEdit(user)) return false;
     if (this.isAdmin(user.role) || this.isPM(user.role)) return true;
     const id = empId !== undefined ? empId : await this.getEmployeeIdByUserId(user.sub);
     if (!id) return false;
@@ -1613,25 +1637,45 @@ export class TasksService {
     });
     let sent = 0;
     let skipped = 0;
+    // Two batched reads instead of ~3 queries per task (audit PERF-07): the old
+    // loop resolved the employee and the dedupe row inside the loop, so 200 due
+    // tasks meant 400+ round-trips every minute.
+    const empIds = [...new Set(tasks.map((t) => t.assignedToId).filter((id): id is string => !!id))];
+    const employees = empIds.length
+      ? await this.prisma.employee.findMany({
+          where: { id: { in: empIds } },
+          select: { id: true, user: { select: { id: true } } },
+        })
+      : [];
+    const userByEmp = new Map(employees.filter((e) => e.user).map((e) => [e.id, e.user!.id]));
+    const userIds = [...new Set([...userByEmp.values()])];
+    const alreadyToday = userIds.length
+      ? await this.prisma.notification.findMany({
+          where: {
+            userId: { in: userIds },
+            type: { in: ["TASK_OVERDUE", "TASK_DUE_SOON"] as any },
+            createdAt: { gte: startOfDay },
+          },
+          select: { userId: true, type: true, link: true },
+        })
+      : [];
+    const sentKeys = new Set(alreadyToday.map((n) => `${n.userId}|${n.type}|${n.link}`));
+
     for (const t of tasks) {
-      const emp = await this.prisma.employee.findUnique({ where: { id: t.assignedToId ?? "__none__" }, include: { user: { select: { id: true } } } });
-      if (!emp?.user) continue;
+      const userId = t.assignedToId ? userByEmp.get(t.assignedToId) : undefined;
+      if (!userId) continue;
       const overdue = t.dueDate && t.dueDate < now;
       const type = overdue ? "TASK_OVERDUE" : "TASK_DUE_SOON";
       const link = `/tasks?task=${t.id}`;
-
-      // per-day dedupe: has this exact nudge already gone out today?
-      const already = await this.prisma.notification.findFirst({
-        where: { userId: emp.user.id, type, link, createdAt: { gte: startOfDay } },
-        select: { id: true },
-      });
-      if (already) {
+      const key = `${userId}|${type}|${link}`;
+      if (sentKeys.has(key)) {
         skipped++;
         continue;
       }
+      sentKeys.add(key);
 
       const n = await this.notifications.create(
-        emp.user.id,
+        userId,
         type as any,
         overdue ? "Task overdue" : "Task due soon",
         overdue ? `"${t.title}" is past its due date.` : `"${t.title}" is due within 24 hours.`,

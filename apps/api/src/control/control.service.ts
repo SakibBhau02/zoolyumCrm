@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import * as bcrypt from "bcryptjs";
 import { basename, join } from "path";
@@ -75,6 +75,12 @@ export const DEFAULT_SETTINGS = {
   financeConfig: {
     defaultPaymentTerms: "net30",
     latePaymentFee: 1.5,
+    // Dashboard planning inputs. Zero/blank hides the target line and lets
+    // runway fall back to trailing spend.
+    monthlyRevenueTarget: 0,
+    monthlyFixedCost: 0,
+    concentrationWarnPct: 50,
+    concentrationCriticalPct: 60,
     paymentMethods: [
       { name: "Bank Transfer", enabled: true },
       { name: "bKash", enabled: true },
@@ -562,6 +568,9 @@ export class ControlService {
       tryDeleteOld(existing.logoLightUrl, body.logoLightUrl);
       tryDeleteOld((existing as any).logoUrl, body.logoUrl);
       tryDeleteOld((existing as any).signatureImageUrl, body.signatureImageUrl);
+      tryDeleteOld((existing as any).logoJxlUrl, body.logoJxlUrl);
+      tryDeleteOld((existing as any).logoDarkJxlUrl, body.logoDarkJxlUrl);
+      tryDeleteOld((existing as any).logoLightJxlUrl, body.logoLightJxlUrl);
     }
     const result = existing
       ? await this.prisma.brandingConfig.update({ where: { id: existing.id }, data: body })
@@ -892,9 +901,15 @@ export class ControlService {
     return { id, email: user.email, temporaryPassword: generated ? password : undefined };
   }
 
-  async changePassword(id: string, oldPassword: string, newPassword: string, actorId?: string) {
+  async changePassword(id: string, oldPassword: string, newPassword: string, actorId?: string, actorRole?: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new NotFoundException("User not found");
+    // The route is documented as self-service. CONTROL-editors used to be able
+    // to target any id (the old password was verified against the *victim*, and
+    // a success bumped their tokenVersion, killing their sessions) — SEC-05.
+    if (actorId && actorId !== id && actorRole !== "Owner") {
+      throw new ForbiddenException("You can only change your own password");
+    }
     const valid = await bcrypt.compare(oldPassword, user.passwordHash);
     if (!valid) throw new BadRequestException("Current password is incorrect");
     const policy = await this.securityPolicy();

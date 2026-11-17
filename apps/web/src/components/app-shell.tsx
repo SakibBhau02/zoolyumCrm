@@ -93,10 +93,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      {/* Keyboard users land on 11 nav links before the page content otherwise
+          (WCAG 2.4.1 — audit UX-03). Visible on focus only. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-body focus:font-semibold focus:text-white"
+      >
+        Skip to main content
+      </a>
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar />
-        <main className="app-main flex-1 overflow-y-auto bg-mesh">
+        <main id="main-content" tabIndex={-1} className="app-main flex-1 overflow-y-auto bg-mesh">
           <div className="mx-auto max-w-7xl px-3 py-4 sm:p-6 lg:p-8 lg:pb-8">{children}</div>
         </main>
       </div>

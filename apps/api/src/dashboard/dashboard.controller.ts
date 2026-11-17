@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Query } from "@nestjs/common";
 import { DashboardService } from "./dashboard.service";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 
@@ -7,13 +7,13 @@ export class DashboardController {
   constructor(private readonly dashboard: DashboardService) {}
 
   @Get("overview")
-  overview() {
-    return this.dashboard.overview();
+  overview(@CurrentUser() user: any, @Query("period") period?: string) {
+    return this.dashboard.overview(period, user?.role, user?.permissions);
   }
 
   @Get("home")
-  home(@CurrentUser() user: any) {
-    return this.dashboard.home(user?.role, user?.sub, user?.permissions);
+  home(@CurrentUser() user: any, @Query("period") period?: string) {
+    return this.dashboard.home(user?.role, user?.sub, user?.permissions, period);
   }
 
   @Get("scoped")

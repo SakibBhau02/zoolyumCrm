@@ -1,4 +1,5 @@
-import { Body, BadRequestException, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, BadRequestException, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFile, UseInterceptors } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { DirectoryService } from "./directory.service";
 import { AttendanceService } from "./attendance.service";
 import { LeaveService } from "./leave.service";
@@ -12,11 +13,10 @@ import { UtilizationService } from "./utilization.service";
 import { MeService } from "./me.service";
 import { OnboardingService } from "./onboarding.service";
 import { AssetsService } from "./assets.service";
+import { PeopleAnalyticsService } from "./analytics.service";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
-import { Roles } from "../common/decorators/roles.decorator";
 import { RequirePermission, SkipPermission } from "../common/decorators/require-permission.decorator";
-
-const HR_ROLES = ["Owner", "HR/Admin"];
+import { imageUploadOptions, optimizeUploadedImage } from "../common/image-pipeline";
 
 @RequirePermission("PEOPLE")
 @Controller("people")
@@ -34,7 +34,8 @@ export class PeopleController {
     private readonly utilization: UtilizationService,
     private readonly me: MeService,
     private readonly onboarding: OnboardingService,
-    private readonly assets: AssetsService
+    private readonly assets: AssetsService,
+    private readonly analyticsService: PeopleAnalyticsService
   ) {}
 
   @Get("overview")
@@ -85,7 +86,6 @@ export class PeopleController {
   }
 
   @Post("employees")
-  @Roles(...HR_ROLES)
   createEmployee(@Body() body: any, @CurrentUser() user: any) {
     return this.directory.createEmployee(body, user);
   }
@@ -95,8 +95,22 @@ export class PeopleController {
     return this.directory.updateEmployee(id, body, user);
   }
 
+  // ── Staff photo (WebP + JPEG XL) ────────────────────────────────────
+  @Post("employees/:id/photo")
+  @UseInterceptors(FileInterceptor("file", imageUploadOptions("people")))
+  async uploadPhoto(@Param("id") id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    const image = await optimizeUploadedImage(file, { kind: "avatar", urlPrefix: "/api/media/people" });
+    const saved = await this.directory.setPhoto(id, image.url, image.jxlUrl);
+    return { ...saved, width: image.width, height: image.height, size: image.size };
+  }
+
+  @Delete("employees/:id/photo")
+  removePhoto(@Param("id") id: string) {
+    return this.directory.removePhoto(id);
+  }
+
   @Delete("employees/:id")
-  @Roles(...HR_ROLES)
   deleteEmployee(@Param("id") id: string) {
     return this.directory.deleteEmployee(id);
   }
@@ -108,7 +122,6 @@ export class PeopleController {
 
   /** Rebuild utilization from time logs (normally the Monday 04:00 cron). */
   @Post("utilization/recompute")
-  @Roles(...HR_ROLES)
   recomputeUtilization(@Query("weeks") weeks?: string) {
     return this.utilization.recompute(Math.min(Math.max(Number(weeks) || 8, 1), 26));
   }
@@ -150,7 +163,6 @@ export class PeopleController {
   }
 
   @Post("attendance")
-  @Roles(...HR_ROLES)
   recordAttendance(@Body() body: any) {
     return this.attendance.recordAttendance(body);
   }
@@ -161,13 +173,11 @@ export class PeopleController {
   }
 
   @Post("attendance/recompute")
-  @Roles(...HR_ROLES)
   recomputeAttendance(@Body() body: { month: string; force?: boolean }) {
     return this.attendance.recomputeMonth(body?.month, { force: body?.force === true });
   }
 
   @Patch("attendance/:id/correct")
-  @Roles(...HR_ROLES)
   correctAttendance(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     return this.attendance.correctAttendance(id, body, user);
   }
@@ -208,31 +218,31 @@ export class PeopleController {
   }
 
   @Get("attendance/devices")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   attendanceDevices() {
     return this.attendance.listDevices();
   }
 
   @Patch("attendance/devices/:id")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   updateAttendanceDevice(@Param("id") id: string, @Body() body: { name?: string | null; location?: string | null; isActive?: boolean }) {
     return this.attendance.updateDevice(id, body);
   }
 
   @Delete("attendance/devices/:id")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   deleteAttendanceDevice(@Param("id") id: string) {
     return this.attendance.deleteDevice(id);
   }
 
   @Get("attendance-policy")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   attendancePolicy() {
     return this.attendance.attendancePolicy();
   }
 
   @Patch("attendance-policy")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   updateAttendancePolicy(@Body() body: any) {
     return this.attendance.updateAttendancePolicy(body);
   }
@@ -250,19 +260,16 @@ export class PeopleController {
   }
 
   @Post("punches/import")
-  @Roles(...HR_ROLES)
   importPunches(@Body() body: { rows: any[] }) {
     return this.attendance.importPunches(body.rows ?? []);
   }
 
   @Patch("punches/:id/map")
-  @Roles(...HR_ROLES)
   mapPunch(@Param("id") id: string, @Body() body: { employeeId: string }) {
     return this.attendance.mapPunch(id, body.employeeId);
   }
 
   @Delete("punches/:id")
-  @Roles(...HR_ROLES)
   deletePunch(@Param("id") id: string) {
     return this.attendance.deletePunch(id);
   }
@@ -283,8 +290,17 @@ export class PeopleController {
   }
 
   @Patch("leave-requests/:id")
+  // Level `view` on purpose: LeaveService owns the approver rule (Owner, HR,
+  // Project Manager) so a manager can still decide without PEOPLE edit.
+  @RequirePermission("PEOPLE", "view")
   approveLeave(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     return this.leave.approveLeave(id, body.approved === true, user, body.note);
+  }
+
+  @Delete("leave-requests/:id")
+  @RequirePermission("PEOPLE", "view")
+  cancelLeave(@Param("id") id: string, @CurrentUser() user: any) {
+    return this.leave.cancelLeave(id, user);
   }
 
   @SkipPermission()
@@ -294,7 +310,7 @@ export class PeopleController {
   }
 
   @Post("leave-balances/ensure")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   ensureLeaveBalances(@Body() body: { period?: string; employeeId?: string; reset?: boolean }) {
     return this.leave.ensureBalances(body.period, body.employeeId, body.reset === true);
   }
@@ -305,7 +321,7 @@ export class PeopleController {
   }
 
   @Patch("leave-policies")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   upsertLeavePolicies(@Body() body: { policies: { leaveType: string; annualDays?: number | null; description?: string }[] }) {
     return this.leave.upsertLeavePolicies(body.policies ?? []);
   }
@@ -317,38 +333,45 @@ export class PeopleController {
   }
 
   @Post("work-calendar")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   upsertOverride(@Body() body: { date: string; isOpen: boolean; note?: string }, @CurrentUser() user: any) {
     return this.attendance.upsertOverride(body, user?.sub);
   }
 
   @Delete("work-calendar/:id")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   deleteOverride(@Param("id") id: string) {
     return this.attendance.deleteOverride(id);
   }
 
   @Get("payroll")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   payroll(@Query("period") period?: string) {
     return this.payrollService.payroll(period);
   }
 
   /** Compact header badge: latest period that actually has records. */
   @Get("payroll/status")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   payrollStatus() {
     return this.payrollService.status();
   }
 
   @Post("payroll/run")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   runPayroll(@Body() body: { period: string }) {
     return this.payrollService.runPayroll(body.period);
   }
 
+  /** Repair FINALIZED payroll records that never produced a salary expense. */
+  @Post("payroll/heal-posted")
+  @RequirePermission("PEOPLE", "approve")
+  healPayroll(@CurrentUser("sub") actorId: string) {
+    return this.payrollService.healFinalizedPayroll(actorId);
+  }
+
   @Patch("payroll/:id")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   updatePayroll(@Param("id") id: string, @Body() body: any, @CurrentUser() user: any) {
     if (body.status !== undefined && Object.keys(body).every((k) => k === "status" || k === "bankAccountId")) {
       return this.payrollService.updatePayrollStatus(id, body.status as any, user?.sub, body.bankAccountId);
@@ -357,25 +380,26 @@ export class PeopleController {
   }
 
   @Post("payroll/:id/recompute")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   recomputePayroll(@Param("id") id: string, @CurrentUser() user: any) {
     return this.payrollService.recomputePayrollRecord(id, user?.sub);
   }
 
   @Delete("payroll/:id")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   deletePayroll(@Param("id") id: string) {
     return this.payrollService.deletePayrollRecord(id);
   }
 
   @Get("payroll/:id/payslip")
+  @RequirePermission("PEOPLE", "approve")
   payslip(@Param("id") id: string, @CurrentUser() user: any) {
     return this.payrollService.payslip(id, user);
   }
 
   // ── Automation (cron entry points exposed for the Control panel) ───────
   @Post("automation/:action")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   runAutomation(@Param("action") action: string) {
     return this.automation.runNow(action as any);
   }
@@ -386,13 +410,11 @@ export class PeopleController {
   }
 
   @Post("reviews")
-  @Roles(...HR_ROLES)
   createReview(@Body() body: any, @CurrentUser() user: any) {
     return this.performance.createReview({ ...body, reviewedById: user?.sub });
   }
 
   @Patch("reviews/:id")
-  @Roles(...HR_ROLES)
   updateReview(@Param("id") id: string, @Body() body: any) {
     return this.performance.updateReview(id, body);
   }
@@ -423,13 +445,11 @@ export class PeopleController {
   }
 
   @Post("courses")
-  @Roles(...HR_ROLES)
   createCourse(@Body() body: any) {
     return this.training.createCourse(body);
   }
 
   @Delete("courses/:id")
-  @Roles(...HR_ROLES)
   deleteCourse(@Param("id") id: string) {
     return this.training.deleteCourse(id);
   }
@@ -440,37 +460,31 @@ export class PeopleController {
   }
 
   @Post("enrollments")
-  @Roles(...HR_ROLES)
   createEnrollment(@Body() body: any) {
     return this.training.createEnrollment(body);
   }
 
   @Patch("enrollments/:id")
-  @Roles(...HR_ROLES)
   updateEnrollment(@Param("id") id: string, @Body() body: any) {
     return this.training.updateEnrollment(id, body);
   }
 
   @Get("candidates")
-  @Roles(...HR_ROLES)
   candidates() {
     return this.recruitment.candidates();
   }
 
   @Post("candidates")
-  @Roles(...HR_ROLES)
   createCandidate(@Body() body: any) {
     return this.recruitment.createCandidate(body);
   }
 
   @Patch("candidates/:id")
-  @Roles(...HR_ROLES)
   updateCandidate(@Param("id") id: string, @Body() body: any) {
     return this.recruitment.updateCandidate(id, body);
   }
 
   @Delete("candidates/:id")
-  @Roles(...HR_ROLES)
   deleteCandidate(@Param("id") id: string) {
     return this.recruitment.deleteCandidate(id);
   }
@@ -482,13 +496,11 @@ export class PeopleController {
   }
 
   @Post("holidays")
-  @Roles(...HR_ROLES)
   createHoliday(@Body() body: any) {
     return this.attendance.createHoliday(body);
   }
 
   @Delete("holidays/:id")
-  @Roles(...HR_ROLES)
   deleteHoliday(@Param("id") id: string) {
     return this.attendance.deleteHoliday(id);
   }
@@ -505,37 +517,31 @@ export class PeopleController {
   }
 
   @Post("onboarding")
-  @Roles(...HR_ROLES)
   startOnboarding(@Body() body: any) {
     return this.onboarding.start(body);
   }
 
   @Patch("onboarding/items/:itemId")
-  @Roles(...HR_ROLES)
   toggleOnboardingItem(@Param("itemId") itemId: string, @Body() body: { done: boolean }, @CurrentUser() user: any) {
     return this.onboarding.toggleItem(itemId, body?.done === true, user?.sub);
   }
 
   @Delete("onboarding/items/:itemId")
-  @Roles(...HR_ROLES)
   removeOnboardingItem(@Param("itemId") itemId: string) {
     return this.onboarding.removeItem(itemId);
   }
 
   @Post("onboarding/:id/items")
-  @Roles(...HR_ROLES)
   addOnboardingItem(@Param("id") id: string, @Body() body: { label: string; owner?: string }) {
     return this.onboarding.addItem(id, body);
   }
 
   @Patch("onboarding/:id")
-  @Roles(...HR_ROLES)
   setOnboardingStatus(@Param("id") id: string, @Body() body: { status: "IN_PROGRESS" | "COMPLETED" }) {
     return this.onboarding.setStatus(id, body.status === "COMPLETED" ? "COMPLETED" : "IN_PROGRESS");
   }
 
   @Delete("onboarding/:id")
-  @Roles(...HR_ROLES)
   removeOnboarding(@Param("id") id: string) {
     return this.onboarding.remove(id);
   }
@@ -552,31 +558,26 @@ export class PeopleController {
   }
 
   @Post("assets")
-  @Roles(...HR_ROLES)
   createAsset(@Body() body: any) {
     return this.assets.create(body);
   }
 
   @Patch("assets/:id")
-  @Roles(...HR_ROLES)
   updateAsset(@Param("id") id: string, @Body() body: any) {
     return this.assets.update(id, body);
   }
 
   @Delete("assets/:id")
-  @Roles(...HR_ROLES)
   deleteAsset(@Param("id") id: string) {
     return this.assets.remove(id);
   }
 
   @Post("assets/:id/assign")
-  @Roles(...HR_ROLES)
   assignAsset(@Param("id") id: string, @Body() body: { employeeId: string }) {
     return this.assets.assign(id, body.employeeId);
   }
 
   @Post("assets/:id/return")
-  @Roles(...HR_ROLES)
   returnAsset(@Param("id") id: string) {
     return this.assets.returnAsset(id);
   }
@@ -610,9 +611,23 @@ export class PeopleController {
   }
 
   @Patch("task-type-rules")
-  @Roles(...HR_ROLES)
+  @RequirePermission("PEOPLE", "approve")
   saveTaskTypeRules(@Body() body: { rules: { department: string; taskTypes: string[] }[] }) {
     return this.team.saveTaskTypeRules(body.rules ?? []);
+  }
+
+  // ── People analytics (per-employee × per-month management view) ────────
+  @Get("analytics/monthly")
+  analyticsMonthly(@Query("months") months?: string, @Query("department") department?: string) {
+    return this.analyticsService.monthlyMatrix({
+      months: months ? Number(months) : undefined,
+      department: department || undefined,
+    });
+  }
+
+  @Get("analytics/employee/:id")
+  analyticsEmployee(@Param("id") id: string, @Query("months") months?: string) {
+    return this.analyticsService.employeeTrend(id, months ? Number(months) : 12);
   }
 
   @Get("skills-matrix")

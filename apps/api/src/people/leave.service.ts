@@ -2,10 +2,8 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { PrismaService } from "../prisma/prisma.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { CacheService } from "../cache/cache.service";
-import { assertDay, dateStrDhaka, eachDayStr, invalidatePeopleCache, leaveDays } from "./people-utils";
+import { assertDay, canDecideLeave, canPeople, dateStrDhaka, eachDayStr, invalidatePeopleCache, leaveDays } from "./people-utils";
 import { AttendanceService } from "./attendance.service";
-
-const APPROVER_ROLES = ["Owner", "HR/Admin", "Admin", "Project Manager"];
 
 @Injectable()
 export class LeaveService {
@@ -18,14 +16,23 @@ export class LeaveService {
     private readonly attendance: AttendanceService
   ) {}
 
-  private async requireApprover(userId?: string) {
+  private async requireApprover(userId?: string, actor?: any) {
     if (!userId) throw new ForbiddenException("Login required");
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, role: { select: { name: true } } },
     });
-    if (!u || !APPROVER_ROLES.includes(u.role?.name ?? "")) {
-      throw new ForbiddenException("Only Owner, HR/Admin or Project Manager can decide leave requests");
+    if (!u) throw new ForbiddenException("Login required");
+    // The role matrix (People → Approve) is the contract; the named roles are
+    // kept for installs that predate it. A custom role with approve used to be
+    // locked out of every decision screen.
+    const roleName = u.role?.name ?? "";
+    const allowed =
+      canDecideLeave(actor) ||
+      canDecideLeave({ role: roleName }) ||
+      ["Owner", "HR/Admin", "Admin", "Project Manager"].includes(roleName);
+    if (!allowed) {
+      throw new ForbiddenException("Only Owner, HR/Admin, Project Manager or a role with People → Approve can decide leave requests");
     }
     return u;
   }
@@ -254,8 +261,39 @@ export class LeaveService {
     return { ...leave, totalDays, workingDays: working.working };
   }
 
-  async approveLeave(id: string, approved: boolean, user?: { sub?: string }, note?: string) {
-    const approver = await this.requireApprover(user?.sub);
+  /**
+   * Withdraw a leave request (audit BUG-006 — the only way to close a pending
+   * request was to approve/reject it, so an employee who filed by mistake had
+   * to ask a manager).
+   *
+   * Allowed for the employee who owns the request while it is still PENDING;
+   * approvers may cancel it at any time. An APPROVED request that already
+   * deducted balance is refused — reverse it through approveLeave(id,false) so
+   * the balance is restored in the same transaction that flips the status.
+   */
+  async cancelLeave(id: string, user?: { sub?: string; role?: string; permissions?: any }) {
+    const leave = await this.prisma.leaveRequest.findUnique({ where: { id } });
+    if (!leave) throw new NotFoundException("Leave request not found");
+    if (leave.status === "CANCELLED") return leave;
+    if (leave.status === "APPROVED") {
+      throw new BadRequestException("Approved leave already deducted balance — reject it instead so the balance is restored");
+    }
+
+    const isApprover = await this.requireApprover(user?.sub, user).then(() => true).catch(() => false);
+    const self = await this.prisma.employee.findFirst({ where: { user: { id: user?.sub } }, select: { id: true } });
+    const owns = !!self && self.id === leave.employeeId;
+    if (!isApprover && !owns) {
+      throw new ForbiddenException("You can only cancel your own leave request");
+    }
+
+    return this.prisma.leaveRequest.update({
+      where: { id },
+      data: { status: "CANCELLED", decidedAt: new Date(), decisionNote: "Cancelled by " + (owns ? "employee" : "approver") },
+    });
+  }
+
+  async approveLeave(id: string, approved: boolean, user?: { sub?: string; role?: string; permissions?: any }, note?: string) {
+    const approver = await this.requireApprover(user?.sub, user);
     const leave = await this.prisma.leaveRequest.findUnique({ where: { id } });
     if (!leave) throw new NotFoundException("Leave request not found");
     if (leave.status !== "PENDING" && !(leave.status === "APPROVED" && !approved)) {
@@ -399,7 +437,10 @@ export class LeaveService {
    */
   async scopeEmployeeId(user: any): Promise<string | null> {
     const role = String(user?.role ?? "");
-    const canSeeAll = APPROVER_ROLES.includes(role) || user?.permissions?.PEOPLE?.edit === true;
+    const canSeeAll =
+      canDecideLeave(user) ||
+      ["Owner", "HR/Admin", "Admin", "Project Manager"].includes(role) ||
+      canPeople(user, "edit");
     if (canSeeAll) return null;
     const self = await this.prisma.employee.findFirst({ where: { user: { id: user?.sub } }, select: { id: true } });
     return self?.id ?? "__none__";

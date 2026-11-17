@@ -49,6 +49,7 @@ export const NAV: NavHub[] = [
     items: [
       { label: "Team 360", href: "/people/team" },
       { label: "Directory", href: "/people/directory" },
+      { label: "Analytics", href: "/people/analytics" },
       { label: "Org chart", href: "/people/org-chart" },
       { label: "Skills", href: "/people/skills" },
       { label: "Onboarding", href: "/people/onboarding" },

@@ -34,15 +34,25 @@ export function PageHeader({
   title,
   subtitle,
   actions,
+  level = 1,
+  className,
 }: {
   title: string;
   subtitle?: string;
   actions?: React.ReactNode;
+  /**
+   * Heading level. A page owns exactly one `h1`; section headers that reuse this
+   * component inside a page pass `level={2}` so the document outline stays flat
+   * (audit UX-17/UX-18).
+   */
+  level?: 1 | 2;
+  className?: string;
 }) {
+  const Heading = level === 1 ? "h1" : "h2";
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className={cn("mb-6 flex flex-wrap items-end justify-between gap-4", className)}>
       <div>
-        <h1 className="text-page font-heading font-semibold tracking-tight">{title}</h1>
+        <Heading className="text-page font-heading font-semibold tracking-tight">{title}</Heading>
         {subtitle && <p className="mt-1 text-body-lg text-muted-foreground">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div>}
@@ -285,7 +295,24 @@ export const AVATAR_GRADIENTS = [
   "bg-gradient-to-br from-fuchsia-500 to-pink-500",
 ];
 
-export function Avatar({ name, size = "size-8" }: { name: string; size?: string }) {
+/**
+ * Initials avatar with an optional photo. `src` is the WebP every browser
+ * renders; `jxlSrc` adds the smaller JPEG XL source for Chrome 155+/Firefox
+ * 158+/Safari 17+ via <picture>, falling back to the WebP everywhere else.
+ */
+export function Avatar({
+  name,
+  size = "size-8",
+  src,
+  jxlSrc,
+  rounded = "rounded-full",
+}: {
+  name: string;
+  size?: string;
+  src?: string | null;
+  jxlSrc?: string | null;
+  rounded?: string;
+}) {
   const initials = name
     .split(" ")
     .map((p) => p[0])
@@ -293,10 +320,21 @@ export function Avatar({ name, size = "size-8" }: { name: string; size?: string 
     .join("")
     .toUpperCase();
   const g = AVATAR_GRADIENTS[name.length % AVATAR_GRADIENTS.length];
+  if (src) {
+    return (
+      <span className={cn("relative flex shrink-0 overflow-hidden border border-border/50 bg-muted", size, rounded)}>
+        <picture>
+          {jxlSrc && <source type="image/jxl" srcSet={jxlSrc} />}
+          <img src={src} alt={name} loading="lazy" className="size-full object-cover" />
+        </picture>
+      </span>
+    );
+  }
   return (
     <span
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full text-micro font-bold text-white",
+        "flex shrink-0 items-center justify-center text-micro font-bold text-white",
+        rounded,
         size,
         g
       )}

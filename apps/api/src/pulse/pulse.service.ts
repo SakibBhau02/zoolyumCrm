@@ -8,6 +8,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { LeadRulesService, normalizeEmail, normalizePhone } from "./lead-rules.service";
 import { signStoredFileUrl, uploadedFilename } from "../common/signed-url";
 import { findUploadedFile } from "../common/file-storage";
+import { isConvertibleImage, optimizeUploadedImage } from "../common/image-pipeline";
 import { existsSync, unlinkSync } from "fs";
 import {
   AddActivityDto,
@@ -287,6 +288,8 @@ export class PulseService {
 
   private async invalidateSummary() {
     await this.cache.del("pulse:summary");
+    await this.cache.delPattern("pulse:leads:*");
+    await this.cache.del("pulse:leads");
     await this.cache.del("insight:overview");
     await this.cache.del("insight:performance");
     await this.cache.del("dashboard:overview");
@@ -303,7 +306,14 @@ export class PulseService {
   }
 
   // ── List with filters (paginated) ──────────────────────────────────────
-  async list(query: {
+  async list(query: Parameters<PulseService["listUncached"]>[0]) {
+    // Lead search was the slowest read in the audit (13.9ms p50, no cache) and
+    // it is re-issued on every keystroke. 15s per query shape; every lead write
+    // clears `pulse:leads*` through invalidateSummary().
+    return this.cache.wrapQuery("pulse:leads", query as any, 15, () => this.listUncached(query));
+  }
+
+  private async listUncached(query: {
     q?: string;
     stage?: string;
     assignedToId?: string;
@@ -1692,6 +1702,31 @@ export class PulseService {
   }
 
   // ── Attachments (reference files) ───────────────────────────────────────
+  /**
+   * Shared upload entry (proposals, attachments). Images are normalised to
+   * WebP + optional JPEG XL; everything else is stored as-is.
+   */
+  async storeUpload(file: Express.Multer.File) {
+    if (isConvertibleImage(file.mimetype)) {
+      const image = await optimizeUploadedImage(file, { kind: "document", urlPrefix: "/api/pulse/uploads" });
+      return {
+        fileUrl: image.url,
+        jxlUrl: image.jxlUrl,
+        originalName: file.originalname,
+        size: image.size,
+        mimeType: image.mimeType,
+        width: image.width,
+        height: image.height,
+      };
+    }
+    return {
+      fileUrl: `/api/pulse/uploads/${file.filename}`,
+      originalName: file.originalname,
+      size: file.size,
+      mimeType: file.mimetype,
+    };
+  }
+
   async addAttachment(
     leadId: string,
     file: Express.Multer.File,
@@ -1702,14 +1737,20 @@ export class PulseService {
     if (!lead) throw new NotFoundException("Lead not found");
     if (!file) throw new BadRequestException("No file uploaded");
 
+    // Images are re-encoded (WebP + optional JXL) before they are stored, so a
+    // 6 MB phone screenshot does not live in the CRM forever.
+    const stored = isConvertibleImage(file.mimetype)
+      ? await optimizeUploadedImage(file, { kind: "document", urlPrefix: "/api/pulse/uploads" })
+      : null;
+
     const attachment = await this.prisma.leadAttachment.create({
       data: {
         leadId,
         title: title?.trim() || null,
-        fileUrl: `/api/pulse/uploads/${file.filename}`,
+        fileUrl: stored?.url ?? `/api/pulse/uploads/${file.filename}`,
         filename: file.originalname,
-        mimeType: file.mimetype,
-        sizeBytes: file.size,
+        mimeType: stored?.mimeType ?? file.mimetype,
+        sizeBytes: stored?.size ?? file.size,
         uploadedById: userId,
       },
       include: { uploadedBy: { select: { name: true } } },
@@ -1736,11 +1777,15 @@ export class PulseService {
     // forever and the uploads volume never shrinks.
     const stored = uploadedFilename(attachment.fileUrl);
     if (stored) {
-      for (const candidate of [findUploadedFile("pulse", stored), findUploadedFile(stored)]) {
-        try {
-          if (existsSync(candidate)) unlinkSync(candidate);
-        } catch {
-          // A missing/locked blob must not fail the delete.
+      // Images were stored as <uuid>.webp with an optional <uuid>.jxl sibling.
+      const names = stored.endsWith(".webp") ? [stored, stored.replace(/\.webp$/, ".jxl")] : [stored];
+      for (const name of names) {
+        for (const candidate of [findUploadedFile("pulse", name), findUploadedFile(name)]) {
+          try {
+            if (existsSync(candidate)) unlinkSync(candidate);
+          } catch {
+            // A missing/locked blob must not fail the delete.
+          }
         }
       }
     }

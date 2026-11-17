@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,13 +8,17 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { AccountsService, CreateClientBody, ClientUpdateBody } from "./accounts.service";
 import { CurrentUser, AuthUser } from "../common/decorators/current-user.decorator";
 import {
   RequirePermission,
   SkipPermission,
 } from "../common/decorators/require-permission.decorator";
+import { imageUploadOptions, optimizeUploadedImage } from "../common/image-pipeline";
 
 @Controller("accounts")
 @RequirePermission("ACCOUNTS")
@@ -62,6 +67,23 @@ export class AccountsController {
   @RequirePermission("ACCOUNTS", "edit")
   remove(@Param("id") id: string) {
     return this.accounts.remove(id);
+  }
+
+  // ── Company logo (WebP + JPEG XL) ────────────────────────────────────
+  @Post("clients/:id/logo")
+  @RequirePermission("ACCOUNTS", "edit")
+  @UseInterceptors(FileInterceptor("file", imageUploadOptions("logos")))
+  async uploadLogo(@Param("id") id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    const image = await optimizeUploadedImage(file, { kind: "logo", urlPrefix: "/api/media/logos" });
+    const saved = await this.accounts.setLogo(id, image.url, image.jxlUrl);
+    return { ...saved, width: image.width, height: image.height, size: image.size };
+  }
+
+  @Delete("clients/:id/logo")
+  @RequirePermission("ACCOUNTS", "edit")
+  removeLogo(@Param("id") id: string) {
+    return this.accounts.removeLogo(id);
   }
 
   @Post("clients/:id/recompute-health")

@@ -365,7 +365,7 @@ export class PulseController {
   )
   upload(@UploadedFile() file: Express.Multer.File) {
     if (!file) return { error: "No file uploaded" };
-    return { fileUrl: `/api/pulse/uploads/${file.filename}`, originalName: file.originalname, size: file.size };
+    return this.pulse.storeUpload(file);
   }
 
   /**

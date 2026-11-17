@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
@@ -18,6 +19,7 @@ import { diskStorage } from "multer";
 import { randomUUID } from "crypto";
 import { basename, extname, join } from "path";
 import { FlowService } from "./flow.service";
+import { FlowShootService } from "./flow-shoot.service";
 import { CurrentUser, AuthUser } from "../common/decorators/current-user.decorator";
 import { Public } from "../common/decorators/public.decorator";
 import { Roles } from "../common/decorators/roles.decorator";
@@ -29,14 +31,22 @@ import {
   AddDiscussionDto,
   AddFileDto,
   AddMilestoneDto,
+  AddShootCrewDto,
+  AssignDeliverableTasksDto,
+  BulkAddDeliverablesDto,
   BulkAssignTasksDto,
+  CreateShootDto,
   GenerateReportDto,
   SetFileApprovalDto,
   UpdateDeliverableDto,
   UpdateMilestoneDto,
   UpdateReportDto,
+  UpdateShootCrewDto,
+  UpdateShootDto,
+  UpsertProjectProposalDto,
 } from "./dto/flow-mutations.dto";
 import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
+import { imageUploadOptions, isConvertibleImage, optimizeUploadedImage } from "../common/image-pipeline";
 import { signFileAccess, verifyFileAccess } from "../common/signed-url";
 import { RequirePermission, SkipPermission } from "../common/decorators/require-permission.decorator";
 
@@ -53,7 +63,10 @@ const flowUploadDir = () => uploadsDir();
 @RequirePermission("FLOW")
 @Controller("flow")
 export class FlowController {
-  constructor(private readonly flow: FlowService) {}
+  constructor(
+    private readonly flow: FlowService,
+    private readonly shoots: FlowShootService
+  ) {}
 
   @Get("overview")
   overview() {
@@ -126,6 +139,40 @@ export class FlowController {
     return this.flow.deleteReference(id);
   }
 
+  // ── Project logo (WebP + JPEG XL) ───────────────────────────────────
+  @Post("projects/:id/logo")
+  @UseInterceptors(FileInterceptor("file", imageUploadOptions("logos")))
+  async uploadLogo(@Param("id") id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException("No file uploaded");
+    const image = await optimizeUploadedImage(file, { kind: "logo", urlPrefix: "/api/media/logos" });
+    const saved = await this.flow.setLogo(id, image.url, image.jxlUrl);
+    return { ...saved, width: image.width, height: image.height, size: image.size };
+  }
+
+  @Delete("projects/:id/logo")
+  removeLogo(@Param("id") id: string) {
+    return this.flow.removeLogo(id);
+  }
+
+  // ── Final proposal (hard limit: one per project) ────────────────────  @Get("projects/:id/proposal")
+  getProposal(@Param("id") id: string) {
+    return this.flow.projectProposal(id);
+  }
+
+  @Put("projects/:id/proposal")
+  saveProposal(
+    @Param("id") id: string,
+    @Body() dto: UpsertProjectProposalDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.upsertProjectProposal(id, dto, user?.sub);
+  }
+
+  @Delete("projects/:id/proposal")
+  removeProposal(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.flow.deleteProjectProposal(id, user?.sub);
+  }
+
   @Post("projects/:id/tasks/bulk")
   bulkTasks(
     @Param("id") id: string,
@@ -145,6 +192,26 @@ export class FlowController {
     return this.flow.addDeliverable(id, dto, user?.sub);
   }
 
+  /** Paste mode — "8 graphics + 4 videos" in one request. */
+  @Post("projects/:id/deliverables/bulk")
+  bulkAddDeliverables(
+    @Param("id") id: string,
+    @Body() dto: BulkAddDeliverablesDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.bulkAddDeliverables(id, dto, user?.sub);
+  }
+
+  /** One-click: turn selected deliverables into tasks for one assignee. */
+  @Post("projects/:id/deliverables/assign-tasks")
+  assignDeliverableTasks(
+    @Param("id") id: string,
+    @Body() dto: AssignDeliverableTasksDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.flow.assignDeliverableTasks(id, dto as any, user?.sub);
+  }
+
   @Patch("deliverables/:id")
   updateDeliverable(
     @Param("id") id: string,
@@ -157,6 +224,68 @@ export class FlowController {
   @Delete("deliverables/:id")
   removeDeliverable(@Param("id") id: string, @CurrentUser() user: AuthUser) {
     return this.flow.removeDeliverable(id, user?.sub);
+  }
+
+  // ── Shoots (production call-sheets) ──────────────────────────────────
+  @Get("projects/:id/shoots")
+  listShoots(@Param("id") id: string) {
+    return this.shoots.list(id);
+  }
+
+  @Post("projects/:id/shoots")
+  createShoot(
+    @Param("id") id: string,
+    @Body() dto: CreateShootDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.shoots.create(id, dto, user?.sub);
+  }
+
+  @Get("shoots/:id")
+  getShoot(@Param("id") id: string) {
+    return this.shoots.detail(id);
+  }
+
+  @Patch("shoots/:id")
+  updateShoot(
+    @Param("id") id: string,
+    @Body() dto: UpdateShootDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.shoots.update(id, dto, user?.sub);
+  }
+
+  @Delete("shoots/:id")
+  removeShoot(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.shoots.remove(id, user?.sub);
+  }
+
+  @Post("shoots/:id/crew")
+  addShootCrew(
+    @Param("id") id: string,
+    @Body() dto: AddShootCrewDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.shoots.addCrew(id, dto, user?.sub);
+  }
+
+  @Patch("shoots/:id/crew/:crewId")
+  updateShootCrew(
+    @Param("id") id: string,
+    @Param("crewId") crewId: string,
+    @Body() dto: UpdateShootCrewDto,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.shoots.updateCrew(id, crewId, dto, user?.sub);
+  }
+
+  @Delete("shoots/:id/crew/:crewId")
+  removeShootCrew(
+    @Param("id") id: string,
+    @Param("crewId") crewId: string,
+    @CurrentUser() user: AuthUser
+  ) {
+    return this.shoots.removeCrew(id, crewId, user?.sub);
   }
 
   // ── Reports (auto-populated from deliverables) ──────────────────────
@@ -269,8 +398,24 @@ export class FlowController {
       },
     })
   )
-  upload(@UploadedFile() file: Express.Multer.File) {
+  async upload(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException("No file uploaded");
+    // Images are re-encoded on the way in (WebP + optional JXL). PDFs and zips
+    // are stored untouched.
+    if (isConvertibleImage(file.mimetype)) {
+      const image = await optimizeUploadedImage(file, { kind: "document", urlPrefix: "/api/flow/uploads" });
+      return {
+        fileUrl: image.url,
+        jxlUrl: image.jxlUrl,
+        downloadUrl: signFileAccess(image.fileName),
+        originalName: file.originalname,
+        fileName: file.originalname,
+        size: image.size,
+        mimeType: image.mimeType,
+        width: image.width,
+        height: image.height,
+      };
+    }
     return {
       fileUrl: `/api/flow/uploads/${file.filename}`,
       downloadUrl: signFileAccess(file.filename),

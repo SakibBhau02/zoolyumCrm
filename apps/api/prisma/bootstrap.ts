@@ -97,15 +97,29 @@ const STAGES = [
 
 const GL_ACCOUNTS: { code: string; name: string; category: any }[] = [
   { code: "1100", name: "Accounts Receivable", category: "ASSET" },
+  { code: "1010", name: "Petty Cash", category: "ASSET" },
   { code: "1200", name: "Cash & Bank", category: "ASSET" },
+  { code: "1250", name: "USD / FX Inventory", category: "ASSET" },
+  { code: "1300", name: "Input VAT Receivable", category: "ASSET" },
+  { code: "1400", name: "Prepaid Vendor Costs", category: "ASSET" },
+  { code: "1500", name: "Fixed Assets — Cost", category: "ASSET" },
+  { code: "1510", name: "Accumulated Depreciation", category: "ASSET" },
+  { code: "1515", name: "Allowance for Doubtful Debts", category: "ASSET" },
   { code: "2000", name: "Accounts Payable", category: "LIABILITY" },
   { code: "2100", name: "VAT Payable", category: "LIABILITY" },
   { code: "2200", name: "TDS / VDS Payable", category: "LIABILITY" },
+  { code: "2300", name: "USD Inventory Payable", category: "LIABILITY" },
+  { code: "2400", name: "Customer Advances", category: "LIABILITY" },
+  { code: "2500", name: "Deferred Revenue", category: "LIABILITY" },
   { code: "3000", name: "Retained Earnings", category: "LIABILITY" },
   { code: "4000", name: "Agency Revenue", category: "REVENUE" },
   { code: "4100", name: "Management Fees", category: "REVENUE" },
   { code: "4200", name: "Other Income", category: "REVENUE" },
   { code: "4300", name: "Discounts Allowed", category: "REVENUE" },
+  { code: "4400", name: "FX Gain on Dollar Sales", category: "REVENUE" },
+  { code: "4450", name: "Gain on Asset Disposal", category: "REVENUE" },
+  { code: "4460", name: "Unrealized FX Gain", category: "REVENUE" },
+  { code: "4470", name: "Realized FX Gain", category: "REVENUE" },
   { code: "5000", name: "Ad Spend", category: "DIRECT_COST" },
   { code: "5010", name: "Freelancer Payments", category: "DIRECT_COST" },
   { code: "5020", name: "Production Costs", category: "DIRECT_COST" },
@@ -118,6 +132,12 @@ const GL_ACCOUNTS: { code: string; name: string; category: any }[] = [
   { code: "5090", name: "Bank Charges", category: "OPEX" },
   { code: "5100", name: "Professional Fees", category: "OPEX" },
   { code: "6500", name: "Bad Debt", category: "OPEX" },
+  { code: "6510", name: "Bad Debt Provision", category: "OPEX" },
+  { code: "6600", name: "FX Loss on Dollar Sales", category: "OPEX" },
+  { code: "6650", name: "Loss on Asset Disposal", category: "OPEX" },
+  { code: "6660", name: "Unrealized FX Loss", category: "OPEX" },
+  { code: "6670", name: "Realized FX Loss", category: "OPEX" },
+  { code: "6700", name: "Depreciation Expense", category: "OPEX" },
 ];
 
 async function main() {
@@ -187,6 +207,27 @@ async function main() {
     }
   }
   console.log(`  GL accounts: ${accountsCreated} created, ${GL_ACCOUNTS.length - accountsCreated} already present`);
+
+  // Fiscal calendar: without period rows every date is treated as OPEN, so the
+  // close control silently does nothing. Create the current year up front.
+  const year = new Date().getUTCFullYear();
+  let periodsCreated = 0;
+  for (let m = 0; m < 12; m++) {
+    const startDate = new Date(Date.UTC(year, m, 1));
+    const endDate = new Date(Date.UTC(year, m + 1, 0));
+    const clash = await prisma.fiscalPeriod.findFirst({ where: { startDate, endDate }, select: { id: true } });
+    if (clash) continue;
+    await prisma.fiscalPeriod.create({
+      data: {
+        name: startDate.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
+        periodType: "MONTH",
+        startDate,
+        endDate,
+      },
+    });
+    periodsCreated++;
+  }
+  console.log(`  fiscal periods: ${periodsCreated} created for ${year}`);
 
   if ((await prisma.brandingConfig.count()) === 0) {
     await prisma.brandingConfig.create({

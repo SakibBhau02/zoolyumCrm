@@ -32,6 +32,7 @@ export function PeopleHero({
   stats,
   actions,
   children,
+  as = "h1",
 }: {
   icon?: React.ReactNode;
   title: React.ReactNode;
@@ -39,7 +40,13 @@ export function PeopleHero({
   stats?: HeroStat[];
   actions?: React.ReactNode;
   children?: React.ReactNode;
+  /**
+   * Heading level. The People layout already owns the page `h1`, so tab-level
+   * heroes pass `as="h2"` (audit UX-17: two h1s on /people).
+   */
+  as?: "h1" | "h2";
 }) {
+  const Heading = as;
   return (
     <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card px-3.5 py-2 shadow-sm">
       <div className="pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-brand-gradient opacity-[0.07] blur-2xl" />
@@ -51,17 +58,17 @@ export function PeopleHero({
             </span>
           )}
           <div className="min-w-0">
-            <h1 className="truncate font-heading text-section font-bold leading-tight">{title}</h1>
+            <Heading className="truncate font-heading text-section font-bold leading-tight">{title}</Heading>
             {subtitle && <p className="truncate text-micro text-muted-foreground">{subtitle}</p>}
           </div>
         </div>
 
         {!!stats?.length && (
-          <div className="flex min-w-0 flex-1 flex-wrap items-stretch gap-1.5">
+          <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto sm:min-w-0 sm:flex-1 sm:flex-wrap sm:items-stretch">
             {stats.map((s) => (
               <div
                 key={s.label}
-                className="min-w-[68px] rounded-lg border border-border/50 bg-muted/25 px-2 py-1"
+                className="min-w-0 rounded-lg border border-border/50 bg-muted/25 px-2 py-1 sm:min-w-[68px]"
                 title={`${s.label}${s.sub ? ` — ${s.sub}` : ""}`}
               >
                 <p className="truncate text-micro font-bold uppercase tracking-wide text-muted-foreground">{s.label}</p>

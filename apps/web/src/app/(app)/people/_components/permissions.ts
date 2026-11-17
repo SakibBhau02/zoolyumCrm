@@ -16,12 +16,12 @@ export function usePeopleAccess() {
   const canView = isHr || perms?.view === true;
   const canEdit = isHr || perms?.edit === true;
   const canApprove = isHr || perms?.approve === true;
-  /** Compensation (salary, deductions, payslips) is Owner / HR only. */
-  const canSeePay = isHr;
+  /** Compensation (salary, deductions, payslips) is People → Approve. */
+  const canSeePay = isHr || perms?.approve === true;
   /** Marking meeting attendance goes through the PULSE module guard. */
   const canManagePulse = user?.permissions?.PULSE?.edit === true || isHr;
-  /** Leave decisions mirror LeaveService.APPROVER_ROLES. */
-  const canDecideLeave = isHr || /project\s*manager/i.test(role) || canApprove;
+  /** Leave decisions mirror LeaveService: approvers plus Project Manager. */
+  const canDecideLeave = canSeePay || /project\s*manager/i.test(role);
 
   return { user, role, isHr, canView, canEdit, canApprove, canSeePay, canManagePulse, canDecideLeave };
 }

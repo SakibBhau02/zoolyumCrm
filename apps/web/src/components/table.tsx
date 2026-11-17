@@ -5,7 +5,7 @@ import { cn } from "./shared";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
-export function TableShell({ children, footer, noScroll, hideScrollbar }: { children: React.ReactNode; footer?: React.ReactNode; noScroll?: boolean; hideScrollbar?: boolean }) {
+export function TableShell({ children, footer, noScroll, hideScrollbar, scrollY }: { children: React.ReactNode; footer?: React.ReactNode; noScroll?: boolean; hideScrollbar?: boolean; scrollY?: boolean }) {
   return (
     <div className="card-lift overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm">
       <div
@@ -16,6 +16,9 @@ export function TableShell({ children, footer, noScroll, hideScrollbar }: { chil
               ? "relative overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
               : "relative overflow-x-auto overscroll-x-contain"
         }
+        // Optional vertically-scrolling body so the sticky header has something
+        // to pin against; without it the page scrolls and the header slips away.
+        style={scrollY && !noScroll ? { maxHeight: "min(70vh, 640px)", overflowY: "auto" } : undefined}
       >{children}</div>
       {footer && (
         <div className="flex items-center justify-between border-t border-border/60 px-5 py-3">
@@ -28,7 +31,10 @@ export function TableShell({ children, footer, noScroll, hideScrollbar }: { chil
 
 export function THead({ children }: { children: React.ReactNode }) {
   return (
-    <thead>
+    // Sticky needs a scrolling ancestor: give TableShell `scrollY` and the
+    // header pins while the rows move (audit UX-10 — at 700px scroll the header
+    // used to sit at -383px and the columns lost their meaning).
+    <thead className="sticky top-0 z-10 [&_tr]:bg-card [&_tr]:backdrop-blur">
       <tr className="border-b border-border/60 bg-muted/40">
         {children}
       </tr>
@@ -66,12 +72,16 @@ export function Tr({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, delay: index * 0.04, ease: EASE }}
       onClick={onClick}
-      // A clickable row must also be reachable and operable from the keyboard.
-      role={onClick ? "button" : undefined}
+      // A clickable <tr> stays keyboard operable, but it must NOT claim
+      // role="button": the row contains real buttons, links and selects, and a
+      // button wrapping interactive children is invalid (axe nested-interactive,
+      // 50 nodes across Accounts/Flow/Tasks/Capital — audit UX-05).
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={
         onClick
           ? (e) => {
+              // Inner controls own their keys; only the row itself activates.
+              if (e.target !== e.currentTarget) return;
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
                 onClick();

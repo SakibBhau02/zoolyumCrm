@@ -3,7 +3,9 @@ import { InvoiceStatus, RevenueTag } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { NotificationsService } from "../notifications/notifications.service";
-import { ACTIVE_STATUSES, INVOICE_CREDIT_INCLUDE, RECEIPT_PAYMENT_FILTER, buildTrend, invoiceTotals, startOfTodayUtc, toBdt } from "./finance-kernel";
+import { ACTIVE_STATUSES, INVOICE_CREDIT_INCLUDE, RECEIPT_PAYMENT_FILTER, invoiceTotals, startOfTodayUtc, toBdt } from "./finance-kernel";
+
+const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 
 @Injectable()
 export class ReportingService {
@@ -20,7 +22,7 @@ export class ReportingService {
 
 
   private async computeOverview() {
-    const [invoices, expenses, bankAccounts, payments, snapshots, unreconciledCount] = await Promise.all([
+    const [invoices, expenses, bankAccounts, payments, , unreconciledCount] = await Promise.all([
       this.prisma.invoice.findMany({ include: { lineItems: true, payments: true, ...INVOICE_CREDIT_INCLUDE } }),
       this.prisma.expense.findMany({
         where: { approvalStatus: "APPROVED" },
@@ -29,7 +31,7 @@ export class ReportingService {
       this.prisma.bankAccount.findMany({ select: { accountName: true, accountType: true, currentBalance: true } }),
       this.prisma.payment.findMany({
         where: { ...RECEIPT_PAYMENT_FILTER },
-        select: { amount: true, exchangeRate: true, type: true, paymentMethod: true },
+        select: { amount: true, exchangeRate: true, type: true, paymentMethod: true, paymentDate: true },
       }),
       this.prisma.metricSnapshot.findMany({ orderBy: { recordedAt: "asc" } }),
       // Bank entries nobody has matched yet — the cash figure cannot be trusted
@@ -44,6 +46,10 @@ export class ReportingService {
     const paidOf = (i: any) => invoiceTotals(i).paidBdt;
 
     const totalInvoiced = invoiceable.reduce((s, i) => s + invoiceTotals(i).grandBdt, 0);
+    const passThroughBilled = invoiceable.reduce((s, i) => s + sumLines(i, "PASS_THROUGH"), 0);
+    // "Our" revenue: agency fees + management fees, i.e. everything that is not
+    // a pass-through reimbursement. `totalInvoiced` stays gross so the two
+    // figures reconcile: gross − pass-through − tax + discount − shipping = this.
     const recognizedRevenue = invoiceable.reduce((s, i) => s + sumLines(i, "AGENCY_REVENUE") + sumLines(i, "MANAGEMENT_FEE"), 0);
     const collected = invoiceable.reduce((s, i) => s + paidOf(i), 0);
     const outstanding = invoiceable.reduce((s, i) => s + invoiceTotals(i).balanceBdt, 0);
@@ -66,11 +72,40 @@ export class ReportingService {
     const paymentSplit = new Map<string, number>();
     for (const p of payments) paymentSplit.set(p.paymentMethod, (paymentSplit.get(p.paymentMethod) ?? 0) + (p.type === "REFUND" ? -1 : 1) * toBdt(Number(p.amount), p));
 
-    const trend = buildTrend(snapshots);
+    // Revenue trend from the real documents. This used to read MetricSnapshot,
+    // a demo table, so the board showed months of revenue that had no invoices.
+    const trendMonths: { month: string; invoiced: number; collected: number; expenses: number }[] = [];
+    const trendKeys: string[] = [];
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      trendKeys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+      trendMonths.push({ month: d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }), invoiced: 0, collected: 0, expenses: 0 });
+    }
+    const trendIndex = new Map(trendKeys.map((k, i) => [k, i]));
+    const monthOf = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    for (const inv of invoiceable) {
+      const idx = trendIndex.get(monthOf(inv.issueDate));
+      if (idx !== undefined) trendMonths[idx].invoiced += sumLines(inv);
+    }
+    for (const p of payments) {
+      const idx = trendIndex.get(monthOf(p.paymentDate));
+      if (idx !== undefined) trendMonths[idx].collected += (p.type === "REFUND" ? -1 : 1) * toBdt(Number(p.amount), p);
+    }
+    for (const e of expenses) {
+      const idx = trendIndex.get(monthOf(e.date));
+      if (idx !== undefined) trendMonths[idx].expenses += toBdt(Number(e.amount), e);
+    }
+    const trend = trendMonths.map((m) => ({
+      ...m,
+      invoiced: Math.round(m.invoiced * 100) / 100,
+      collected: Math.round(m.collected * 100) / 100,
+      expenses: Math.round(m.expenses * 100) / 100,
+    }));
     const profitTrend = trend.map((t) => ({ month: t.month, revenue: t.invoiced, expenses: t.expenses, profit: t.invoiced - t.expenses }));
 
     return {
       totalInvoiced,
+      passThroughBilled,
       recognizedRevenue,
       collected,
       outstanding,
@@ -237,8 +272,27 @@ export class ReportingService {
   // ── Recurring billing ────────────────────────────────────────────────
 
 
-  async trialBalance() {
-    return this.cache.wrap("capital:statements:tb", 30, () => this.computeTrialBalance());
+  /** Inclusive date window for a statement. Defaults: fiscal-year-to-date. */
+  private resolveRange(fromStr?: string, toStr?: string) {
+    const startOf = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const endOf = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
+    const parse = (value: string, endOfDay: boolean) => {
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) throw new BadRequestException(`Invalid date: ${value}`);
+      return endOfDay ? endOf(d) : startOf(d);
+    };
+    const now = new Date();
+    const to = toStr ? parse(toStr, true) : endOf(now);
+    const from = fromStr ? parse(fromStr, false) : new Date(Date.UTC(to.getUTCFullYear(), 0, 1));
+    if (from.getTime() > to.getTime()) throw new BadRequestException("`from` must be before `to`");
+    return { from, to, label: `${from.toISOString().slice(0, 10)} → ${to.toISOString().slice(0, 10)}` };
+  }
+
+  async trialBalance(fromStr?: string, toStr?: string) {
+    const { from, to, label } = this.resolveRange(fromStr, toStr);
+    return this.cache.wrap(`capital:statements:tb:${from.toISOString()}:${to.toISOString()}`, 30, () =>
+      this.computeTrialBalance(from, to, label)
+    );
   }
 
 
@@ -248,11 +302,20 @@ export class ReportingService {
    * The three statements used to `findMany` the entire journal line table with
    * the account joined, then aggregate in JS. `groupBy` pushes that to Postgres
    * and returns one row per account (≈20 rows instead of hundreds of thousands).
+   *
+   * `from`/`to` restrict the movement window. Passing only `to` gives the
+   * cumulative position up to that date (balance sheet); passing both gives the
+   * movement inside the window (P&L, trial balance).
    */
-  private async accountTotals() {
+  private async accountTotals(from?: Date | null, to?: Date | null) {
+    const dateFilter =
+      from || to
+        ? { entry: { entryDate: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } }
+        : {};
     const [totals, accounts] = await Promise.all([
       this.prisma.journalEntryLine.groupBy({
         by: ["accountId"],
+        where: dateFilter,
         _sum: { debit: true, credit: true },
       }),
       this.prisma.account.findMany({ select: { id: true, code: true, name: true, category: true } }),
@@ -268,8 +331,8 @@ export class ReportingService {
       .filter((x): x is { accountId: string; account: (typeof accounts)[number]; debit: number; credit: number } => !!x);
   }
 
-  private async computeTrialBalance() {
-    const lines = await this.accountTotals();
+  private async computeTrialBalance(from: Date, to: Date, label: string) {
+    const lines = await this.accountTotals(from, to);
     const rows = new Map<string, { accountId: string; code: string; name: string; category: string; debit: number; credit: number }>();
     for (const l of lines) {
       const r = rows.get(l.accountId) ?? { accountId: l.accountId, code: l.account.code ?? "", name: l.account.name, category: l.account.category, debit: 0, credit: 0 };
@@ -280,17 +343,27 @@ export class ReportingService {
     const list = Array.from(rows.values())
       .map((r) => ({ ...r, debit: Math.round(r.debit * 100) / 100, credit: Math.round(r.credit * 100) / 100, balance: Math.round((r.debit - r.credit) * 100) / 100 }))
       .sort((a, b) => a.code.localeCompare(b.code));
-    return { rows: list, totalDebit: list.reduce((s, r) => s + r.debit, 0), totalCredit: list.reduce((s, r) => s + r.credit, 0) };
+    return {
+      from,
+      to,
+      label,
+      rows: list,
+      totalDebit: Math.round(list.reduce((s, r) => s + r.debit, 0) * 100) / 100,
+      totalCredit: Math.round(list.reduce((s, r) => s + r.credit, 0) * 100) / 100,
+    };
   }
 
 
-  async profitLoss() {
-    return this.cache.wrap("capital:statements:pl", 30, () => this.computeProfitLoss());
+  async profitLoss(fromStr?: string, toStr?: string) {
+    const { from, to, label } = this.resolveRange(fromStr, toStr);
+    return this.cache.wrap(`capital:statements:pl:${from.toISOString()}:${to.toISOString()}`, 30, () =>
+      this.computeProfitLoss(from, to, label)
+    );
   }
 
 
-  private async computeProfitLoss() {
-    const lines = await this.accountTotals();
+  private async computeProfitLoss(from: Date, to: Date, label: string) {
+    const lines = await this.accountTotals(from, to);
     const revenue = new Map<string, { name: string; code: string; amount: number }>();
     const expense = new Map<string, { name: string; code: string; amount: number }>();
     let totalRevenue = 0, totalExpense = 0, totalDirectCost = 0;
@@ -314,6 +387,9 @@ export class ReportingService {
     for (const e of expense.values()) { e.amount = Math.round(e.amount * 100) / 100; totalExpense += e.amount; }
     const grossProfit = totalRevenue - totalDirectCost;
     return {
+      from,
+      to,
+      label,
       revenue: Array.from(revenue.values()).sort((a, b) => a.code.localeCompare(b.code)),
       expenses: Array.from(expense.values()).sort((a, b) => a.code.localeCompare(b.code)),
       totalRevenue: Math.round(totalRevenue * 100) / 100,
@@ -326,13 +402,17 @@ export class ReportingService {
   }
 
 
-  async balanceSheet() {
-    return this.cache.wrap("capital:statements:bs", 30, () => this.computeBalanceSheet());
+  async balanceSheet(asOfStr?: string) {
+    // Balance sheet is a point-in-time statement: cumulative up to the date.
+    const { to, label } = this.resolveRange(undefined, asOfStr);
+    return this.cache.wrap(`capital:statements:bs:${to.toISOString()}`, 30, () =>
+      this.computeBalanceSheet(to, label)
+    );
   }
 
 
-  private async computeBalanceSheet() {
-    const lines = await this.accountTotals();
+  private async computeBalanceSheet(asOf: Date, label: string) {
+    const lines = await this.accountTotals(null, asOf);
     const assets = new Map<string, { name: string; code: string; amount: number }>();
     const liabilities = new Map<string, { name: string; code: string; amount: number }>();
     const equityAccounts = new Map<string, { name: string; code: string; amount: number }>();
@@ -379,6 +459,8 @@ export class ReportingService {
     const retained = Math.round(equityRows.reduce((s, r) => s + r.amount, 0) * 100) / 100;
     const totalEquity = Math.round((retained + currentProfit) * 100) / 100;
     return {
+      asOf,
+      label,
       assets: assetRows,
       liabilities: liabilityRows,
       equityAccounts: equityRows,
@@ -400,27 +482,55 @@ export class ReportingService {
   }
 
 
-  async cashFlow() {
-    return this.cache.wrap("capital:statements:cf", 30, () => this.computeCashFlow());
+  async cashFlow(fromStr?: string, toStr?: string) {
+    const { from, to, label } = this.resolveRange(fromStr, toStr);
+    return this.cache.wrap(`capital:statements:cf:${from.toISOString()}:${to.toISOString()}`, 30, () =>
+      this.computeCashFlow(from, to, label)
+    );
   }
 
 
-  private async computeCashFlow() {
-    const [entries, bankAccounts] = await Promise.all([
-      this.prisma.journalEntry.findMany({ where: { lines: { some: { account: { code: "1200" } } } }, include: { lines: { include: { account: true } } }, orderBy: { entryDate: "asc" } }),
+  private async computeCashFlow(from: Date, to: Date, label: string) {
+    const cashAccount = { account: { code: "1200" } };
+    const [entries, bankAccounts, openingAgg] = await Promise.all([
+      this.prisma.journalEntry.findMany({
+        where: { lines: { some: cashAccount }, entryDate: { gte: from, lte: to } },
+        include: { lines: { include: { account: true } } },
+        orderBy: { entryDate: "asc" },
+      }),
       this.prisma.bankAccount.findMany({ select: { currentBalance: true } }),
+      // Everything that moved cash BEFORE the window is the opening balance.
+      this.prisma.journalEntryLine.aggregate({
+        where: { account: { code: "1200" }, entry: { entryDate: { lt: from } } },
+        _sum: { debit: true, credit: true },
+      }),
     ]);
+    // Cash-flow sections. An opening-balance journal is NOT operating cash: it
+    // is the starting position of the business and must sit above the statement.
+    const FINANCING_TYPES = new Set(["FX_OPENING", "LOAN", "CAPITAL", "OWNER_CONTRIBUTION", "DIVIDEND"]);
+    const INVESTING_TYPES = new Set(["ASSET_PURCHASE", "ASSET_SALE", "FIXED_ASSET_PURCHASE", "FIXED_ASSET_SALE", "ASSET_DISPOSAL"]);
+    const sectionOf = (entryType: string) =>
+      FINANCING_TYPES.has(entryType) ? "financing" : INVESTING_TYPES.has(entryType) ? "investing" : "operating";
+
     const operating = new Map<string, number>();
-    const sections = ["INVOICE", "PAYMENT", "EXPENSE", "EXPENSE_PAYMENT", "MANUAL_INCOME", "CREDIT_NOTE", "REFUND", "WRITE_OFF", "MANUAL"];
+    let openingBalance = Math.round((Number(openingAgg._sum.debit ?? 0) - Number(openingAgg._sum.credit ?? 0)) * 100) / 100;
     let netOperating = 0;
-    const detail: { entryType: string; reference: string | null; date: Date; inflow: number; outflow: number; label: string; in: number; out: number; net: number }[] = [];
+    let netInvesting = 0;
+    let netFinancing = 0;
+    const detail: { entryType: string; reference: string | null; date: Date; inflow: number; outflow: number; label: string; in: number; out: number; net: number; section: string }[] = [];
     for (const e of entries) {
       const cash = e.lines.find((l) => l.account.code === "1200");
       if (!cash) continue;
       const inflow = Number(cash.debit);
       const outflow = Number(cash.credit);
-      netOperating += inflow - outflow;
-      operating.set(e.entryType, (operating.get(e.entryType) ?? 0) + inflow - outflow);
+      const net = inflow - outflow;
+      const section = sectionOf(e.entryType);
+      if (section === "financing") netFinancing += net;
+      else if (section === "investing") netInvesting += net;
+      else {
+        netOperating += net;
+        operating.set(e.entryType, (operating.get(e.entryType) ?? 0) + net);
+      }
       detail.push({
         entryType: e.entryType,
         reference: e.reference,
@@ -430,21 +540,31 @@ export class ReportingService {
         label: e.reference || e.entryType.replace(/_/g, " ").toLowerCase(),
         in: Math.round(inflow * 100) / 100,
         out: Math.round(outflow * 100) / 100,
-        net: Math.round((inflow - outflow) * 100) / 100,
+        net: Math.round(net * 100) / 100,
+        section,
       });
     }
-    const openingBalance = 0; // ledger starts this cycle
-    const closingBalance = bankAccounts.reduce((s, b) => s + Number(b.currentBalance), 0);
-    const netChange = Math.round((closingBalance - openingBalance) * 100) / 100;
+    const bankTotal = bankAccounts.reduce((s, b) => s + Number(b.currentBalance), 0);
+    const netChange = Math.round((netOperating + netInvesting + netFinancing) * 100) / 100;
+    const calculatedClosing = Math.round((openingBalance + netChange) * 100) / 100;
+    // For a historical window the closing balance IS the calculated one; the
+    // bank mirror only makes sense as a cross-check for a window ending today.
+    const asOfNow = to.getTime() >= Date.now() - 86400000;
+    const closingBalance = asOfNow ? Math.round(bankTotal * 100) / 100 : calculatedClosing;
     return {
+      from,
+      to,
+      label,
       operating: Array.from(operating.entries()).map(([type, net]) => ({ type, net: Math.round(net * 100) / 100 })),
       netOperating: Math.round(netOperating * 100) / 100,
+      netInvesting: Math.round(netInvesting * 100) / 100,
+      netFinancing: Math.round(netFinancing * 100) / 100,
       openingBalance,
       closingBalance,
+      calculatedClosing,
       netChange,
-      // When these disagree the GL cash account and the operational bank
-      // balances are out of step (usually an un-posted opening balance).
-      reconciled: Math.abs(Math.round(netOperating * 100) / 100 - netChange) < 0.01,
+      // The GL cash account and the operational bank balances must agree.
+      reconciled: Math.abs(calculatedClosing - Math.round(bankTotal * 100) / 100) < 0.01,
       detail: detail.slice(-200),
     };
   }
@@ -486,11 +606,15 @@ export class ReportingService {
     const months: { month: string; revenue: number; expenses: number; profit: number; collected: number }[] = [];
     const monthKeys: string[] = [];
     const now = new Date();
+    // Build the buckets in UTC. Mixing `new Date(y, m, 1)` (local) with the
+    // `getUTC*` getters shifted every key one month back east of UTC (UTC+6 in
+    // Bangladesh) — the "Oct" bucket held September's numbers and the current
+    // month's invoices fell outside the window entirely.
     for (let i = 7; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
       monthKeys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
       months.push({
-        month: d.toLocaleString("en-US", { month: "short" }),
+        month: d.toLocaleString("en-US", { month: "short", timeZone: "UTC" }),
         revenue: 0, expenses: 0, profit: 0, collected: 0,
       });
     }
@@ -680,7 +804,9 @@ export class ReportingService {
     const expensesTotal = r2(expenses.reduce((s, e) => s + toBdt(Number(e.amount), e), 0));
     const profit = r2(invoiced - expensesTotal);
     const margin = invoiced ? Math.round((profit / invoiced) * 10000) / 100 : 0;
-    const collectionRate = invoiced ? Math.round((collected / invoiced) * 10000) / 100 : 0;
+    // Collected can exceed invoiced in a window when prior-period invoices are
+    // paid in it, which used to print a nonsensical "213.94%" collection rate.
+    const collectionRate = invoiced ? Math.min(100, Math.round((collected / invoiced) * 10000) / 100) : 0;
     const outstanding = r2(active.reduce((s, i) => s + invoiceTotals(i).balanceBdt, 0));
 
     // ── monthly buckets across the window ──
@@ -797,7 +923,7 @@ export class ReportingService {
         margin,
         collectionRate,
         outstanding,
-        invoiceCount: invoices.length,
+        invoiceCount: invoices.filter((i) => i.status !== "VOID" && i.status !== "CANCELLED").length,
         paidInvoiceCount: invoices.filter((i) => i.status === "PAID").length,
         paymentCount: payments.length,
         expenseCount: expenses.length,
@@ -861,13 +987,14 @@ export class ReportingService {
     // tasks → time logs) into one nested payload per request.
     const [projects, revenueRows, collectedRows, costRows, hourRows, monthlyRevenue, monthlyExpense] = await Promise.all([
       this.prisma.project.findMany({ select: { id: true, name: true, budgetAmount: true } }),
-      this.prisma.$queryRaw<{ id: string; revenue: number }[]>`
+      this.prisma.$queryRaw<{ id: string; revenue: number; agency: number; passthrough: number }[]>`
         SELECT i."projectId" AS id,
-               COALESCE(SUM(li.amount * COALESCE(i."exchangeRate", 1)), 0)::float8 AS revenue
+               COALESCE(SUM(li.amount * COALESCE(i."exchangeRate", 1)), 0)::float8 AS revenue,
+               COALESCE(SUM(CASE WHEN li."revenueTag" <> 'PASS_THROUGH' THEN li.amount * COALESCE(i."exchangeRate", 1) ELSE 0 END), 0)::float8 AS agency,
+               COALESCE(SUM(CASE WHEN li."revenueTag" = 'PASS_THROUGH' THEN li.amount * COALESCE(i."exchangeRate", 1) ELSE 0 END), 0)::float8 AS passthrough
         FROM "Invoice" i
         JOIN "InvoiceLineItem" li ON li."invoiceId" = i.id
         WHERE i.status IN ('SENT','VIEWED','PARTIALLY_PAID','PAID','OVERDUE')
-          AND li."revenueTag" <> 'PASS_THROUGH'
           AND i."projectId" IS NOT NULL
         GROUP BY i."projectId"
       `,
@@ -899,7 +1026,6 @@ export class ReportingService {
         FROM "Invoice" i
         JOIN "InvoiceLineItem" li ON li."invoiceId" = i.id
         WHERE i.status IN ('SENT','VIEWED','PARTIALLY_PAID','PAID','OVERDUE')
-          AND li."revenueTag" <> 'PASS_THROUGH'
         GROUP BY 1
       `,
       this.prisma.$queryRaw<{ month: string; expenses: number }[]>`
@@ -912,11 +1038,16 @@ export class ReportingService {
     ]);
 
     const revenueById = new Map(revenueRows.map((r) => [r.id, Number(r.revenue)]));
+    const agencyById = new Map(revenueRows.map((r) => [r.id, Number(r.agency)]));
+    const passThroughById = new Map(revenueRows.map((r) => [r.id, Number(r.passthrough)]));
     const collectedById = new Map(collectedRows.map((r) => [r.id, Number(r.collected)]));
     const costById = new Map(costRows.map((r) => [r.id, Number(r.cost)]));
     const hoursById = new Map(hourRows.map((r) => [r.id, Number(r.hours)]));
 
     const rows = projects.map((p) => {
+      // Revenue is gross (pass-through included) so it matches what was billed
+      // and what the GL records. Excluding pass-through revenue while keeping
+      // every pass-through cost made project margins structurally wrong.
       const revenue = revenueById.get(p.id) ?? 0;
       const cost = costById.get(p.id) ?? 0;
       const collected = collectedById.get(p.id) ?? 0;
@@ -925,6 +1056,8 @@ export class ReportingService {
         id: p.id,
         name: p.name,
         revenue: Math.round(revenue * 100) / 100,
+        agencyRevenue: Math.round((agencyById.get(p.id) ?? 0) * 100) / 100,
+        passThroughRevenue: Math.round((passThroughById.get(p.id) ?? 0) * 100) / 100,
         cost: Math.round(cost * 100) / 100,
         profit: Math.round((revenue - cost) * 100) / 100,
         margin: revenue ? Math.round(((revenue - cost) / revenue) * 100) : 0,
@@ -964,8 +1097,51 @@ export class ReportingService {
     };
   }
 
-  // ── Activity log ─────────────────────────────────────────────────────
+  /**
+   * Cost by department — the expense side of a departmental P&L.
+   *
+   * Revenue cannot be split by department (invoices attach to clients, not
+   * teams), so this reports spend, direct cost vs overhead and each department's
+   * share of the total. Anything untagged lands in "Unassigned" instead of
+   * disappearing.
+   */
+  async costByDepartment(fromStr?: string, toStr?: string) {
+    const { from, to, label } = this.resolveRange(fromStr, toStr);
+    const expenses = await this.prisma.expense.findMany({
+      where: { approvalStatus: "APPROVED", date: { gte: from, lte: to } },
+      select: { department: true, category: true, amount: true, exchangeRate: true, isClientBillable: true },
+    });
+    const DIRECT = new Set(["AD_SPEND", "FREELANCER", "PRODUCTION"]);
+    const byDept = new Map<string, { department: string; total: number; billable: number; directCost: number; overhead: number; categories: Map<string, number> }>();
+    for (const e of expenses) {
+      const dept = e.department?.trim() || "Unassigned";
+      const row = byDept.get(dept) ?? { department: dept, total: 0, billable: 0, directCost: 0, overhead: 0, categories: new Map<string, number>() };
+      const amount = toBdt(Number(e.amount), e);
+      row.total += amount;
+      if (e.isClientBillable) row.billable += amount;
+      if (DIRECT.has(e.category)) row.directCost += amount;
+      else row.overhead += amount;
+      row.categories.set(e.category, (row.categories.get(e.category) ?? 0) + amount);
+      byDept.set(dept, row);
+    }
+    const total = Array.from(byDept.values()).reduce((s, r) => s + r.total, 0);
+    const rows = Array.from(byDept.values())
+      .map((r) => ({
+        department: r.department,
+        total: r2(r.total),
+        directCost: r2(r.directCost),
+        overhead: r2(r.overhead),
+        billable: r2(r.billable),
+        share: total ? Math.round((r.total / total) * 10000) / 100 : 0,
+        categories: Array.from(r.categories.entries())
+          .map(([category, amount]) => ({ category, amount: r2(amount) }))
+          .sort((a, b) => b.amount - a.amount),
+      }))
+      .sort((a, b) => b.total - a.total);
+    return { from, to, label, rows, total: r2(total) };
+  }
 
+  // ── Activity log ─────────────────────────────────────────────────────
 
   async activityLog() {
     return this.cache.wrap("capital:activity", 30, () =>

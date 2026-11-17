@@ -63,7 +63,7 @@ export function MonthView({
                   }
                 }}
                 className={cn(
-                  "group relative flex min-h-[118px] flex-col border-b border-r border-border/50 p-1.5 transition-colors",
+                  "group relative flex min-h-[158px] flex-col border-b border-r border-border/50 p-1.5 transition-colors",
                   !inMonth && "bg-muted/20",
                   weekend && inMonth && "bg-muted/10",
                   info?.hasHoliday && "bg-rose-500/[0.04]",
@@ -74,12 +74,13 @@ export function MonthView({
                   <button
                     onClick={() => onOpenDay(date)}
                     className={cn(
-                      "flex size-5 items-center justify-center rounded-full text-[10.5px] font-bold tabular-nums outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary/40",
+                      "flex size-6 items-center justify-center rounded-full text-[11px] font-bold tabular-nums outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary/40",
                       isToday && "bg-primary text-primary-foreground hover:bg-primary",
                       !inMonth && "text-muted-foreground/40",
                       inMonth && !isToday && "text-muted-foreground"
                     )}
                     title="Open day"
+                    aria-label={`${Number(date.slice(8))} — open ${date}`}
                   >
                     {Number(date.slice(8))}
                   </button>
@@ -89,9 +90,9 @@ export function MonthView({
                     <button
                       onClick={() => onAdd(date)}
                       aria-label={`Add on ${date}`}
-                      className="flex size-4 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                      className="flex size-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                     >
-                      <Plus className="size-3" />
+                      <Plus className="size-3.5" />
                     </button>
                   </div>
                 </div>
@@ -103,7 +104,7 @@ export function MonthView({
                   {dayItems.length > 4 && (
                     <button
                       onClick={() => onOpenDay(date)}
-                      className="rounded px-1 py-0.5 text-left text-[9.5px] font-semibold text-primary hover:underline"
+                      className="min-h-6 rounded px-1 text-left text-[11px] font-semibold text-primary hover:underline"
                     >
                       +{dayItems.length - 4} more
                     </button>

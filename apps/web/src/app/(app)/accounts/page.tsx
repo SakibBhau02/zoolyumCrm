@@ -84,6 +84,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import { CollectionsModal, type CollectionsMode } from "./_components/collections-modal";
+import { ImagePicker } from "@/components/media/image-picker";
 
 const VERTICALS = ["EDUCATION", "HEALTHCARE", "D2C", "OTHER"];
 // NOTE: must stay in sync with the Prisma BillingCycleType enum — values outside
@@ -235,6 +236,9 @@ function ClientFormModal({
   const [emailErr, setEmailErr] = useState<string | null>(null);
   const [dupHint, setDupHint] = useState<string | null>(null);
   const [dupChecking, setDupChecking] = useState(false);
+  // The upload endpoint stores the logo immediately, so the preview is owned
+  // here instead of the (stale) `initial` prop.
+  const [logo, setLogo] = useState<{ url: string | null; jxl: string | null }>({ url: null, jxl: null });
   const editing = !!initial;
 
   const checkDuplicates = async (name: string) => {
@@ -270,6 +274,7 @@ function ClientFormModal({
     setCompanyErr(null);
     setEmailErr(null);
     setDupHint(null);
+    setLogo({ url: initial?.logoUrl ?? null, jxl: initial?.logoJxlUrl ?? null });
     if (!initial) {
       setF(EMPTY_FORM);
       return;
@@ -406,7 +411,26 @@ function ClientFormModal({
         <FormError>{err}</FormError>
         {/* Live identity strip — the name you type shows up here immediately. */}
         <div className="flex items-center gap-3 rounded-2xl border border-border/70 bg-primary/[0.04] p-3.5">
-          <Avatar name={f.companyName || "New Client"} size="size-10" />
+          {editing ? (
+            <ImagePicker
+              src={logo.url}
+              jxlSrc={logo.jxl}
+              name={f.companyName || "Client"}
+              endpoint={`/accounts/clients/${initial!.id}/logo`}
+              removeEndpoint={`/accounts/clients/${initial!.id}/logo`}
+              onDone={(res) => {
+                setLogo(res ? { url: res.logoUrl ?? null, jxl: res.logoJxlUrl ?? null } : { url: null, jxl: null });
+                onSaved();
+              }}
+              shape="rounded"
+              sizeClass="size-16"
+              title="Company logo"
+              hint="Shown on the client header, project cards and portal"
+              compact
+            />
+          ) : (
+            <Avatar name={f.companyName || "New Client"} size="size-10" />
+          )}
           <div className="min-w-0 flex-1">
             <p className="truncate font-heading text-body-lg font-semibold">
               {f.companyName.trim() || (editing ? initial!.companyName : "New client")}
@@ -840,8 +864,15 @@ function SortTh({
   onSort: (k: SortKey) => void;
 }) {
   const active = sort.key === k;
+  // Raw <th> instead of the shared <Th>: the sortable column has to carry
+  // aria-sort so screen readers get the current order (audit UX-12). Classes
+  // mirror components/table.tsx `Th` so the header row still looks identical.
   return (
-    <Th>
+    <th
+      scope="col"
+      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      className="whitespace-nowrap px-3 py-2.5 text-left text-micro font-semibold uppercase tracking-wider text-muted-foreground first:pl-3 sm:px-5 sm:first:pl-5"
+    >
       <button
         type="button"
         onClick={() => onSort(k)}
@@ -849,7 +880,7 @@ function SortTh({
           "inline-flex items-center gap-1 uppercase tracking-wider transition-colors hover:text-foreground",
           active && "text-foreground"
         )}
-        aria-label={`Sort by ${labelText}`}
+        aria-label={`Sort by ${labelText}${active ? (sort.dir === "asc" ? ", currently ascending" : ", currently descending") : ""}`}
       >
         {labelText}
         {active ? (
@@ -858,7 +889,7 @@ function SortTh({
           <ArrowUpDown className="size-3.5 opacity-30" />
         )}
       </button>
-    </Th>
+    </th>
   );
 }
 
@@ -1793,6 +1824,7 @@ export default function AccountsPage() {
             {view === "table" && (
               <motion.div key="table" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
                 <TableShell
+                  scrollY
                   footer={
                     <>
                       <span className="text-meta text-muted-foreground">
@@ -1821,7 +1853,7 @@ export default function AccountsPage() {
                           <Tr key={c.id} index={Math.min(i, 12)} onClick={() => setSelectedId(c.id)} className="group cursor-pointer">
                             <Td>
                               <div className="flex items-center gap-2.5">
-                                <Avatar name={c.companyName} />
+                                <Avatar name={c.companyName} src={c.logoUrl} jxlSrc={c.logoJxlUrl} />
                                 <div className="min-w-0">
                                   <div className="flex flex-wrap items-center gap-1.5">
                                     <span className="truncate font-semibold">{c.companyName}</span>
@@ -2014,7 +2046,7 @@ export default function AccountsPage() {
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex min-w-0 items-center gap-2.5">
-                            <Avatar name={c.companyName} />
+                            <Avatar name={c.companyName} src={c.logoUrl} jxlSrc={c.logoJxlUrl} />
                             <div className="min-w-0">
                               <p className="truncate text-body-lg font-semibold">{c.companyName}</p>
                               <p className="truncate text-meta text-muted-foreground">
@@ -2107,7 +2139,7 @@ export default function AccountsPage() {
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex min-w-0 items-center gap-2">
-                                  <Avatar name={c.companyName} size="size-7" />
+                                  <Avatar name={c.companyName} size="size-7" src={c.logoUrl} jxlSrc={c.logoJxlUrl} />
                                   <div className="min-w-0">
                                     <p className="truncate text-body font-semibold">{c.companyName}</p>
                                     <p className="truncate text-micro text-muted-foreground">
@@ -2168,7 +2200,7 @@ export default function AccountsPage() {
         size="2xl"
         title={
           <div className="flex min-w-0 items-center gap-3">
-            <Avatar name={clientName} size="size-10" />
+            <Avatar name={clientName} size="size-10" src={detail?.logoUrl} jxlSrc={detail?.logoJxlUrl} rounded="rounded-xl" />
             <div className="min-w-0">
               <h3 className="truncate font-heading text-section font-semibold">{clientName}</h3>
               <p className="truncate text-meta text-muted-foreground">

@@ -53,6 +53,7 @@ import { formatDate } from "@/lib/format";
 import { Avatar, cn } from "@/components/shared";
 import { Btn } from "@/components/table";
 import { Input, Modal, Select, Textarea } from "@/components/ui";
+import { ImagePicker } from "@/components/media/image-picker";
 
 /* ─────────────────────────────── constants ─────────────────────────────── */
 
@@ -153,6 +154,8 @@ export interface WizardProjectRow {
   description?: string | null;
   projectLink?: string | null;
   websiteUrl?: string | null;
+  logoUrl?: string | null;
+  logoJxlUrl?: string | null;
   socialLinks?: Record<string, string> | null;
   briefLink?: string | null;
   driveLink?: string | null;
@@ -853,6 +856,12 @@ export function ProjectModal({
   const [empQuery, setEmpQuery] = useState("");
   const [created, setCreated] = useState<{ id: string; name: string; added: number; requested: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Logo upload persists immediately, so the preview cannot come from `editing`
+  // (the parent keeps the pre-upload row until the modal is reopened).
+  const [logo, setLogo] = useState<{ url: string | null; jxl: string | null }>({ url: null, jxl: null });
+  useEffect(() => {
+    setLogo({ url: editing?.logoUrl ?? null, jxl: editing?.logoJxlUrl ?? null });
+  }, [editing?.id, open]);
 
   const isEditing = !!editing;
   const clientOptions = clients;
@@ -1692,6 +1701,25 @@ export function ProjectModal({
                     </Card>
 
                     <Card title="Links & social media" hint="Live URL, client website, and social handles — editable later from the project page.">
+                      {isEditing && editing && (
+                        <div className="mb-4 rounded-xl border border-border/60 bg-muted/20 p-3">
+                          <ImagePicker
+                            src={logo.url}
+                            jxlSrc={logo.jxl}
+                            name={editing.name}
+                            endpoint={`/flow/projects/${editing.id}/logo`}
+                            removeEndpoint={`/flow/projects/${editing.id}/logo`}
+                            onDone={(res) => {
+                              setLogo(res ? { url: res.logoUrl ?? null, jxl: res.logoJxlUrl ?? null } : { url: null, jxl: null });
+                              onSaved();
+                            }}
+                            shape="rounded"
+                            sizeClass="size-16"
+                            title="Project logo"
+                            hint="Shown on the project header and cards — saved automatically"
+                          />
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <FieldShell label="Project / live link" error={errors.projectLink}>
                           <div className="relative">

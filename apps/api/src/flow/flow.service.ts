@@ -21,16 +21,22 @@ import {
   AddDeliverableDto,
   AddFileDto,
   AddMilestoneDto,
+  AssignDeliverableTasksDto,
+  BulkAddDeliverablesDto,
   GenerateReportDto,
   UpdateDeliverableDto,
   UpdateMilestoneDto,
   UpdateReportDto,
+  UpsertProjectProposalDto,
 } from "./dto/flow-mutations.dto";
 import { advanceBillingDate } from "../common/billing-date";
 import { recomputeProjectStats } from "../common/project-stats";
 import { writeSystemAudit } from "../common/system-audit";
 import { signStoredFileUrl, uploadedFilename } from "../common/signed-url";
 import { findUploadedFile, uploadsRoot } from "../common/file-storage";
+import { mediaDir, removeOptimizedImage, uploadFilename } from "../common/image-pipeline";
+import { dayKey } from "../calendar/calendar.utils";
+import { TasksService } from "../tasks/tasks.service";
 
 const DAY = 86400000;
 
@@ -44,6 +50,26 @@ const dayStart = (date: Date) => {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d;
+};
+
+/** `@db.Date` columns round-trip best at UTC midnight. */
+const dateOnly = (value: string | Date, field: string): Date => {
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new BadRequestException(`${field} is not a valid date`);
+  }
+  return new Date(
+    Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate())
+  );
+};
+
+/** Deliverable kind → the task type the department rules speak in. */
+const KIND_TASK_TYPE: Record<string, string> = {
+  GRAPHIC: "design",
+  VIDEO: "video",
+  PHOTO: "photo",
+  COPY: "copy",
+  OTHER: "general",
 };
 
 /** Minimal RFC-4180 parser: quoted cells, escaped quotes, CRLF, embedded commas. */
@@ -101,7 +127,8 @@ export class FlowService {
     private readonly notifications: NotificationsService,
     private readonly cache: CacheService,
     private readonly capital: CapitalService,
-    private readonly scoring: ScoringService
+    private readonly scoring: ScoringService,
+    private readonly tasks: TasksService
   ) {}
 
   async overview() {
@@ -273,6 +300,7 @@ export class FlowService {
         template: { select: { id: true, name: true } },
         sourceLead: { select: { id: true, name: true, company: true, source: true, vertical: true, estimatedDealSize: true, contactEmail: true, contactPhone: true } },
         sourceProposal: { select: { id: true, versionNumber: true, status: true, fileUrl: true, portalLink: true, sentDate: true } },
+        proposal: { include: { updatedBy: { select: { id: true, name: true } } } },
         milestones: { orderBy: { dueDate: "asc" } },
         files: {
           include: { uploadedBy: { select: { name: true } } },
@@ -290,8 +318,22 @@ export class FlowService {
               where: { archivedAt: null },
               select: { id: true, title: true, status: true },
             },
+            campaign: { select: { id: true, name: true } },
           },
           orderBy: { sortOrder: "asc" },
+        },
+        shoots: {
+          include: {
+            crew: {
+              include: {
+                employee: { select: { id: true, name: true, photoUrl: true, roleTitle: true } },
+                vendor: { select: { id: true, name: true, phone: true, category: true } },
+              },
+              orderBy: { createdAt: "asc" },
+            },
+            campaign: { select: { id: true, name: true } },
+          },
+          orderBy: [{ shootDate: "asc" }, { createdAt: "asc" }],
         },
         reports: {
           include: { generatedBy: { select: { name: true } } },
@@ -316,7 +358,8 @@ export class FlowService {
       // The download route requires a signature; the UI uses this value.
       downloadUrl: signStoredFileUrl(f.fileUrl),
     }));
-    return { ...project, files, deliverables, progress, tasksTotal, tasksCompleted };
+    const proposal = project.proposal ? this.proposalWithAccess(project.proposal) : null;
+    return { ...project, proposal, files, deliverables, progress, tasksTotal, tasksCompleted };
   }
 
   async create(body: CreateProjectDto, actorId?: string) {
@@ -782,6 +825,107 @@ export class FlowService {
     return { ok: true };
   }
 
+  /**
+   * Project logo. The pipeline writes a WebP plus an optional JPEG XL sibling;
+   * the previous pair is removed so re-uploads do not pile up on disk.
+   */
+  async setLogo(projectId: string, logoUrl: string, logoJxlUrl: string | null) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { logoUrl: true, logoJxlUrl: true },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    await this.prisma.project.update({ where: { id: projectId }, data: { logoUrl, logoJxlUrl } });
+    await removeOptimizedImage(mediaDir("logos"), uploadFilename(project.logoUrl), uploadFilename(project.logoJxlUrl));
+    await writeSystemAudit(this.prisma, {
+      actorId: undefined, action: "flow.project.logo", entityType: "Project", entityId: projectId,
+      after: { logoUrl, hasJxl: !!logoJxlUrl },
+    });
+    return { logoUrl, logoJxlUrl };
+  }
+
+  async removeLogo(projectId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { logoUrl: true, logoJxlUrl: true },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+    await this.prisma.project.update({ where: { id: projectId }, data: { logoUrl: null, logoJxlUrl: null } });
+    await removeOptimizedImage(mediaDir("logos"), uploadFilename(project.logoUrl), uploadFilename(project.logoJxlUrl));
+    return { logoUrl: null, logoJxlUrl: null };
+  }
+
+  // ── Project proposal: exactly one per project ────────────────────────────  /** Shared shape so `detail()` and the dedicated GET return the same thing. */
+  private proposalWithAccess<T extends { fileUrl?: string | null }>(row: T) {
+    return { ...row, downloadUrl: signStoredFileUrl(row.fileUrl) };
+  }
+
+  async projectProposal(projectId: string) {
+    await this.ensureProject(projectId);
+    const row = await this.prisma.projectProposal.findUnique({
+      where: { projectId },
+      include: { updatedBy: { select: { id: true, name: true } } },
+    });
+    return {
+      proposal: row ? this.proposalWithAccess(row) : null,
+      limit: 1,
+      used: row ? 1 : 0,
+    };
+  }
+
+  /**
+   * Save the final proposal. Upsert is deliberate: the limit is one, so a
+   * second save replaces the first instead of stacking versions.
+   */
+  async upsertProjectProposal(projectId: string, dto: UpsertProjectProposalDto, actorId?: string) {
+    await this.ensureProject(projectId);
+    const notes = dto.notes?.trim() || null;
+    if (!dto.fileUrl && !dto.link && !notes) {
+      throw new BadRequestException("Add a PDF, a link, or a summary before saving the proposal");
+    }
+    const status = dto.status ?? "DRAFT";
+    const sentDate =
+      dto.sentDate ? new Date(dto.sentDate)
+        : status !== "DRAFT" ? new Date()
+          : null;
+    const data = {
+      title: dto.title?.trim() || "Final proposal",
+      fileUrl: dto.fileUrl ?? null,
+      fileName: dto.fileName ?? null,
+      link: dto.link ?? null,
+      notes,
+      amount: dto.amount ?? null,
+      status,
+      sentDate,
+      updatedById: actorId ?? null,
+    };
+    const saved = await this.prisma.projectProposal.upsert({
+      where: { projectId },
+      create: { projectId, ...data },
+      update: data,
+      include: { updatedBy: { select: { id: true, name: true } } },
+    });
+    await writeSystemAudit(this.prisma, {
+      actorId,
+      action: "flow.proposal.save",
+      entityType: "ProjectProposal",
+      entityId: saved.id,
+      after: { projectId, title: saved.title, status: saved.status, hasFile: !!saved.fileUrl, hasLink: !!saved.link },
+    });
+    return { proposal: this.proposalWithAccess(saved), limit: 1, used: 1 };
+  }
+
+  async deleteProjectProposal(projectId: string, userId?: string) {
+    const row = await this.prisma.projectProposal.findUnique({ where: { projectId }, select: { id: true } });
+    if (!row) throw new NotFoundException("Proposal not found");
+    await this.prisma.projectProposal.delete({ where: { projectId } });
+    await writeSystemAudit(this.prisma, {
+      actorId: userId, action: "flow.proposal.delete", entityType: "ProjectProposal", entityId: row.id,
+      after: { projectId },
+    });
+    return { ok: true };
+  }
+
   async bulkAssignTasks(projectId: string, taskIds: string[], userId?: string) {
     const target = await this.prisma.project.findUnique({
       where: { id: projectId },
@@ -1200,6 +1344,65 @@ export class FlowService {
     }
   }
 
+  /**
+   * Validate + map one deliverable payload. Campaigns must belong to the same
+   * client as the project, otherwise a report would mix two clients' work.
+   */
+  private async deliverableFields(
+    projectId: string,
+    dto: AddDeliverableDto | UpdateDeliverableDto,
+    campaignMemo?: Map<string, string>
+  ) {
+    let campaignId: string | null | undefined;
+    if (dto.campaignId !== undefined) {
+      if (!dto.campaignId) {
+        campaignId = null;
+      } else {
+        const cached = campaignMemo?.get(dto.campaignId);
+        if (cached !== undefined) {
+          campaignId = cached;
+        } else {
+          const [project, campaign] = await Promise.all([
+            this.prisma.project.findUnique({ where: { id: projectId }, select: { clientId: true } }),
+            this.prisma.campaign.findUnique({
+              where: { id: dto.campaignId },
+              select: { id: true, clientId: true },
+            }),
+          ]);
+          if (!project) throw new NotFoundException("Project not found");
+          if (!campaign) throw new NotFoundException("Campaign not found");
+          if (campaign.clientId !== project.clientId) {
+            throw new BadRequestException("This campaign belongs to a different client");
+          }
+          campaignMemo?.set(campaign.id, campaign.id);
+          campaignId = campaign.id;
+        }
+      }
+    }
+
+    const data: any = {};
+    if (dto.title !== undefined) data.title = dto.title.trim();
+    if (dto.description !== undefined) data.description = dto.description?.trim() || null;
+    if (dto.kind !== undefined) data.kind = dto.kind;
+    if (dto.topic !== undefined) data.topic = dto.topic?.trim() || null;
+    if (dto.objective !== undefined) data.objective = dto.objective?.trim() || null;
+    if (campaignId !== undefined) data.campaignId = campaignId;
+    if (dto.startDate !== undefined) {
+      data.startDate = dto.startDate ? dateOnly(dto.startDate, "Start date") : null;
+    }
+    if (dto.dueDate !== undefined) {
+      data.dueDate = dto.dueDate ? dateOnly(dto.dueDate, "Due date") : null;
+    }
+    if (dto.ownerId !== undefined) data.ownerId = dto.ownerId || null;
+    if (dto.clientVisible !== undefined) data.clientVisible = dto.clientVisible;
+    return data;
+  }
+
+  private readonly deliverableInclude = {
+    tasks: { select: { id: true, title: true, status: true } },
+    campaign: { select: { id: true, name: true } },
+  } as const;
+
   async addDeliverable(projectId: string, dto: AddDeliverableDto, actorId?: string) {
     await this.ensureProject(projectId);
     const taskIds = dto.taskIds ?? [];
@@ -1208,22 +1411,54 @@ export class FlowService {
       where: { projectId },
       orderBy: { sortOrder: "desc" },
     });
+    const data = await this.deliverableFields(projectId, dto);
     const d = await this.prisma.projectDeliverable.create({
       data: {
         projectId,
         title: dto.title.trim(),
-        description: dto.description,
         sortOrder: (last?.sortOrder ?? 0) + 1,
+        ...data,
         ...(taskIds.length ? { tasks: { connect: taskIds.map((id) => ({ id })) } } : {}),
       },
-      include: { tasks: { select: { id: true, title: true, status: true } } },
+      include: this.deliverableInclude,
     });
     await writeSystemAudit(this.prisma, {
       actorId, action: "flow.deliverable.create", entityType: "ProjectDeliverable", entityId: d.id,
-      after: { projectId, title: d.title },
+      after: { projectId, title: d.title, kind: d.kind },
     });
     await this.invalidateProjects();
     return d;
+  }
+
+  /** Paste mode — "8 graphics + 4 videos" in one submit. */
+  async bulkAddDeliverables(projectId: string, dto: BulkAddDeliverablesDto, actorId?: string) {
+    await this.ensureProject(projectId);
+    const last = await this.prisma.projectDeliverable.findFirst({
+      where: { projectId },
+      orderBy: { sortOrder: "desc" },
+    });
+    let sortOrder = last?.sortOrder ?? 0;
+    const campaignMemo = new Map<string, string>();
+    const created = [];
+    for (const item of dto.items) {
+      const data = await this.deliverableFields(projectId, item, campaignMemo);
+      const row = await this.prisma.projectDeliverable.create({
+        data: {
+          projectId,
+          title: item.title.trim(),
+          sortOrder: ++sortOrder,
+          ...data,
+        },
+        include: this.deliverableInclude,
+      });
+      created.push(row);
+    }
+    await writeSystemAudit(this.prisma, {
+      actorId, action: "flow.deliverable.bulk_create", entityType: "ProjectDeliverable", entityId: projectId,
+      after: { projectId, count: created.length },
+    });
+    await this.invalidateProjects();
+    return { count: created.length, items: created };
   }
 
   async updateDeliverable(deliverableId: string, dto: UpdateDeliverableDto, actorId?: string) {
@@ -1231,12 +1466,15 @@ export class FlowService {
       where: { id: deliverableId },
     });
     if (!existing) throw new NotFoundException("Deliverable not found");
-    const data: any = {};
-    if (dto.title !== undefined) data.title = dto.title.trim();
-    if (dto.description !== undefined) data.description = dto.description;
+    const data: any = await this.deliverableFields(existing.projectId, dto);
     if (dto.status !== undefined) {
       data.status = dto.status;
       data.completedAt = dto.status === "DELIVERED" ? new Date() : null;
+    }
+    const start = data.startDate !== undefined ? data.startDate : existing.startDate;
+    const due = data.dueDate !== undefined ? data.dueDate : existing.dueDate;
+    if (start && due && due < start) {
+      throw new BadRequestException("Due date cannot be before the start date");
     }
     if (dto.taskIds !== undefined) {
       await this.assertTasksInProject(existing.projectId, dto.taskIds);
@@ -1245,14 +1483,146 @@ export class FlowService {
     const d = await this.prisma.projectDeliverable.update({
       where: { id: deliverableId },
       data,
-      include: { tasks: { select: { id: true, title: true, status: true } } },
+      include: this.deliverableInclude,
     });
     await writeSystemAudit(this.prisma, {
       actorId, action: "flow.deliverable.update", entityType: "ProjectDeliverable", entityId: deliverableId,
-      after: { status: d.status },
+      after: { status: d.status, kind: d.kind },
     });
     await this.invalidateProjects();
     return d;
+  }
+
+  /**
+   * One-click "commitments → work". One task per deliverable, never a duplicate:
+   * a deliverable that already owns a task is skipped and reported back.
+   */
+  async assignDeliverableTasks(
+    projectId: string,
+    dto: AssignDeliverableTasksDto,
+    userId?: string
+  ) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, name: true },
+    });
+    if (!project) throw new NotFoundException("Project not found");
+
+    const deliverables = await this.prisma.projectDeliverable.findMany({
+      where: { id: { in: dto.deliverableIds }, projectId },
+      include: { tasks: { select: { id: true } } },
+      orderBy: { sortOrder: "asc" },
+    });
+    const foundIds = new Set(deliverables.map((d) => d.id));
+    const missing = dto.deliverableIds.filter((id) => !foundIds.has(id));
+
+    const assignee = await this.prisma.employee.findUnique({
+      where: { id: dto.assigneeId },
+      select: { id: true, name: true, employmentStatus: true },
+    });
+    if (!assignee) throw new NotFoundException("Assignee not found");
+
+    const coAssigneeIds = [...new Set(dto.coAssigneeIds ?? [])].filter(
+      (id) => id !== assignee.id
+    );
+    const coAssignees = coAssigneeIds.length
+      ? await this.prisma.employee.findMany({
+          where: { id: { in: coAssigneeIds } },
+          select: { id: true, name: true, photoUrl: true },
+        })
+      : [];
+
+    const actor = userId
+      ? await this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
+      : null;
+
+    const results: {
+      deliverableId: string;
+      title: string;
+      status: "created" | "skipped" | "failed";
+      taskId?: string;
+      reason?: string;
+    }[] = [];
+
+    for (const d of deliverables) {
+      const title = (d.topic?.trim() || d.title).slice(0, 200);
+      if (d.tasks.length) {
+        results.push({
+          deliverableId: d.id,
+          title,
+          status: "skipped",
+          reason: "already assigned",
+        });
+        continue;
+      }
+      const description = [d.objective?.trim(), d.description?.trim()]
+        .filter(Boolean)
+        .join("\n\n");
+      try {
+        const task = await this.tasks.create({
+          title,
+          description: description || undefined,
+          projectId,
+          assignedToId: assignee.id,
+          assignedToName: assignee.name,
+          createdById: userId,
+          createdByName: actor?.name ?? "Flow",
+          priority: dto.priority ?? "MEDIUM",
+          dueDate: dto.dueDateOverride
+            ? dateOnly(dto.dueDateOverride, "Due date").toISOString()
+            : d.dueDate?.toISOString(),
+          taskType: dto.taskType ?? KIND_TASK_TYPE[d.kind ?? "OTHER"] ?? "general",
+          isClientVisible: dto.clientVisible ?? d.clientVisible,
+          assignees: coAssignees.map((e) => ({
+            id: e.id,
+            name: e.name,
+            photoUrl: e.photoUrl ?? null,
+          })),
+        });
+        await this.prisma.task.update({
+          where: { id: task.id },
+          data: { deliverableId: d.id },
+        });
+        results.push({ deliverableId: d.id, title, status: "created", taskId: task.id });
+      } catch (e: any) {
+        results.push({
+          deliverableId: d.id,
+          title,
+          status: "failed",
+          reason: e?.message ?? "Task could not be created",
+        });
+      }
+    }
+
+    for (const id of missing) {
+      results.push({
+        deliverableId: id,
+        title: "—",
+        status: "failed",
+        reason: "Not found in this project",
+      });
+    }
+
+    const created = results.filter((r) => r.status === "created").length;
+    const skipped = results.filter((r) => r.status === "skipped").length;
+    const failed = results.filter((r) => r.status === "failed").length;
+
+    await writeSystemAudit(this.prisma, {
+      actorId: userId,
+      action: "flow.deliverable.assign_tasks",
+      entityType: "ProjectDeliverable",
+      entityId: projectId,
+      after: { projectId, assigneeId: assignee.id, created, skipped, failed },
+    });
+    await this.invalidateProjects();
+
+    return {
+      created,
+      skipped,
+      failed,
+      assignee: { id: assignee.id, name: assignee.name, employmentStatus: assignee.employmentStatus },
+      results,
+    };
   }
 
   async removeDeliverable(deliverableId: string, actorId?: string) {
@@ -1271,19 +1641,38 @@ export class FlowService {
   // ── Reports (auto-populated from deliverables + tasks) ───────────────
   async generateReport(
     projectId: string,
-    dto: { periodStart?: string; periodEnd?: string; pmNotes?: string },
+    dto: GenerateReportDto,
     userId?: string
   ) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
       include: {
+        client: { select: { id: true, companyName: true } },
         deliverables: {
-          include: { tasks: { where: { archivedAt: null } } },
+          where: dto.campaignId ? { campaignId: dto.campaignId } : undefined,
+          include: {
+            tasks: { where: { archivedAt: null }, select: { id: true, status: true } },
+            campaign: { select: { id: true, name: true } },
+          },
           orderBy: { sortOrder: "asc" },
         },
       },
     });
     if (!project) throw new NotFoundException("Project not found");
+
+    // A campaign-scoped report only makes sense inside the project's own client.
+    let campaignLabel: string | null = null;
+    if (dto.campaignId) {
+      const campaign = await this.prisma.campaign.findUnique({
+        where: { id: dto.campaignId },
+        select: { id: true, name: true, clientId: true },
+      });
+      if (!campaign) throw new NotFoundException("Campaign not found");
+      if (campaign.clientId !== project.clientId) {
+        throw new BadRequestException("This campaign belongs to a different client");
+      }
+      campaignLabel = campaign.name;
+    }
 
     const end = dto.periodEnd ? new Date(dto.periodEnd) : new Date();
     const start = dto.periodStart
@@ -1293,6 +1682,17 @@ export class FlowService {
       throw new BadRequestException("Invalid report period");
     }
 
+    const ownerIds = [
+      ...new Set(project.deliverables.map((d) => d.ownerId).filter(Boolean)),
+    ] as string[];
+    const owners = ownerIds.length
+      ? await this.prisma.employee.findMany({
+          where: { id: { in: ownerIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const ownerName = new Map(owners.map((o) => [o.id, o.name]));
+
     const deriveStatus = (d: (typeof project.deliverables)[number]) => {
       if (!d.tasks.length) return d.status;
       const done = d.tasks.filter((t) => t.status === "DONE").length;
@@ -1300,27 +1700,127 @@ export class FlowService {
       return done === d.tasks.length ? "DELIVERED" : done > 0 || active > 0 ? "IN_PROGRESS" : "PENDING";
     };
 
+    type Bucket = { delivered: number; deliveredInPeriod: number; pending: number; total: number };
+    const emptyBucket = (): Bucket => ({ delivered: 0, deliveredInPeriod: 0, pending: 0, total: 0 });
+    const byKind: Record<string, Bucket> = {};
+    const byCampaign = new Map<string, Bucket & { campaignId: string | null; name: string }>();
+    const byOwner = new Map<string, Bucket & { employeeId: string | null; name: string }>();
+
     const completed: any[] = [];
     const pending: any[] = [];
+    let tasksTotal = 0;
+    let tasksDone = 0;
+
     for (const d of project.deliverables) {
       const status = deriveStatus(d);
+      const done = d.tasks.filter((t) => t.status === "DONE").length;
+      tasksTotal += d.tasks.length;
+      tasksDone += done;
+
+      const kind = d.kind ?? "OTHER";
+      const kindBucket = (byKind[kind] ??= emptyBucket());
+      const campKey = d.campaignId ?? "__none";
+      const campBucket = byCampaign.get(campKey) ?? {
+        ...emptyBucket(),
+        campaignId: d.campaignId ?? null,
+        name: d.campaign?.name ?? "No campaign",
+      };
+      const ownerKey = d.ownerId ?? "__none";
+      const ownerBucket = byOwner.get(ownerKey) ?? {
+        ...emptyBucket(),
+        employeeId: d.ownerId ?? null,
+        name: d.ownerId ? ownerName.get(d.ownerId) ?? "Unknown" : "Unassigned",
+      };
+
+      const item = {
+        deliverableId: d.id,
+        title: d.title,
+        topic: d.topic,
+        objective: d.objective,
+        kind: d.kind,
+        campaignId: d.campaignId,
+        campaignName: d.campaign?.name ?? null,
+        ownerId: d.ownerId,
+        ownerName: d.ownerId ? ownerName.get(d.ownerId) ?? "Unknown" : null,
+        dueDate: d.dueDate ? d.dueDate.toISOString() : null,
+        tasksDone: done,
+        tasksTotal: d.tasks.length,
+      };
+
+      kindBucket.total++;
+      campBucket.total++;
+      ownerBucket.total++;
+
       if (status === "DELIVERED") {
-        // The PDF section says "Completed this period": a deliverable finished
-        // before the window must not be re-announced inside it.
-        if (d.completedAt && (d.completedAt < start || d.completedAt > end)) continue;
-        completed.push({
-          deliverableId: d.id,
-          title: d.title,
-          // Never invent a completion date: a client-facing report must not
-          // claim a delivery happened on the period boundary.
-          completedAt: d.completedAt ? d.completedAt.toISOString() : null,
-          tasksDone: d.tasks.filter((t) => t.status === "DONE").length,
-          tasksTotal: d.tasks.length,
-        });
+        kindBucket.delivered++;
+        campBucket.delivered++;
+        ownerBucket.delivered++;
+        // The section says "Completed this period": work finished before the
+        // window must not be re-announced inside it.
+        const inPeriod = !d.completedAt || (d.completedAt >= start && d.completedAt <= end);
+        if (inPeriod) {
+          kindBucket.deliveredInPeriod++;
+          campBucket.deliveredInPeriod++;
+          ownerBucket.deliveredInPeriod++;
+          completed.push({
+            ...item,
+            // Never invent a completion date.
+            completedAt: d.completedAt ? d.completedAt.toISOString() : null,
+          });
+        }
       } else {
-        pending.push({ deliverableId: d.id, title: d.title, status });
+        kindBucket.pending++;
+        campBucket.pending++;
+        ownerBucket.pending++;
+        pending.push({ ...item, status });
       }
+
+      byCampaign.set(campKey, campBucket);
+      byOwner.set(ownerKey, ownerBucket);
     }
+
+    // Shoots inside the period — frozen with crew + gear so reports never change
+    // when a call-sheet is edited later.
+    const shoots = await this.prisma.shoot.findMany({
+      where: {
+        projectId,
+        ...(dto.campaignId ? { campaignId: dto.campaignId } : {}),
+        shootDate: { gte: dateOnly(start, "Period start"), lte: dateOnly(end, "Period end") },
+      },
+      include: {
+        crew: {
+          include: {
+            employee: { select: { id: true, name: true } },
+            vendor: { select: { id: true, name: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+      orderBy: { shootDate: "asc" },
+    });
+    const shootSnapshot = shoots.map((s) => ({
+      id: s.id,
+      title: s.title,
+      date: dayKey(s.shootDate),
+      endDate: s.endDate ? dayKey(s.endDate) : null,
+      duration: s.durationType,
+      callTime: s.callTime,
+      wrapTime: s.wrapTime,
+      location: s.location,
+      status: s.status,
+      description: s.description,
+      equipment: s.equipment,
+      crew: s.crew.map((c) => ({
+        role: c.role,
+        name: c.name,
+        source: c.source,
+        phone: c.phone,
+        callTime: c.callTime,
+        isConfirmed: c.isConfirmed,
+        employeeId: c.employeeId,
+        vendorId: c.vendorId,
+      })),
+    }));
 
     // Billing snapshot for the period — this used to sum the project's entire
     // invoice history while the title claimed a 15/30-day window.
@@ -1341,10 +1841,31 @@ export class FlowService {
     );
     const collected = invoices.reduce((s, i) => s + i.payments.reduce((x, p) => x + Number(p.amount), 0), 0);
 
-    const title =
+    const periodLabel =
       project.reportFrequency === "15-days"
-        ? `Progress report — ${start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} to ${end.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
-        : `Progress report — ${start.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`;
+        ? `${start.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} to ${end.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`
+        : start.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    const title = campaignLabel
+      ? `Campaign report — ${campaignLabel} · ${periodLabel}`
+      : `Progress report — ${periodLabel}`;
+
+    const summary = {
+      delivered: project.deliverables.filter((d) => deriveStatus(d) === "DELIVERED").length,
+      deliveredInPeriod: completed.length,
+      pending: pending.length,
+      total: project.deliverables.length,
+      byKind,
+      byCampaign: [...byCampaign.values()],
+      byOwner: [...byOwner.values()],
+      shoots: {
+        count: shootSnapshot.length,
+        fullDays: shootSnapshot.filter((s) => s.duration === "FULL_DAY").length,
+        halfDays: shootSnapshot.filter((s) => s.duration === "HALF_DAY").length,
+        crewCount: shootSnapshot.reduce((n, s) => n + s.crew.length, 0),
+        equipmentCount: shootSnapshot.reduce((n, s) => n + s.equipment.length, 0),
+      },
+      tasksFromDeliverables: { total: tasksTotal, done: tasksDone },
+    };
 
     const report = await this.prisma.projectReport.create({
       data: {
@@ -1357,6 +1878,11 @@ export class FlowService {
         completed,
         pending,
         billing: { invoiced, collected, outstanding: Math.max(invoiced - collected, 0) },
+        groupBy: dto.groupBy ?? "CAMPAIGN",
+        campaignId: dto.campaignId ?? null,
+        campaignLabel,
+        summary,
+        shoots: shootSnapshot,
       },
       include: { generatedBy: { select: { name: true } } },
     });

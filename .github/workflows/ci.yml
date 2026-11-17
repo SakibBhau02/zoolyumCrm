@@ -22,6 +22,7 @@ jobs:
       - run: npm ci
       - run: npx prisma generate --schema apps/api/prisma/schema.prisma
       - run: npm run typecheck
+      - run: npm run test:unit
       - run: npm run build
 
   e2e:
@@ -76,3 +77,15 @@ jobs:
         working-directory: apps/web
         env:
           CI: "true"
+      # Traces and screenshots were thrown away on failure, so a red CI run was
+      # undebuggable (audit finding). Keep them for 7 days.
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/test-results
+            apps/web/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore

@@ -107,8 +107,11 @@ export class MeService {
 
     const attToday = await this.prisma.attendance.findUnique({
       where: { employeeId_date: { employeeId: emp.id, date: todayCol } },
-      select: { status: true, checkInTime: true, checkOutTime: true },
+      select: { status: true, checkInTime: true, checkOutTime: true, correctedFields: true },
     });
+    // Same pairing rules as the dashboard: one punch is a check-in, not a
+    // check-in *and* a check-out.
+    const times = this.attendance.resolveDayTimes(attToday, todaysPunch);
 
     return {
       employee,
@@ -117,10 +120,10 @@ export class MeService {
         isWorkingDay: workday.isWorking,
         holiday: workday.holiday?.name ?? null,
         status: attToday?.status ?? null,
-        checkIn: attToday?.checkInTime ?? null,
-        checkOut: attToday?.checkOutTime ?? null,
+        checkIn: times.checkIn,
+        checkOut: times.checkOut,
         punches: todaysPunch.length,
-        inside: !!attToday?.checkInTime && !attToday?.checkOutTime,
+        inside: times.open,
       },
       attendance: {
         range: (att as any)?.range ?? null,

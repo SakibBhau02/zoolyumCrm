@@ -43,8 +43,13 @@ export class IclockController {
   private assertDevice(key?: string, sn?: string) {
     const expected = process.env.ICLOCK_DEVICE_KEY?.trim();
     if (!expected) {
-      if (process.env.NODE_ENV === "production") {
-        throw new ServiceUnavailableException("Attendance device key is not configured (set ICLOCK_DEVICE_KEY)");
+      // Fail closed everywhere except an explicit opt-in. The old rule keyed off
+      // NODE_ENV=production, which left staging and tunneled demos wide open:
+      // anyone who could reach the URL could post punches for any PIN (SEC-07).
+      if (process.env.NODE_ENV !== "test" && process.env.ICLOCK_ALLOW_ANONYMOUS !== "1") {
+        throw new ServiceUnavailableException(
+          "Attendance device key is not configured (set ICLOCK_DEVICE_KEY, or ICLOCK_ALLOW_ANONYMOUS=1 for a local demo)"
+        );
       }
       if (!sn) throw new BadRequestException("SN is required");
       return;

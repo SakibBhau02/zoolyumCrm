@@ -612,18 +612,28 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  label,
 }: {
-  options: { value: T; label: React.ReactNode }[];
+  /** `ariaLabel` names icon-only options (audit UX-07). */
+  options: { value: T; label: React.ReactNode; ariaLabel?: string }[];
   value: T;
   onChange: (v: T) => void;
+  /** Accessible name for the button group. */
+  label?: string;
 }) {
   return (
-    <div className="inline-flex w-full max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto">
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex w-full max-w-full overflow-x-auto rounded-xl border border-border bg-card p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:w-auto"
+    >
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
+          aria-label={o.ariaLabel}
+          aria-pressed={value === o.value}
           className={cn(
             "rounded-lg px-3 py-1.5 text-meta font-semibold transition-all",
             value === o.value
