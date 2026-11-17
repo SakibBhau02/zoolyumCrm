@@ -6,12 +6,21 @@ out/
 *.tsbuildinfo
 .env
 .env.local
+.env.*.local
+# keep the committed templates
+!.env.example
+!apps/api/.env.example
+apps/web/.env.production
 # runtime uploads + local QA scratch (never commit)
 apps/api/uploads/
 qa-evidence/
+artifacts/
 .playwright-mcp/
 *.png
 qa/*.json
+qa-*.log*
+qa-tunnel-url.txt
+*.pid
 # one-off QA / probe scripts
 qa-*.js
 probe-*.js
@@ -25,6 +34,11 @@ coverage/
 
 # playwright run artifacts
 apps/web/test-results/
+
+# compiled test artefacts (tests run from .ts via tsx)
+apps/api/tests/**/*.js
+apps/api/tests/**/*.js.map
+apps/api/tests/**/*.d.ts
 
 # local demo tunnel secret (never commit)
 .zoolyum-demo-secret

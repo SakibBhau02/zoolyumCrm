@@ -7,8 +7,10 @@
     "apps/*"
   ],
   "scripts": {
-    "db:up": "docker compose up -d postgres",
+    "setup": "node scripts/setup.mjs",
+    "db:up": "docker compose up -d postgres redis",
     "db:down": "docker compose down",
+    "db:deploy": "npm run prisma:deploy --prefix apps/api",
     "db:migrate": "npm run prisma:migrate --prefix apps/api",
     "db:seed": "npm run prisma:seed --prefix apps/api",
     "db:bootstrap": "npm run bootstrap --prefix apps/api",
@@ -22,8 +24,17 @@
     "test:smoke": "node scripts/smoke.mjs",
     "test:portal": "node scripts/qa-portal.mjs",
     "test:flow": "node scripts/flow-verify.mjs",
+    "test:shoots": "node scripts/flow-shoots-verify.mjs",
     "test:e2e": "npm run test:e2e --prefix apps/web",
-    "check": "npm run typecheck && npm run test:smoke"
+    "test:unit": "npm run test:unit --prefix apps/api",
+    "check": "npm run typecheck && npm run test:unit && npm run test:smoke",
+    "test:finance": "npm run test:finance --prefix apps/api"
+  },
+  "overrides": {
+    "proxy-addr": "^2.0.8",
+    "compression": "^1.8.2",
+    "multer": "^2.5.0",
+    "dompurify": "^3.4.17"
   },
   "engines": {
     "node": ">=20.9"
