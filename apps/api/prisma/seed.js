@@ -181,7 +181,7 @@ async function main() {
     });
     const hash = (p) => bcrypt.hashSync(p, 10);
     const uSakib = await prisma.user.create({
-        data: { name: "Sakib Hasan", email: "sakib@zoolyum.com", passwordHash: hash("zoolyum123"), roleId: roleOwner.id, lastLoginAt: daysAgo(0, 9) },
+        data: { name: "Sakib Chowdhury", email: "sakib@zoolyum.com", passwordHash: hash("zoolyum123"), roleId: roleOwner.id, lastLoginAt: daysAgo(0, 9) },
     });
     const uSadia = await prisma.user.create({
         data: { name: "Sadia Rahman", email: "sadia@zoolyum.com", passwordHash: hash("zoolyum123"), roleId: roleFinance.id, lastLoginAt: daysAgo(0, 8) },
@@ -198,7 +198,7 @@ async function main() {
     const uNusrat = await prisma.user.create({
         data: { name: "Nusrat Jahan", email: "nusrat@zoolyum.com", passwordHash: hash("zoolyum123"), roleId: roleHr.id, lastLoginAt: daysAgo(0, 9) },
     });
-    const empSakib = await prisma.employee.create({ data: { name: "Sakib Hasan", roleTitle: "Founder & CEO", department: "Leadership", joinDate: daysAgo(730), costRate: bdt(1500), skillTags: ["Strategy", "Sales"], user: { connect: { id: uSakib.id } } } });
+    const empSakib = await prisma.employee.create({ data: { name: "Sakib Chowdhury", roleTitle: "Founder & CEO", department: "Leadership", joinDate: daysAgo(730), costRate: bdt(1500), skillTags: ["Strategy", "Sales"], user: { connect: { id: uSakib.id } } } });
     const empSadia = await prisma.employee.create({ data: { name: "Sadia Rahman", roleTitle: "Finance & Ops", department: "Finance", joinDate: daysAgo(540), costRate: bdt(700), skillTags: ["Accounting", "Operations"], user: { connect: { id: uSadia.id } } } });
     const empRahim = await prisma.employee.create({ data: { name: "Rahim Uddin", roleTitle: "BD Lead", department: "Sales", joinDate: daysAgo(400), costRate: bdt(600), skillTags: ["Sales", "Meta Ads"], user: { connect: { id: uRahim.id } } } });
     const empKarim = await prisma.employee.create({ data: { name: "Karim Ahmed", roleTitle: "Senior PM", department: "Delivery", joinDate: daysAgo(500), costRate: bdt(650), skillTags: ["Video Production", "Client Comms"], user: { connect: { id: uKarim.id } } } });

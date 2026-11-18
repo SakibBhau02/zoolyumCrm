@@ -1199,7 +1199,7 @@ function InvoiceCompanyProfileSection({ notify }: { notify: (msg: string) => voi
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Authorized signer name"><Input value={f.authorizedSignerName} onChange={(e) => set("authorizedSignerName", e.target.value)} placeholder="Sakib Hasan" /></Field>
+            <Field label="Authorized signer name"><Input value={f.authorizedSignerName} onChange={(e) => set("authorizedSignerName", e.target.value)} placeholder="Sakib Chowdhury" /></Field>
             <Field label="Signer title"><Input value={f.authorizedSignerTitle} onChange={(e) => set("authorizedSignerTitle", e.target.value)} placeholder="Managing Director" /></Field>
           </div>
           <div className="flex flex-col gap-2">

@@ -250,7 +250,7 @@ PATCH /tasks/:id/status  {status:"GARBAGE"} → 200, status = TODO   ❌
 3. Comment textarea-র label নেই (শুধু placeholder)।
 4. Empty state-এ "0 tasks" দুইবার (filter bar + table footer)।
 5. Setup-এ Templates কার্ড বিশাল ফাঁকা জায়গা নেয় (right column-এর উচ্চতার সাথে stretch)।
-6. Drawer-এ "Sakib Hasan → Unassigned" — reporter → assignee, কিন্তু লেবেল ছাড়া assignment transition মনে হয়।
+6. Drawer-এ "Sakib Chowdhury → Unassigned" — reporter → assignee, কিন্তু লেবেল ছাড়া assignment transition মনে হয়।
 7. `deleteTask` / `archiveTask`-এ `window.confirm` — বাকি অ্যাপের modal ভাষার সাথে অসঙ্গত।
 8. Dev-server নোট: প্রথম লোডে পুরো অ্যাপ ৫০০ দিচ্ছিল — `next/font/google` (Noto Sans Bengali) + Turbopack cache corruption। `.next` ক্লিয়ার করে ঠিক হয়। CI/নতুন মেশিনে আবার হতে পারে; `next build`-এ যাচাই করা দরকার।
 
