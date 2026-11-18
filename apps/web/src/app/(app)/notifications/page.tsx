@@ -307,8 +307,8 @@ export default function NotificationsPage() {
             </CardShell>
 
             <CardShell className="!p-0">
-              <div className="flex flex-wrap items-center gap-2 border-b border-border/60 p-3">
-                <div className="relative min-w-0 flex-1">
+              <div className="flex flex-col gap-2 border-b border-border/60 p-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="relative w-full sm:min-w-0 sm:flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                   <input
                     value={q}
@@ -317,19 +317,21 @@ export default function NotificationsPage() {
                     className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-3 text-body outline-none focus:border-primary/40"
                   />
                 </div>
-                <button
-                  onClick={markAllRead}
-                  disabled={!summary?.unread}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-meta font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-                >
-                  <CheckCheck className="size-3.5" /> Mark all read
-                </button>
-                <button
-                  onClick={clearAll}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-meta font-semibold text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"
-                >
-                  <Trash2 className="size-3.5" /> Clear
-                </button>
+                <div className="grid grid-cols-2 gap-2 sm:flex">
+                  <button
+                    onClick={markAllRead}
+                    disabled={!summary?.unread}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border px-3 py-2 text-meta font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  >
+                    <CheckCheck className="size-3.5" /> Mark all read
+                  </button>
+                  <button
+                    onClick={clearAll}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border px-3 py-2 text-meta font-semibold text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-500"
+                  >
+                    <Trash2 className="size-3.5" /> Clear
+                  </button>
+                </div>
               </div>
 
               {loading ? (

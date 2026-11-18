@@ -35,12 +35,12 @@ export function FilterBar({
 
   return (
     <div className="mb-3 flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
         <Select
           value={filters.clientId}
           onChange={(e) => onChange({ ...filters, clientId: e.target.value })}
           aria-label="Filter by client"
-          className="!w-52 !py-1.5 text-[12px]"
+          className="w-full sm:!w-52"
         >
           <option value="">All clients</option>
           {clients.map((c) => (
@@ -51,33 +51,18 @@ export function FilterBar({
         <button
           onClick={() => onChange({ ...filters, mine: !filters.mine })}
           className={cn(
-            "inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold transition-colors",
+            "inline-flex min-h-[42px] items-center justify-center gap-1 rounded-xl border px-3 py-2 text-body font-semibold transition-colors sm:min-h-0 sm:px-2.5 sm:py-1.5 sm:text-[11px]",
             filters.mine ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"
           )}
         >
           <UserRound className="size-3.5" /> My work
         </button>
 
-        <div className="hidden items-center gap-1 md:flex">
-          {SOURCE_TOGGLES.map((s) => (
-            <button
-              key={s}
-              onClick={() => toggleSource(s)}
-              className={cn(
-                "rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors",
-                sources.includes(s) ? "border-primary/30 bg-primary/5 text-primary" : "border-border text-muted-foreground/70 hover:text-foreground"
-              )}
-            >
-              {SOURCE_LABEL[s]}
-            </button>
-          ))}
-        </div>
-
         <Select
           value={filters.approval}
           onChange={(e) => onChange({ ...filters, approval: e.target.value })}
           aria-label="Filter by approval status"
-          className="!w-40 !py-1.5 text-[11px]"
+          className="w-full sm:!w-40"
         >
           <option value="">Any approval</option>
           <option value="INTERNAL_REVIEW">In review</option>
@@ -90,7 +75,7 @@ export function FilterBar({
           value={filters.platforms}
           onChange={(e) => onChange({ ...filters, platforms: e.target.value })}
           aria-label="Filter by platform"
-          className="!w-36 !py-1.5 text-[11px]"
+          className="w-full sm:!w-36"
         >
           <option value="">All platforms</option>
           {PLATFORMS.map((p) => (
@@ -98,32 +83,50 @@ export function FilterBar({
           ))}
         </Select>
 
-        <div className="relative min-w-[140px] max-w-[230px] flex-1">
+        <div className="relative col-span-2 w-full sm:min-w-[140px] sm:max-w-[230px] sm:flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={filters.q}
             onChange={(e) => onChange({ ...filters, q: e.target.value })}
             placeholder="Search title, client, project…"
-            className="!py-1.5 pl-8 text-[12px]"
+            className="pl-8"
           />
         </div>
 
-        {active > 0 && (
-          <button
-            onClick={() => onChange({ ...filters, approval: "", platforms: "", mine: false, q: "", clientId: "" })}
-            className="inline-flex items-center gap-1 rounded-xl border border-border px-2 py-1 text-[10.5px] font-semibold text-muted-foreground hover:text-foreground"
-          >
-            <X className="size-3" /> Clear ({active})
-          </button>
-        )}
-
-        <Btn variant="ghost" onClick={onSaveView} title="Save this filter set" className="!px-2">
-          <SlidersHorizontal className="size-3.5" />
-        </Btn>
-        <div className="flex items-center gap-1">
-          <Btn variant="ghost" onClick={() => onExport("csv")} className="!px-2 text-[10.5px]">CSV</Btn>
-          <Btn variant="ghost" onClick={() => onExport("ics")} className="!px-2 text-[10.5px]">iCal</Btn>
+        <div className="col-span-2 flex items-center justify-between gap-1 sm:col-auto sm:ml-auto">
+          {active > 0 ? (
+            <button
+              onClick={() => onChange({ ...filters, approval: "", platforms: "", mine: false, q: "", clientId: "" })}
+              className="inline-flex min-h-[38px] items-center gap-1 rounded-xl border border-border px-2.5 text-meta font-semibold text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3" /> Clear ({active})
+            </button>
+          ) : <span />}
+          <div className="flex items-center gap-1">
+            <Btn variant="ghost" onClick={onSaveView} title="Save this filter set" aria-label="Save this filter set" className="!px-2">
+              <SlidersHorizontal className="size-3.5" />
+            </Btn>
+            <Btn variant="ghost" onClick={() => onExport("csv")} className="!px-2">CSV</Btn>
+            <Btn variant="ghost" onClick={() => onExport("ics")} className="!px-2">iCal</Btn>
+          </div>
         </div>
+      </div>
+
+      {/* Source filters used to disappear below md, so phones could not narrow
+          the feed at all. They now live on a one-line scroll strip. */}
+      <div className="scroll-x -mx-3 gap-1.5 px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+        {SOURCE_TOGGLES.map((s) => (
+          <button
+            key={s}
+            onClick={() => toggleSource(s)}
+            className={cn(
+              "whitespace-nowrap rounded-full border px-3 py-1.5 text-meta font-semibold transition-colors",
+              sources.includes(s) ? "border-primary/30 bg-primary/5 text-primary" : "border-border text-muted-foreground/70 hover:text-foreground"
+            )}
+          >
+            {SOURCE_LABEL[s]}
+          </button>
+        ))}
       </div>
     </div>
   );

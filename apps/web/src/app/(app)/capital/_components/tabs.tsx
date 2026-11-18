@@ -529,13 +529,13 @@ export function InvoicesTab({ error, refresh, refreshKey, clients, onView, onNew
         <StatCard label="Overdue" value={formatBDT(overdueValue)} sub={`${counts.overdue} invoice${counts.overdue === 1 ? "" : "s"} past due`} tone="rose" icon={<AlarmClock className="size-4" />} index={3} />
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="scroll-x -mx-3 gap-1.5 px-3 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
         {quickChips.map((c) => (
           <button
             key={c.key}
             onClick={() => setQuick(c.key)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-meta font-semibold transition-colors",
+              "inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-body font-semibold transition-colors sm:py-1.5 sm:text-meta",
               quick === c.key ? "bg-brand-gradient text-white" : "border border-border bg-card text-muted-foreground hover:text-foreground"
             )}
           >
@@ -543,28 +543,30 @@ export function InvoicesTab({ error, refresh, refreshKey, clients, onView, onNew
             <span className={cn("rounded-full px-1.5 py-0.5 text-micro font-bold tabular-nums", quick === c.key ? "bg-white/20" : "bg-muted")}>{c.count}</span>
           </button>
         ))}
-        {draftValue > 0 && (
-          <span className="ml-auto self-center text-meta text-amber-600 dark:text-amber-400">
-            {drafts} draft{drafts === 1 ? "" : "s"} ({formatBDT(draftValue)}) not issued
-          </span>
-        )}
       </div>
+      {draftValue > 0 && (
+        <p className="-mt-2 text-meta text-amber-600 dark:text-amber-400">
+          {drafts} draft{drafts === 1 ? "" : "s"} ({formatBDT(draftValue)}) not issued
+        </p>
+      )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative max-w-sm flex-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative w-full sm:max-w-sm sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by invoice # or client…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
-        <Select value={status} onChange={(e) => setStatus(e.target.value)} className="!w-40"><option value="">All statuses</option>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select>
-        <Select value={clientId} onChange={(e) => setClientId(e.target.value)} className="!w-44"><option value="">All clients</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select>
-        <input value={minAmt} onChange={(e) => setMinAmt(e.target.value)} type="number" min={0} placeholder="Min ৳" className="w-24 rounded-xl border border-border bg-card px-3 py-2 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
-        <input value={maxAmt} onChange={(e) => setMaxAmt(e.target.value)} type="number" min={0} placeholder="Max ৳" className="w-24 rounded-xl border border-border bg-card px-3 py-2 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+          <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full sm:!w-40"><option value="">All statuses</option>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select>
+          <Select value={clientId} onChange={(e) => setClientId(e.target.value)} className="w-full sm:!w-44"><option value="">All clients</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select>
+          <input value={minAmt} onChange={(e) => setMinAmt(e.target.value)} type="number" min={0} placeholder="Min ৳" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20 sm:w-24" />
+          <input value={maxAmt} onChange={(e) => setMaxAmt(e.target.value)} type="number" min={0} placeholder="Max ৳" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20 sm:w-24" />
+        </div>
         {hasFilters && (
-          <button onClick={() => { setQ(""); setStatus(""); setClientId(""); setMinAmt(""); setMaxAmt(""); setQuick("all"); }} className="text-meta font-bold text-primary hover:underline">
+          <button onClick={() => { setQ(""); setStatus(""); setClientId(""); setMinAmt(""); setMaxAmt(""); setQuick("all"); }} className="self-start py-1 text-meta font-bold text-primary hover:underline sm:self-auto">
             Reset
           </button>
         )}
-        <div className="ml-auto"><Btn variant="primary" onClick={onNew} data-testid="new-invoice-btn"><Plus className="size-3.5" /> New Invoice</Btn></div>
+        <div className="hidden lg:ml-auto lg:block"><Btn variant="primary" onClick={onNew} data-testid="new-invoice-btn"><Plus className="size-3.5" /> New Invoice</Btn></div>
       </div>
 
       {selected.length > 0 && (
@@ -838,15 +840,17 @@ export function ExpensesTab({ expenses, error, refresh, notify, onRecord, onVend
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative max-w-sm flex-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative w-full sm:max-w-sm sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search expenses…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
-        <Select value={cat} onChange={(e) => setCat(e.target.value)} className="!w-44"><option value="">All categories</option>{catOptions.map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select>
-        <Select value={status} onChange={(e) => setStatus(e.target.value)} className="!w-36"><option value="">All statuses</option>{EXPENSE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <Select value={cat} onChange={(e) => setCat(e.target.value)} className="w-full sm:!w-44"><option value="">All categories</option>{catOptions.map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select>
+          <Select value={status} onChange={(e) => setStatus(e.target.value)} className="w-full sm:!w-36"><option value="">All statuses</option>{EXPENSE_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}</Select>
+        </div>
         {policy && (
-          <button onClick={() => setPolicyOpen(true)} className="ml-auto flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-micro text-muted-foreground transition-colors hover:text-foreground" title="Open the approval matrix">
+          <button onClick={() => setPolicyOpen(true)} className="flex items-center gap-1.5 self-start rounded-lg px-1.5 py-1 text-micro text-muted-foreground transition-colors hover:text-foreground sm:ml-auto" title="Open the approval matrix">
             <ShieldCheck className={cn("size-3.5", policy.enabled ? "text-emerald-500" : "text-amber-500")} />
             {policy.enabled ? `${policy.rules.length} approval limits on` : "Approval limits off"}
             <span className="font-bold text-primary">View</span>
@@ -1185,22 +1189,24 @@ export function IncomeTab({ income, error, refresh, stats, bankAccounts, clients
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative max-w-sm flex-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative w-full sm:max-w-sm sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search client, project or invoice…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
-        <Select value={method} onChange={(e) => setMethod(e.target.value)} className="!w-40">
-          <option value="">All methods</option>
-          {methodOptions.map((m: any) => <option key={m} value={m}>{label(m)}</option>)}
-        </Select>
-        <Select value={range} onChange={(e) => setRange(e.target.value as any)} className="!w-40">
-          <option value="all">All time</option>
-          <option value="month">This month</option>
-          <option value="last">Last month</option>
-          <option value="year">This year</option>
-        </Select>
-        <span className="ml-auto rounded-xl border border-border/60 bg-card px-3 py-2 text-meta text-muted-foreground">
+        <div className="grid grid-cols-2 gap-2 sm:flex">
+          <Select value={method} onChange={(e) => setMethod(e.target.value)} className="w-full sm:!w-40">
+            <option value="">All methods</option>
+            {methodOptions.map((m: any) => <option key={m} value={m}>{label(m)}</option>)}
+          </Select>
+          <Select value={range} onChange={(e) => setRange(e.target.value as any)} className="w-full sm:!w-40">
+            <option value="all">All time</option>
+            <option value="month">This month</option>
+            <option value="last">Last month</option>
+            <option value="year">This year</option>
+          </Select>
+        </div>
+        <span className="self-start rounded-xl border border-border/60 bg-card px-3 py-2 text-meta text-muted-foreground sm:ml-auto">
           In view: <b className="tabular-nums text-foreground">{formatBDT(rowsTotal)}</b>
         </span>
       </div>
@@ -2200,14 +2206,14 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
         onSaved={onSaved}
         notify={notify ?? (() => {})}
       />
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative max-w-sm flex-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative w-full sm:max-w-sm sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search accounts…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
-        <Select value={cat} onChange={(e) => setCat(e.target.value)} className="!w-40"><option value="">All categories</option>{ACCOUNT_CATEGORIES.map((c) => <option key={c} value={c}>{label(c)}</option>)}</Select>
-        <div className="ml-auto flex items-center gap-2">
-          <Btn variant="primary" onClick={onAdd}><Plus className="size-3.5" /> Add Account</Btn>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+          <Select value={cat} onChange={(e) => setCat(e.target.value)} className="w-full sm:!w-40"><option value="">All categories</option>{ACCOUNT_CATEGORIES.map((c) => <option key={c} value={c}>{label(c)}</option>)}</Select>
+          <Btn variant="primary" onClick={onAdd} className="w-full sm:w-auto"><Plus className="size-3.5" /> Add Account</Btn>
         </div>
       </div>
 
@@ -2318,13 +2324,13 @@ export function VendorsTab({ vendors, expenses, onEdit, onAdd, onDelete, onSaved
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative max-w-sm flex-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative w-full sm:max-w-sm sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search vendors…" className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20" />
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Btn variant="primary" onClick={onAdd} data-testid="add-vendor-btn"><UserPlus className="size-3.5" /> Add Vendor</Btn>
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <Btn variant="primary" onClick={onAdd} data-testid="add-vendor-btn" className="w-full sm:w-auto"><UserPlus className="size-3.5" /> Add Vendor</Btn>
         </div>
       </div>
 

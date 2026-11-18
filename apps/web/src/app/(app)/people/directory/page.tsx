@@ -145,32 +145,34 @@ export default function DirectoryPage() {
       />
 
       {/* Filter bar */}
-      <div className="mt-3 mb-2 flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[180px] max-w-sm flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search name, role, email…"
-              aria-label="Search employees"
-              className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-          <Select value={dept} onChange={(e) => setDept(e.target.value)} aria-label="Filter by department" className="!w-40 !py-1.5 text-meta">
+      <div className="mt-3 mb-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative w-full sm:max-w-sm sm:flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search name, role, email…"
+            aria-label="Search employees"
+            className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+          />
+        </div>
+        <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+          <Select value={dept} onChange={(e) => setDept(e.target.value)} aria-label="Filter by department" className="w-full sm:!w-40">
             <option value="">All departments</option>
             {depts.map((d) => <option key={d} value={d}>{d}</option>)}
           </Select>
-          <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status" className="!w-36 !py-1.5 text-meta">
+          <Select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status" className="w-full sm:!w-36">
             <option value="">Any status</option>
             <option value="ACTIVE">Active</option>
             <option value="ON_LEAVE">On leave</option>
             <option value="EXITED">Exited</option>
           </Select>
+        </div>
+        <div className="flex items-center justify-between gap-2 sm:ml-auto">
           <span className="inline-flex items-center gap-1 text-micro text-muted-foreground">
             <SlidersHorizontal className="size-3" /> {activeFilters ? `${activeFilters} filter${activeFilters > 1 ? "s" : ""}` : "No filters"}
           </span>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             {selected.size > 0 && (
               <span className="text-micro font-semibold text-muted-foreground">{selected.size} selected</span>
             )}
@@ -178,7 +180,7 @@ export default function DirectoryPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="scroll-x -mx-3 w-full gap-1.5 px-3 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
           {QUICK_FILTERS.map((c) => {
             const on = chip === c.id;
             return (
@@ -188,7 +190,7 @@ export default function DirectoryPage() {
                 aria-pressed={on}
                 onClick={() => setChip(on ? "" : c.id)}
                 className={cn(
-                  "rounded-full border px-2.5 py-1 text-micro font-semibold transition-colors",
+                  "whitespace-nowrap rounded-full border px-3 py-2 text-body font-semibold transition-colors sm:px-2.5 sm:py-1 sm:text-micro",
                   on ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:text-foreground",
                 )}
               >
@@ -196,16 +198,16 @@ export default function DirectoryPage() {
               </button>
             );
           })}
-          {(activeFilters > 0 || selected.size > 0) && (
-            <button
-              type="button"
-              onClick={() => { setQ(""); setDept(""); setStatus(""); setChip(""); setSelected(new Set()); }}
-              className="ml-1 text-micro font-semibold text-muted-foreground hover:text-foreground"
-            >
-              Clear all
-            </button>
-          )}
         </div>
+        {(activeFilters > 0 || selected.size > 0) && (
+          <button
+            type="button"
+            onClick={() => { setQ(""); setDept(""); setStatus(""); setChip(""); setSelected(new Set()); }}
+            className="self-start text-micro font-semibold text-muted-foreground hover:text-foreground"
+          >
+            Clear all
+          </button>
+        )}
       </div>
 
       {loading || error ? (

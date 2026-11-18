@@ -136,7 +136,7 @@ export function BankAccountsCard({
                       <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Inactive</span>
                     )}
                   </p>
-                  <p className="mt-0.5 truncate text-meta text-muted-foreground">
+                  <p className="mt-0.5 text-meta leading-snug text-muted-foreground line-clamp-2 sm:truncate">
                     {[
                       account.bankName,
                       account.accountNumber,

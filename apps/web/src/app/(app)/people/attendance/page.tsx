@@ -406,25 +406,25 @@ export default function AttendancePage() {
         actions={canEdit ? <Btn variant="primary" onClick={() => { setEdit(null); setOpen(true); }}><Plus className="size-3.5" /> Record</Btn> : undefined}
       >
         <div className="flex flex-wrap items-center gap-1.5">
-          <Input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setRangeDays(null); }} className="!w-40 !py-1 text-meta" />
+          <Input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setRangeDays(null); }} className="w-full sm:!w-40 sm:!py-1 sm:text-meta" />
           {([7, 15, 30] as const).map((n) => (
             <button
               key={n}
               onClick={() => setRangeDays((d) => (d === n ? null : n))}
               className={cn(
-                "rounded-lg px-2 py-1 text-micro font-bold transition-colors",
+                "rounded-lg px-3 py-2 text-body font-bold transition-colors sm:px-2 sm:py-1 sm:text-micro",
                 rangeDays === n ? "bg-brand-gradient text-white" : "border border-border text-muted-foreground hover:text-foreground"
               )}
             >
               {n}D
             </button>
           ))}
-          <Btn variant="outline" onClick={() => kiosk("in")} disabled={kioskBusy} className={cn("!px-2 !py-1 text-micro", kioskBusy && "opacity-60")}><Fingerprint className="size-3.5" /> Kiosk in</Btn>
-          <Btn variant="outline" onClick={() => kiosk("out")} disabled={kioskBusy} className={cn("!px-2 !py-1 text-micro", kioskBusy && "opacity-60")}><Fingerprint className="size-3.5" /> Out</Btn>
+          <Btn variant="outline" onClick={() => kiosk("in")} disabled={kioskBusy} className={cn("text-body sm:text-micro", kioskBusy && "opacity-60")}><Fingerprint className="size-3.5" /> Kiosk in</Btn>
+          <Btn variant="outline" onClick={() => kiosk("out")} disabled={kioskBusy} className={cn("text-body sm:text-micro", kioskBusy && "opacity-60")}><Fingerprint className="size-3.5" /> Out</Btn>
           {canEdit && (
             <>
-              <Btn variant="outline" onClick={() => setImportOpen(true)} className="!px-2 !py-1 text-micro"><Upload className="size-3.5" /> Import</Btn>
-              <Btn variant="outline" onClick={recompute} disabled={recompBusy} className={cn("!px-2 !py-1 text-micro", recompBusy && "opacity-60")}><RotateCcw className="size-3.5" /> Recompute</Btn>
+              <Btn variant="outline" onClick={() => setImportOpen(true)} className="text-body sm:text-micro"><Upload className="size-3.5" /> Import</Btn>
+              <Btn variant="outline" onClick={recompute} disabled={recompBusy} className={cn("text-body sm:text-micro", recompBusy && "opacity-60")}><RotateCcw className="size-3.5" /> Recompute</Btn>
             </>
           )}
         </div>

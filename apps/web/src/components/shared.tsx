@@ -50,7 +50,7 @@ export function PageHeader({
 }) {
   const Heading = level === 1 ? "h1" : "h2";
   return (
-    <div className={cn("mb-6 flex flex-wrap items-end justify-between gap-4", className)}>
+    <div className={cn("mb-4 flex flex-wrap items-end justify-between gap-3 sm:mb-6 sm:gap-4", className)}>
       <div>
         <Heading className="text-page font-heading font-semibold tracking-tight">{title}</Heading>
         {subtitle && <p className="mt-1 text-body-lg text-muted-foreground">{subtitle}</p>}
@@ -74,7 +74,7 @@ export function CardShell({
     <div
       id={id}
       className={cn(
-        "card-lift rounded-2xl border border-border/60 bg-card p-5 shadow-sm",
+        "card-lift rounded-2xl border border-border/60 bg-card p-4 shadow-sm sm:p-5",
         id && "scroll-mt-24",
         className
       )}
@@ -247,7 +247,7 @@ export function StatCard({
             {(delta || sub) && (
               <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
                 {delta && <DeltaPill value={delta} good={deltaGood ?? true} />}
-                {sub && <span className="min-w-0 truncate text-meta text-muted-foreground">{sub}</span>}
+                {sub && <span className="min-w-0 text-meta leading-snug text-muted-foreground">{sub}</span>}
               </div>
             )}
           </div>

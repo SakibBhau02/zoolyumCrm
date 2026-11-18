@@ -23,7 +23,7 @@ export default function CapitalTabNav() {
           key={t.key}
           href={t.href}
           className={cn(
-            "whitespace-nowrap rounded-lg px-3.5 py-2 text-meta font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50",
+            "whitespace-nowrap rounded-lg px-3.5 py-2.5 text-body font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 sm:py-2 sm:text-meta",
             activeKey === t.key
               ? "bg-primary text-primary-foreground shadow-sm"
               : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"

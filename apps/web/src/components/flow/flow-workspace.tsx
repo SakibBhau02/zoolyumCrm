@@ -1604,7 +1604,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
           <div className="mt-4">
             <div className="mb-3 flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-44 max-w-sm flex-1">
+                <div className="relative w-full sm:min-w-44 sm:max-w-sm sm:flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     value={q}
@@ -1613,7 +1613,7 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                     className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
-                <Btn variant="outline" onClick={() => setAdvanced((v) => !v)} className="!px-3 !py-2 text-meta">
+                <Btn variant="outline" onClick={() => setAdvanced((v) => !v)}>
                   <SlidersHorizontal className="size-3.5" /> Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
                 </Btn>
                 {hasFilters && (
@@ -1645,20 +1645,20 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
                 </div>
               )}
               {advanced && (
-                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 p-2">
-                  <Select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="!w-40">
+                <div className="grid grid-cols-2 items-center gap-2 rounded-xl border border-border/60 bg-muted/20 p-2 sm:flex sm:flex-wrap">
+                  <Select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="w-full sm:!w-40">
                     <option value="">All clients</option>
                     {(clients ?? []).map((c) => <option key={c.id} value={c.id}>{c.companyName}</option>)}
                   </Select>
-                  <Select value={managerFilter} onChange={(e) => setManagerFilter(e.target.value)} className="!w-40">
+                  <Select value={managerFilter} onChange={(e) => setManagerFilter(e.target.value)} className="w-full sm:!w-40">
                     <option value="">All managers</option>
                     {(managers ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </Select>
-                  <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="!w-36">
+                  <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full sm:!w-36">
                     <option value="">All statuses</option>
                     {PROJECT_STATUSES.map((s) => <option key={s} value={s}>{label(s)}</option>)}
                   </Select>
-                  <Select value={healthFilter} onChange={(e) => setHealthFilter(e.target.value)} className="!w-32">
+                  <Select value={healthFilter} onChange={(e) => setHealthFilter(e.target.value)} className="w-full sm:!w-32">
                     <option value="">All health</option>
                     {HEALTH_STATUSES.map((h) => <option key={h} value={h}>{label(h)}</option>)}
                   </Select>

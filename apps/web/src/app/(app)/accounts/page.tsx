@@ -1738,9 +1738,9 @@ export default function AccountsPage() {
               transition={{ duration: 0.18 }}
               className="overflow-hidden border-t border-border/60"
             >
-              <div className="flex flex-wrap items-end gap-3 px-3 py-3">
+              <div className="grid grid-cols-1 items-end gap-3 px-3 py-3 sm:flex sm:flex-wrap">
                 <Field label="Health">
-                  <Select value={health} onChange={(e) => setHealth(e.target.value)} className="!w-36">
+                  <Select value={health} onChange={(e) => setHealth(e.target.value)} className="w-full sm:!w-36">
                     <option value="">Any health</option>
                     <option value="GREEN">Green</option>
                     <option value="YELLOW">Yellow</option>
@@ -1748,7 +1748,7 @@ export default function AccountsPage() {
                   </Select>
                 </Field>
                 <Field label="Vertical">
-                  <Select value={vertical} onChange={(e) => setVertical(e.target.value)} className="!w-40">
+                  <Select value={vertical} onChange={(e) => setVertical(e.target.value)} className="w-full sm:!w-40">
                     <option value="">Any vertical</option>
                     {VERTICALS.map((v) => (
                       <option key={v} value={v}>{label(v)}</option>
@@ -1756,7 +1756,7 @@ export default function AccountsPage() {
                   </Select>
                 </Field>
                 <Field label="Account owner">
-                  <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="!w-44">
+                  <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className="w-full sm:!w-44">
                     <option value="">Anyone</option>
                     {(users ?? []).map((u) => (
                       <option key={u.id} value={u.id}>{u.name}</option>

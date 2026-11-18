@@ -209,7 +209,7 @@ export function ChipGroup<T extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               "inline-flex items-center gap-1.5 rounded-lg border font-semibold transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-              size === "sm" ? "px-2.5 py-1 text-meta" : "px-3 py-1.5 text-meta",
+              size === "sm" ? "px-3 py-2 text-body sm:px-2.5 sm:py-1 sm:text-meta" : "px-3.5 py-2.5 text-body sm:px-3 sm:py-1.5 sm:text-meta",
               active
                 ? o.tone ?? "border-primary/40 bg-primary/10 text-primary"
                 : "border-border bg-card text-muted-foreground hover:border-primary/25 hover:text-foreground"
@@ -289,7 +289,7 @@ export function Toggle({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-card px-3 py-2 transition-colors hover:border-primary/25 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/40",
+        "flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/70 bg-card px-3 py-2.5 transition-colors hover:border-primary/25 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/40 sm:py-2",
         className
       )}
     >
@@ -299,7 +299,7 @@ export function Toggle({
       </span>
       <span
         className={cn(
-          "relative flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200",
+          "relative flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 sm:h-5 sm:w-9",
           checked ? "bg-primary" : "bg-muted"
         )}
       >
@@ -311,8 +311,8 @@ export function Toggle({
         />
         <span
           className={cn(
-            "pointer-events-none absolute left-0.5 size-4 rounded-full bg-white shadow-sm transition-transform duration-200",
-            checked && "translate-x-4"
+            "pointer-events-none absolute left-0.5 size-5 rounded-full bg-white shadow-sm transition-transform duration-200 sm:size-4",
+            checked && "translate-x-5 sm:translate-x-4"
           )}
         />
       </span>
@@ -635,7 +635,7 @@ export function Segmented<T extends string>({
           aria-label={o.ariaLabel}
           aria-pressed={value === o.value}
           className={cn(
-            "rounded-lg px-3 py-1.5 text-meta font-semibold transition-all",
+            "rounded-lg px-3 py-2.5 text-body font-semibold transition-all sm:py-1.5 sm:text-meta",
             value === o.value
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:text-foreground"
@@ -689,7 +689,7 @@ export function FormActions({
         <button
           type="button"
           onClick={cancel}
-          className="rounded-xl border border-border px-4 py-2 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="rounded-xl border border-border px-4 py-2.5 text-body font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:py-2"
         >
           Cancel
         </button>
@@ -698,7 +698,7 @@ export function FormActions({
           form={formId}
           disabled={busy}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-body font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60",
+            "inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-body font-bold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-60 sm:py-2",
             danger
               ? "bg-rose-500 text-white hover:bg-rose-500/90"
               : "bg-primary text-primary-foreground hover:bg-primary/90"

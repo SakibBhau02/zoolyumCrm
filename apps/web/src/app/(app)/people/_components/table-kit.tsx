@@ -57,20 +57,20 @@ export function TableToolbar({
   count?: React.ReactNode;
 }) {
   return (
-    <div className="mb-2 flex flex-wrap items-center gap-2">
+    <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
       {onQ && (
-        <div className="relative max-w-xs flex-1">
+        <div className="relative w-full sm:max-w-xs sm:flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             value={q}
             onChange={(e) => onQ(e.target.value)}
             placeholder={placeholder}
-            className="w-full rounded-xl border border-border bg-card py-1.5 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
+            className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-body outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20"
           />
         </div>
       )}
       {count && <span className="text-meta text-muted-foreground">{count}</span>}
-      {right && <div className="ml-auto flex flex-wrap items-center gap-2">{right}</div>}
+      {right && <div className="flex flex-wrap items-center gap-2 sm:ml-auto">{right}</div>}
     </div>
   );
 }

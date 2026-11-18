@@ -64,11 +64,11 @@ export function PeopleHero({
         </div>
 
         {!!stats?.length && (
-          <div className="grid w-full grid-cols-2 gap-1.5 sm:flex sm:w-auto sm:min-w-0 sm:flex-1 sm:flex-wrap sm:items-stretch">
+          <div className="grid w-full grid-cols-2 gap-1.5 sm:grid-cols-3 lg:flex lg:w-auto lg:min-w-0 lg:flex-1 lg:flex-wrap lg:items-stretch">
             {stats.map((s) => (
               <div
                 key={s.label}
-                className="min-w-0 rounded-lg border border-border/50 bg-muted/25 px-2.5 py-1.5 sm:min-w-[78px]"
+                className="min-w-0 rounded-lg border border-border/50 bg-muted/25 px-2.5 py-1.5 lg:min-w-[78px]"
                 title={`${s.label}${s.sub ? ` — ${s.sub}` : ""}`}
               >
                 <p className="truncate text-meta font-semibold uppercase tracking-wider text-muted-foreground">{s.label}</p>
@@ -111,7 +111,7 @@ export function PeopleTabs<T extends string>({
             aria-current={active ? "page" : undefined}
             onClick={() => onChange(t.id)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-body font-semibold transition-colors",
+              "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-body font-semibold transition-colors sm:py-1 sm:text-meta",
               active
                 ? "bg-brand-gradient text-white shadow-sm"
                 : "border border-border bg-card text-muted-foreground hover:text-foreground"

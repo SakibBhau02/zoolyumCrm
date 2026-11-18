@@ -420,6 +420,21 @@ html {
   }
 }
 
+/* Phone-sized tap targets. Utilities like `!py-1` keep the desktop density but
+   must not leave a 28px control on a touch screen. */
+@media (max-width: 639px) {
+  select,
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea {
+    min-height: 42px;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 20px;
+    height: 20px;
+  }
+}
+
 /* Touch devices get feedback, not sticky desktop hover states. */
 @media (hover: none) {
   .card-lift:hover { transform: none; box-shadow: none; }
@@ -428,6 +443,30 @@ html {
   [role="button"] {
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+  }
+}
+
+/* Phones and tablets: chips, view toggles and table actions must be tappable.
+   Desktop keeps its compact density; small screens get a 36px target. */
+@media (max-width: 1023px) {
+  [aria-pressed],
+  [role="tab"] {
+    min-height: 36px;
+  }
+  tbody button,
+  tbody select {
+    min-height: 36px;
+  }
+  thead button {
+    min-height: 32px;
+  }
+  tbody button[aria-label],
+  tbody a[title] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    min-height: 36px;
   }
 }
 

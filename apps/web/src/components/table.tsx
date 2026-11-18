@@ -21,7 +21,7 @@ export function TableShell({ children, footer, noScroll, hideScrollbar, scrollY 
         style={scrollY && !noScroll ? { maxHeight: "min(70vh, 640px)", overflowY: "auto" } : undefined}
       >{children}</div>
       {footer && (
-        <div className="flex items-center justify-between border-t border-border/60 px-5 py-3">
+        <div className="flex items-center justify-between gap-2 border-t border-border/60 px-4 py-3 sm:px-5">
           {footer}
         </div>
       )}
@@ -132,7 +132,7 @@ export function Btn({
       onClick={onClick}
       {...rest}
       className={cn(
-        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2 text-body font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 py-2.5 text-body font-semibold transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-1 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-50 sm:py-2 max-sm:min-h-10",
         variant === "primary" &&
           "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80",
         variant === "ghost" &&

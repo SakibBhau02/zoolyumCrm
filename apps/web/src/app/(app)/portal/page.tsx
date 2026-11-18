@@ -261,7 +261,7 @@ export default function PortalPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Portal Users" value={users?.length ?? "—"} sub="client logins created" icon={<Globe2 className="size-5" />} />
         <StatCard label="Deliverable Decisions" value={approvals?.length ?? "—"} sub="approve / revision" icon={<ThumbsUp className="size-5" />} />
         <StatCard label="Client Comments" value={comments?.length ?? "—"} sub="latest 50" icon={<MessageSquareText className="size-5" />} />

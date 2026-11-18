@@ -247,9 +247,9 @@ export function Topbar() {
             className="flex items-center gap-2.5 rounded-xl py-1 pl-1 pr-2 transition-colors hover:bg-muted/60"
           >
             <Avatar name={user?.name ?? "Z"} />
-            <span className="hidden text-left sm:block">
-              <span className="block text-body font-semibold leading-tight">{user?.name ?? "—"}</span>
-              <span className="block text-micro leading-tight text-muted-foreground">
+            <span className="hidden max-w-[9rem] text-left sm:block">
+              <span className="block truncate text-body font-semibold leading-tight">{user?.name ?? "—"}</span>
+              <span className="block truncate text-micro leading-tight text-muted-foreground">
                 {user?.role ?? ""}
               </span>
             </span>
