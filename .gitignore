@@ -17,6 +17,9 @@ qa-evidence/
 artifacts/
 .playwright-mcp/
 *.png
+# …except the shipped brand artwork + app icon, which must deploy with the app
+!apps/web/public/brand/*.png
+!apps/web/src/app/icon.png
 qa/*.json
 qa-*.log*
 qa-tunnel-url.txt

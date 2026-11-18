@@ -1862,6 +1862,8 @@ model Invoice {
   @@index([clientId])
   @@index([status])
   @@index([issueDate])
+  /// The overdue sweep flips rows by (status, dueDate) every ten minutes.
+  @@index([status, dueDate])
 }
 
 model InvoiceReminder {
@@ -2066,6 +2068,19 @@ model BankAccount {
   accountType           BankAccountType
   currency              String                 @default("BDT")
   currentBalance        Decimal                @default(0) @db.Decimal(14, 2)
+  /// Print details. A BANK account stores bankName + branch + routingNumber;
+  /// an MFS wallet (bKash/Nagad/Rocket/Upay) stores accountNumber as the
+  /// mobile number. Kept nullable so existing rows stay valid.
+  accountHolder         String?
+  bankName              String?
+  accountNumber         String?
+  branch                String?
+  routingNumber         String?
+  /// Show this account in the invoice "Pay via" box.
+  showOnInvoice         Boolean                @default(true)
+  /// The account highlighted first on invoices and prefilled in forms.
+  isPrimary             Boolean                @default(false)
+  isActive              Boolean                @default(true)
   expenses              Expense[]
   manualIncome          ManualIncome[]
   payments              Payment[]
@@ -3339,6 +3354,8 @@ enum BankAccountType {
   BANK
   BKASH
   NAGAD
+  ROCKET
+  UPAY
   CASH
 }
 

@@ -148,4 +148,4 @@ npm run check       # typecheck + smoke
 
 ## Design system
 
-Zoolyum UI follows the EduTrack-inspired design spec in `docs/design-system.md` — OKLCH tokens, violet→fuchsia→sky gradient brand, glass surfaces, dark mode, Geist/Space Grotesk/Hind Siliguri fonts, BDT formatting (lakh-style).
+Zoolyum UI follows the EduTrack-inspired design spec in `docs/design-system.md` — orange/black/white palette taken from the ZOO LYUM logo, AA-safe brand tokens, glass surfaces, dark mode, Geist/Space Grotesk/Hind Siliguri fonts, BDT formatting (lakh-style).

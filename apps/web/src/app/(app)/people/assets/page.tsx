@@ -77,7 +77,7 @@ export default function AssetsPage() {
           { label: "In repair", value: summary?.repair ?? "—", sub: "vendor", tone: summary?.repair ? "amber" : "default" },
           { label: "Book value", value: summary?.totalValue != null ? formatBDT(summary.totalValue) : "—", sub: "cost" },
         ]}
-        actions={canEdit ? <Btn variant="primary" onClick={() => setAddOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> Add</Btn> : undefined}
+        actions={canEdit ? <Btn variant="primary" onClick={() => setAddOpen(true)}><Plus className="size-3.5" /> Add</Btn> : undefined}
       />
 
       <div className="mt-3">

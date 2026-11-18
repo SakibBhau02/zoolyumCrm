@@ -234,7 +234,7 @@ export default function PayrollPage() {
         actions={
           <div className="flex items-center gap-1.5">
             <Input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="!w-36 !py-1 text-meta" />
-            <Btn variant="primary" onClick={() => setRunOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Play className="size-3.5" /> Run</Btn>
+            <Btn variant="primary" onClick={() => setRunOpen(true)}><Play className="size-3.5" /> Run</Btn>
           </div>
         }
       />

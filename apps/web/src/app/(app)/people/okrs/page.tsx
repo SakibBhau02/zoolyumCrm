@@ -54,7 +54,7 @@ export default function OkrsPage() {
           { label: "At risk", value: (okrs ?? []).filter((o: any) => o.status === "at-risk").length, tone: "amber" },
           { label: "Avg progress", value: `${(okrs ?? []).length ? Math.round((okrs ?? []).reduce((s: number, o: any) => s + Number(o.overallProgress ?? 0), 0) / (okrs ?? []).length) : 0}%`, tone: "sky" },
         ]}
-        actions={<Btn variant="primary" onClick={() => setOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> OKR</Btn>}
+        actions={<Btn variant="primary" onClick={() => setOpen(true)}><Plus className="size-3.5" /> OKR</Btn>}
       />
       <LoadOrError loading={loading} error={error} onRetry={reload} skeleton={4} />
       {!loading && !error && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { ReportsTab } from "../_components/tabs";
+import { ReportsTab } from "../_components/tab-loader";
 import { useCapital } from "../_components/capital-context";
 
 export default function CapitalReportsPage() {

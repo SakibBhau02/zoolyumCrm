@@ -469,7 +469,7 @@ function FactorCard({
             type="checkbox"
             checked={factor.enabled !== false}
             onChange={(e) => onPatch({ enabled: e.target.checked })}
-            className="size-4 accent-violet-600"
+            className="size-4 accent-primary"
           />
         </label>
         <Input
@@ -744,7 +744,7 @@ function ProfilesEditor({
                       type="checkbox"
                       checked={(profile.match?.billingCycleType ?? []).includes(c.value)}
                       onChange={(e) => patchCycle(index, c.value, e.target.checked)}
-                      className="size-3.5 accent-violet-600"
+                      className="size-3.5 accent-primary"
                     />
                     {c.label}
                   </label>
@@ -825,7 +825,7 @@ function OverallEditor({
                         : (policy.levels ?? []).filter((l: string) => l !== level),
                     })
                   }
-                  className="size-3.5 accent-violet-600"
+                  className="size-3.5 accent-primary"
                 />
                 {level}
               </label>
@@ -875,7 +875,7 @@ function OverallEditor({
                 type="checkbox"
                 checked={component.enabled !== false}
                 onChange={(e) => patchComponent(index, { enabled: e.target.checked })}
-                className="size-4 accent-violet-600"
+                className="size-4 accent-primary"
               />
               <span className="flex-1 text-body font-semibold">{component.label}</span>
               <span className="font-mono text-micro text-muted-foreground">{component.key}</span>
@@ -912,7 +912,7 @@ function OverallEditor({
                   type="checkbox"
                   checked={alerts?.notifyImprovements !== false}
                   onChange={(e) => patchAlerts({ notifyImprovements: e.target.checked })}
-                  className="size-4 accent-violet-600"
+                  className="size-4 accent-primary"
                 />
                 Also on recovery
               </label>
@@ -921,7 +921,7 @@ function OverallEditor({
                   type="checkbox"
                   checked={alerts?.enabled !== false}
                   onChange={(e) => patchAlerts({ enabled: e.target.checked })}
-                  className="size-4 accent-violet-600"
+                  className="size-4 accent-primary"
                 />
                 Alerts on
               </label>
@@ -989,7 +989,7 @@ function OverridesEditor({
                 type="checkbox"
                 checked={rule.enabled !== false}
                 onChange={(e) => patch(index, { enabled: e.target.checked })}
-                className="size-4 accent-violet-600"
+                className="size-4 accent-primary"
               />
             </div>
             <Labeled label="Metric">

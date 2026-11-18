@@ -102,7 +102,7 @@ export default function AnalyticsPage() {
           { label: "Meetings", value: latestTotals?.meetingsAttended ?? "—", sub: latest?.label, tone: "violet" },
           { label: "Shoots", value: latestTotals?.shoots ?? "—", sub: latest?.label, tone: "emerald" },
         ]}
-        actions={<Btn onClick={exportCsv} className="!px-2.5 !py-1.5 text-meta"><Download className="size-3.5" /> CSV</Btn>}
+        actions={<Btn onClick={exportCsv}><Download className="size-3.5" /> CSV</Btn>}
       />
 
       <div className="flex flex-wrap items-center gap-2">

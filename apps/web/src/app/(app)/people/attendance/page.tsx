@@ -403,7 +403,7 @@ export default function AttendancePage() {
           { label: "Absent", value: rpl ? "—" : overall.absent, sub: overall.unrecorded > 0 ? `${overall.unrecorded} no record` : rangeLabel, tone: overall.absent ? "rose" : "default" },
           { label: "Inside", value: lvLoading ? "—" : `${live?.inside ?? 0}/${live?.total ?? 0}`, sub: "now", tone: "sky" },
         ]}
-        actions={canEdit ? <Btn variant="primary" onClick={() => { setEdit(null); setOpen(true); }} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> Record</Btn> : undefined}
+        actions={canEdit ? <Btn variant="primary" onClick={() => { setEdit(null); setOpen(true); }}><Plus className="size-3.5" /> Record</Btn> : undefined}
       >
         <div className="flex flex-wrap items-center gap-1.5">
           <Input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setRangeDays(null); }} className="!w-40 !py-1 text-meta" />

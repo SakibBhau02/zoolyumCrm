@@ -1,20 +1,33 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { Bell, Download, FileDown, HandCoins, Mail, MessageCircle, Pencil, Plus, Printer, Trash2, Wallet } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatBDT, formatDate } from "@/lib/format";
 import { useBranding } from "@/lib/branding-context";
-import { buildInvoicePdf, buildInvoicePdfAsync, buildReceiptPdf } from "@/lib/invoice-pdf";
 import { REMINDER_TYPES, invoiceTotals, numberToWords, paymentSerial, receiptLabel } from "@/lib/invoice-utils";
 import { buildReceiptMessage, buildReminderMessage, mailtoLink, whatsappLink } from "@/lib/share";
 import { Avatar, CardShell, EmptyState, SectionTitle, SkeletonBlock, StatusBadge, cn } from "@/components/shared";
 import { Btn, Td, THead, Th } from "@/components/table";
 import { Field, Input, Modal, Select, Textarea } from "@/components/ui";
 import { INVOICE_STATUSES, label } from "./constants";
-import { InvoicePrintView } from "./invoice-print-view";
 import { useCapitalOptional } from "./capital-context";
 import { CreditNoteModal, InstallmentModal, PaymentModal } from "./modals";
+
+/**
+ * jsPDF (~350 KB) and the `qrcode` encoder only matter once someone downloads
+ * or prints an invoice, but both used to sit in the statically imported module
+ * graph of every capital tab. `invoice-pdf` is now imported inside the click
+ * handlers; the print preview — the only consumer of `qrcode` — is its own
+ * chunk that downloads when the preview opens.
+ */
+const fromPdf = () => import("@/lib/invoice-pdf");
+
+const InvoicePrintView = dynamic(
+  () => import("./invoice-print-view").then((m) => m.InvoicePrintView),
+  { ssr: false }
+);
 
 /**
  * Centered invoice detail popup (replaces the old right-side Drawer).
@@ -247,6 +260,7 @@ export function InvoiceDetailModal({
       } catch {
         shareUrl = undefined;
       }
+      const { buildInvoicePdfAsync } = await fromPdf();
       const doc = await buildInvoicePdfAsync({ ...invForPdf, shareUrl }, pdfBranding);
       doc.save(`${detail.invoiceNumber}.pdf`);
     } catch {
@@ -260,7 +274,7 @@ export function InvoiceDetailModal({
     if (!detail || receiptBusy) return;
     setReceiptBusy(true);
     try {
-      const { buildReceiptPdf: receiptBuilder, resolveBrandingImages, ensurePdfFonts } = await import("@/lib/invoice-pdf");
+      const { buildReceiptPdf: receiptBuilder, resolveBrandingImages, ensurePdfFonts } = await fromPdf();
       await ensurePdfFonts();
       const fullBranding = await resolveBrandingImages(branding ? { ...branding } : undefined);
       const rdoc = receiptBuilder(detail, { ...p, index: receiptIndex(p) }, fullBranding);
@@ -282,7 +296,7 @@ export function InvoiceDetailModal({
       setDetail(fresh);
       const newest = (fresh?.payments ?? [])[0];
       if (newest) {
-        const { buildReceiptPdf: receiptBuilder, resolveBrandingImages, ensurePdfFonts } = await import("@/lib/invoice-pdf");
+        const { buildReceiptPdf: receiptBuilder, resolveBrandingImages, ensurePdfFonts } = await fromPdf();
         await ensurePdfFonts();
         const fullBranding = await resolveBrandingImages(branding ? { ...branding } : undefined);
         const serial = newest.serial ?? paymentSerial(fresh.payments, newest.id);

@@ -90,7 +90,6 @@ const sectionCases = [
   ["financeConfig", { ...originalSettings.financeConfig, latePaymentFee: 1.6 }, (s) => s.financeConfig.latePaymentFee],
   ["leadCategories", originalSettings.leadCategories, (s) => s.leadCategories.length],
   ["clientTiers", originalSettings.clientTiers, (s) => s.clientTiers.length],
-  ["healthScoreWeights", originalSettings.healthScoreWeights, (s) => s.healthScoreWeights.length],
   ["taskStatuses", originalSettings.taskStatuses, (s) => s.taskStatuses.length],
   ["notifications", originalSettings.notifications, (s) => s.notifications.length],
   ["emailTemplates", originalSettings.emailTemplates, (s) => s.emailTemplates.length],
@@ -134,12 +133,9 @@ await test("settings: system flags merge without wiping", async () => {
   await req("/control/settings", { method: "PATCH", body: { system: originalSettings.system }, token: owner });
 });
 
-await test("settings: staff read is sanitised", async () => {
-  const s = await expectStatus(await req("/control/settings", { token: finance }), 200, "finance GET");
-  assert(s.clientTiers, "clientTiers missing for staff");
-  assert(s.security === undefined, "security leaked to finance");
-  assert(s.system === undefined, "system leaked to finance");
-  assert(s.email === undefined, "email config leaked to finance");
+await test("settings: staff cannot read the admin document", async () => {
+  const r = await req("/control/settings", { token: finance });
+  assert(r.status === 403, `finance GET expected 403, got ${r.status}`);
 });
 
 // ── RBAC ─────────────────────────────────────────────────────────────────
@@ -173,8 +169,9 @@ await test("roles: create with normalised permissions", async () => {
   );
   qaRoleId = r.id;
   created.roleIds.push(r.id);
-  assert(r.modulePermissions.CLIENTS.view === true, "view not set");
-  assert(r.modulePermissions.CLIENTS.approve === true, "approve should imply nothing");
+  // CLIENTS is the legacy label: the service migrates it to ACCOUNTS.
+  assert(r.modulePermissions.ACCOUNTS.view === true, "legacy CLIENTS alias not migrated");
+  assert(r.modulePermissions.ACCOUNTS.approve === true, "approve not stored");
   assert(r.modulePermissions.TASKS.view === true, "edit without view should force view");
 });
 

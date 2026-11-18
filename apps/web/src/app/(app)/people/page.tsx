@@ -185,7 +185,7 @@ export default function OverviewPage() {
         ]}
         actions={
           canEdit ? (
-            <Btn variant="primary" onClick={() => setAddOpen(true)} className="!px-2.5 !py-1.5 text-meta">
+            <Btn variant="primary" onClick={() => setAddOpen(true)}>
               <Plus className="size-3.5" /> Add employee
             </Btn>
           ) : undefined
@@ -358,7 +358,7 @@ function LatestMonthStrip({ totals, label: l }: { totals: any; label: string }) 
         {items.map((i) => (
           <div key={i.key} className="rounded-lg border border-border/50 bg-muted/25 px-2 py-1">
             <p className="text-micro font-semibold uppercase tracking-wide text-muted-foreground">{i.key}</p>
-            <p className={cn("font-heading text-body-lg font-bold tabular-nums", i.tone)}>{i.value ?? 0}</p>
+            <p className={cn("font-heading text-title font-bold tabular-nums", i.tone)}>{i.value ?? 0}</p>
           </div>
         ))}
       </div>
@@ -376,7 +376,7 @@ function MiniStat({ label: l, value, tone, icon }: { label: string; value: React
   return (
     <div className="rounded-lg border border-border/50 bg-muted/25 px-2 py-1.5">
       <p className="flex items-center gap-1 text-micro font-bold uppercase tracking-wide text-muted-foreground">{icon}{l}</p>
-      <p className={cn("font-heading text-body-lg font-bold tabular-nums", cls)}>{value}</p>
+      <p className={cn("font-heading text-title font-bold tabular-nums", cls)}>{value}</p>
     </div>
   );
 }

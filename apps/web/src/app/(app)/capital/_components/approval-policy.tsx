@@ -88,7 +88,7 @@ export function ApprovalPolicyModal({ open, onClose, notify }: { open: boolean; 
               type="checkbox"
               checked={policy.enabled}
               onChange={(e) => setPolicy({ ...policy, enabled: e.target.checked })}
-              className="size-4 cursor-pointer accent-violet-600"
+              className="size-4 cursor-pointer accent-primary"
             />
           </label>
 
@@ -101,7 +101,7 @@ export function ApprovalPolicyModal({ open, onClose, notify }: { open: boolean; 
               type="checkbox"
               checked={policy.requireDifferentApprover}
               onChange={(e) => setPolicy({ ...policy, requireDifferentApprover: e.target.checked })}
-              className="size-4 cursor-pointer accent-violet-600"
+              className="size-4 cursor-pointer accent-primary"
             />
           </label>
 

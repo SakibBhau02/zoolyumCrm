@@ -1056,8 +1056,9 @@ export class TasksService {
   async list(query: { status?: string; priority?: string; taskType?: string; assignee?: string; projectId?: string; sprintId?: string; q?: string; parent?: string; mine?: boolean; sort?: string; archived?: string; employeeId?: string; limit?: string | number; offset?: string | number }, user?: any) {
     // `mine` is resolved from the JWT here — the query string used to carry an
     // employeeId that the client never sent, so "Mine" silently matched nothing.
-    const mineEmployeeId = (query.mine === true || String(query.mine) === "true") ? (await this.getEmployeeIdByUserId(user?.sub)) ?? undefined : undefined;
+    // One lookup serves both: this ran the same User query twice per list call.
     const viewerEmployeeId = await this.getEmployeeIdByUserId(user?.sub);
+    const mineEmployeeId = (query.mine === true || String(query.mine) === "true") ? viewerEmployeeId ?? undefined : undefined;
     const privileged = !!user && (this.isAdmin(user.role) || this.isPM(user.role));
     // Every list query is scoped: a view-only role must not receive tasks it
     // cannot open (the detail endpoint already 403s those).

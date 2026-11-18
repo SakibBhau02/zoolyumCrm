@@ -83,19 +83,101 @@ export class MastersService {
 
 
   async bankAccounts() {
-    return this.prisma.bankAccount.findMany({ orderBy: { accountType: "asc" } });
+    // Primary first, then active, then by type — the invoice "Pay via" box and
+    // every payment picker consume this order directly.
+    return this.prisma.bankAccount.findMany({
+      orderBy: [{ isPrimary: "desc" }, { isActive: "desc" }, { accountType: "asc" }, { accountName: "asc" }],
+    });
+  }
+
+
+  /** Only these fields may be written from the API; the rest are managed by the ledger. */
+  private bankAccountData(body: any, { creating = false } = {}) {
+    const TYPES = ["BANK", "BKASH", "NAGAD", "ROCKET", "UPAY", "CASH"];
+    const data: any = {};
+    const text = (key: string, max = 120) => {
+      if (body[key] === undefined) return;
+      const value = typeof body[key] === "string" ? body[key].trim() : "";
+      data[key] = value ? value.slice(0, max) : null;
+    };
+    if (body.accountName !== undefined || creating) {
+      const name = String(body.accountName ?? "").trim();
+      if (!name) throw new BadRequestException("Account name is required");
+      data.accountName = name.slice(0, 120);
+    }
+    if (body.accountType !== undefined || creating) {
+      const type = String(body.accountType ?? "").toUpperCase();
+      if (!TYPES.includes(type)) throw new BadRequestException("Pick a valid account type");
+      data.accountType = type;
+    }
+    text("accountHolder");
+    text("bankName");
+    text("accountNumber", 40);
+    text("branch");
+    text("routingNumber", 40);
+    if (body.currency !== undefined) data.currency = String(body.currency).toUpperCase().slice(0, 3) || "BDT";
+    if (body.showOnInvoice !== undefined) data.showOnInvoice = !!body.showOnInvoice;
+    if (body.isActive !== undefined) data.isActive = !!body.isActive;
+    if (body.isPrimary !== undefined) data.isPrimary = !!body.isPrimary;
+    if (creating && body.currentBalance !== undefined) data.currentBalance = Number(body.currentBalance) || 0;
+    return data;
   }
 
 
   async createBankAccount(body: any) {
-    return this.prisma.bankAccount.create({ data: { accountName: body.accountName, accountType: body.accountType, currency: body.currency ?? "BDT", currentBalance: body.currentBalance ?? 0 } });
+    const data = this.bankAccountData(body, { creating: true });
+    return this.prisma.$transaction(async (tx) => {
+      if (data.isPrimary) await tx.bankAccount.updateMany({ where: { isPrimary: true }, data: { isPrimary: false } });
+      await invalidateFinance(this.cache);
+      return tx.bankAccount.create({ data });
+    });
   }
 
 
   async updateBankAccount(id: string, body: any) {
     const existing = await this.prisma.bankAccount.findUnique({ where: { id } }).catch(() => null);
     if (!existing) throw new NotFoundException("Bank account not found");
-    return this.prisma.bankAccount.update({ where: { id }, data: body });
+    const data = this.bankAccountData(body);
+    return this.prisma.$transaction(async (tx) => {
+      if (data.isPrimary) await tx.bankAccount.updateMany({ where: { isPrimary: true, id: { not: id } }, data: { isPrimary: false } });
+      await invalidateFinance(this.cache);
+      return tx.bankAccount.update({ where: { id }, data });
+    });
+  }
+
+
+  /**
+   * Money already moved through this account, so deleting it would orphan
+   * ledger rows: deactivate it instead and say why. With `force`, the caller has
+   * confirmed that history may be detached: payments/expenses/income keep their
+   * amounts but lose the bank-account link, reconciliation rows are removed.
+   */
+  async deleteBankAccount(id: string, force = false) {
+    const existing = await this.prisma.bankAccount.findUnique({
+      where: { id },
+      include: {
+        _count: { select: { payments: true, expenses: true, manualIncome: true, statementLines: true } },
+      },
+    }).catch(() => null);
+    if (!existing) throw new NotFoundException("Bank account not found");
+    const used = existing._count.payments + existing._count.expenses + existing._count.manualIncome + existing._count.statementLines;
+    if (used > 0 && !force) {
+      await this.prisma.bankAccount.update({ where: { id }, data: { isActive: false, isPrimary: false } });
+      await invalidateFinance(this.cache);
+      return { deleted: false, deactivated: true, used };
+    }
+    await this.prisma.$transaction(async (tx) => {
+      if (used > 0) {
+        await tx.payment.updateMany({ where: { bankAccountId: id }, data: { bankAccountId: null } });
+        await tx.expense.updateMany({ where: { bankAccountId: id }, data: { bankAccountId: null } });
+        await tx.manualIncome.updateMany({ where: { bankAccountId: id }, data: { bankAccountId: null } });
+        await tx.reconciliationRecord.deleteMany({ where: { bankAccountId: id } });
+        await tx.bankStatementLine.deleteMany({ where: { bankAccountId: id } });
+      }
+      await tx.bankAccount.delete({ where: { id } });
+    });
+    await invalidateFinance(this.cache);
+    return { deleted: true, deactivated: false, used };
   }
 
   // ── Expense category definitions (user-managed hierarchy) ────────────

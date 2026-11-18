@@ -4,6 +4,7 @@ import { CacheService } from "../cache/cache.service";
 import { CapitalService } from "../capital/capital.service";
 import { AttendanceService } from "./attendance.service";
 import { assertPeriod, dateStrDhaka, dhakaDayRange, dhakaDaysInMonth } from "./people-utils";
+import { getBrandingConfig } from "../common/branding";
 
 @Injectable()
 export class PayrollService {
@@ -50,7 +51,7 @@ export class PayrollService {
         throw new ForbiddenException("You can only open your own payslip");
       }
     }
-    const branding = await this.prisma.brandingConfig.findFirst();
+    const branding = await getBrandingConfig(this.prisma);
     return { record, employee: record.employee, company: { name: "Zoolyum OS", branding: branding ?? null } };
   }
 

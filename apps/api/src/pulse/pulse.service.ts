@@ -797,6 +797,7 @@ export class PulseService {
     await this.cache.del("insight:client-health");
     await this.cache.del("flow:overview");
     await this.cache.delPattern("flow:list:*");
+    await this.cache.delPattern("flow:lite:*");
     await this.cache.del("tasks:stats");
     await this.cache.delPattern("tasks:list:*");
     return { client, project, leadId: id };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
@@ -53,6 +53,11 @@ function ShellSkeleton() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, loadError, retry } = useAuth();
   const router = useRouter();
+  // Read the token in an effect, not during render: the server has no
+  // localStorage, so deciding during render would make the first client render
+  // differ from the server HTML (hydration mismatch).
+  const [hasToken, setHasToken] = useState(false);
+  useEffect(() => setHasToken(!!getToken()), []);
 
   useEffect(() => {
     // Redirect only when there is genuinely no session. A token that failed to
@@ -61,9 +66,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!loading && !user && !getToken()) router.replace("/login");
   }, [loading, user, router]);
 
-  if (loading) return <ShellSkeleton />;
+  // A token means a session almost certainly exists, so mount the page right
+  // away: its own queries then run in parallel with /auth/me instead of queuing
+  // behind it. That removes one full round trip from every boot and every
+  // hard navigation. Visitors with no token still see the skeleton — there is
+  // nothing for them to fetch.
+  if (loading && !hasToken) return <ShellSkeleton />;
 
-  if (!user) {
+  if (!user && !loading) {
     // Token exists but /auth/me could not be reached → offer a retry instead
     // of silently emptying every page.
     if (getToken()) {

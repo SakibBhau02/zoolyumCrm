@@ -429,7 +429,7 @@ function TasksPageInner() {
   const { data: stats } = useApi<Stats>("/tasks/stats");
   const { data: employees } = useApi<UserLite[]>("/people/employees");
   const users = employees ?? [];
-  const { data: projects } = useApi<ProjectLite[]>("/flow/projects");
+  const { data: projects } = useApi<ProjectLite[]>("/flow/projects?lite=1");
   const { data: myDay } = useApi<any[]>(`/tasks/my-day?v=${aux}`);
   const { data: sprints } = useApi<Sprint[]>(`/tasks/sprints?v=${aux}`);
   const { data: savedViews } = useApi<SavedView[]>(`/tasks/views?v=${aux}`);

@@ -1,6 +1,6 @@
 "use client";
 
-import { ExpensesTab } from "../_components/tabs";
+import { ExpensesTab } from "../_components/tab-loader";
 import { useCapital } from "../_components/capital-context";
 
 export default function CapitalExpensesPage() {

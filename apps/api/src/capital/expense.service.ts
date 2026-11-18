@@ -23,6 +23,19 @@ export class ExpenseService {
 
 
   async expenses(query: { status?: string; clientId?: string; q?: string; category?: string; limit?: string }, actorId?: string) {
+    // Cached per viewer: each row carries *this* caller's approval capability,
+    // so two roles must never share an entry. The capital context asks for this
+    // list on every tab mount and after every write; it was a fresh read of
+    // 300 rows (plus client/project/vendor joins) each time.
+    return this.cache.wrapQuery(
+      "capital:expenses",
+      { ...query, actorId: actorId ?? "anon" },
+      20,
+      () => this.computeExpenses(query, actorId)
+    );
+  }
+
+  private async computeExpenses(query: { status?: string; clientId?: string; q?: string; category?: string; limit?: string }, actorId?: string) {
     const take = Math.min(500, Math.max(1, Number(query.limit) || 300));
     const rows = await this.prisma.expense.findMany({
       where: {

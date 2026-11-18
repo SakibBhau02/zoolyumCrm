@@ -127,7 +127,7 @@ export default function OnboardingPage() {
           { label: "Offboarding", value: summary?.OFFBOARDING ?? "—", sub: "exits" },
           { label: "Stale", value: summary?.stale ?? "—", sub: ">7 days", tone: summary?.stale ? "amber" : "default" },
         ]}
-        actions={canEdit ? <Btn variant="primary" onClick={() => setStartOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> Start</Btn> : undefined}
+        actions={canEdit ? <Btn variant="primary" onClick={() => setStartOpen(true)}><Plus className="size-3.5" /> Start</Btn> : undefined}
       />
 
       <div className="mt-3 mb-2 flex flex-wrap gap-1.5">

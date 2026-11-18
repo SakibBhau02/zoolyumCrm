@@ -18,6 +18,7 @@ import { AddIncomeModal, BudgetModal, CategoriesModal, EditExpenseModal, PayExpe
 import type { StatementType } from "@/lib/reports-pdf";
 import { Pager, usePaged } from "./table-pager";
 import { ApprovalPolicyModal } from "./approval-policy";
+import { BankAccountsCard } from "./bank-accounts";
 
 // jsPDF (~143 KB gz) is loaded on demand: someone reading the overview must not
 // download a PDF engine. Every PDF helper below resolves its module at click time.
@@ -616,7 +617,7 @@ export function InvoicesTab({ error, refresh, refreshKey, clients, onView, onNew
                     aria-label="Select all on this page"
                     checked={allOnPage}
                     onChange={togglePage}
-                    className="size-3.5 cursor-pointer accent-violet-600"
+                    className="size-3.5 cursor-pointer accent-primary"
                   />
                 </Th>
                 <Th>Invoice #</Th><Th>Client</Th><Th>Issue / Due</Th><Th className="text-right">Amount</Th><Th className="text-right">Paid</Th><Th className="text-right">Balance</Th><Th>Status</Th><Th />
@@ -638,7 +639,7 @@ export function InvoicesTab({ error, refresh, refreshKey, clients, onView, onNew
                           aria-label={`Select ${inv.invoiceNumber}`}
                           checked={picked}
                           onChange={() => toggleOne(inv.id)}
-                          className="size-3.5 cursor-pointer accent-violet-600"
+                          className="size-3.5 cursor-pointer accent-primary"
                         />
                       </Td>
                       <Td>
@@ -2177,7 +2178,7 @@ export function ProfitabilityTab({ data }: { data: any }) {
   );
 }
 
-export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSaved }: { accounts: any[]; balances: any[]; onEdit: (a: any) => void; onAdd: () => void; onDelete: (a: any) => void; onSaved: () => void }) {
+export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSaved, bankAccounts, notify }: { accounts: any[]; balances: any[]; onEdit: (a: any) => void; onAdd: () => void; onDelete: (a: any) => void; onSaved: () => void; bankAccounts?: any[]; notify?: (m: string) => void }) {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -2194,6 +2195,11 @@ export function AccountsTab({ accounts, balances, onEdit, onAdd, onDelete, onSav
 
   return (
     <div className="flex flex-col gap-4">
+      <BankAccountsCard
+        bankAccounts={bankAccounts ?? []}
+        onSaved={onSaved}
+        notify={notify ?? (() => {})}
+      />
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />

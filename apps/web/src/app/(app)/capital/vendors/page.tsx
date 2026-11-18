@@ -1,6 +1,6 @@
 "use client";
 
-import { VendorsTab } from "../_components/tabs";
+import { VendorsTab } from "../_components/tab-loader";
 import { useCapital } from "../_components/capital-context";
 
 export default function CapitalVendorsPage() {

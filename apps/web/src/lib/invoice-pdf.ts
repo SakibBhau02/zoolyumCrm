@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import { API_URL } from "./api";
 import { numberToWords } from "./invoice-utils";
+import { invoicePaymentLines, pickPaymentDetails } from "./payment-meta";
 
 export interface PdfInvoiceLine {
   description?: string;
@@ -43,6 +44,18 @@ export interface PdfInvoice {
   terms?: string | null;
   notes?: string | null;
   paymentDetails?: Record<string, any> | null;
+  /** Active bank/MFS accounts (see InvoiceService.paymentAccounts). */
+  paymentAccounts?: Array<{
+    id: string;
+    accountName?: string | null;
+    accountType?: string | null;
+    accountHolder?: string | null;
+    bankName?: string | null;
+    accountNumber?: string | null;
+    branch?: string | null;
+    routingNumber?: string | null;
+    isPrimary?: boolean | null;
+  }> | null;
   client?: {
     companyName?: string;
     address?: string | null;
@@ -461,6 +474,15 @@ export function buildInvoicePdf(inv: PdfInvoice, branding?: InvoiceBranding | nu
     return yy;
   };
 
+  /** Draw wrapped text left-aligned from `leftX`, returning the next baseline. */
+  const leftLines = (text: string, maxW: number, leftX: number, yy: number, lead = 3.8) => {
+    for (const ln of doc.splitTextToSize(text, maxW)) {
+      doc.text(ln, leftX, yy);
+      yy += lead;
+    }
+    return yy;
+  };
+
   accentBar();
   y += 5;
 
@@ -530,7 +552,7 @@ export function buildInvoicePdf(inv: PdfInvoice, branding?: InvoiceBranding | nu
   doc.line(M, y, RM, y);
   y += 5.5;
 
-  // ── Parties: client left, payment instructions right ─────────────────
+  // ── Parties: client only — payment details print at the bottom-left ──
   const secY = y;
   const payColW = 72;
   const clientColW = W - payColW - 12;
@@ -538,7 +560,6 @@ export function buildInvoicePdf(inv: PdfInvoice, branding?: InvoiceBranding | nu
   doc.setFontSize(7.5);
   doc.setTextColor(...accent);
   doc.text("BILLED TO / CLIENT", M, secY);
-  doc.text("PAYMENT INSTRUCTIONS", RE, secY, { align: "right" });
 
   doc.setFont(BODY_FONT, "bold");
   doc.setFontSize(10.5);
@@ -582,37 +603,11 @@ export function buildInvoicePdf(inv: PdfInvoice, branding?: InvoiceBranding | nu
     }
   }
 
-  const pay: Record<string, any> = inv.paymentDetails ?? branding?.defaultPaymentDetails ?? {};
-  let py = secY + 5.5;
-  if (pay.bankName) {
-    doc.setFont(BODY_FONT, "bold");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...INK);
-    py = rightLines(String(pay.bankName), payColW, RE, py);
-  }
-  doc.setFont(BODY_FONT, "normal");
-  doc.setFontSize(8);
-  doc.setTextColor(...SLATE);
-  const acct = [pay.accountNumber, pay.accountName].filter(Boolean).join(" · ");
-  if (acct) py = rightLines(`A/C: ${acct}`, payColW, RE, py);
-  const branchBits = [pay.branch ? `Branch: ${pay.branch}` : "", pay.routingNumber ? `Routing: ${pay.routingNumber}` : ""].filter(Boolean).join("  •  ");
-  if (branchBits) py = rightLines(branchBits, payColW, RE, py);
-  if (pay.mobileWalletNumber) {
-    const walletType = String(pay.mobileWalletType || (["BKASH", "NAGAD"].includes(String(pay.method ?? "").toUpperCase()) ? pay.method : "bKash")).toUpperCase();
-    doc.setFont(BODY_FONT, "bold");
-    doc.setTextColor(...accent);
-    py = rightLines(`${walletType}: ${pay.mobileWalletNumber}`, payColW, RE, py);
-    doc.setFont(BODY_FONT, "normal");
-  }
-  doc.setFontSize(7.5);
-  if (!pay.bankName && !pay.accountNumber && !pay.mobileWalletNumber) {
-    doc.setTextColor(...SLATE);
-    py = rightLines("Please transfer the balance and quote the reference below.", payColW, RE, py);
-  }
-  doc.setTextColor(...FAINTER);
-  py = rightLines(`Ref: Invoice #${inv.invoiceNumber}`, payColW, RE, py);
+  const pay: Record<string, any> = pickPaymentDetails(inv.paymentDetails, branding?.defaultPaymentDetails);
+  // Payment details print in the bottom-left block (see "Payment instructions"
+  // below the totals), not next to the client — the top stays client-only.
 
-  y = Math.max(cy, py) + 3;
+  y = Math.max(cy, secY + 12) + 3;
   doc.setDrawColor(228, 228, 231);
   doc.setLineWidth(0.3);
   doc.line(M, y, RM, y);
@@ -911,6 +906,32 @@ export function buildInvoicePdf(inv: PdfInvoice, branding?: InvoiceBranding | nu
     wY += 4;
   }
   y += inWordsH + 2;
+
+  // ── Payment instructions (bottom left, plain text) ───────────────────
+  const payLines = invoicePaymentLines((inv as any).paymentAccounts, pay);
+  const payTextW = 112;
+  doc.setFont(BODY_FONT, "normal");
+  doc.setFontSize(7.6);
+  doc.setTextColor(...SLATE);
+  const payWrapped: string[] = [];
+  for (const line of (payLines.length ? payLines : ["Please transfer the balance and quote the reference below."])) {
+    payWrapped.push(...(doc.splitTextToSize(line, payTextW) as string[]).slice(0, 3));
+  }
+  payWrapped.push(`Ref: Invoice #${inv.invoiceNumber}`);
+  const payH = 9 + payWrapped.length * 3.7;
+  if (y + payH + 4 > PAGE_H - 20) continuation();
+  doc.setFont(BODY_FONT, "bold");
+  doc.setFontSize(7.6);
+  doc.setTextColor(...accent);
+  doc.text("PAYMENT INSTRUCTIONS", M, y + 4);
+  doc.setFont(BODY_FONT, "normal");
+  doc.setTextColor(...SLATE);
+  let piY = y + 8;
+  for (const ln of payWrapped) {
+    doc.text(ln, M, piY);
+    piY += 3.7;
+  }
+  y = piY + 1;
 
   // ── Closing band: terms/notes left, QR + signature right ─────────────
   // Anchored to the bottom of the page when there is spare room, so a short

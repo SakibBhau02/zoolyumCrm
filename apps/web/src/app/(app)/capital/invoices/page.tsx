@@ -6,7 +6,7 @@ import { AlarmClock, CircleAlert } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { formatBDT, formatDate } from "@/lib/format";
 import { Btn } from "@/components/table";
-import { InvoicesTab } from "../_components/tabs";
+import { InvoicesTab } from "../_components/tab-loader";
 import { InvoiceDetailModal } from "../_components/invoice-detail-modal";
 import { useCapital } from "../_components/capital-context";
 

@@ -52,7 +52,7 @@ export default function CandidatesPage() {
           { label: "Hired", value: (candidates ?? []).filter((c: any) => c.stage === "hired").length, tone: "emerald" },
           { label: "Rejected", value: (candidates ?? []).filter((c: any) => c.stage === "rejected").length, tone: "rose" },
         ]}
-        actions={canEdit ? <Btn variant="primary" onClick={() => setOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> Candidate</Btn> : undefined}
+        actions={canEdit ? <Btn variant="primary" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Candidate</Btn> : undefined}
       />
 
       <div className="mb-3 flex flex-wrap gap-1.5">

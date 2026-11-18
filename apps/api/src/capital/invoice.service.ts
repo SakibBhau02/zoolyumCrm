@@ -1,8 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException, OnApplicationBootstrap } from "@nestjs/common";
+import { Cron } from "@nestjs/schedule";
 import { InvoiceStatus, RevenueTag } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
 import { NotificationsService } from "../notifications/notifications.service";
+import { getBrandingConfig } from "../common/branding";
 import { LedgerService, CapitalDb } from "./ledger.service";
 import { ReportingService } from "./reporting.service";
 import { WhatsappTriggersService } from "../whatsapp/whatsapp-triggers.service";
@@ -10,7 +12,7 @@ import { ACTIVE_STATUSES, INVOICE_CREDIT_INCLUDE, POSTABLE_STATUSES, RECEIPT_PAY
 import { AccountsService } from "../accounts/accounts.service";
 
 @Injectable()
-export class InvoiceService {
+export class InvoiceService implements OnApplicationBootstrap {
   private lastOverdueSync = 0;
 
   constructor(
@@ -45,6 +47,25 @@ export class InvoiceService {
       : (["PAID", "PARTIALLY_PAID", "OVERDUE"].includes(inv.status) ? "SENT" : inv.status);
     if (status !== inv.status) await this.prisma.invoice.update({ where: { id: invoiceId }, data: { status } });
     return { total: t.grand, paid: t.paid, credits: t.credits };
+  }
+
+  /**
+   * Overdue reconciliation belongs on a clock, not on the read path.
+   *
+   * It used to run inline in `GET /capital/invoices` *and* inside the cached
+   * page computation: two `UPDATE … FROM`-style sweeps over the invoice table
+   * sat in front of every list render, and whenever a row flipped status the
+   * helper wiped the whole finance cache — including the entry currently being
+   * computed. A sweep every ten minutes keeps the badges equally honest (they
+   * are day-granular, not second-granular) at zero cost to readers.
+   */
+  async onApplicationBootstrap() {
+    await this.syncOverdueStatuses(true).catch(() => {});
+  }
+
+  @Cron("*/10 * * * *")
+  async overdueSweep() {
+    await this.syncOverdueStatuses(true).catch(() => {});
   }
 
   /**
@@ -152,8 +173,7 @@ export class InvoiceService {
 
 
   async invoices(query: { status?: string; clientId?: string; q?: string; limit?: string }) {
-    // Keep OVERDUE badges honest before reading the list (throttled to 1/min).
-    await this.syncOverdueStatuses().catch(() => {});
+    // OVERDUE badges are refreshed by `overdueSweep` (every 10 min), not here.
     const take = Math.min(500, Math.max(1, Number(query.limit) || 200));
     return this.prisma.invoice.findMany({
       where: {
@@ -217,7 +237,6 @@ export class InvoiceService {
     min?: string;
     max?: string;
   }) {
-    await this.syncOverdueStatuses().catch(() => {});
     const pageSize = Math.min(Math.max(Number(query.pageSize) || 12, 1), 100);
     const page = Math.max(Number(query.page) || 1, 1);
 
@@ -338,7 +357,28 @@ export class InvoiceService {
       ...p,
       serial: chrono.findIndex((x: any) => x.id === p.id) + 1,
     }));
+    // Where the client can actually send the money: the invoice's own payment
+    // details are preferred, but the workspace's "Pay via" accounts are what
+    // the print view and PDF list.
+    (inv as any).paymentAccounts = await this.paymentAccounts();
     return inv;
+  }
+
+  /** Active bank / MFS accounts that should be offered on invoices. */
+  async paymentAccounts() {
+    return this.prisma.bankAccount
+      .findMany({
+        // Cash is not something a client can remit to, so it never belongs in a
+        // "pay via" box even when the ledger account itself is active.
+        where: { isActive: true, showOnInvoice: true, accountType: { not: "CASH" } },
+        select: {
+          id: true, accountName: true, accountType: true, accountHolder: true,
+          bankName: true, accountNumber: true, branch: true, routingNumber: true,
+          currency: true, isPrimary: true,
+        },
+        orderBy: [{ isPrimary: "desc" }, { accountType: "asc" }, { accountName: "asc" }],
+      })
+      .catch(() => []);
   }
 
   /**
@@ -1232,7 +1272,7 @@ export class InvoiceService {
     });
     if (!inv || ["VOID", "CANCELLED"].includes(inv.status)) throw new NotFoundException("Invoice link is invalid or revoked");
     const t = invoiceTotals(inv);
-    const branding = await this.prisma.brandingConfig.findFirst().catch(() => null);
+    const branding = await getBrandingConfig(this.prisma).catch(() => null);
     const statement = inv.projectId ? await this.projectBalance(inv.id).catch(() => null) : null;
     return {
       invoiceNumber: inv.invoiceNumber,
@@ -1254,6 +1294,7 @@ export class InvoiceService {
       payments: (inv.payments ?? []).map((p: any) => ({ id: p.id, amount: Number(p.amount), paymentMethod: p.paymentMethod, referenceId: p.referenceId, paymentDate: p.paymentDate })),
       totals: t,
       projectBalance: statement?.project && !(statement as any).reason ? statement : null,
+      paymentAccounts: await this.paymentAccounts(),
       branding: branding
         ? {
             appName: branding.appName, tagline: branding.tagline, email: branding.email, phone: branding.phone,

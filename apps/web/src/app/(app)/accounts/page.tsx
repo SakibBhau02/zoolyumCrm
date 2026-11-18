@@ -1864,8 +1864,8 @@ export default function AccountsPage() {
                                     )}
                                     {c._tier && tierVariety > 1 && (
                                       <span
-                                        className="rounded-full border px-1.5 py-0.5 text-micro font-bold"
-                                        style={{ borderColor: `${c._tier.color}40`, background: `${c._tier.color}15`, color: c._tier.color }}
+                                        className="tier-chip rounded-full border px-1.5 py-0.5 text-micro font-bold"
+                                        style={{ "--tier-color": c._tier.color } as React.CSSProperties}
                                       >
                                         {c._tier.name}
                                       </span>
@@ -2316,8 +2316,8 @@ export default function AccountsPage() {
                 </span>
                 {tier && (
                   <span
-                    className="rounded-full border px-2.5 py-1 text-micro font-bold"
-                    style={{ borderColor: `${tier.color}40`, background: `${tier.color}15`, color: tier.color }}
+                    className="tier-chip rounded-full border px-2.5 py-1 text-micro font-bold"
+                    style={{ "--tier-color": tier.color } as React.CSSProperties}
                   >
                     {tier.name}
                   </span>

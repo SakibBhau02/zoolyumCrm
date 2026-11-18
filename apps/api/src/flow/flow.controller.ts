@@ -74,7 +74,7 @@ export class FlowController {
   }
 
   @Get("projects")
-  list(@Query() query: { q?: string; status?: string; health?: string }) {
+  list(@Query() query: { q?: string; status?: string; health?: string; clientId?: string; managerId?: string; page?: string; pageSize?: string; limit?: string; lite?: string }) {
     return this.flow.list(query);
   }
 

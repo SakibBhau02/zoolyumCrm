@@ -11,6 +11,8 @@ import { useAuth } from "@/lib/auth";
 import { useBranding } from "@/lib/branding-context";
 import { INVOICE_TEMPLATES, accountsForMethod, invoiceTotals, numberToWords } from "@/lib/invoice-utils";
 import { ACCOUNT_CATEGORIES, INVOICE_STATUSES, PAYMENT_METHODS, label, today } from "./constants";
+import { MOBILE_WALLET_KINDS, PAY_META } from "@/lib/payment-meta";
+import { MethodPicker } from "@/components/payment-badge";
 
 type InvoiceLineDraft = { description: string; unitPrice: string; quantity: string };
 
@@ -22,9 +24,10 @@ type PayDraft = {
   branch: string;
   routingNumber: string;
   mobileWalletNumber: string;
+  mobileWalletProviders: string[];
 };
 
-const blankPay = (): PayDraft => ({ method: "BANK_TRANSFER", bankName: "", accountName: "", accountNumber: "", branch: "", routingNumber: "", mobileWalletNumber: "" });
+const blankPay = (): PayDraft => ({ method: "BANK_TRANSFER", bankName: "", accountName: "", accountNumber: "", branch: "", routingNumber: "", mobileWalletNumber: "", mobileWalletProviders: [] });
 
 const payFrom = (src: any): PayDraft => ({
   method: src?.method ?? "BANK_TRANSFER",
@@ -34,11 +37,16 @@ const payFrom = (src: any): PayDraft => ({
   branch: src?.branch ?? "",
   routingNumber: src?.routingNumber ?? "",
   mobileWalletNumber: src?.mobileWalletNumber ?? "",
+  mobileWalletProviders: Array.isArray(src?.mobileWalletProviders) ? src.mobileWalletProviders : [],
 });
 
 const cleanPay = (p: PayDraft) => {
-  const out: Record<string, string> = {};
+  const out: Record<string, any> = {};
   for (const [k, v] of Object.entries(p)) {
+    if (Array.isArray(v)) {
+      if (v.length) out[k] = v;
+      continue;
+    }
     const s = (v ?? "").trim();
     if (s) out[k] = s;
   }
@@ -112,19 +120,46 @@ function TemplatePicker({ value, onChange, compact }: { value: string; onChange:
 
 function PaymentDetailsFields({ value, onChange }: { value: PayDraft; onChange: (v: PayDraft) => void }) {
   const set = (k: keyof PayDraft, v: string) => onChange({ ...value, [k]: v });
+  const toggleProvider = (provider: string) => {
+    const current = value.mobileWalletProviders ?? [];
+    onChange({
+      ...value,
+      mobileWalletProviders: current.includes(provider) ? current.filter((p) => p !== provider) : [...current, provider],
+    });
+  };
   return (
-    <div className="grid grid-cols-2 gap-4">
-      <Field label="Method">
-        <Select value={value.method} onChange={(e) => set("method", e.target.value)}>
-          {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}
-        </Select>
-      </Field>
-      <Field label="Mobile wallet no"><Input value={value.mobileWalletNumber} onChange={(e) => set("mobileWalletNumber", e.target.value)} placeholder="01XXXXXXXXX" /></Field>
-      <Field label="Bank name"><Input value={value.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder="City Bank PLC" /></Field>
-      <Field label="Account name"><Input value={value.accountName} onChange={(e) => set("accountName", e.target.value)} placeholder="Zoolyum Agency" /></Field>
-      <Field label="Account number"><Input value={value.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} placeholder="1102938481901" /></Field>
-      <Field label="Branch"><Input value={value.branch} onChange={(e) => set("branch", e.target.value)} placeholder="Gulshan Branch" /></Field>
-      <Field label="Routing number"><Input value={value.routingNumber} onChange={(e) => set("routingNumber", e.target.value)} placeholder="225271891" /></Field>
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Method">
+          <Select value={value.method} onChange={(e) => set("method", e.target.value)}>
+            {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}
+          </Select>
+        </Field>
+        <Field label="Mobile wallet no">
+          <Input value={value.mobileWalletNumber} onChange={(e) => set("mobileWalletNumber", e.target.value)} placeholder="01XXXXXXXXX" inputMode="tel" />
+        </Field>
+        <div className="col-span-2 flex flex-col gap-1.5">
+          <span className="text-meta font-semibold text-muted-foreground">This number is used for</span>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+            {MOBILE_WALLET_KINDS.map((kind) => (
+              <label key={kind} className="flex cursor-pointer items-center gap-1.5 text-body">
+                <input
+                  type="checkbox"
+                  className="size-3.5 accent-primary"
+                  checked={(value.mobileWalletProviders ?? []).includes(kind)}
+                  onChange={() => toggleProvider(kind)}
+                />
+                {PAY_META[kind].short}
+              </label>
+            ))}
+          </div>
+        </div>
+        <Field label="Bank name"><Input value={value.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder="City Bank PLC" /></Field>
+        <Field label="Branch"><Input value={value.branch} onChange={(e) => set("branch", e.target.value)} placeholder="Gulshan Branch" /></Field>
+        <Field label="Routing number"><Input value={value.routingNumber} onChange={(e) => set("routingNumber", e.target.value)} placeholder="225271891" /></Field>
+        <Field label="Account name"><Input value={value.accountName} onChange={(e) => set("accountName", e.target.value)} placeholder="Zoolyum Agency" /></Field>
+        <Field label="Account number"><Input value={value.accountNumber} onChange={(e) => set("accountNumber", e.target.value)} placeholder="1102938481901" /></Field>
+      </div>
     </div>
   );
 }
@@ -917,7 +952,7 @@ export function PaymentModal({ invoice, open, bankAccounts, onClose, onSaved }: 
           <span className="text-right font-bold tabular-nums">{formatBDT(balance)}</span>
         </div>
         <Field label="Amount *"><Input type="number" min={0} value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} autoFocus /></Field>
-        <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+        <div className="flex flex-col gap-1.5 sm:col-span-2"><span className="text-meta font-semibold text-muted-foreground">Method</span><MethodPicker value={f.method} onChange={(v) => setF(withMethod(f, bankAccounts, v))} /></div>
         <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
         <Field label="Payment date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
         {(invoice?.installments ?? []).length > 0 && (
@@ -1092,7 +1127,7 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
             <Field label="Vendor"><Select value={f.vendorId} onChange={(e) => setF({ ...f, vendorId: e.target.value })}><option value="">No vendor</option>{(vendors ?? []).map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}</Select></Field>
             <Field label="Vendor bill no."><Input value={f.vendorBillNumber} onChange={(e) => setF({ ...f, vendorBillNumber: e.target.value })} placeholder="INV-2043" /></Field>
             <Field label="Bill date"><Input type="date" value={f.vendorBillDate} onChange={(e) => setF({ ...f, vendorBillDate: e.target.value })} /></Field>
-            <Field label="Payment method"><Select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+            <div className="flex flex-col gap-1.5"><span className="text-meta font-semibold text-muted-foreground">Payment method</span><MethodPicker value={f.method} onChange={(v) => setF({ ...f, method: v })} /></div>
             <Field label="Paid from"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">Default account</option>{(bankAccounts ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
             <Field label="Receipt URL"><Input value={f.receiptUrl} onChange={(e) => setF({ ...f, receiptUrl: e.target.value })} placeholder="https://…" /></Field>
           </div>
@@ -1227,7 +1262,7 @@ export function EditExpenseModal({ expense, onClose, onSaved, categories }: { ex
           <Field label="Amount *"><Input type="number" min={0} step="0.01" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
           <Field label="Category"><Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{(categories?.length ? categories : [{ key: "MISC", name: "Misc" }]).map((c: any) => <option key={c.key} value={c.key}>{c.name}</option>)}</Select></Field>
           <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
-          <Field label="Method"><Select value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+          <div className="flex flex-col gap-1.5 sm:col-span-2"><span className="text-meta font-semibold text-muted-foreground">Method</span><MethodPicker value={f.method} onChange={(v) => setF({ ...f, method: v })} /></div>
           <Field label="Vendor bill no."><Input value={f.vendorBillNumber} onChange={(e) => setF({ ...f, vendorBillNumber: e.target.value })} placeholder="INV-2043" /></Field>
           <Field label="Bill date"><Input type="date" value={f.vendorBillDate} onChange={(e) => setF({ ...f, vendorBillDate: e.target.value })} /></Field>
           <Field label="Department"><Input value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })} placeholder="Accounts / Creative…" /></Field>
@@ -1344,7 +1379,7 @@ export function PayExpenseModal({ expense, open, bankAccounts, onClose, onSaved 
           <p className="rounded-lg bg-muted/40 px-2.5 py-2 text-meta font-semibold">Net cash out {formatBDT(net)}</p>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+          <div className="flex flex-col gap-1.5 sm:col-span-2"><span className="text-meta font-semibold text-muted-foreground">Method</span><MethodPicker value={f.method} onChange={(v) => setF(withMethod(f, bankAccounts, v))} /></div>
           <Field label="Bank account"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">No account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
         </div>
         <Field label="Payment date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
@@ -1552,7 +1587,7 @@ export function AddIncomeModal({ open, bankAccounts, clients, projects, onClose,
         <FormBlock title="How was it received?">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
-            <Field label="Method"><Select value={f.method} onChange={(e) => setF(withMethod(f, bankAccounts, e.target.value))}>{PAYMENT_METHODS.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select></Field>
+            <div className="flex flex-col gap-1.5 sm:col-span-2"><span className="text-meta font-semibold text-muted-foreground">Method</span><MethodPicker value={f.method} onChange={(v) => setF(withMethod(f, bankAccounts, v))} /></div>
             <Field label="Received into"><Select value={f.bankAccountId} onChange={(e) => setF({ ...f, bankAccountId: e.target.value })}><option value="">Default account</option>{methodAccounts(bankAccounts, f.method).map((b: any) => <option key={b.id} value={b.id}>{b.accountName} ({label(b.accountType)})</option>)}</Select></Field>
             <Field label="Reference"><Input value={f.referenceId} onChange={(e) => setF({ ...f, referenceId: e.target.value })} placeholder="Txn / cheque no." /></Field>
             <Field label="Currency"><Select value={f.currency} onChange={(e) => setF({ ...f, currency: e.target.value })}><option value="BDT">BDT</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="GBP">GBP</option><option value="INR">INR</option></Select></Field>

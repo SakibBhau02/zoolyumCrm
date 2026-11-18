@@ -167,7 +167,7 @@ export function Sidebar() {
     <>
       <aside className="hidden h-full w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-white lg:flex">
         <div className="flex h-16 items-center gap-2.5 px-5">
-          <BrandLogo variant="light" />
+          <BrandLogo variant="light" height={38} />
         </div>
         {nav}
       </aside>
@@ -195,7 +195,7 @@ export function Sidebar() {
               aria-label="Navigation menu"
             >
               <div className="flex items-center justify-between py-3 pl-5 pr-3">
-                <BrandLogo variant="light" />
+                <BrandLogo variant="light" height={38} />
                 <button
                   ref={closeRef}
                   onClick={() => setMobileOpen(false)}

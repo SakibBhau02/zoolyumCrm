@@ -5,6 +5,7 @@ import QRCode from "qrcode";
 import { formatDate } from "@/lib/format";
 import { numberToWords } from "@/lib/invoice-utils";
 import { API_URL } from "@/lib/api";
+import { invoicePaymentLines, pickPaymentDetails } from "@/lib/payment-meta";
 
 const brandingImg = (url: string | null | undefined) => {
   if (!url) return null;
@@ -69,12 +70,12 @@ export function InvoicePrintView({
   const sigUrl = brandingImg(branding?.signatureImageUrl);
   const showStatement = projBalance?.project && !projBalance?.reason;
   const sym = currencySymbol(detail.currency);
-  const pay = detail.paymentDetails ?? branding?.defaultPaymentDetails ?? {};
+  const pay = pickPaymentDetails(detail.paymentDetails, branding?.defaultPaymentDetails);
+  // Plain-text payment lines: managed accounts plus the legacy default when it
+  // is not already covered. Wallets sharing a number print on one line.
+  const paymentLines = invoicePaymentLines(detail.paymentAccounts, pay);
   const terms = detail.terms || branding?.defaultTerms;
   const notes = detail.notes || branding?.defaultNotes;
-  const walletType = String(
-    pay.mobileWalletType || (["BKASH", "NAGAD"].includes(String(pay.method ?? "").toUpperCase()) ? pay.method : "bKash")
-  ).toUpperCase();
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,7 +98,7 @@ export function InvoicePrintView({
       style={{ colorScheme: "light" }}
     >
       {/* header */}
-      <div className="flex items-start justify-between gap-4 border-b-2 border-violet-600 pb-4">
+      <div className="flex items-start justify-between gap-4 border-b-2 border-primary pb-4">
         <div className="min-w-0">
           {logoUrl && <img src={logoUrl} alt="" className="mb-1.5 h-10 w-auto max-w-[180px] object-contain" />}
           <p className="text-[22px] font-extrabold tracking-tight text-slate-900">{appName}</p>
@@ -115,7 +116,7 @@ export function InvoicePrintView({
           )}
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-[20px] font-extrabold text-violet-700">#{detail.invoiceNumber}</p>
+          <p className="text-[20px] font-extrabold text-primary">#{detail.invoiceNumber}</p>
           <p className="mt-1 text-[10.5px] text-slate-500">Issue Date: {docDate(detail.issueDate)}</p>
           <p className="text-[10.5px] text-slate-500">Due Date: {docDate(detail.dueDate)}</p>
           <p className="mt-1 inline-block rounded-md border border-slate-300 px-2 py-0.5 text-[10px] font-bold tracking-wide">
@@ -124,39 +125,18 @@ export function InvoicePrintView({
         </div>
       </div>
 
-      {/* billed-to + payment instructions */}
-      <div className="mt-4 flex items-start justify-between gap-6">
-        <div className="min-w-0">
-          <p className="text-[9.5px] font-bold uppercase tracking-widest text-violet-700">Billed to / Client</p>
-          <p className="mt-0.5 text-[14px] font-bold">{detail.client?.companyName ?? "Valued Client"}</p>
-          {(detail.client?.contacts ?? []).slice(0, 3).map((c: any) => (
-            <p key={c.id ?? c.name} className="text-[10.5px] text-slate-500">
-              {[c.name, c.phone, c.email].filter(Boolean).join("  •  ")}
-            </p>
-          ))}
-          {detail.client?.address && <p className="text-[10.5px] text-slate-500">{detail.client.address}</p>}
-          {detail.client?.taxId && <p className="text-[10px] text-slate-400">Tax ID: {detail.client.taxId}</p>}
-          {detail.project?.name && <p className="text-[10.5px] text-slate-500">Project: {detail.project.name}</p>}
-        </div>
-        <div className="w-[46%] shrink-0 text-right text-[10.5px] text-slate-500">
-          <p className="text-[9.5px] font-bold uppercase tracking-widest text-violet-700">Payment instructions</p>
-          {pay.bankName && <p className="mt-0.5 font-bold text-slate-800">{pay.bankName}</p>}
-          {(pay.accountNumber || pay.accountName) && (
-            <p>A/C: {[pay.accountNumber, pay.accountName].filter(Boolean).join(" · ")}</p>
-          )}
-          {(pay.branch || pay.routingNumber) && (
-            <p>{[pay.branch && `Branch: ${pay.branch}`, pay.routingNumber && `Routing: ${pay.routingNumber}`].filter(Boolean).join("  •  ")}</p>
-          )}
-          {pay.mobileWalletNumber && (
-            <p className="font-bold text-violet-700">
-              {walletType}: {pay.mobileWalletNumber}
-            </p>
-          )}
-          {!pay.bankName && !pay.accountNumber && !pay.mobileWalletNumber && (
-            <p>Please transfer the balance and quote the reference below.</p>
-          )}
-          <p className="text-slate-400">Ref: Invoice #{detail.invoiceNumber}</p>
-        </div>
+      {/* billed to */}
+      <div className="mt-4">
+        <p className="text-[9.5px] font-bold uppercase tracking-widest text-primary">Billed to / Client</p>
+        <p className="mt-0.5 text-[14px] font-bold">{detail.client?.companyName ?? "Valued Client"}</p>
+        {(detail.client?.contacts ?? []).slice(0, 3).map((c: any) => (
+          <p key={c.id ?? c.name} className="text-[10.5px] text-slate-500">
+            {[c.name, c.phone, c.email].filter(Boolean).join("  •  ")}
+          </p>
+        ))}
+        {detail.client?.address && <p className="text-[10.5px] text-slate-500">{detail.client.address}</p>}
+        {detail.client?.taxId && <p className="text-[10px] text-slate-400">Tax ID: {detail.client.taxId}</p>}
+        {detail.project?.name && <p className="text-[10.5px] text-slate-500">Project: {detail.project.name}</p>}
       </div>
 
       {/* items */}
@@ -201,7 +181,7 @@ export function InvoicePrintView({
           {totals.tax > 0 && <div className="flex justify-between py-0.5"><span className="text-slate-500">VAT / Tax:</span><span className="font-medium tabular-nums">+ {money(totals.tax, sym)}</span></div>}
           {totals.discount > 0 && <div className="flex justify-between py-0.5"><span className="text-emerald-600">Discount:</span><span className="font-medium tabular-nums">− {money(totals.discount, sym)}</span></div>}
           {totals.shipping > 0 && <div className="flex justify-between py-0.5"><span className="text-slate-500">Shipping:</span><span className="font-medium tabular-nums">+ {money(totals.shipping, sym)}</span></div>}
-          <div className="mt-1 flex justify-between border-t border-slate-200 pt-1.5 text-[14px] font-extrabold text-violet-700">
+          <div className="mt-1 flex justify-between border-t border-slate-200 pt-1.5 text-[14px] font-extrabold text-primary">
             <span>Grand Total:</span><span className="tabular-nums">{money(totals.grand, sym)}</span>
           </div>
           {totals.paid > 0 && (
@@ -214,8 +194,8 @@ export function InvoicePrintView({
       </div>
 
       {showStatement && (
-        <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-700">Project Statement — {projBalance.project.name}</p>
+        <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-primary">Project Statement — {projBalance.project.name}</p>
           <div className="mt-1.5 grid grid-cols-3 gap-2">
             <div><p className="text-[9px] font-bold uppercase text-slate-400">Project value</p><p className="text-[12.5px] font-bold tabular-nums">{money(projBalance.value, sym)}</p></div>
             <div><p className="text-[9px] font-bold uppercase text-slate-400">Paid to date</p><p className="text-[12.5px] font-bold tabular-nums text-emerald-600">{money(projBalance.paid, sym)}</p></div>
@@ -240,8 +220,21 @@ export function InvoicePrintView({
       )}
 
       <div className="mt-3 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-[11px]">
-        <span className="font-bold text-violet-700">In Words: </span>
+        <span className="font-bold text-primary">In Words: </span>
         <span className="italic">{numberToWords(totals.grand, detail.currency ?? "BDT")}</span>
+      </div>
+
+      {/* payment instructions — bottom left, plain text */}
+      <div className="mt-3 break-inside-avoid text-[10.5px] text-slate-600">
+        <p className="text-[9.5px] font-bold uppercase tracking-widest text-primary">Payment instructions</p>
+        {paymentLines.length > 0 ? (
+          <div className="mt-0.5">
+            {paymentLines.map((line, i) => <p key={i} className="leading-relaxed">{line}</p>)}
+          </div>
+        ) : (
+          <p className="mt-0.5">Please transfer the balance and quote the reference below.</p>
+        )}
+        <p className="mt-0.5 text-slate-400">Ref: Invoice #{detail.invoiceNumber}</p>
       </div>
 
       <div className="mt-4 flex items-end justify-end gap-4 break-inside-avoid">

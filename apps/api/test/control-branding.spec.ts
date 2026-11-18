@@ -70,7 +70,7 @@ describe("Branding upload fileFilter + limits", () => {
 describe("Branding service fallback", () => {
   it("fallback keeps logoUrl for backward compat", () => {
     const fallback = {
-      logoUrl: "/brand/zoolyum-logo.svg",
+      logoUrl: "/brand/zoolyum-wordmark-dark.png",
       logoDarkUrl: null,
       logoLightUrl: null,
       appName: "Zoolyum OS",
@@ -78,7 +78,7 @@ describe("Branding service fallback", () => {
       secondaryColor: "#38BDF8",
       invoiceNumberingFormat: "ZLM-{year}-{seq}",
     };
-    expect(fallback.logoUrl).toBe("/brand/zoolyum-logo.svg");
+    expect(fallback.logoUrl).toBe("/brand/zoolyum-wordmark-dark.png");
     expect(fallback.logoDarkUrl).toBeNull();
   });
 });

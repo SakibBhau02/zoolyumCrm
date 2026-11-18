@@ -62,13 +62,14 @@ const sourceLabel = (source: string | null | undefined) => {
  */
 export function MyDayWidget({ userName }: { userName?: string | null }) {
   const { user } = useAuth();
-  const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState<"in" | "out" | "bio" | "reg" | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [manage, setManage] = useState(false);
   const [fingerprints, setFingerprints] = useState<FingerprintRow[]>([]);
 
-  const { data, mutate } = useApi<any>(`/people/attendance/today?ts=${tick}`);
+  // Stable key; `mutate()` is what refreshes it. Appending `?ts=` used to force
+  // a new cache entry (and a network hit) on every render.
+  const { data, mutate } = useApi<any>(`/people/attendance/today`);
   const mine = data?.mine;
 
   const loadFingerprints = async () => {
@@ -108,7 +109,6 @@ export function MyDayWidget({ userName }: { userName?: string | null }) {
   const supported = webAuthnSupported();
 
   const refresh = () => {
-    setTick((t) => t + 1);
     mutate();
   };
 

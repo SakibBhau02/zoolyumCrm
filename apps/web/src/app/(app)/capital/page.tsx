@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { OverviewTab } from "./_components/tabs";
+import { OverviewTab } from "./_components/tab-loader";
 import { useCapital } from "./_components/capital-context";
 import { LEGACY_TAB_ROUTE } from "./_components/constants";
 

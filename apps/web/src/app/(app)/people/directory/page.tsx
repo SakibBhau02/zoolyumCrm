@@ -141,7 +141,7 @@ export default function DirectoryPage() {
           { label: "On leave", value: (employees ?? []).filter((e) => e.employmentStatus === "ON_LEAVE").length, tone: "amber" },
           { label: "Departments", value: depts.length, tone: "violet" },
         ]}
-        actions={canEdit ? <Btn variant="primary" onClick={() => setAddOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> Add</Btn> : undefined}
+        actions={canEdit ? <Btn variant="primary" onClick={() => setAddOpen(true)}><Plus className="size-3.5" /> Add</Btn> : undefined}
       />
 
       {/* Filter bar */}
@@ -174,7 +174,7 @@ export default function DirectoryPage() {
             {selected.size > 0 && (
               <span className="text-micro font-semibold text-muted-foreground">{selected.size} selected</span>
             )}
-            <Btn onClick={exportCsv} className="!px-2 !py-1.5 text-meta"><Download className="size-3.5" /> CSV</Btn>
+            <Btn onClick={exportCsv}><Download className="size-3.5" /> CSV</Btn>
           </div>
         </div>
 

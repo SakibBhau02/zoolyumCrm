@@ -175,24 +175,48 @@ export class FlowService {
     page?: string | number;
     pageSize?: string | number;
     limit?: string | number;
+    lite?: string | boolean;
   }) {
-    return this.cache.wrapQuery("flow:list", query, 30, async () => {
-      const where: any = {
-        ...(query.q
-          ? {
-              OR: [
-                { name: { contains: query.q, mode: "insensitive" } },
-                { client: { companyName: { contains: query.q, mode: "insensitive" } } },
-                { assignedPm: { name: { contains: query.q, mode: "insensitive" } } },
-                { uid: { contains: query.q, mode: "insensitive" } },
-              ],
-            }
-          : {}),
-        ...(query.status ? { status: query.status as ProjectStatus } : {}),
-        ...(query.health ? { healthStatus: query.health as HealthStatus } : {}),
-        ...(query.clientId ? { clientId: query.clientId } : {}),
-        ...(query.managerId ? { assignedPmId: query.managerId } : {}),
-      };
+    const where: any = {
+      ...(query.q
+        ? {
+            OR: [
+              { name: { contains: query.q, mode: "insensitive" } },
+              { client: { companyName: { contains: query.q, mode: "insensitive" } } },
+              { assignedPm: { name: { contains: query.q, mode: "insensitive" } } },
+              { uid: { contains: query.q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+      ...(query.status ? { status: query.status as ProjectStatus } : {}),
+      ...(query.health ? { healthStatus: query.health as HealthStatus } : {}),
+      ...(query.clientId ? { clientId: query.clientId } : {}),
+      ...(query.managerId ? { assignedPmId: query.managerId } : {}),
+    };
+
+    // Picker mode (`?lite=1`): the task board and the calendar only render
+    // id / name / clientId. The full payload costs three queries (the include,
+    // the `_count` join, and a groupBy over every task on the page) plus ~40
+    // columns per row — for a `<select>` that shows twelve characters of text.
+    // Cached under its own prefix so neither shape evicts the other.
+    if (query.lite === true || query.lite === "true" || query.lite === "1") {
+      return this.cache.wrapQuery(
+        "flow:lite",
+        { q: query.q, status: query.status, clientId: query.clientId, managerId: query.managerId },
+        300,
+        () =>
+          this.prisma.project.findMany({
+            where,
+            select: { id: true, name: true, clientId: true },
+            orderBy: { name: "asc" },
+            take: 500,
+          })
+      );
+    }
+
+    const listQuery: Record<string, unknown> = { ...query };
+    delete listQuery.lite;
+    return this.cache.wrapQuery("flow:list", listQuery, 30, async () => {
       // Paged callers get { items, total, page, pageSize }; legacy callers get
       // an array (capped). The cap is the difference between an 8 MB response
       // and a fast board — a caller that needs everything pages through it.
@@ -971,6 +995,7 @@ export class FlowService {
   private async invalidateProjects() {
     await this.cache.del("flow:overview");
     await this.cache.delPattern("flow:list:*");
+    await this.cache.delPattern("flow:lite:*");
     await this.cache.del("tasks:stats");
     await this.cache.delPattern("tasks:list:*");
     await this.cache.del("dashboard:overview");

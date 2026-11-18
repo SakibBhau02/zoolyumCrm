@@ -183,7 +183,7 @@ export function CalendarWorkspace({ fixedClientId }: { fixedClientId?: string })
     Promise.all([
       apiFetch<CalendarClient[]>("/calendar/clients").catch(() => []),
       apiFetch<CalendarPerson[]>("/calendar/people").catch(() => []),
-      apiFetch<any[]>("/flow/projects").catch(() => []),
+      apiFetch<any[]>("/flow/projects?lite=1").catch(() => []),
       apiFetch<any[]>("/calendar/campaigns").catch(() => []),
       apiFetch<any[]>("/calendar/settings/pillars").catch(() => []),
     ]).then(([c, p, pr, cp, pl]) => {

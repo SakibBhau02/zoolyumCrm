@@ -38,7 +38,7 @@ export default function PerformancePage() {
           { label: "Completed", value: rows.filter((r: any) => r.status === "COMPLETED").length, tone: "emerald" },
           { label: "Pending", value: rows.filter((r: any) => r.status !== "COMPLETED").length, tone: "sky" },
         ]}
-        actions={canEdit ? <Btn variant="primary" onClick={() => setOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> Review</Btn> : undefined}
+        actions={canEdit ? <Btn variant="primary" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Review</Btn> : undefined}
       />
       {!loading && !error && rows.length === 0 ? (
         <EmptyState title="No reviews yet" hint={`Add the first review — pick a person, a period (e.g. Q${Math.floor(new Date().getMonth() / 3) + 1} ${new Date().getFullYear()}) and a rating out of 5.`} />

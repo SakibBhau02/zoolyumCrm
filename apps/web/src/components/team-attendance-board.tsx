@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { ArrowRight, Clock, LogIn, LogOut, Users } from "lucide-react";
 import { useApi } from "@/lib/use-api";
@@ -25,13 +25,14 @@ const RANK: Record<string, number> = { inside: 0, left: 1, not_in: 2 };
  * as the attendance engine (one punch = checked in, not in *and* out).
  */
 export function TeamAttendanceBoard() {
-  const [tick, setTick] = useState(0);
-  const { data } = useApi<any>(`/people/attendance/live?ts=${tick}`);
+  // Stable query key + explicit invalidation: the old `?ts=` counter forced a
+  // cold network round trip every minute and made the query cache useless.
+  const { data, mutate } = useApi<any>(`/people/attendance/live`);
 
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    const t = setInterval(mutate, 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [mutate]);
 
   const rows = useMemo(() => {
     const list: any[] = data?.rows ?? [];

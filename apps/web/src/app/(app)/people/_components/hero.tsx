@@ -48,18 +48,18 @@ export function PeopleHero({
 }) {
   const Heading = as;
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card px-3.5 py-2 shadow-sm">
+    <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card px-4 py-3 shadow-sm">
       <div className="pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-brand-gradient opacity-[0.07] blur-2xl" />
       <div className="relative flex flex-wrap items-center gap-x-3.5 gap-y-2">
         <div className="flex min-w-0 items-center gap-2.5">
           {icon && (
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               {icon}
             </span>
           )}
           <div className="min-w-0">
-            <Heading className="truncate font-heading text-section font-bold leading-tight">{title}</Heading>
-            {subtitle && <p className="truncate text-micro text-muted-foreground">{subtitle}</p>}
+            <Heading className="truncate font-heading text-title font-bold leading-tight">{title}</Heading>
+            {subtitle && <p className="truncate text-body text-muted-foreground">{subtitle}</p>}
           </div>
         </div>
 
@@ -68,13 +68,13 @@ export function PeopleHero({
             {stats.map((s) => (
               <div
                 key={s.label}
-                className="min-w-0 rounded-lg border border-border/50 bg-muted/25 px-2 py-1 sm:min-w-[68px]"
+                className="min-w-0 rounded-lg border border-border/50 bg-muted/25 px-2.5 py-1.5 sm:min-w-[78px]"
                 title={`${s.label}${s.sub ? ` — ${s.sub}` : ""}`}
               >
-                <p className="truncate text-micro font-bold uppercase tracking-wide text-muted-foreground">{s.label}</p>
-                <p className={cn("font-heading text-body-lg font-bold leading-tight tabular-nums", TONE[s.tone ?? "default"])}>
+                <p className="truncate text-meta font-semibold uppercase tracking-wider text-muted-foreground">{s.label}</p>
+                <p className={cn("font-heading text-title font-bold leading-tight tabular-nums", TONE[s.tone ?? "default"])}>
                   {s.value}
-                  {s.sub && <span className="ml-1 text-micro font-medium text-muted-foreground">{s.sub}</span>}
+                  {s.sub && <span className="ml-1 text-meta font-medium text-muted-foreground">{s.sub}</span>}
                 </p>
               </div>
             ))}
@@ -111,7 +111,7 @@ export function PeopleTabs<T extends string>({
             aria-current={active ? "page" : undefined}
             onClick={() => onChange(t.id)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-meta font-semibold transition-colors",
+              "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-body font-semibold transition-colors",
               active
                 ? "bg-brand-gradient text-white shadow-sm"
                 : "border border-border bg-card text-muted-foreground hover:text-foreground"
@@ -152,13 +152,13 @@ export function DenseCard({
   className?: string;
 }) {
   return (
-    <div className={cn("flex min-h-0 flex-col rounded-2xl border border-border/60 bg-card p-3 shadow-sm", className)}>
-      <div className="mb-1.5 flex items-center justify-between gap-2">
+    <div className={cn("flex min-h-0 flex-col rounded-2xl border border-border/60 bg-card p-4 shadow-sm", className)}>
+      <div className="mb-2 flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 truncate text-body font-heading font-semibold">
+          <p className="flex items-center gap-1.5 truncate font-heading text-section font-semibold">
             {icon}{title}
           </p>
-          {hint && <p className="truncate text-micro text-muted-foreground">{hint}</p>}
+          {hint && <p className="truncate text-body text-muted-foreground">{hint}</p>}
         </div>
         {action}
       </div>

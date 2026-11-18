@@ -57,6 +57,92 @@ export class CapitalService {
   }
 
   /**
+   * Everything the Capital workspace needs on mount, in one round trip.
+   *
+   * The context used to fire twenty-one separate GETs, and every authenticated
+   * request pays three round trips of overhead before the handler runs (Redis
+   * `revoked:jti` GET, Redis rate-limit INCR, Postgres `User` lookup). At
+   * twenty-one requests that overhead — not the queries — was the dominant cost
+   * of opening Capital. The individual endpoints stay for anything that
+   * refreshes a single tab; this is only a way to fetch them together.
+   *
+   * Each section settles independently: a broken report must not blank the
+   * whole workspace, so a failure becomes `null` and only the tab that needs it
+   * shows an empty state.
+   */
+  async bootstrap(actorId?: string) {
+    const safe = <T,>(p: Promise<T>) => p.catch(() => null);
+    const [
+      overview,
+      incomeStats,
+      reports,
+      profitability,
+      activity,
+      aging,
+      forecast,
+      bankAccounts,
+      expenseCategories,
+      vendors,
+      accounts,
+      budgets,
+      trialBalance,
+      profitLoss,
+      balanceSheet,
+      cashFlow,
+      apAging,
+      installmentsDue,
+      invoicePage,
+      expenseRows,
+      incomeRows,
+    ] = await Promise.all([
+      safe(this.overview()),
+      safe(this.incomeStats()),
+      safe(this.reportsData()),
+      safe(this.profitability()),
+      safe(this.activityLog()),
+      safe(this.aging()),
+      safe(this.forecast()),
+      safe(this.bankAccounts()),
+      safe(this.expenseCategories()),
+      safe(this.vendors()),
+      safe(this.accounts()),
+      safe(this.budgets()),
+      safe(this.trialBalance()),
+      safe(this.profitLoss()),
+      safe(this.balanceSheet()),
+      safe(this.cashFlow()),
+      safe(this.apAging()),
+      safe(this.installmentsDue()),
+      safe(this.invoices({ pageSize: "100" })),
+      safe(this.expenses({ limit: "200" }, actorId)),
+      safe(this.income({ limit: "200" })),
+    ]);
+
+    return {
+      overview,
+      incomeStats,
+      reports,
+      profitability,
+      activity,
+      aging,
+      forecast,
+      bankAccounts,
+      expenseCategories,
+      vendors,
+      accounts,
+      budgets,
+      statements: { trialBalance, profitLoss, balanceSheet, cashFlow },
+      apAging,
+      installmentsDue,
+      // Same envelopes the standalone endpoints return, so the client keeps
+      // using one unwrap path for array-or-page payloads.
+      invoices: invoicePage,
+      expenses: expenseRows,
+      income: incomeRows,
+    };
+  }
+
+  /**
    * Reverse every journal entry whose source document no longer exists.
    * Safe to re-run: an entry that is already reversed is skipped.
    */
@@ -172,7 +258,7 @@ export class CapitalService {
   }
 
 
-  async income(query: { q?: string }) {
+  async income(query: { q?: string; limit?: string }) {
     return this.invoiceService.income(query);
   }
 
@@ -192,7 +278,7 @@ export class CapitalService {
   }
 
 
-  async expenses(query: { status?: string; clientId?: string; q?: string; category?: string }, actorId?: string) {
+  async expenses(query: { status?: string; clientId?: string; q?: string; category?: string; limit?: string }, actorId?: string) {
     return this.expenseService.expenses(query, actorId);
   }
 
@@ -378,6 +464,11 @@ export class CapitalService {
 
   async updateBankAccount(id: string, body: any) {
     return this.mastersService.updateBankAccount(id, body);
+  }
+
+
+  async deleteBankAccount(id: string, force = false) {
+    return this.mastersService.deleteBankAccount(id, force);
   }
 
 

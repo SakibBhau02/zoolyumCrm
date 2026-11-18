@@ -1,6 +1,6 @@
 "use client";
 
-import { ProfitabilityTab } from "../_components/tabs";
+import { ProfitabilityTab } from "../_components/tab-loader";
 import { useCapital } from "../_components/capital-context";
 
 export default function CapitalProfitabilityPage() {

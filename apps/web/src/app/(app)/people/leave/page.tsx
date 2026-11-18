@@ -105,7 +105,7 @@ export default function LeavePage() {
           { label: "Approved", value: (requests ?? []).filter((r: any) => r.status === "APPROVED").length, tone: "emerald" },
           { label: "Balances", value: (balances ?? []).length, sub: "rows", tone: "sky" },
         ]}
-        actions={<Btn variant="primary" onClick={() => setOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> Request</Btn>}
+        actions={<Btn variant="primary" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Request</Btn>}
       />
       <PeopleTabs
         className="mt-2"

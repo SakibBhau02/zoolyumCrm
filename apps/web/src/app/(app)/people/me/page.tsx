@@ -136,7 +136,7 @@ export default function MySpacePage() {
                   <LogOut className="size-3.5" /> {busy ? "…" : "Check out"}
                 </Btn>
               ) : (
-                <Btn variant="primary" onClick={() => punch("in")} disabled={busy} className="!px-2.5 !py-1.5 text-meta">
+                <Btn variant="primary" onClick={() => punch("in")} disabled={busy}>
                   <Fingerprint className="size-3.5" /> {busy ? "…" : t.checkOut ? "Check in again" : "Check in"}
                 </Btn>
               )
@@ -272,8 +272,8 @@ export default function MySpacePage() {
             <>
               <div className="flex items-center justify-between gap-2 rounded-lg bg-brand-gradient-soft px-2.5 py-1.5">
                 <div>
-                  <p className="text-micro font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300">Net · {payroll.latest.period}</p>
-                  <p className="font-heading text-section font-extrabold tabular-nums text-violet-800 dark:text-violet-200">{formatBDT(payroll.latest.netPay)}</p>
+                  <p className="text-micro font-bold uppercase tracking-wider text-primary dark:text-violet-300">Net · {payroll.latest.period}</p>
+                  <p className="font-heading text-section font-extrabold tabular-nums text-primary dark:text-primary">{formatBDT(payroll.latest.netPay)}</p>
                 </div>
                 <Link href={`/people/payroll/payslip/${payroll.latest.id}`} className="text-micro font-bold text-primary hover:underline">View</Link>
               </div>

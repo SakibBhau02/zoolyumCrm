@@ -1,6 +1,6 @@
 "use client";
 
-import { ActivityTab } from "../_components/tabs";
+import { ActivityTab } from "../_components/tab-loader";
 import { useCapital } from "../_components/capital-context";
 
 export default function CapitalActivityPage() {

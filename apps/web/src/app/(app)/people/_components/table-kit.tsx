@@ -157,7 +157,7 @@ export function RowCheck({ checked, onChange, label }: { checked: boolean; onCha
       checked={checked}
       onChange={(e) => onChange(e.target.checked)}
       onClick={(e) => e.stopPropagation()}
-      className="size-3.5 cursor-pointer accent-violet-600"
+      className="size-3.5 cursor-pointer accent-primary"
     />
   );
 }

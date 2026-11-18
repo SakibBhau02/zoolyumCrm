@@ -1261,6 +1261,7 @@ export class ScoringService {
     await this.cache.del("dashboard:overview");
     await this.cache.del("flow:overview");
     await this.cache.delPattern("flow:list:*");
+    await this.cache.delPattern("flow:lite:*");
     await this.cache.del("scoring:overview");
     await this.cache.delPattern("scoring:backtest:*");
     await this.cache.delPattern("scoring:calibrate:*");

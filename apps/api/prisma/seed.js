@@ -695,7 +695,7 @@ async function main() {
         data: { projectFileId: scriptFile.id, portalUserId: pv1.id, decision: "APPROVED", revisionNotes: "Approved with minor caption fixes", decidedAt: daysAgo(7, 15) },
     });
     await prisma.brandingConfig.create({
-        data: { logoUrl: "/brand/zoolyum-logo.svg", primaryColor: "#7C3AED", secondaryColor: "#38BDF8", invoiceNumberingFormat: "ZLM-{year}-{seq}" },
+        data: { logoUrl: "/brand/zoolyum-wordmark-dark.png", logoDarkUrl: "/brand/zoolyum-wordmark-dark.png", logoLightUrl: "/brand/zoolyum-wordmark-light.png", primaryColor: "#FF5001", secondaryColor: "#FF8A2B", invoiceNumberingFormat: "ZLM-{year}-{seq}" },
     });
     await prisma.integration.createMany({
         data: [

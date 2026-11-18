@@ -1,8 +1,50 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/use-api";
 import { apiFetch } from "@/lib/api";
+
+/**
+ * Every query this provider owns. `reload()` invalidates exactly these keys
+ * instead of bumping a `?ts=` counter that used to be appended to the URL —
+ * that trick guaranteed a network round trip on every render (it made the
+ * 30 s `staleTime` impossible to hit) and leaked a meaningless query param
+ * into the API logs.
+ */
+const QUERY_PATHS = [
+  "/capital/bootstrap",
+  "/capital/overview",
+  "/accounts/client-lookup",
+  "/flow/project-lookup",
+  "/capital/income/stats",
+  "/capital/reports",
+  "/capital/profitability",
+  "/capital/activity",
+  "/capital/aging",
+  "/capital/forecast",
+  "/capital/bank-accounts",
+  "/capital/expense-categories",
+  "/capital/vendors",
+  "/capital/accounts",
+  "/capital/budgets",
+  "/capital/statements/trial-balance",
+  "/capital/statements/profit-loss",
+  "/capital/statements/balance-sheet",
+  "/capital/statements/cash-flow",
+  "/capital/aging/ap",
+  "/capital/invoices?pageSize=100",
+  "/capital/expenses?limit=200",
+  "/capital/income?limit=200",
+  "/capital/installments/due",
+] as const;
+
+/** Accepts either a bare array or the `{ items, total }` page envelope. */
+function unwrapList(value: any): any[] | null {
+  if (!value) return null;
+  if (Array.isArray(value)) return value;
+  return Array.isArray(value.items) ? value.items : [];
+}
 
 type CapitalContextValue = {
   refreshKey: number;
@@ -72,78 +114,67 @@ const CapitalContext = createContext<CapitalContextValue | null>(null);
 export function CapitalProvider({ children }: { children: React.ReactNode }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [flash, setFlash] = useState<string | null>(null);
-  const reload = useCallback(() => setRefreshKey((r) => r + 1), []);
+  const queryClient = useQueryClient();
+  const reload = useCallback(() => {
+    setRefreshKey((r) => r + 1);
+    for (const path of QUERY_PATHS) {
+      void queryClient.invalidateQueries({ queryKey: ["api", path] });
+    }
+  }, [queryClient]);
   const notify = useCallback((msg: string) => {
     setFlash(msg);
     setTimeout(() => setFlash(null), 3000);
   }, []);
 
-  const { data: overview } = useApi<any>(`/capital/overview?ts=${refreshKey}`);
-  // NOTE: lookups carry ?ts= so every reload() busts the react-query cache.
-  // Without it, newly created vendors/accounts/categories/clients only appear
-  // after a full page reload (static query keys never refetch).
-  const { data: clients } = useApi<any[]>(`/accounts/client-lookup?ts=${refreshKey}`);
-  const { data: projects } = useApi<any[]>(`/flow/project-lookup?ts=${refreshKey}`);
-  const { data: incomeStats } = useApi<any>(`/capital/income/stats?ts=${refreshKey}`);
-  const { data: reports } = useApi<any>(`/capital/reports?ts=${refreshKey}`);
-  const { data: profitability } = useApi<any>(`/capital/profitability?ts=${refreshKey}`);
-  const { data: activity } = useApi<any[]>(`/capital/activity?ts=${refreshKey}`);
-  const { data: aging } = useApi<any>(`/capital/aging?ts=${refreshKey}`);
-  const { data: forecast } = useApi<any>(`/capital/forecast?ts=${refreshKey}`);
-  const { data: bankAccounts } = useApi<any[]>(`/capital/bank-accounts?ts=${refreshKey}`);
-  const { data: expenseCategories } = useApi<any[]>(`/capital/expense-categories?ts=${refreshKey}`);
-  const { data: vendors } = useApi<any[]>(`/capital/vendors?ts=${refreshKey}`);
-  const { data: accounts } = useApi<any[]>(`/capital/accounts?ts=${refreshKey}`);
-  const { data: budgets } = useApi<any[]>(`/capital/budgets?ts=${refreshKey}`);
-  const { data: tb } = useApi<any>(`/capital/statements/trial-balance?ts=${refreshKey}`);
-  const { data: pl } = useApi<any>(`/capital/statements/profit-loss?ts=${refreshKey}`);
-  const { data: bs } = useApi<any>(`/capital/statements/balance-sheet?ts=${refreshKey}`);
-  const { data: cf } = useApi<any>(`/capital/statements/cash-flow?ts=${refreshKey}`);
-  const { data: apAging } = useApi<any>(`/capital/aging/ap?ts=${refreshKey}`);
+  // Everything below arrives in ONE request (`/capital/bootstrap`): overview,
+  // lookups, the three list envelopes and the four statements. It used to be
+  // twenty-one GETs — and every authenticated GET pays three extra round trips
+  // (Redis jti check, rate-limit INCR, User lookup) before its handler runs.
+  // Only the two cross-module lookups stay separate; they belong to Accounts
+  // and Flow, not to Capital.
+  const { data: boot, error: bootErr } = useApi<any>(`/capital/bootstrap`);
+  const { data: clients } = useApi<any[]>(`/accounts/client-lookup`);
+  const { data: projects } = useApi<any[]>(`/flow/project-lookup`);
 
-  const [invoices, setInvoices] = useState<any[] | null>(null);
-  const [invoicesErr, setInvoicesErr] = useState<string | null>(null);
-  const [expenses, setExpenses] = useState<any[] | null>(null);
-  const [expensesErr, setExpensesErr] = useState<string | null>(null);
-  const [income, setIncome] = useState<any[] | null>(null);
-  const [incomeErr, setIncomeErr] = useState<string | null>(null);
+  const overview = boot?.overview ?? null;
+  const incomeStats = boot?.incomeStats ?? null;
+  const reports = boot?.reports ?? null;
+  const profitability = boot?.profitability ?? null;
+  const activity = boot?.activity ?? null;
+  const aging = boot?.aging ?? null;
+  const forecast = boot?.forecast ?? null;
+  const bankAccounts = boot?.bankAccounts ?? null;
+  const expenseCategories = boot?.expenseCategories ?? null;
+  const vendors = boot?.vendors ?? null;
+  const accounts = boot?.accounts ?? null;
+  const budgets = boot?.budgets ?? null;
+  const apAging = boot?.apAging ?? null;
+  const installmentsDue = boot?.installmentsDue ?? null;
+  const statements = useMemo(
+    () => ({
+      trialBalance: boot?.statements?.trialBalance ?? null,
+      profitLoss: boot?.statements?.profitLoss ?? null,
+      balanceSheet: boot?.statements?.balanceSheet ?? null,
+      cashFlow: boot?.statements?.cashFlow ?? null,
+    }),
+    [boot]
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    setInvoices(null);
-    setInvoicesErr(null);
-    setExpenses(null);
-    setExpensesErr(null);
-    setIncome(null);
-    setIncomeErr(null);
-    // Paged envelope: the legacy array path would ship the whole invoice book.
-    // The tabs that need a full list page through /capital/invoices themselves.
-    apiFetch<any>("/capital/invoices?pageSize=100")
-      .then((d) => !cancelled && setInvoices(Array.isArray(d) ? d : d?.items ?? []))
-      .catch((e) => !cancelled && setInvoicesErr(e.message ?? "Failed to load invoices"));
-    apiFetch<any>("/capital/expenses?limit=200")
-      .then((d) => !cancelled && setExpenses(Array.isArray(d) ? d : d?.items ?? []))
-      .catch((e) => !cancelled && setExpensesErr(e.message ?? "Failed to load expenses"));
-    apiFetch<any>("/capital/income?limit=200")
-      .then((d) => !cancelled && setIncome(Array.isArray(d) ? d : d?.items ?? []))
-      .catch((e) => !cancelled && setIncomeErr(e.message ?? "Failed to load income"));
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshKey]);
+  // Paged envelope: the legacy array path would ship the whole invoice book.
+  // The tabs that need a full list page through /capital/invoices themselves.
+  const invoices = useMemo(() => unwrapList(boot?.invoices), [boot]);
+  const expenses = useMemo(() => unwrapList(boot?.expenses), [boot]);
+  const income = useMemo(() => unwrapList(boot?.income), [boot]);
+
+  // A `null` section means the server reported it failed (every section
+  // settles independently), so only that list shows an error.
+  const sectionErr = (section: any, label: string) =>
+    bootErr ? bootErr : boot && section == null ? `Failed to load ${label}` : null;
+  const invoicesErr = sectionErr(boot?.invoices, "invoices");
+  const expensesErr = sectionErr(boot?.expenses, "expenses");
+  const incomeErr = sectionErr(boot?.income, "income");
 
   const [recurringBusy, setRecurringBusy] = useState(false);
-  const [installmentsDue, setInstallmentsDue] = useState<any[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    apiFetch<any[]>("/capital/installments/due")
-      .then((d) => !cancelled && setInstallmentsDue(d))
-      .catch(() => !cancelled && setInstallmentsDue([]));
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshKey]);
 
   const runRecurring = useCallback(async () => {
     setRecurringBusy(true);
@@ -153,13 +184,13 @@ export function CapitalProvider({ children }: { children: React.ReactNode }) {
       if (r.created > 0) bits.push(`${r.created} recurring invoice(s) generated`);
       if (r.reminders > 0) bits.push(`${r.reminders} installment reminder(s) logged`);
       notify(bits.length ? bits.join(" · ") : "No recurring invoices due");
-      setRefreshKey((v) => v + 1);
+      reload();
     } catch (e: any) {
       notify(e.message ?? "Recurring billing failed");
     } finally {
       setRecurringBusy(false);
     }
-  }, [notify]);
+  }, [notify, reload]);
 
   // ---- global modal / action state (previously local to the monolith page) ----
   const [invOpen, setInvOpen] = useState(false);
@@ -184,12 +215,12 @@ export function CapitalProvider({ children }: { children: React.ReactNode }) {
       try {
         await apiFetch(`/capital/invoices/${id}/duplicate`, { method: "POST" });
         notify("Invoice duplicated");
-        setRefreshKey((v) => v + 1);
+        reload();
       } catch (e: any) {
         notify(e.message ?? "Duplicate failed");
       }
     },
-    [notify]
+    [notify, reload]
   );
 
   /** Deletes the pending `toDelete` entry. Returns the deleted id (for closing detail views). */
@@ -201,7 +232,7 @@ export function CapitalProvider({ children }: { children: React.ReactNode }) {
       notify("Deleted");
       const id = toDelete.id;
       setToDelete(null);
-      setRefreshKey((v) => v + 1);
+      reload();
       return id;
     } catch (e: any) {
       notify(e.message ?? "Delete failed");
@@ -209,7 +240,7 @@ export function CapitalProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setDeleting(false);
     }
-  }, [toDelete, notify]);
+  }, [toDelete, notify, reload]);
 
   const doDeleteVendor = useCallback(async () => {
     if (!toDeleteVendor) return;
@@ -218,25 +249,25 @@ export function CapitalProvider({ children }: { children: React.ReactNode }) {
       await apiFetch(`/capital/vendors/${toDeleteVendor.id}`, { method: "DELETE" });
       notify("Vendor deleted");
       setToDeleteVendor(null);
-      setRefreshKey((v) => v + 1);
+      reload();
     } catch (e: any) {
       notify(e.message ?? "Delete failed");
     } finally {
       setDeletingVendor(false);
     }
-  }, [toDeleteVendor, notify]);
+  }, [toDeleteVendor, notify, reload]);
 
   const deleteAccount = useCallback(
     async (a: any) => {
       try {
         await apiFetch(`/capital/accounts/${a.id}`, { method: "DELETE" });
         notify("Account deactivated");
-        setRefreshKey((v) => v + 1);
+        reload();
       } catch (e: any) {
         notify(e.message ?? "Deactivate failed");
       }
     },
-    [notify]
+    [notify, reload]
   );
 
   return (
@@ -266,7 +297,7 @@ export function CapitalProvider({ children }: { children: React.ReactNode }) {
         aging,
         forecast,
         budgets: budgets ?? [],
-        statements: { trialBalance: tb, profitLoss: pl, balanceSheet: bs, cashFlow: cf },
+        statements,
         apAging,
         recurringBusy,
         runRecurring,

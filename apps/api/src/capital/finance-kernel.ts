@@ -155,6 +155,8 @@ export async function invalidateFinance(cache: CacheService) {
   await cache.delPattern("capital:statements:*");
   await cache.delPattern("capital:invoices:*");
   await cache.del("capital:invoices");
+  await cache.delPattern("capital:expenses:*");
+  await cache.del("capital:expenses");
   // Accounts reads the same invoices: without these the client board shows
   // stale money for up to 30s after every invoice/payment/expense change.
   await cache.del("accounts:overview");

@@ -109,30 +109,45 @@ Rules:
 
 ## 3. Colour
 
-OKLCH, all tokens in `globals.css`.
+Brand palette comes from the ZOO LYUM logo: orange `#FF5001`, black `#0B0A09`,
+white `#FFFFFF`. Tokens live in `globals.css`.
 
 | Token | Light | Dark |
 |---|---|---|
-| `--background` | `oklch(0.985 0.004 285)` | `oklch(0.18 0.02 285)` |
-| `--foreground` | `oklch(0.22 0.03 285)` | `oklch(0.94 0.01 285)` |
-| `--card` | `oklch(1 0 0)` | `oklch(0.22 0.025 285)` |
-| `--primary` | `oklch(0.52 0.22 290)` | `oklch(0.68 0.18 290)` |
-| `--secondary` | `oklch(0.62 0.14 220)` | `oklch(0.68 0.12 220)` |
-| `--muted` | `oklch(0.955 0.01 285)` | `oklch(0.26 0.02 285)` |
-| `--muted-foreground` | `oklch(0.52 0.03 285)` | `oklch(0.7 0.02 285)` |
-| `--border` | `oklch(0.91 0.012 285)` | `oklch(1 0 0 / 10%)` |
-| `--sidebar` | `oklch(0.21 0.035 285)` | same (always dark) |
+| `--background` | `#FAF8F6` | `#0C0B0A` |
+| `--foreground` | `#1A1613` | `#F6F2EF` |
+| `--card` | `#FFFFFF` | `#171412` |
+| `--primary` | `#C43D01` (AA-safe brand orange) | `#FF6A2B` |
+| `--primary-foreground` | `#FFFFFF` | `#1A0D06` |
+| `--primary-strong` | `#C43D01` | `#C43D01` |
+| `--primary-brand-raw` | `#FF5001` | `#FF5001` |
+| `--secondary` | `#FF8A2B` | `#FFA35C` |
+| `--muted` | `#F1ECE7` | `#221D19` |
+| `--muted-foreground` | `#6B625A` | `#ABA19A` |
+| `--border` | `#E8E1DA` | `oklch(1 0 0 / 10%)` |
+| `--sidebar` | `#100E0D` | same (always dark) |
 
-Chart series: `--chart-1` violet · `--chart-2` sky · `--chart-3` emerald ·
-`--chart-4` amber · `--chart-5` fuchsia.
+`--primary` is theme-scoped: `:root` reads `--brand-primary-light`, `.dark` reads
+`--brand-primary-dark`, both emitted by `lib/branding-theme.ts`. An admin-picked
+brand hex is darkened until it clears AA on white *and* on its own 10% tint
+(`accessibleOnWhite`), and lightened until it clears AA on the dark card
+(`accessibleOnDark`). `.bg-brand-gradient` uses `--primary-strong` so pills that
+hard-code `text-white` stay legible in dark mode too.
+
+Chart series: `--chart-1` orange · `--chart-2` amber · `--chart-3` sky ·
+`--chart-4` emerald · `--chart-5` rose.
 
 Semantic states use Tailwind hues, not new tokens:
 success `emerald-500`, warning `amber-500`, danger `rose-500`, info `sky-500`,
-each as `bg-*-500/10` + `text-*-600 dark:text-*-400`.
+each as `bg-*-500/10` + `text-*-600 dark:text-*-400`. Light mode darkens the
+400/500 shades of these chips (see the AA block at the end of `globals.css`):
+axe-core reports 0 colour-contrast violations on all 12 module pages in both
+themes.
 
-Utility classes: `bg-brand-gradient` (solid `--primary`, no gradients on primary
-buttons by branding decision), `bg-brand-gradient-soft`, `text-gradient`,
-`bg-emerald-gradient`, `bg-mesh`.
+Utility classes: `bg-brand-gradient` (solid `--primary-strong`, no gradients on
+primary buttons by branding decision), `bg-brand-gradient-soft`, `text-gradient`,
+`bg-emerald-gradient`, `bg-mesh`, `tier-chip` (data-driven colour that stays
+legible in both themes).
 
 ---
 

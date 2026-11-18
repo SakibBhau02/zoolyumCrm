@@ -38,7 +38,7 @@ export default function HolidaysPage() {
           { label: "Govt", value: (holidays ?? []).filter((h: any) => h.isGovernment).length, tone: "emerald" },
           { label: "Tentative", value: (holidays ?? []).filter((h: any) => h.tentative).length, tone: "amber" },
         ]}
-        actions={canEdit ? <Btn variant="primary" onClick={() => setOpen(true)} className="!px-2.5 !py-1.5 text-meta"><Plus className="size-3.5" /> Add</Btn> : undefined}
+        actions={canEdit ? <Btn variant="primary" onClick={() => setOpen(true)}><Plus className="size-3.5" /> Add</Btn> : undefined}
       />
       <LoadOrError loading={loading} error={error} onRetry={reload} skeleton={4} />
       {!loading && !error && (

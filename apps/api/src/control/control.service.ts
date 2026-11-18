@@ -9,8 +9,9 @@ import { decryptSecret, encryptSecret } from "../common/crypto";
 import { invalidateAdminPolicyCache } from "../common/guards/admin-policy.guard";
 import { PrismaService } from "../prisma/prisma.service";
 import { CacheService } from "../cache/cache.service";
+import { getBrandingConfig } from "../common/branding";
 import { DEFAULT_LEAD_RULES, mergeLeadRules } from "../pulse/lead-rules.service";
-import { CONTROL_MODULES, migrateModuleMatrix } from "../common/module-keys";
+import { CONTROL_MODULES, LEGACY_MODULE_ALIASES, migrateModuleMatrix } from "../common/module-keys";
 
 /** Modules that can be granted per-role permissions. These are the exact keys
  *  the API guards enforce (see common/module-keys.ts). */
@@ -56,7 +57,7 @@ export const DEFAULT_EMAIL = {
 export const DEFAULT_SETTINGS = {
   companyProfile: {
     companyName: "Zoolyum",
-    companyLogo: "/brand/zoolyum-logo.svg",
+    companyLogo: "/brand/zoolyum-wordmark-dark.png",
     website: "zoolyum.com",
     businessEmail: "support@zoolyum.com",
     phone: "+880 1712-000000",
@@ -68,7 +69,7 @@ export const DEFAULT_SETTINGS = {
     invoicePrefix: "ZLM",
     invoiceStartNumber: 1001,
     logoPosition: "left",
-    accentColor: "#7C3AED",
+    accentColor: "#FF5001",
     paymentTermsText: "Payment is due within 30 days.",
     defaultNotes: "Thank you for your business!",
   },
@@ -113,9 +114,9 @@ export const DEFAULT_SETTINGS = {
     { id: "7", name: "PPC", color: "#f43f5e" },
   ],
   clientTiers: [
-    { name: "Enterprise", minValue: 100000, color: "#f59e0b" },
-    { name: "Professional", minValue: 25000, color: "#3b82f6" },
-    { name: "Starter", minValue: 0, color: "#64748b" },
+    { name: "Enterprise", minValue: 100000, color: "#8a6400" },
+    { name: "Professional", minValue: 25000, color: "#1f5ebc" },
+    { name: "Starter", minValue: 0, color: "#4b5563" },
   ],
   healthScoreWeights: [
     { factor: "Payment History", weight: 30 },
@@ -341,8 +342,18 @@ export class ControlService {
     // editor does not send. Rebuilding from the visible list alone used to
     // wipe grants for modules the UI did not know about.
     const out: Record<string, { view: boolean; edit: boolean; approve: boolean }> = migrateModuleMatrix(existing);
+    // Older clients (and the pre-rename UI) still post CLIENTS/LEADS/PROJECTS/
+    // FINANCE/INSIGHTS. Mapping those keys only on `existing` meant a *new*
+    // role created with a legacy label silently lost that grant.
+    const source = input && typeof input === "object" ? { ...input } : {};
+    for (const [legacy, canonical] of Object.entries(LEGACY_MODULE_ALIASES)) {
+      if (source[legacy] !== undefined && source[canonical] === undefined) {
+        source[canonical] = source[legacy];
+      }
+      delete source[legacy];
+    }
     for (const m of CONTROL_MODULES) {
-      const p = input?.[m];
+      const p = source?.[m];
       if (p === undefined) continue;
       const edit = !!p.edit;
       const approve = !!p.approve;
@@ -533,15 +544,17 @@ export class ControlService {
 
   async branding() {
     return this.cache.wrap("control:branding", 300, async () => {
-      const config = await this.prisma.brandingConfig.findFirst();
+      // Newest row wins — see common/branding.ts. Without the order Postgres
+      // returned an arbitrary row and saves looked like they silently failed.
+      const config = await getBrandingConfig(this.prisma);
       return (
         config ?? {
-          logoUrl: "/brand/zoolyum-logo.svg",
-          logoDarkUrl: null,
-          logoLightUrl: null,
+          logoUrl: "/brand/zoolyum-wordmark-dark.png",
+          logoDarkUrl: "/brand/zoolyum-wordmark-dark.png",
+          logoLightUrl: "/brand/zoolyum-wordmark-light.png",
           appName: "Zoolyum OS",
-          primaryColor: "#7C3AED",
-          secondaryColor: "#38BDF8",
+          primaryColor: "#FF5001",
+          secondaryColor: "#FF8A2B",
           invoiceNumberingFormat: "ZLM-{year}-{seq}",
           defaultCurrency: "BDT",
           defaultTerms: "Payment is due within 15 days of invoice date.",
@@ -551,7 +564,9 @@ export class ControlService {
   }
 
   async updateBranding(body: any, actorId?: string) {
-    const existing = await this.prisma.brandingConfig.findFirst();
+    // Always write to the row the readers use (newest), never to an arbitrary
+    // duplicate left behind by an earlier save.
+    const existing = await getBrandingConfig(this.prisma);
     const tryDeleteOld = (oldUrl?: string | null, newUrl?: string | null) => {
       if (!oldUrl) return;
       if (newUrl === undefined) return;
@@ -575,6 +590,9 @@ export class ControlService {
     const result = existing
       ? await this.prisma.brandingConfig.update({ where: { id: existing.id }, data: body })
       : await this.prisma.brandingConfig.create({ data: body });
+    await this.prisma.brandingConfig
+      .deleteMany({ where: { id: { not: result.id } } })
+      .catch(() => null);
     await this.cache.del("control:branding");
     await this.cache.del("control:settings");
     await this.audit(actorId, "branding.update", "Branding", result.id, undefined, {

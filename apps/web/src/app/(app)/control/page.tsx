@@ -20,6 +20,7 @@ import {
 } from "@/components/shared";
 import { Btn, TableShell, Td, THead, Th, Tr } from "@/components/table";
 import { Field, FormActions, Input, Modal, Segmented, Select, Textarea } from "@/components/ui";
+import { PAY_META, MOBILE_WALLET_KINDS } from "@/lib/payment-meta";
 import { TelegramTab } from "./_components/telegram-tab";
 
 type Tab = "settings" | "users" | "roles" | "integrations" | "whatsapp" | "telegram" | "data";
@@ -144,7 +145,7 @@ function ColorInput({ value, onChange }: { value: string; onChange: (v: string) 
   return (
     <input
       type="color"
-      value={value || "#7C3AED"}
+      value={value || "#FF5001"}
       onChange={(e) => onChange(e.target.value)}
       className="h-8 w-11 shrink-0 cursor-pointer rounded-lg border border-border bg-card p-0.5"
     />
@@ -240,7 +241,7 @@ function CompanyProfileSection({ settings, busy, onSave }: any) {
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Company name"><Input value={draft.companyName ?? ""} onChange={(e) => set("companyName", e.target.value)} /></Field>
-        <Field label="Company logo URL" hint="Path or hosted URL of the logo"><Input value={draft.companyLogo ?? ""} onChange={(e) => set("companyLogo", e.target.value)} placeholder="/brand/zoolyum-logo.svg" /></Field>
+        <Field label="Company logo URL" hint="Path or hosted URL of the logo"><Input value={draft.companyLogo ?? ""} onChange={(e) => set("companyLogo", e.target.value)} placeholder="/brand/zoolyum-wordmark-dark.png" /></Field>
         <Field label="Website"><Input value={draft.website ?? ""} onChange={(e) => set("website", e.target.value)} placeholder="zoolyum.com" /></Field>
         <Field label="Business email"><Input type="email" value={draft.businessEmail ?? ""} onChange={(e) => set("businessEmail", e.target.value)} placeholder="support@company.com" /></Field>
         <Field label="Phone"><Input value={draft.phone ?? ""} onChange={(e) => set("phone", e.target.value)} placeholder="+880 1712-000000" /></Field>
@@ -317,7 +318,7 @@ function InvoicingSection({ settings, busy, onSave }: any) {
         </Field>
       </div>
       <div className="flex items-center gap-3">
-        <Field label="Accent color"><ColorInput value={draft.accentColor ?? "#7C3AED"} onChange={(v) => set("accentColor", v)} /></Field>
+        <Field label="Accent color"><ColorInput value={draft.accentColor ?? "#FF5001"} onChange={(v) => set("accentColor", v)} /></Field>
         <p className="pt-6 text-body text-muted-foreground">Accent used for headings and totals on generated PDFs</p>
       </div>
       <Field label="Payment terms text"><Textarea value={draft.paymentTermsText ?? ""} onChange={(e) => set("paymentTermsText", e.target.value)} /></Field>
@@ -548,7 +549,7 @@ function LeadCategoriesSection({ settings, busy, onSave }: any) {
       busy={busy}
       rows={rows}
       addLabel="Add category"
-      onAdd={() => setRows([...rows, { id: uid(), name: "", color: "#7C3AED" }])}
+      onAdd={() => setRows([...rows, { id: uid(), name: "", color: "#FF5001" }])}
       onSave={(e) => {
         e.preventDefault();
         onSave({ leadCategories: rows });
@@ -556,7 +557,7 @@ function LeadCategoriesSection({ settings, busy, onSave }: any) {
       onCancel={() => setRows(settings.leadCategories?.map((c: any) => ({ ...c })) ?? [])}
       renderRow={(r: any, i: number) => (
         <div key={r.id ?? i} className="flex items-center gap-2.5">
-          <ColorInput value={r.color ?? "#7C3AED"} onChange={(v) => patch(i, { color: v })} />
+          <ColorInput value={r.color ?? "#FF5001"} onChange={(v) => patch(i, { color: v })} />
           <Input value={r.name} onChange={(e) => patch(i, { name: e.target.value })} className="flex-1" />
           <DelBtn onClick={() => setRows(rows.filter((_: any, j: number) => j !== i))} />
         </div>
@@ -577,7 +578,7 @@ function ClientTiersSection({ settings, busy, onSave }: any) {
       busy={busy}
       rows={rows}
       addLabel="Add tier"
-      onAdd={() => setRows([...rows, { name: "", minValue: 0, color: "#7C3AED" }])}
+      onAdd={() => setRows([...rows, { name: "", minValue: 0, color: "#FF5001" }])}
       onSave={(e) => {
         e.preventDefault();
         onSave({ clientTiers: rows });
@@ -585,7 +586,7 @@ function ClientTiersSection({ settings, busy, onSave }: any) {
       onCancel={() => setRows(settings.clientTiers?.map((t: any) => ({ ...t })) ?? [])}
       renderRow={(r: any, i: number) => (
         <div key={i} className="flex items-center gap-2.5">
-          <ColorInput value={r.color ?? "#7C3AED"} onChange={(v) => patch(i, { color: v })} />
+          <ColorInput value={r.color ?? "#FF5001"} onChange={(v) => patch(i, { color: v })} />
           <Input value={r.name} onChange={(e) => patch(i, { name: e.target.value })} className="flex-1" placeholder="Tier name" />
           <Input type="number" value={r.minValue ?? 0} onChange={(e) => patch(i, { minValue: Number(e.target.value) })} className="!w-32" placeholder="Min value" />
           <DelBtn onClick={() => setRows(rows.filter((_: any, j: number) => j !== i))} />
@@ -868,8 +869,8 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
   const [logoLightUrl, setLogoLightUrl] = useState<string>("");
   const [logoDarkJxlUrl, setLogoDarkJxlUrl] = useState<string>("");
   const [logoLightJxlUrl, setLogoLightJxlUrl] = useState<string>("");
-  const [primaryColor, setPrimaryColor] = useState("#7C3AED");
-  const [secondaryColor, setSecondaryColor] = useState("#38BDF8");
+  const [primaryColor, setPrimaryColor] = useState("#FF5001");
+  const [secondaryColor, setSecondaryColor] = useState("#FF8A2B");
   const [busy, setBusy] = useState(false);
   const [uploadingDark, setUploadingDark] = useState(false);
   const [uploadingLight, setUploadingLight] = useState(false);
@@ -1070,8 +1071,8 @@ function BrandingSection({ notify }: { notify: (msg: string) => void }) {
             setAppName(branding.appName ?? "");
             setLogoDarkUrl(branding.logoDarkUrl ?? "");
             setLogoLightUrl(branding.logoLightUrl ?? "");
-            setPrimaryColor(branding.primaryColor ?? "#7C3AED");
-            setSecondaryColor(branding.secondaryColor ?? "#38BDF8");
+            setPrimaryColor(branding.primaryColor ?? "#FF5001");
+            setSecondaryColor(branding.secondaryColor ?? "#FF8A2B");
           }
         }} submitLabel="Save branding" />
       </form>
@@ -1087,7 +1088,7 @@ function InvoiceCompanyProfileSection({ notify }: { notify: (msg: string) => voi
     taxId: "", website: "", authorizedSignerName: "", authorizedSignerTitle: "",
     signatureImageUrl: "", defaultCurrency: "BDT", defaultNotes: "", defaultTerms: "",
     payMethod: "BANK_TRANSFER", payBankName: "", payAccountName: "", payAccountNumber: "",
-    payBranch: "", payRoutingNumber: "", payMobileWalletNumber: "",
+    payBranch: "", payRoutingNumber: "", payMobileWalletNumber: "", payWalletProviders: [] as string[],
   });
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -1106,10 +1107,21 @@ function InvoiceCompanyProfileSection({ notify }: { notify: (msg: string) => voi
       payMethod: pay.method ?? "BANK_TRANSFER", payBankName: pay.bankName ?? "", payAccountName: pay.accountName ?? "",
       payAccountNumber: pay.accountNumber ?? "", payBranch: pay.branch ?? "", payRoutingNumber: pay.routingNumber ?? "",
       payMobileWalletNumber: pay.mobileWalletNumber ?? "",
+      payWalletProviders: Array.isArray(pay.mobileWalletProviders) ? pay.mobileWalletProviders : [],
     });
   }, [branding]);
 
   const set = (k: string, v: string) => setF((prev) => ({ ...prev, [k]: v }));
+  const toggleWallet = (provider: string) =>
+    setF((prev) => {
+      const current = prev.payWalletProviders ?? [];
+      return {
+        ...prev,
+        payWalletProviders: current.includes(provider)
+          ? current.filter((p) => p !== provider)
+          : [...current, provider],
+      };
+    });
 
   const handleSigFile = async (file: File) => {
     const allowed = ["image/png", "image/jpeg", "image/webp"];
@@ -1134,8 +1146,12 @@ function InvoiceCompanyProfileSection({ notify }: { notify: (msg: string) => voi
     setBusy(true);
     try {
       const trim = (v: string) => v.trim() || null;
-      const pay: Record<string, string> = {};
-      if (f.payMethod.trim()) pay.method = f.payMethod.trim();
+      const pay: Record<string, any> = {};
+      const providers = f.payWalletProviders ?? [];
+      // One number can serve several providers; `method` stays the primary one
+      // for the ledger, the full list drives the invoice line.
+      pay.method = providers[0] || (f.payMethod.trim() || "BANK_TRANSFER");
+      if (providers.length) pay.mobileWalletProviders = providers;
       if (f.payBankName.trim()) pay.bankName = f.payBankName.trim();
       if (f.payAccountName.trim()) pay.accountName = f.payAccountName.trim();
       if (f.payAccountNumber.trim()) pay.accountNumber = f.payAccountNumber.trim();
@@ -1201,13 +1217,28 @@ function InvoiceCompanyProfileSection({ notify }: { notify: (msg: string) => voi
           </div>
 
           <p className="text-body font-semibold">Default payment instructions</p>
+          <p className="-mt-2 text-meta text-muted-foreground">
+            These print at the bottom-left of every invoice. One mobile number can serve several providers.
+          </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Method">
-              <Select value={f.payMethod} onChange={(e) => set("payMethod", e.target.value)}>
-                {["BANK_TRANSFER", "BKASH", "NAGAD", "CASH", "CARD"].map((m) => <option key={m} value={m}>{m.replace(/_/g, " ")}</option>)}
-              </Select>
-            </Field>
-            <Field label="Mobile wallet no"><Input value={f.payMobileWalletNumber} onChange={(e) => set("payMobileWalletNumber", e.target.value)} placeholder="01XXXXXXXXX" /></Field>
+            <Field label="Mobile wallet number" hint="bKash / Nagad / Rocket / Upay — same number allowed">
+              <Input value={f.payMobileWalletNumber} onChange={(e) => set("payMobileWalletNumber", e.target.value)} placeholder="01XXXXXXXXX" inputMode="tel" /></Field>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-meta font-semibold text-muted-foreground">This number is used for</span>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
+                {MOBILE_WALLET_KINDS.map((kind) => (
+                  <label key={kind} className="flex cursor-pointer items-center gap-1.5 text-body">
+                    <input
+                      type="checkbox"
+                      className="size-3.5 accent-primary"
+                      checked={(f.payWalletProviders ?? []).includes(kind)}
+                      onChange={() => toggleWallet(kind)}
+                    />
+                    {PAY_META[kind].short}
+                  </label>
+                ))}
+              </div>
+            </div>
             <Field label="Bank name"><Input value={f.payBankName} onChange={(e) => set("payBankName", e.target.value)} placeholder="City Bank PLC" /></Field>
             <Field label="Account name"><Input value={f.payAccountName} onChange={(e) => set("payAccountName", e.target.value)} placeholder="Zoolyum Agency" /></Field>
             <Field label="Account number"><Input value={f.payAccountNumber} onChange={(e) => set("payAccountNumber", e.target.value)} placeholder="1102938481901" /></Field>

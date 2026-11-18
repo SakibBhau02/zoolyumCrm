@@ -125,6 +125,16 @@ export class CapitalController {
     return this.capital.overview();
   }
 
+  /**
+   * One request for the whole workspace (overview + lookups + lists + the four
+   * statements). See `CapitalService.bootstrap` — opening Capital used to cost
+   * twenty-one authenticated round trips.
+   */
+  @Get("bootstrap")
+  bootstrap(@CurrentUser() user: any) {
+    return this.capital.bootstrap(user?.sub);
+  }
+
   @Get("invoices")
   invoices(@Query() query: any) {
     return this.capital.invoices(query);
@@ -376,6 +386,12 @@ export class CapitalController {
   @Patch("bank-accounts/:id")
   updateBankAccount(@Param("id") id: string, @Body() body: any) {
     return this.capital.updateBankAccount(id, body);
+  }
+
+  @Delete("bank-accounts/:id")
+  @RequirePermission("CAPITAL", "edit")
+  deleteBankAccount(@Param("id") id: string, @Query("force") force?: string) {
+    return this.capital.deleteBankAccount(id, force === "true" || force === "1");
   }
 
   @Get("bank-accounts/:id/transactions")

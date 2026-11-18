@@ -2902,7 +2902,7 @@ export default function PulsePage() {
                       onChange={(e) =>
                         setSelectedIds(e.target.checked ? tableLeads.map((l) => l.id) : [])
                       }
-                      className="size-3.5 accent-violet-500"
+                      className="size-3.5 accent-primary"
                     />
                   </Th>
                   <Th>Lead</Th>
@@ -2927,7 +2927,7 @@ export default function PulsePage() {
                           aria-label={`Select ${l.name}`}
                           checked={selectedIds.includes(l.id)}
                           onChange={() => toggleSelected(l.id)}
-                          className="size-3.5 accent-violet-500"
+                          className="size-3.5 accent-primary"
                         />
                       </Td>
                       <Td>
@@ -4744,7 +4744,7 @@ export default function PulsePage() {
               type="checkbox"
               checked={proposalSendNow}
               onChange={(e) => setProposalSendNow(e.target.checked)}
-              className="size-4 accent-violet-500"
+              className="size-4 accent-primary"
             />
             Send now — SENT হিসেবে mark হবে, lead stage PROPOSAL SENT-এ যাবে
           </label>

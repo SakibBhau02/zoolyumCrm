@@ -1,6 +1,6 @@
 "use client";
 
-import { AccountsTab } from "../_components/tabs";
+import { AccountsTab } from "../_components/tab-loader";
 import { useCapital } from "../_components/capital-context";
 
 export default function CapitalAccountsPage() {
@@ -13,6 +13,8 @@ export default function CapitalAccountsPage() {
       onAdd={() => c.setAccountOpen(true)}
       onDelete={(a) => void c.deleteAccount(a)}
       onSaved={c.reload}
+      bankAccounts={c.bankAccounts}
+      notify={c.notify}
     />
   );
 }

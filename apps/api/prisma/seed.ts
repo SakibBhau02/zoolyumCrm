@@ -942,7 +942,7 @@ async function main() {
 
   // ── Control extras ───────────────────────────────────────────────────
   await prisma.brandingConfig.create({
-    data: { logoUrl: "/brand/zoolyum-logo.svg", logoDarkUrl: "/brand/zoolyum-logo-dark.svg", logoLightUrl: "/brand/zoolyum-logo-light.svg", appName: "Zoolyum OS", primaryColor: "#7C3AED", secondaryColor: "#38BDF8", invoiceNumberingFormat: "ZLM-{year}-{seq}" },
+    data: { logoUrl: "/brand/zoolyum-wordmark-dark.png", logoDarkUrl: "/brand/zoolyum-wordmark-dark.png", logoLightUrl: "/brand/zoolyum-wordmark-light.png", appName: "Zoolyum OS", primaryColor: "#FF5001", secondaryColor: "#FF8A2B", invoiceNumberingFormat: "ZLM-{year}-{seq}" },
   });
   await prisma.integration.createMany({
     data: [

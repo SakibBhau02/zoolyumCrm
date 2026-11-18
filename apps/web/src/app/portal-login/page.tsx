@@ -63,7 +63,7 @@ export default function PortalLoginPage() {
       >
         <CardShell className="glass rounded-3xl p-8 shadow-2xl shadow-primary/10">
           <div className="mb-8 flex flex-col items-center text-center">
-            <BrandLogo height={36} />
+            <BrandLogo height={44} />
             <h1 className="mt-4 font-heading text-2xl font-bold">
               <span
                 className="bg-clip-text text-transparent"

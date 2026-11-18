@@ -10,6 +10,8 @@ export class CacheService implements OnModuleDestroy {
   private redis: Redis | null = null;
   private readonly mem = new Map<string, MemoryEntry>();
   private readonly memory = !process.env.REDIS_URL;
+  /** In-flight cache fills, keyed the same as the cache — see `wrap`. */
+  private readonly inflight = new Map<string, Promise<unknown>>();
 
   constructor(config: ConfigService) {
     const url = config.get<string>("REDIS_URL");
@@ -89,6 +91,7 @@ export class CacheService implements OnModuleDestroy {
   }
 
   async del(key: string): Promise<void> {
+    this.inflight.delete(key);
     if (this.ready()) {
       await this.redis!.del(key);
       return;
@@ -100,6 +103,12 @@ export class CacheService implements OnModuleDestroy {
     // suffix), which `prefix:*` never matches — so always drop the bare key
     // too, otherwise unfiltered lists stay stale for the full TTL.
     const bare = pattern.endsWith(":*") ? pattern.slice(0, -2) : null;
+    if (pattern.endsWith("*")) {
+      const prefix = pattern.slice(0, -1);
+      for (const k of this.inflight.keys()) if (k.startsWith(prefix)) this.inflight.delete(k);
+    } else {
+      this.inflight.delete(pattern);
+    }
     if (this.ready()) {
       if (bare) await this.redis!.del(bare).catch(() => {});
       let cursor = "0";
@@ -129,8 +138,32 @@ export class CacheService implements OnModuleDestroy {
   async wrap<T>(key: string, ttlSeconds: number, fn: () => Promise<T>): Promise<T> {
     const hit = await this.get<T>(key);
     if (hit !== null) return hit;
+    return this.singleFlight(key, () => this.computeAndStore(key, ttlSeconds, fn));
+  }
+
+  /**
+   * Coalesces concurrent misses on the same key.
+   *
+   * A dashboard fires ~20 cached queries at once and they all expire together,
+   * so every TTL boundary used to send 20 identical queries to Postgres at the
+   * same millisecond — the exact moment the database is already busy. Callers
+   * that arrive while a computation is in flight await that one promise.
+   * Rejections are shared too: a failing query is asked once, not twenty times.
+   */
+  private async singleFlight<T>(key: string, start: () => Promise<T>): Promise<T> {
+    const running = this.inflight.get(key);
+    if (running) return running as Promise<T>;
+    const promise = start().finally(() => {
+      if (this.inflight.get(key) === promise) this.inflight.delete(key);
+    });
+    this.inflight.set(key, promise);
+    return promise;
+  }
+
+  private async computeAndStore<T>(key: string, ttlSeconds: number, fn: () => Promise<T>): Promise<T> {
     const value = await fn();
-    await this.set(key, value, ttlSeconds);
+    // `null` means "no such key" to `get`, so caching it would re-query forever.
+    if (value !== null && value !== undefined) await this.set(key, value, ttlSeconds);
     return value;
   }
 

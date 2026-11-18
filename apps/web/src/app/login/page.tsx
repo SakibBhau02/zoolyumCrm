@@ -85,7 +85,7 @@ export default function LoginPage() {
       >
         <div className="glass rounded-3xl border border-border/60 p-8 shadow-2xl shadow-primary/10">
           <div className="mb-8 flex flex-col items-center text-center">
-            <BrandLogo height={36} />
+            <BrandLogo height={44} />
             <h1 className="mt-4 font-heading text-page font-bold">
               Welcome to{" "}
               <span

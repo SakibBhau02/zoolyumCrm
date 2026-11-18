@@ -73,12 +73,19 @@ export class TrainingService {
 
   async updateEnrollment(id: string, body: any) {
     const data: any = {};
-    for (const f of ["status", "progress", "score", "certificateUrl"]) {
+    // Only columns that exist on TrainingEnrollment. `score`/`certificateUrl`
+    // used to be accepted here, made Prisma throw, and the catch below turned
+    // that into a "404 Enrollment not found" even though the row existed.
+    for (const f of ["status", "progress"]) {
       if (body[f] !== undefined) data[f] = body[f];
     }
     if (body.progress === 100 || body.status === "completed") data.completedAt = new Date();
-    return this.prisma.trainingEnrollment.update({ where: { id }, data }).catch(() => {
-      throw new NotFoundException("Enrollment not found");
+    return this.prisma.trainingEnrollment.update({ where: { id }, data }).catch((err) => {
+      if (err?.code === "P2025") throw new NotFoundException("Enrollment not found");
+      if (err?.code === "P2003" || err?.code === "P2002") {
+        throw new BadRequestException("That enrollment update is not valid");
+      }
+      throw err;
     });
   }
 }

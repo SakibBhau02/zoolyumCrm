@@ -593,6 +593,13 @@ export class AccountsService {
         paymentDueDays: body.paymentDueDays ?? undefined,
         retainerInterval: body.retainerInterval || undefined,
         nextRetainerDate: body.nextRetainerDate ? new Date(body.nextRetainerDate) : undefined,
+        // These three were accepted by CreateClientBody but never written, so a
+        // client created with a credit limit / scoring profile silently lost it
+        // until someone edited the record. The update path already persisted
+        // them; create must do the same.
+        creditLimit: body.creditLimit === null ? null : body.creditLimit ?? undefined,
+        creditHold: body.creditHold ?? undefined,
+        scoreProfile: body.scoreProfile ?? undefined,
         healthScore: 75,
         healthLevel: "GREEN",
         ...(contactName

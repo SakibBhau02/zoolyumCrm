@@ -1,6 +1,6 @@
 "use client";
 
-import { IncomeTab } from "../_components/tabs";
+import { IncomeTab } from "../_components/tab-loader";
 import { useCapital } from "../_components/capital-context";
 
 export default function CapitalIncomePage() {

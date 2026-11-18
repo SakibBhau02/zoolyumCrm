@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { ReportsService } from "../reports/reports.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CacheService } from "../../cache/cache.service";
+import { getBrandingConfig } from "../../common/branding";
 
 @Injectable()
 export class DashboardService {
@@ -10,7 +11,7 @@ export class DashboardService {
   async executive(query:any){
     const exec=await this.reports.executive(query);
     // add branding & comparison
-    const branding=await this.prisma.brandingConfig.findFirst().catch(()=>null);
+    const branding=await getBrandingConfig(this.prisma).catch(()=>null);
     const comparison = query.compare ? await this.reports.comparison({
       from: query.from, to: query.to,
       compareFrom: query.compareFrom ?? new Date(new Date(query.from).getTime() - 30*86400000).toISOString(),
@@ -21,7 +22,7 @@ export class DashboardService {
   }
 
   async whiteLabel(){
-    const branding=await this.prisma.brandingConfig.findFirst();
-    return branding ?? { appName:"Zoolyum OS", primaryColor:"#7c3aed" };
+    const branding=await getBrandingConfig(this.prisma);
+    return branding ?? { appName:"Zoolyum OS", primaryColor:"#FF5001" };
   }
 }

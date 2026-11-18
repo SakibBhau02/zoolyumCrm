@@ -47,7 +47,7 @@ export default function TabNav() {
                 href={h.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-meta font-semibold transition-all",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-body font-semibold transition-all",
                   active ? "bg-brand-gradient text-white shadow-sm" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                 )}
               >

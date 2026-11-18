@@ -1,12 +1,12 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ─── Type scale — the single source of truth for every font size ───────────
+/* â”€â”€â”€ Type scale â€” the single source of truth for every font size â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Modules used to hard-code raw px (`text-[10px]`, `text-[11.5px]`,
-   `text-[13px]`, …): 17 distinct sizes existed, so Pulse rendered body copy at
+   `text-[13px]`, â€¦): 17 distinct sizes existed, so Pulse rendered body copy at
    14px while Accounts rendered its table at 10px. Everything now resolves to
-   one of the steps below. Never use `text-[<n>px]` in a component again — add
+   one of the steps below. Never use `text-[<n>px]` in a component again â€” add
    a step here instead if a genuinely new size is needed.
 
      micro    12px    badges, uppercase labels, micro captions
@@ -48,46 +48,64 @@
   --text-display--line-height: 1;
 }
 
-/* ─── Zoolyum OS design tokens (adapted from EduTrack design system) ─── */
+/* â”€â”€â”€ Zoolyum brand tokens â€” derived from the ZOO LYUM logo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Logo orange  #FF5001  (mark + wordmark accent)
+   Logo black   #0B0A09  (sidebar, ink)
+   Logo white   #FFFFFF
+
+   #FF5001 with white text is 3.28:1, so `--primary` (used as a button
+   background under white text and as link text on white) is the AA-safe
+   #C9400A. The raw orange stays available as `--primary-brand-raw`, the
+   chart-1 colour, the logo artwork and the sidebar rail accent. */
 :root {
-  --background: oklch(0.985 0.004 285);
-  --foreground: oklch(0.22 0.03 285);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.03 285);
-  --primary: oklch(0.52 0.22 290);
-  --primary-foreground: oklch(0.985 0.004 285);
-  --secondary: oklch(0.62 0.14 220);
-  --muted: oklch(0.955 0.01 285);
-  --muted-foreground: oklch(0.49 0.03 285);
-  --border: oklch(0.91 0.012 285);
-  --sidebar: oklch(0.21 0.035 285);
-  --sidebar-primary: oklch(0.56 0.22 290);
+  --background: #faf8f6;
+  --foreground: #1a1613;
+  --card: #ffffff;
+  --card-foreground: #1a1613;
+  --primary: var(--brand-primary-light, #c43d01);
+  --primary-foreground: #ffffff;
+  /* Always-dark-enough orange for white text (`.bg-brand-gradient`, active
+     pills that hard-code text-white). Kept separate from --primary so dark
+     mode can use a bright orange for icons/text without breaking buttons. */
+  --primary-strong: var(--brand-primary-strong, #c43d01);
+  --primary-brand-raw: var(--brand-primary-raw, #ff5001);
+  --secondary: #ff8a2b;
+  --muted: #f1ece7;
+  --muted-foreground: #6b625a;
+  --border: #e8e1da;
+  --sidebar: #100e0d;
+  --sidebar-primary: #c43d01;
   --sidebar-accent: oklch(1 0 0 / 8%);
   --sidebar-border: oklch(1 0 0 / 8%);
-  --chart-1: oklch(0.56 0.23 290);
-  --chart-2: oklch(0.62 0.14 220);
-  --chart-3: oklch(0.66 0.16 170);
-  --chart-4: oklch(0.72 0.16 70);
-  --chart-5: oklch(0.62 0.21 330);
+  --chart-1: #ff5001;
+  --chart-2: #f59e0b;
+  --chart-3: #0ea5e9;
+  --chart-4: #10b981;
+  --chart-5: #f43f5e;
   --radius: 0.75rem;
 }
 
 .dark {
-  --background: oklch(0.18 0.02 285);
-  --foreground: oklch(0.94 0.01 285);
-  --card: oklch(0.22 0.025 285);
-  --card-foreground: oklch(0.94 0.01 285);
-  --primary: oklch(0.68 0.18 290);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.68 0.12 220);
-  --muted: oklch(0.26 0.02 285);
-  --muted-foreground: oklch(0.7 0.02 285);
+  --background: #0c0b0a;
+  --foreground: #f6f2ef;
+  --card: #171412;
+  --card-foreground: #f6f2ef;
+  /* Bright orange reads at 6.7:1 on the near-black surface; buttons pair it
+     with the near-black `--primary-foreground` (7.3:1), exactly like the
+     logo's orange block with dark artwork. */
+  --primary: var(--brand-primary-dark, #ff6a2b);
+  --primary-foreground: #1a0d06;
+  --secondary: #ffa35c;
+  --muted: #221d19;
+  --muted-foreground: #aba19a;
   --border: oklch(1 0 0 / 10%);
-  --chart-1: oklch(0.68 0.18 290);
-  --chart-2: oklch(0.68 0.12 220);
-  --chart-3: oklch(0.7 0.14 170);
-  --chart-4: oklch(0.74 0.14 70);
-  --chart-5: oklch(0.68 0.17 330);
+  --sidebar: #100e0d;
+  --sidebar-primary: #c43d01;
+  --chart-1: #ff6a2b;
+  --chart-2: #fbbf24;
+  --chart-3: #38bdf8;
+  --chart-4: #34d399;
+  --chart-5: #fb7185;
 }
 
 @theme inline {
@@ -109,8 +127,8 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
-  /* Noto Sans Bengali covers ৳ (U+09F3) + Bangla text, which Inter/Outfit
-     don't ship — it only renders for those glyphs, everything else unchanged. */
+  /* Noto Sans Bengali covers à§³ (U+09F3) + Bangla text, which Inter/Outfit
+     don't ship â€” it only renders for those glyphs, everything else unchanged. */
   --font-sans: var(--font-inter), var(--font-bengali), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --font-heading: var(--font-display), var(--font-bengali), ui-sans-serif, system-ui, sans-serif;
@@ -135,7 +153,7 @@
     line-height: var(--text-body--line-height);
   }
   /* Headings always use the display face. Modules used to apply
-     `font-heading` by hand — Insight applied it once, Pulse twice — so a
+     `font-heading` by hand â€” Insight applied it once, Pulse twice â€” so a
      section could render in Inter while the same section elsewhere rendered
      in Outfit. */
   h1,
@@ -151,7 +169,7 @@
   }
 }
 
-/* ─── Privacy mode (screen sharing / client meetings) ───────────────────────
+/* â”€â”€â”€ Privacy mode (screen sharing / client meetings) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Blurring inline text with `filter` does nothing, so mask it with a shadow:
    the glyphs stay in place (no layout shift) but become unreadable. */
 html[data-privacy="on"] .money,
@@ -165,21 +183,21 @@ html[data-privacy="on"] [data-money] * {
   color: transparent !important;
 }
 
-/* ─── Brand (solid via --primary, fallback OKLCH) — no gradient on buttons per branding request ─── */
+/* â”€â”€â”€ Brand (solid via --primary-strong, fallback OKLCH) â€” no gradient on buttons per branding request â”€â”€â”€ */
 .bg-brand-gradient {
-  background: var(--primary, oklch(0.56 0.23 290));
+  background: var(--primary-strong, #c43d01);
 }
 .bg-brand-gradient-soft {
-  background: color-mix(in oklch, var(--primary, oklch(0.56 0.23 290)) 12%, transparent);
+  background: color-mix(in oklch, var(--primary, #c43d01) 12%, transparent);
 }
 .text-gradient {
-  background-image: linear-gradient(110deg, oklch(0.56 0.23 290), oklch(0.6 0.21 310), oklch(0.62 0.16 220));
+  background-image: linear-gradient(110deg, #c43d01, #ff5001 55%, #f59e0b);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 .text-gradient-warm {
-  background-image: linear-gradient(110deg, oklch(0.68 0.18 290), oklch(0.65 0.2 285), oklch(0.7 0.14 170));
+  background-image: linear-gradient(110deg, #ff6a2b, #ff8a2b, #fbbf24);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -191,27 +209,27 @@ html[data-privacy="on"] [data-money] * {
   background-image:
     radial-gradient(
       at 12% 8%,
-      color-mix(in oklch, var(--primary, oklch(0.56 0.23 290)) 10%, transparent) 0px,
+      color-mix(in oklch, var(--primary, #c43d01) 10%, transparent) 0px,
       transparent 45%
     ),
     radial-gradient(
       at 88% 12%,
-      color-mix(in oklch, var(--secondary, oklch(0.62 0.14 220)) 10%, transparent) 0px,
+      color-mix(in oklch, var(--secondary, #ff8a2b) 10%, transparent) 0px,
       transparent 45%
     ),
     radial-gradient(
       at 75% 85%,
-      color-mix(in oklch, var(--primary, oklch(0.66 0.16 170)) 10%, transparent) 0px,
+      color-mix(in oklch, var(--primary, #ff5001) 10%, transparent) 0px,
       transparent 45%
     ),
     radial-gradient(
       at 15% 92%,
-      color-mix(in oklch, var(--secondary, oklch(0.62 0.21 330)) 8%, transparent) 0px,
+      color-mix(in oklch, var(--secondary, #f59e0b) 8%, transparent) 0px,
       transparent 45%
     );
 }
 
-/* ─── Surfaces ─── */
+/* â”€â”€â”€ Surfaces â”€â”€â”€ */
 .glass {
   background: color-mix(in oklch, white 60%, transparent);
   backdrop-filter: blur(24px);
@@ -237,7 +255,7 @@ html[data-privacy="on"] [data-money] * {
   background-size: 28px 28px;
 }
 
-/* ─── Keyframes ─── */
+/* â”€â”€â”€ Keyframes â”€â”€â”€ */
 @keyframes marquee {
   from { transform: translateX(0); }
   to { transform: translateX(-50%); }
@@ -271,7 +289,7 @@ html[data-privacy="on"] [data-money] * {
   animation: pulse-glow 4s ease-in-out infinite;
 }
 
-/* ─── Print (invoice print preview) ─── */
+/* â”€â”€â”€ Print (invoice print preview) â”€â”€â”€ */
 @media print {
   @page {
     size: A4 portrait;
@@ -289,7 +307,7 @@ html[data-privacy="on"] [data-money] * {
   .invoice-print-area * {
     visibility: visible;
   }
-  /* The sheet is a true A4 content box: 210mm page − 2 × 10mm page margins.
+  /* The sheet is a true A4 content box: 210mm page âˆ’ 2 Ã— 10mm page margins.
      Using 100% previously let the sheet grow to the viewport width, which
      changed every column's proportion when printing from a wide screen. */
   .invoice-print-area {
@@ -323,7 +341,7 @@ html[data-privacy="on"] [data-money] * {
   }
 }
 
-/* ─── Popover panel ─── */
+/* â”€â”€â”€ Popover panel â”€â”€â”€ */
 @keyframes pop-in {
   from { opacity: 0; transform: translateY(-6px) scale(0.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -338,7 +356,7 @@ html[data-privacy="on"] [data-money] * {
 /* Slim scroll area used by inbox / notification panels */
 .scroll-slim {
   scrollbar-width: thin;
-  scrollbar-color: oklch(0.5 0.05 285 / 25%) transparent;
+  scrollbar-color: rgba(138, 127, 119, 0.3) transparent;
 }
 .scroll-slim::-webkit-scrollbar {
   width: 6px;
@@ -347,14 +365,14 @@ html[data-privacy="on"] [data-money] * {
   background: transparent;
 }
 .scroll-slim::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0.05 285 / 25%);
+  background: rgba(138, 127, 119, 0.3);
   border-radius: 999px;
 }
 .scroll-slim::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0.05 285 / 45%);
+  background: rgba(107, 98, 90, 0.5);
 }
 
-/* ─── Scrollbar ─── */
+/* â”€â”€â”€ Scrollbar â”€â”€â”€ */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -363,16 +381,16 @@ html[data-privacy="on"] [data-money] * {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: oklch(0.5 0.05 285 / 30%);
+  background: rgba(138, 127, 119, 0.35);
   border-radius: 8px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0.05 285 / 50%);
+  background: rgba(107, 98, 90, 0.55);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────
+/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Responsive / touch layer (phone + tablet first)
-   ───────────────────────────────────────────────────────────────────────── */
+   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 :root {
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -472,11 +490,11 @@ html {
   }
 }
 
-/* ── AA contrast for the 12px status pills ───────────────────────────────
-   Tailwind's *-600 shades land at 2.0–3.9:1 on their own 10% tints, which
+/* â”€â”€ AA contrast for the 12px status pills â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   Tailwind's *-600 shades land at 2.0â€“3.9:1 on their own 10% tints, which
    fails WCAG 1.4.3 at 12px (audit UX-02 follow-up). The 700 shades clear
    4.5:1 in the same hue family, so tint/palette pairing stays intact.
-   Dark mode is untouched — it uses the *-400 variants on dark surfaces.   */
+   Dark mode is untouched â€” it uses the *-400 variants on dark surfaces.   */
 :root:not(.dark) .text-rose-600 {
   color: oklch(0.47 0.19 16);
 }
@@ -494,3 +512,40 @@ html {
 :root:not(.dark) .text-rose-500 {
   color: oklch(0.51 0.2 16);
 }
+
+/* Admin-picked tier colours are stored as a single hex and used on both white
+   and near-black surfaces. The tint stays in the same hue; only the text is
+   lifted in dark mode so the chip keeps its colour identity and stays legible. */
+.tier-chip {
+  border-color: color-mix(in srgb, var(--tier-color) 30%, transparent);
+  background: color-mix(in srgb, var(--tier-color) 10%, transparent);
+  color: var(--tier-color);
+}
+.dark .tier-chip {
+  color: color-mix(in srgb, var(--tier-color) 52%, white);
+}
+
+/* ── AA for the tinted status chips ──────────────────────────────────────────
+   The *-400 / *-500 shades are tuned for dark surfaces; on the 10% tint chips
+   they land at 1.6–2.9:1 in light mode (axe-core color-contrast). These deeper
+   values keep the hue and clear 4.5:1 on white and on their own tint. Dark mode
+   is untouched — it keeps the lighter 300/400 shades. */
+:root:not(.dark) .text-emerald-400 { color: #007e57; }
+:root:not(.dark) .text-emerald-500 { color: #007d53; }
+:root:not(.dark) .text-amber-400 { color: #926900; }
+:root:not(.dark) .text-amber-500 { color: #8a6400; }
+:root:not(.dark) .text-sky-400 { color: #00719a; }
+:root:not(.dark) .text-sky-500 { color: #006f98; }
+:root:not(.dark) .text-fuchsia-500 { color: #a51eb8; }
+:root:not(.dark) .text-blue-500 { color: #1f5ebc; }
+:root:not(.dark) .text-orange-500 { color: #b34a00; }
+:root:not(.dark) .text-orange-600 { color: #c83c00; }
+:root:not(.dark) .text-rose-400 { color: #b34558; }
+
+/* `text-muted-foreground/70` blends to 3.1:1 on white (axe-core flags every
+   hint and timestamp). Using the full muted tone keeps the hierarchy — it is
+   already lighter than body copy — while clearing AA. */
+:root:not(.dark) .text-muted-foreground\/70 { color: var(--muted-foreground); }
+.dark .text-muted-foreground\/70 { color: var(--muted-foreground); }
+/* On the dark green tint the 600 shade sits at 4.37:1; the 500 step clears it. */
+.dark .text-emerald-600 { color: #0d9e6e; }

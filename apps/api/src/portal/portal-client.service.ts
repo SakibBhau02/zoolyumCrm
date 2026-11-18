@@ -16,6 +16,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { PortalAccessService, PortalScope } from "./portal-access.service";
 import { TelegramService } from "./telegram.service";
 import { findUploadedFile, sanitizeFilename, uploadsDir } from "../common/file-storage";
+import { getBrandingConfig } from "../common/branding";
 import { invoiceTotals, isReceivable } from "../capital/finance-kernel";
 import { summariseDollarSales, toClientDollarView } from "../common/dollar-purchases";
 
@@ -53,7 +54,7 @@ export class PortalClientService {
 
   /** Public-safe company branding for portal invoice / receipt PDFs. */
   async branding() {
-    const b = await this.prisma.brandingConfig.findFirst();
+    const b = await getBrandingConfig(this.prisma);
     if (!b) return null;
     // Public-safe invoice branding: display identity + the fields the invoice /
     // report PDFs actually print. Internal numbering config stays server-side.
