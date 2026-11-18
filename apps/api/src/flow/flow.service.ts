@@ -207,7 +207,12 @@ export class FlowService {
         () =>
           this.prisma.project.findMany({
             where,
-            select: { id: true, name: true, clientId: true },
+            select: {
+              id: true,
+              name: true,
+              clientId: true,
+              client: { select: { companyName: true } },
+            },
             orderBy: { name: "asc" },
             take: 500,
           })
@@ -298,12 +303,28 @@ export class FlowService {
     });
   }
 
-  /** id + name only, for pickers in modules that lack Flow permissions. */
+  /**
+   * Minimal project list for pickers in modules whose roles do not have the
+   * Flow workspace (e.g. HR recording a project expense).
+   *
+   * `clientId` is required by every client → project cascade (invoice, expense,
+   * income); without it the project dropdown empties as soon as a client is
+   * chosen. Billing type/currency let the invoice form prefill correctly, while
+   * budget, health and client details stay out of this endpoint.
+   */
   async projectLookup() {
     return this.prisma.project.findMany({
       where: { status: { not: "ARCHIVED" } },
-      select: { id: true, name: true, uid: true },
-      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        name: true,
+        uid: true,
+        clientId: true,
+        status: true,
+        billingType: true,
+        currency: true,
+      },
+      orderBy: [{ clientId: "asc" }, { name: "asc" }],
       take: 500,
     });
   }

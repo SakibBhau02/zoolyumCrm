@@ -72,7 +72,8 @@ export type TaskRow = {
 };
 
 export type UserLite = { id: string; name: string; roleTitle?: string };
-export type ProjectLite = { id: string; name: string };
+export type ProjectLite = { id: string; name: string; clientId?: string | null };
+export type ClientLite = { id: string; companyName: string };
 
 // Status/priority/type vocabulary is owned by ./domain — re-exported here so
 // existing imports of this module keep working.
@@ -92,13 +93,13 @@ const DUE_PRESETS = [
   { label: "Next week", days: 7 },
 ];
 
-export function TaskFormModal({ open, onClose, initial, tasks, users, projects, onSaved, projectId }: {
+export function TaskFormModal({ open, onClose, initial, tasks, users, projects, clients, onSaved, projectId }: {
   open: boolean; onClose: () => void; initial?: TaskRow | null;
-  tasks: TaskRow[]; users: UserLite[]; projects: ProjectLite[]; onSaved: () => void;
+  tasks: TaskRow[]; users: UserLite[]; projects: ProjectLite[]; clients?: ClientLite[]; onSaved: () => void;
   projectId?: string;
 }) {
   const [f, setF] = useState({
-    title: "", description: "", projectId: "", priority: "MEDIUM", status: "TODO", taskType: "general",
+    title: "", description: "", projectId: "", clientId: "", priority: "MEDIUM", status: "TODO", taskType: "general",
     assignedToId: "", extraAssignees: [] as string[], dueDate: "", startDate: "",
     estimatedHours: "", tags: "", parentTaskId: "", isClientVisible: false, isRecurring: false, recurrenceSchedule: "weekly",
     referenceLinks: [] as { id: string; title: string; url: string }[],
@@ -136,9 +137,11 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
     setErr(null);
     setTitleErr(null);
     setDescErr(null);
+    const linkedProject = projects.find((p) => p.id === (initial?.projectId ?? projectId ?? "")) ?? null;
     setF(initial
       ? {
         title: initial.title, description: initial.description ?? "", projectId: initial.projectId ?? "",
+        clientId: linkedProject?.clientId ?? "",
         priority: initial.priority || "MEDIUM", status: initial.status, taskType: initial.taskType ?? "general",
         assignedToId: initial.assignedToId ?? "",
         extraAssignees: (initial.assignees ?? []).map((a: any) => a.id),
@@ -152,7 +155,8 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
         attachments: (initial.attachments ?? []) as any,
       }
       : {
-        title: "", description: "", projectId: projectId ?? "", priority: "MEDIUM", status: "TODO", taskType: "general",
+        title: "", description: "", projectId: projectId ?? "", clientId: linkedProject?.clientId ?? "",
+        priority: "MEDIUM", status: "TODO", taskType: "general",
         assignedToId: "", extraAssignees: [], dueDate: "", startDate: "",
         estimatedHours: "", tags: "", parentTaskId: "", isClientVisible: false, isRecurring: false, recurrenceSchedule: "weekly",
         referenceLinks: [], customFields: [], attachments: [],
@@ -218,6 +222,15 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
   const toggleExtra = (id: string) => setF({ ...f, extraAssignees: f.extraAssignees.includes(id) ? f.extraAssignees.filter((x) => x !== id) : [...f.extraAssignees, id] });
   const assigneeName = users.find((u) => u.id === f.assignedToId)?.name;
   const extraCount = f.referenceLinks.length + f.attachments.length + f.customFields.length;
+  // Client narrows the project list; a project already implies its client, so
+  // picking a different client clears a project that would no longer match.
+  const projectChoices = f.clientId ? projects.filter((p) => p.clientId === f.clientId) : projects;
+  const selectedClientName = (clients ?? []).find((c) => c.id === f.clientId)?.companyName;
+  const onClientChange = (clientId: string) => {
+    const current = projects.find((p) => p.id === f.projectId);
+    const keepProject = !clientId || !f.projectId || current?.clientId === clientId;
+    setF({ ...f, clientId, projectId: keepProject ? f.projectId : "" });
+  };
 
   return (
     <Modal
@@ -285,11 +298,20 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
                 {users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}
               </Select>
             </Field>
+            <Field label="Client" hint="Narrows the project list below">
+              <Select value={f.clientId} onChange={(e) => onClientChange(e.target.value)} disabled={!!projectId}>
+                <option value="">All clients</option>
+                {(clients ?? []).map((c) => (<option key={c.id} value={c.id}>{c.companyName}</option>))}
+              </Select>
+            </Field>
             <Field label="Project">
               <Select value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })} disabled={!!projectId}>
                 <option value="">No project</option>
-                {projects.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                {projectChoices.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
               </Select>
+              {f.clientId && projectChoices.length === 0 && (
+                <p className="mt-1 text-meta text-muted-foreground">No projects under {selectedClientName ?? "this client"} yet — create one in Flow.</p>
+              )}
             </Field>
             <div className="flex flex-col gap-1.5">
               <FieldLabel>Due date</FieldLabel>

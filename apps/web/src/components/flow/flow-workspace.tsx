@@ -2993,7 +2993,8 @@ export default function FlowWorkspace({ projectId }: { projectId?: string }) {
         onClose={() => setTaskOpen(false)}
         tasks={(detail?.tasks ?? []) as any}
         users={(employees ?? []).map((e) => ({ id: e.id, name: e.name }))}
-        projects={(projects ?? []).map((p) => ({ id: p.id, name: p.name }))}
+        projects={(projects ?? []).map((p) => ({ id: p.id, name: p.name, clientId: p.client?.id }))}
+        clients={(clients ?? []).map((c: any) => ({ id: c.id, companyName: c.companyName }))}
         projectId={detail?.id}
         onSaved={() => { setTaskOpen(false); notify("Task created"); reload(); }}
       />

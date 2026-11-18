@@ -95,7 +95,7 @@ type TaskDetail = TaskRow & {
 };
 type Stats = { total?: number; open?: number; done?: number; inProgress?: number; overdue?: number; dueToday?: number; highPriority?: number; review?: number; blocked?: number; hoursThisWeek?: number };
 type UserLite = { id: string; name: string; roleTitle?: string };
-type ProjectLite = { id: string; name: string };
+type ProjectLite = { id: string; name: string; clientId?: string | null };
 const SWIMLANES = [
   { value: "none", label: "No lanes" },
   { value: "project", label: "By project" },
@@ -430,6 +430,7 @@ function TasksPageInner() {
   const { data: employees } = useApi<UserLite[]>("/people/employees");
   const users = employees ?? [];
   const { data: projects } = useApi<ProjectLite[]>("/flow/projects?lite=1");
+  const { data: clientLookup } = useApi<{ id: string; companyName: string }[]>("/accounts/client-lookup");
   const { data: myDay } = useApi<any[]>(`/tasks/my-day?v=${aux}`);
   const { data: sprints } = useApi<Sprint[]>(`/tasks/sprints?v=${aux}`);
   const { data: savedViews } = useApi<SavedView[]>(`/tasks/views?v=${aux}`);
@@ -2192,7 +2193,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
         )}
       </Modal>
 
-      <TaskFormModal open={formOpen} onClose={closeTaskForm} initial={editTask} tasks={tasks ?? []} users={users} projects={projects ?? []} onSaved={() => { notify(editTask ? "Task updated" : "Task created"); reload(); }} />
+      <TaskFormModal open={formOpen} onClose={closeTaskForm} initial={editTask} tasks={tasks ?? []} users={users} projects={projects ?? []} clients={clientLookup ?? []} onSaved={() => { notify(editTask ? "Task updated" : "Task created"); reload(); }} />
 
       <ConfirmModal
         open={!!confirmReq}

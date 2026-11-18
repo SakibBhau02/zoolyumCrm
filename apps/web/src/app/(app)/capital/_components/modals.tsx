@@ -223,7 +223,11 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = f
   // Projects belonging to a client (project rows carry clientId from /flow/projects)
   const projectsFor = (clientId: string) =>
     clientId ? (projects ?? []).filter((p: any) => p.clientId === clientId) : (projects ?? []);
-  const visibleProjects = projectsFor(f.clientId);
+  // A project always implies its client; infer it when the form was opened with
+  // a project preselected but no client.
+  const effectiveClientId = f.clientId || ((projects ?? []).find((p: any) => p.id === f.projectId)?.clientId ?? "");
+  const visibleProjects = projectsFor(effectiveClientId);
+  const selectedClient = (clients ?? []).find((c: any) => c.id === effectiveClientId) ?? null;
   const selectedProject = (projects ?? []).find((p: any) => p.id === f.projectId) ?? null;
   const linesPristine = (lines: InvoiceLineDraft[]) =>
     lines.length === 1 && !lines[0].description.trim() && !Number(lines[0].unitPrice || 0);
@@ -339,12 +343,14 @@ function InvoiceFormBody({ f, setF, clients, projects, showNumber, sectioned = f
       {showNumber && <Field label="Invoice number *"><Input value={f.invoiceNumber} onChange={(e) => setF({ ...f, invoiceNumber: e.target.value })} placeholder="ZLM-2026-0001" className="font-mono" /></Field>}
       <Field label="Client *"><Select value={f.clientId} onChange={(e) => onClientChange(e.target.value)}><option value="">Select client…</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
       <Field label="Project">
-        <Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)}>
-          <option value="">No project</option>
+        <Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)} disabled={!effectiveClientId}>
+          <option value="">{effectiveClientId ? "No project" : "Select a client first"}</option>
           {visibleProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
-        {f.clientId && visibleProjects.length === 0 && (
-          <p className="mt-1 text-meta text-muted-foreground">No projects under this client yet.</p>
+        {effectiveClientId && visibleProjects.length === 0 && (
+          <p className="mt-1 text-meta text-muted-foreground">
+            No projects under {selectedClient?.companyName ?? "this client"} yet — create one in Flow, then pick it here.
+          </p>
         )}
         {showAdvanceInput && (
           <div className="mt-2 flex items-center gap-2">
@@ -1106,7 +1112,15 @@ export function ExpenseModal({ open, onClose, onSaved, bankAccounts, categories,
           {f.scope === "PROJECT" ? (
             <div className="grid grid-cols-2 gap-4">
               <Field label="Client *"><Select value={f.clientId} onChange={(e) => onClientChange(e.target.value)}><option value="">Select client…</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
-              <Field label="Project *"><Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)}><option value="">Select project…</option>{projectsFor(f.clientId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+              <Field label="Project *">
+                <Select value={f.projectId} onChange={(e) => onProjectChange(e.target.value)} disabled={!f.clientId}>
+                  <option value="">{f.clientId ? "Select project…" : "Select a client first"}</option>
+                  {projectsFor(f.clientId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </Select>
+                {f.clientId && projectsFor(f.clientId).length === 0 && (
+                  <p className="mt-1 text-meta text-muted-foreground">No projects under this client yet — create one in Flow.</p>
+                )}
+              </Field>
             </div>
           ) : (
             <p className="rounded-xl bg-muted/40 px-3 py-2 text-meta text-muted-foreground">
@@ -1580,7 +1594,15 @@ export function AddIncomeModal({ open, bankAccounts, clients, projects, onClose,
         <FormBlock title="Who is it from?" hint="Optional — linking makes client profitability and the income table accurate.">
           <div className="grid grid-cols-2 gap-4">
             <Field label="Client"><Select value={f.clientId} onChange={(e) => setF({ ...f, clientId: e.target.value, projectId: "" })}><option value="">No client</option>{(clients ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.companyName}</option>)}</Select></Field>
-            <Field label="Project"><Select value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })}><option value="">No project</option>{projectsFor(f.clientId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>
+            <Field label="Project">
+              <Select value={f.projectId} onChange={(e) => setF({ ...f, projectId: e.target.value })} disabled={!f.clientId}>
+                <option value="">{f.clientId ? "No project" : "Select a client first"}</option>
+                {projectsFor(f.clientId).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </Select>
+              {f.clientId && projectsFor(f.clientId).length === 0 && (
+                <p className="mt-1 text-meta text-muted-foreground">No projects under this client yet — create one in Flow.</p>
+              )}
+            </Field>
           </div>
         </FormBlock>
 
