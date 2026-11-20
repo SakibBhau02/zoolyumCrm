@@ -49,6 +49,7 @@ import { GridView } from "./grid-view";
 import { PlansPanel } from "./plans-panel";
 import { SettingsPanel } from "./settings-panel";
 import { ItemDrawer } from "./item-drawer";
+import { DayPeek } from "./day-peek";
 import { CampaignForm, EventForm, FlightForm, PostForm } from "./forms";
 
 const VIEWS: { value: CalendarView; label: string; icon: any }[] = [
@@ -114,6 +115,7 @@ export function CalendarWorkspace({ fixedClientId }: { fixedClientId?: string })
   const [forbidden, setForbidden] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [drawer, setDrawer] = useState<CalItem | null>(null);
+  const [peekDay, setPeekDay] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ kind: "none" });
   const [toast, setToast] = useState<string | null>(null);
   const [quickTitle, setQuickTitle] = useState("");
@@ -496,7 +498,7 @@ export function CalendarWorkspace({ fixedClientId }: { fixedClientId?: string })
                 onOpen={setDrawer}
                 onMove={moveItem}
                 onAdd={(date) => setModal({ kind: "post", date })}
-                onOpenDay={(d) => goToDate(d, "day")}
+                onOpenDay={(d) => setPeekDay(d)}
               />
             </>
           ) : view === "week" ? (
@@ -550,6 +552,26 @@ export function CalendarWorkspace({ fixedClientId }: { fixedClientId?: string })
           )}
         </>
       )}
+
+      <DayPeek
+        date={peekDay}
+        items={viewItems}
+        dayInfo={peekDay ? feed?.days?.[peekDay] : undefined}
+        canEdit={canEdit}
+        onClose={() => setPeekDay(null)}
+        onOpenItem={(item) => {
+          setPeekDay(null);
+          setDrawer(item);
+        }}
+        onAdd={(date) => {
+          setPeekDay(null);
+          setModal({ kind: "post", date });
+        }}
+        onOpenDay={(date) => {
+          setPeekDay(null);
+          goToDate(date, "day");
+        }}
+      />
 
       <ItemDrawer
         item={drawer ? feed?.items.find((i) => i.key === drawer.key) ?? drawer : null}

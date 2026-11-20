@@ -51,6 +51,10 @@ export function MonthView({
             return (
               <div
                 key={date}
+                onClick={() => onOpenDay(date)}
+                role="button"
+                tabIndex={-1}
+                aria-label={`${Number(date.slice(8))} — view ${date}`}
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
@@ -72,7 +76,10 @@ export function MonthView({
               >
                 <div className="mb-1 flex items-center justify-between">
                   <button
-                    onClick={() => onOpenDay(date)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenDay(date);
+                    }}
                     className={cn(
                       "flex size-6 items-center justify-center rounded-full text-[11px] font-bold tabular-nums outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary/40",
                       isToday && "bg-primary text-primary-foreground hover:bg-primary",
@@ -88,7 +95,10 @@ export function MonthView({
                     {!!info?.overdue && <span className="size-1.5 rounded-full bg-rose-500" title={`${info.overdue} overdue`} />}
                     {!!info?.pendingApproval && <span className="size-1.5 rounded-full bg-amber-400" title={`${info.pendingApproval} awaiting review`} />}
                     <button
-                      onClick={() => onAdd(date)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAdd(date);
+                      }}
                       aria-label={`Add on ${date}`}
                       className="flex size-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                     >
@@ -103,7 +113,10 @@ export function MonthView({
                   ))}
                   {dayItems.length > 4 && (
                     <button
-                      onClick={() => onOpenDay(date)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenDay(date);
+                      }}
                       className="min-h-6 rounded px-1 text-left text-[11px] font-semibold text-primary hover:underline"
                     >
                       +{dayItems.length - 4} more
