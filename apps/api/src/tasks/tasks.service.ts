@@ -26,6 +26,24 @@ function parseTaskStatus(value?: string | null): TaskStatus | null {
 }
 
 const PRIORITY_SET = new Set<string>(["LOW", "MEDIUM", "HIGH", "URGENT"]);
+/**
+ * Old task-type values → the categories they now belong to. Department rules
+ * saved before the rename must keep matching, so the check below accepts any
+ * alias of the requested category.
+ */
+const LEGACY_TASK_TYPE_ALIAS: Record<string, string[]> = {
+  graphics: ["design"],
+  development: ["bug", "feature", "improvement"],
+  admin: ["documentation"],
+};
+/** Reverse lookup: an old value sent by a stale client folds onto its category. */
+const CANONICAL_FOR_LEGACY: Record<string, string[]> = {
+  design: ["graphics"],
+  bug: ["development"],
+  feature: ["development"],
+  improvement: ["development"],
+  documentation: ["admin"],
+};
 const AUTOMATION_TRIGGERS = new Set<string>(["status-changed", "priority-changed", "assigned"]);
 const AUTOMATION_ACTIONS = new Set<string>([
   "assign-to", "set-priority", "change-status", "change-priority", "notify", "create-task", "archive",
@@ -54,6 +72,20 @@ function assertDescription(value: any): string | undefined {
     throw new BadRequestException("Description must be 20,000 characters or fewer");
   }
   return description;
+}
+
+/** Category key: legacy values fold onto their category, unknown keys are kept. */
+function normalizeCategory(value?: any): string {
+  const v = cleanText(value ?? "").toLowerCase();
+  if (!v) return "general";
+  return CANONICAL_FOR_LEGACY[v]?.[0] ?? v;
+}
+
+/** Sub-category key, or null. Free-form so a new sub-type needs no migration. */
+function cleanSubtype(value?: any): string | null {
+  if (value === undefined || value === null) return null;
+  const v = cleanText(value).toLowerCase().replace(/\s+/g, "_");
+  return v ? v.slice(0, 40) : null;
 }
 
 function assertPriority(value: any): Priority {
@@ -193,7 +225,13 @@ export class TasksService {
     );
     if (!rules.length) return;
     const wanted = String(taskType ?? "general").toLowerCase();
-    const allows = (types: string[]) => types.map((t) => String(t).toLowerCase()).includes(wanted);
+    // Rules saved before the category rename still say "design"/"bug"/…; accept
+    // those aliases so an old rule keeps matching the category it now maps to.
+    const aliases = [wanted, ...(LEGACY_TASK_TYPE_ALIAS[wanted] ?? []), ...(CANONICAL_FOR_LEGACY[wanted] ?? [])];
+    const allows = (types: string[]) => {
+      const cleaned = types.map((t) => String(t).toLowerCase());
+      return aliases.some((a) => cleaned.includes(a));
+    };
 
     if (!assignedToId) {
       if (rules.some((r: any) => allows(r.taskTypes))) return;
@@ -1053,7 +1091,7 @@ export class TasksService {
     return tasks.map((t) => ({ ...t, priorityScore: score(t) })).sort((a, b) => b.priorityScore - a.priorityScore);
   }
 
-  async list(query: { status?: string; priority?: string; taskType?: string; assignee?: string; projectId?: string; sprintId?: string; q?: string; parent?: string; mine?: boolean; sort?: string; archived?: string; employeeId?: string; limit?: string | number; offset?: string | number }, user?: any) {
+  async list(query: { status?: string; priority?: string; taskType?: string; taskSubType?: string; assignee?: string; projectId?: string; sprintId?: string; q?: string; parent?: string; mine?: boolean; sort?: string; archived?: string; employeeId?: string; limit?: string | number; offset?: string | number }, user?: any) {
     // `mine` is resolved from the JWT here — the query string used to carry an
     // employeeId that the client never sent, so "Mine" silently matched nothing.
     // One lookup serves both: this ran the same User query twice per list call.
@@ -1089,7 +1127,8 @@ export class TasksService {
           ...(String(query.archived) === "true" ? { archivedAt: { not: null } } : { archivedAt: null }),
           ...(statusFilter ? { status: statusFilter } : {}),
           ...(priorityFilter ? { priority: priorityFilter as Priority } : {}),
-          ...(query.taskType ? { taskType: query.taskType } : {}),
+          ...(query.taskType ? { taskType: normalizeCategory(query.taskType) } : {}),
+          ...(query.taskSubType ? { taskSubType: cleanSubtype(query.taskSubType) } : {}),
           ...(query.assignee ? { assignedToId: query.assignee } : {}),
           ...(query.projectId ? { projectId: query.projectId } : {}),
           ...(query.sprintId ? { sprintId: query.sprintId } : {}),
@@ -1189,6 +1228,7 @@ export class TasksService {
     dueDate?: string;
     startDate?: string;
     taskType?: string;
+    taskSubType?: string;
     estimatedHours?: number;
     isClientVisible?: boolean;
     parentTaskId?: string;
@@ -1268,7 +1308,8 @@ export class TasksService {
         priority,
         dueDate,
         startDate,
-        taskType: body.taskType ?? "general",
+        taskType: normalizeCategory(body.taskType),
+        taskSubType: cleanSubtype(body.taskSubType),
         estimatedHours,
         isClientVisible: body.isClientVisible ?? false,
         parentTaskId: body.parentTaskId,
@@ -1345,7 +1386,17 @@ export class TasksService {
       push("priority", existing.priority, priority);
       data.priority = priority;
     }
-    if (body.taskType !== undefined) push("taskType", existing.taskType, body.taskType), (data.taskType = body.taskType);
+    if (body.taskType !== undefined) push("taskType", existing.taskType, normalizeCategory(body.taskType)), (data.taskType = normalizeCategory(body.taskType));
+    if (body.taskSubType !== undefined) {
+      const nextSub = cleanSubtype(body.taskSubType);
+      // A sub-category only makes sense under its own category: switching the
+      // category without sending a new sub-type clears the stale one.
+      push("taskSubType", existing.taskSubType, nextSub);
+      data.taskSubType = nextSub;
+    } else if (body.taskType !== undefined && normalizeCategory(body.taskType) !== existing.taskType) {
+      push("taskSubType", existing.taskSubType, null);
+      data.taskSubType = null;
+    }
     if (body.assignedToId !== undefined) push("assignee", existing.assignedToId, body.assignedToId), (data.assignedToId = body.assignedToId);
     // Reassignment records who handed it over, so "assigned by X" survives the
     // hand-off instead of silently pointing at the original creator.

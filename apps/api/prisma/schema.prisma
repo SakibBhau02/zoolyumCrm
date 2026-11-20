@@ -1085,6 +1085,9 @@ model Task {
   referenceLinks      Json?               @default("[]")
   activityLog         Json?               @default("[]")
   taskType            String              @default("general")
+  /// Sub-category inside `taskType` (e.g. graphics → social_post). Nullable so
+  /// older tasks and API callers that only send a category keep working.
+  taskSubType         String?
   startDate           DateTime?
   actualHours         Decimal             @default(0) @db.Decimal(8, 2)
   sortOrder           Int                 @default(0)

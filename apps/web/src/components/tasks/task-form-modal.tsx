@@ -27,6 +27,8 @@ import {
   TASK_TYPES,
   TASK_TYPE_META,
   label,
+  subtypesFor,
+  subtypeLabel,
 } from "@/components/tasks/domain";
 
 export type TaskRow = {
@@ -36,6 +38,7 @@ export type TaskRow = {
   status: string;
   priority: string;
   taskType?: string;
+  taskSubType?: string | null;
   dueDate?: string | null;
   startDate?: string | null;
   estimatedHours?: number | null;
@@ -99,7 +102,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
   projectId?: string;
 }) {
   const [f, setF] = useState({
-    title: "", description: "", projectId: "", clientId: "", priority: "MEDIUM", status: "TODO", taskType: "general",
+    title: "", description: "", projectId: "", clientId: "", priority: "MEDIUM", status: "TODO", taskType: "general", taskSubType: "",
     assignedToId: "", extraAssignees: [] as string[], dueDate: "", startDate: "",
     estimatedHours: "", tags: "", parentTaskId: "", isClientVisible: false, isRecurring: false, recurrenceSchedule: "weekly",
     referenceLinks: [] as { id: string; title: string; url: string }[],
@@ -142,7 +145,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
       ? {
         title: initial.title, description: initial.description ?? "", projectId: initial.projectId ?? "",
         clientId: linkedProject?.clientId ?? "",
-        priority: initial.priority || "MEDIUM", status: initial.status, taskType: initial.taskType ?? "general",
+        priority: initial.priority || "MEDIUM", status: initial.status, taskType: initial.taskType ?? "general", taskSubType: initial.taskSubType ?? "",
         assignedToId: initial.assignedToId ?? "",
         extraAssignees: (initial.assignees ?? []).map((a: any) => a.id),
         dueDate: initial.dueDate?.slice(0, 10) ?? "", startDate: initial.startDate?.slice(0, 10) ?? "",
@@ -156,7 +159,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
       }
       : {
         title: "", description: "", projectId: projectId ?? "", clientId: linkedProject?.clientId ?? "",
-        priority: "MEDIUM", status: "TODO", taskType: "general",
+        priority: "MEDIUM", status: "TODO", taskType: "general", taskSubType: "",
         assignedToId: "", extraAssignees: [], dueDate: "", startDate: "",
         estimatedHours: "", tags: "", parentTaskId: "", isClientVisible: false, isRecurring: false, recurrenceSchedule: "weekly",
         referenceLinks: [], customFields: [], attachments: [],
@@ -178,6 +181,8 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
     const base = rule.taskTypes as string[];
     return base.includes(f.taskType) ? base : [...base, f.taskType];
   })();
+  /** Sub-categories under the chosen category — empty for free-form values. */
+  const subOptions = subtypesFor(f.taskType);
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!f.title.trim()) {
@@ -202,7 +207,7 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
           projectId: f.projectId || undefined, assignedToId: f.assignedToId || undefined,
           // reporterId is no longer sent — the server sets it from the caller
           status: f.status,
-          priority: f.priority, taskType: f.taskType,
+          priority: f.priority, taskType: f.taskType, taskSubType: f.taskSubType || null,
           dueDate: f.dueDate || null, startDate: f.startDate || null,
           estimatedHours: f.estimatedHours ? Number(f.estimatedHours) : undefined,
           parentTaskId: f.parentTaskId || undefined,
@@ -388,13 +393,32 @@ export function TaskFormModal({ open, onClose, initial, tasks, users, projects, 
               </Select>
             </Field>
             <Field label="Type">
-              <Select value={f.taskType} onChange={(e) => setF({ ...f, taskType: e.target.value })}>
+              <Select value={f.taskType} onChange={(e) => setF({ ...f, taskType: e.target.value, taskSubType: "" })}>
                 {allowedTypes.map((t) => (
                   <option key={t} value={t}>
                     {(TASK_TYPE_META as Record<string, { label: string }>)[t]?.label ??
                       t.replace(/\b\w/g, (c) => c.toUpperCase())}
                   </option>
                 ))}
+              </Select>
+            </Field>
+            <Field
+              label="Sub-type"
+              hint={subOptions.length ? undefined : "This type has no sub-categories yet"}
+            >
+              <Select
+                value={f.taskSubType}
+                onChange={(e) => setF({ ...f, taskSubType: e.target.value })}
+                disabled={!subOptions.length}
+              >
+                <option value="">Not set</option>
+                {subOptions.map((s) => (
+                  <option key={s.key} value={s.key}>{s.label}</option>
+                ))}
+                {/* An older/renamed value stays visible instead of silently clearing. */}
+                {f.taskSubType && !subOptions.some((s) => s.key === f.taskSubType) && (
+                  <option value={f.taskSubType}>{subtypeLabel(f.taskType, f.taskSubType)}</option>
+                )}
               </Select>
             </Field>
             <Field label="Start date">

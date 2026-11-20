@@ -63,12 +63,12 @@ const dateOnly = (value: string | Date, field: string): Date => {
   );
 };
 
-/** Deliverable kind → the task type the department rules speak in. */
+/** Deliverable kind → the task category the department rules speak in. */
 const KIND_TASK_TYPE: Record<string, string> = {
-  GRAPHIC: "design",
+  GRAPHIC: "graphics",
   VIDEO: "video",
-  PHOTO: "photo",
-  COPY: "copy",
+  PHOTO: "graphics",
+  COPY: "script",
   OTHER: "general",
 };
 
@@ -1618,6 +1618,7 @@ export class FlowService {
             ? dateOnly(dto.dueDateOverride, "Due date").toISOString()
             : d.dueDate?.toISOString(),
           taskType: dto.taskType ?? KIND_TASK_TYPE[d.kind ?? "OTHER"] ?? "general",
+          taskSubType: (dto as any).taskSubType,
           isClientVisible: dto.clientVisible ?? d.clientVisible,
           assignees: coAssignees.map((e) => ({
             id: e.id,

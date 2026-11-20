@@ -30,14 +30,18 @@ import {
   GANTT_BAR,
   PRIORITIES,
   PRIORITY_META,
+  TASK_CATEGORIES,
   TASK_STATUSES,
   TASK_STATUS_META,
   TASK_STATUS_OPTS,
-  TASK_TYPES,
-  TASK_TYPE_META,
+  categoryLabel,
+  categoryTone,
   label,
   normalizeStatus,
   statusLabel,
+  subtypesFor,
+  subtypeLabel,
+  taskTypeLabel,
 } from "@/components/tasks/domain";
 
 type TaskRow = {
@@ -47,6 +51,7 @@ type TaskRow = {
   status: string;
   priority: string;
   taskType?: string;
+  taskSubType?: string | null;
   dueDate?: string | null;
   startDate?: string | null;
   estimatedHours?: number | null;
@@ -106,9 +111,6 @@ const REACTION_EMOJIS = ["👍", "❤️", "😂", "🎉", "😮", "😢", "👏
 /** Base tone per priority / type — the canonical maps live in ./domain. */
 const PRIORITY_TONES: Record<string, string> = Object.fromEntries(
   PRIORITIES.map((p) => [p, PRIORITY_META[p].tone])
-);
-const TYPE_TONES: Record<string, string> = Object.fromEntries(
-  TASK_TYPES.map((t) => [t, TASK_TYPE_META[t].tone])
 );
 /** Status pill colour by real status — legacy values are normalised first. */
 const STATUS_CHIP: Record<string, string> = Object.fromEntries(
@@ -364,7 +366,7 @@ function FragmentRow({ t, i, expanded, hasChildren, childrenList, onToggleExpand
             </div>
           </div>
         </Td>
-        <Td className="hidden md:table-cell">{t.taskType ? <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-bold capitalize", TYPE_TONES[t.taskType] ?? TYPE_TONES.general)}><span className="size-1.5 rounded-full bg-current opacity-60" />{t.taskType}</span> : <span className="text-muted-foreground/50">—</span>}</Td>
+        <Td className="hidden md:table-cell">{t.taskType ? <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-bold", categoryTone(t.taskType))} title={categoryLabel(t.taskType)}><span className="size-1.5 rounded-full bg-current opacity-60" />{taskTypeLabel(t.taskType, t.taskSubType)}</span> : <span className="text-muted-foreground/50">—</span>}</Td>
         <Td><StatusBadge status={t.status} /></Td>
         <Td className="hidden sm:table-cell">
           <Select aria-label={`Priority for ${t.title}`} value={t.priority} onChange={(e) => { e.stopPropagation(); apiFetch(`/tasks/${t.id}`, { method: "PATCH", body: JSON.stringify({ priority: e.target.value }) }).then(() => onChanged()).catch(() => {}); }} className="!w-28 !py-1" onClick={(e) => e.stopPropagation()}>
@@ -413,6 +415,7 @@ function TasksPageInner() {
   const [fStatus, setFStatus] = useState("");
   const [fPriority, setFPriority] = useState("");
   const [fType, setFType] = useState("");
+  const [fSubType, setFSubType] = useState("");
   const [fProject, setFProject] = useState("");
   const [fAssignee, setFAssignee] = useState("");
   const [sort, setSort] = useState("due");
@@ -449,7 +452,7 @@ function TasksPageInner() {
   }, [q]);
   const activeSprint = (sprints ?? []).find((s) => s.id === fSprint) ?? null;
   /** How many advanced filters are on — drives the "Filters (n)" badge and chips. */
-  const activeFilterCount = [fStatus, fPriority, fType, fProject, fAssignee].filter(Boolean).length;
+  const activeFilterCount = [fStatus, fPriority, fType, fSubType, fProject, fAssignee].filter(Boolean).length;
 
   const [tasks, setTasks] = useState<TaskRow[] | null>(null);
   const [tasksErr, setTasksErr] = useState<string | null>(null);
@@ -489,13 +492,14 @@ function TasksPageInner() {
     if (fStatus) p.set("status", fStatus);
     if (fPriority) p.set("priority", fPriority);
     if (fType) p.set("taskType", fType);
+    if (fType && fSubType) p.set("taskSubType", fSubType);
     if (fProject) p.set("projectId", fProject);
     if (fAssignee) p.set("assignee", fAssignee);
     if (fSprint) p.set("sprintId", fSprint);
     if (mine) p.set("mine", "true");
     p.set("sort", sort);
     return p.toString();
-  }, [dq, fStatus, fPriority, fType, fProject, fAssignee, fSprint, mine, sort]);
+  }, [dq, fStatus, fPriority, fType, fSubType, fProject, fAssignee, fSprint, mine, sort]);
   useEffect(() => {
     let cancelled = false;
     setTasksErr(null);
@@ -1044,7 +1048,7 @@ function TasksPageInner() {
           <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5", t.project?.name ? "border-border/60 bg-muted/40" : "border-dashed border-border bg-transparent")}>
             <FolderKanban className="size-3.5" />{t.project?.name ?? "No project"}
           </span>
-          <span className="ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-bold capitalize" style={{ borderColor: "var(--border)" }}><span className={cn("size-1.5 rounded-full", TYPE_TONES[t.taskType ?? "general"]?.includes("rose") ? "bg-rose-400" : TYPE_TONES[t.taskType ?? "general"]?.includes("primary") ? "bg-primary" : "bg-muted-foreground")} />{t.taskType ?? "general"}</span>
+          <span className={cn("ml-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-micro font-bold", categoryTone(t.taskType))} title={taskTypeLabel(t.taskType, t.taskSubType)}><span className="size-1.5 rounded-full bg-current opacity-60" />{taskTypeLabel(t.taskType, t.taskSubType)}</span>
         </div>
         <div className="flex items-start justify-between gap-2">
           <p className="min-w-0 line-clamp-2 flex-1 text-body font-bold leading-snug">{t.title}</p>
@@ -1222,7 +1226,7 @@ function TasksPageInner() {
                   </p>
                   {activeFilterCount > 0 && (
                     <button
-                      onClick={() => { setFStatus(""); setFPriority(""); setFType(""); setFProject(""); setFAssignee(""); setQ(""); }}
+                      onClick={() => { setFStatus(""); setFPriority(""); setFType(""); setFSubType(""); setFProject(""); setFAssignee(""); setQ(""); }}
                       className="mt-2 rounded-xl border border-border px-3 py-1.5 text-meta font-bold text-muted-foreground hover:text-foreground"
                     >
                       Clear all filters
@@ -1245,7 +1249,7 @@ function TasksPageInner() {
                         {c.isBlocked && <span className="rounded-full bg-rose-500/15 px-1.5 py-0.5 text-micro font-bold text-rose-400">BLOCKED</span>}
                       </div>
                     </Td>
-                    <Td className="hidden md:table-cell">{c.taskType ? <span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold capitalize", TYPE_TONES[c.taskType] ?? TYPE_TONES.general)}>{c.taskType}</span> : <span className="text-muted-foreground/50">-</span>}</Td>
+                    <Td className="hidden md:table-cell">{c.taskType ? <span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold", categoryTone(c.taskType))}>{taskTypeLabel(c.taskType, (c as any).taskSubType)}</span> : <span className="text-muted-foreground/50">-</span>}</Td>
                     <Td><StatusBadge status={c.status} /></Td>
                     <Td className="hidden sm:table-cell"><span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold", PRIORITY_TONES[c.priority] ?? PRIORITY_TONES.MEDIUM)}>{c.priority}</span></Td>
                     <Td className="hidden tabular-nums text-muted-foreground sm:table-cell">{formatDay(c.dueDate)}</Td>
@@ -1517,6 +1521,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
               setFStatus(f.status ? normalizeStatus(f.status) : "");
               setFPriority(f.priority ?? "");
               setFType(f.taskType ?? "");
+              setFSubType((f as any).taskSubType ?? "");
               setFProject(f.projectId ?? "");
               setFAssignee(f.assignee ?? f.assigneeId ?? "");
               setFSprint(f.sprintId ?? "");
@@ -1591,7 +1596,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
 
             {activeFilterCount > 0 && (
               <button
-                onClick={() => { setFStatus(""); setFPriority(""); setFType(""); setFProject(""); setFAssignee(""); setQ(""); }}
+                onClick={() => { setFStatus(""); setFPriority(""); setFType(""); setFSubType(""); setFProject(""); setFAssignee(""); setQ(""); }}
                 className="flex items-center gap-1 text-meta font-bold text-primary hover:underline"
               >
                 <X className="size-3.5" /> Clear all
@@ -1610,7 +1615,8 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
             <div className="flex flex-wrap items-center gap-1.5">
               {fStatus && <FilterChip label={statusLabel(fStatus)} onClear={() => setFStatus("")} />}
               {fPriority && <FilterChip label={label(fPriority)} onClear={() => setFPriority("")} />}
-              {fType && <FilterChip label={fType} onClear={() => setFType("")} />}
+              {fType && <FilterChip label={categoryLabel(fType)} onClear={() => { setFType(""); setFSubType(""); }} />}
+              {fType && fSubType && <FilterChip label={subtypeLabel(fType, fSubType)} onClear={() => setFSubType("")} />}
               {fProject && <FilterChip label={(projects ?? []).find((p) => p.id === fProject)?.name ?? "Project"} onClear={() => setFProject("")} />}
               {fAssignee && <FilterChip label={users.find((u) => u.id === fAssignee)?.name ?? "Assignee"} onClear={() => setFAssignee("")} />}
               {myDayOnly && <FilterChip label="My Day" onClear={() => setMyDayOnly(false)} />}
@@ -1622,7 +1628,17 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
             <div id="tasks-advanced" className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-muted/20 p-2">
               <Select aria-label="Filter by status" value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="!w-36"><option value="">All statuses</option>{TASK_STATUS_OPTS.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}</Select>
               <Select aria-label="Filter by priority" value={fPriority} onChange={(e) => setFPriority(e.target.value)} className="!w-32"><option value="">All priorities</option>{PRIORITIES.map((p) => (<option key={p} value={p}>{label(p)}</option>))}</Select>
-              <Select aria-label="Filter by type" value={fType} onChange={(e) => setFType(e.target.value)} className="!w-36"><option value="">All types</option>{TASK_TYPES.map((t) => (<option key={t} value={t}>{t}</option>))}</Select>
+              <Select aria-label="Filter by type" value={fType} onChange={(e) => { setFType(e.target.value); setFSubType(""); }} className="!w-40"><option value="">All types</option>{TASK_CATEGORIES.map((c) => (<option key={c.key} value={c.key}>{c.label}</option>))}</Select>
+              {fType && subtypesFor(fType).length > 0 && (
+                <Select aria-label="Filter by sub type" value={fSubType} onChange={(e) => setFSubType(e.target.value)} className="!w-40">
+                  <option value="">All {categoryLabel(fType).toLowerCase()}</option>
+                  {subtypesFor(fType).map((s) => (<option key={s.key} value={s.key}>{s.label}</option>))}
+                  {/* A value stored before this taxonomy existed must stay filterable. */}
+                  {fSubType && !subtypesFor(fType).some((s) => s.key === fSubType) && (
+                    <option value={fSubType}>{subtypeLabel(fType, fSubType)}</option>
+                  )}
+                </Select>
+              )}
               <Select aria-label="Filter by project" value={fProject} onChange={(e) => setFProject(e.target.value)} className="!w-40"><option value="">All projects</option>{(projects ?? []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}</Select>
               {view === "board" && (
                 <Select aria-label="Group board into swimlanes" value={swimlane} onChange={(e) => setSwimlane(e.target.value)} className="!w-36">
@@ -1677,8 +1693,8 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                 <span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold uppercase tracking-wide", PRIORITY_TONES[detail.priority] ?? PRIORITY_TONES.MEDIUM)}>
                   {detail.priority}
                 </span>
-                <span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold capitalize", TYPE_TONES[detail.taskType ?? "general"] ?? TYPE_TONES.general)}>
-                  {detail.taskType ?? "general"}
+                <span className={cn("rounded-full border px-2 py-0.5 text-micro font-bold", categoryTone(detail.taskType))}>
+                  {taskTypeLabel(detail.taskType, detail.taskSubType)}
                 </span>
                 {detail.dueDate && (
                   <span className={cn(
@@ -1834,7 +1850,7 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                         <h4 className="text-micro font-bold uppercase tracking-wider text-muted-foreground">Brief &amp; description</h4>
                         <span className="ml-auto flex items-center gap-1.5">
                           <span className="flex items-center gap-1 text-micro font-semibold text-muted-foreground">
-                            <Zap className="size-3.5" /> {detail.taskType ?? "general"}
+                            <Zap className="size-3.5" /> {taskTypeLabel(detail.taskType, detail.taskSubType)}
                           </span>
                           {canFull && !descEdit && (
                             <button
@@ -2145,7 +2161,8 @@ const width = Math.max(CELL, Math.round((span.end.getTime() - span.start.getTime
                           </Field>
                           <Field label="Assignee"><Select value={detail.assignedToId ?? ""} onChange={(e) => canFull && patchDetail({ assignedToId: e.target.value || null }, "Assignee updated")} disabled={!canFull} className="!py-1.5"><option value="">Unassigned</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
                           <Field label="Reporter"><Select value={detail.reporterId ?? ""} onChange={(e) => canFull && patchDetail({ reporterId: e.target.value || null }, "Reporter updated")} disabled={!canFull} className="!py-1.5"><option value="">None</option>{users.map((u) => (<option key={u.id} value={u.id}>{u.name}</option>))}</Select></Field>
-                          <Field label="Type"><Select value={detail.taskType ?? "general"} onChange={(e) => canFull && patchDetail({ taskType: e.target.value }, "Type updated")} disabled={!canFull} className="!py-1.5">{TASK_TYPES.map((t) => (<option key={t} value={t}>{t}</option>))}</Select></Field>
+                          <Field label="Type"><Select value={detail.taskType ?? "general"} onChange={(e) => canFull && patchDetail({ taskType: e.target.value, taskSubType: null }, "Type updated")} disabled={!canFull} className="!py-1.5">{TASK_CATEGORIES.map((c) => (<option key={c.key} value={c.key}>{c.label}</option>))}{/* Keep a legacy value selectable while editing an old task. */}{!TASK_CATEGORIES.some((c) => c.key === detail.taskType) && detail.taskType && (<option value={detail.taskType}>{categoryLabel(detail.taskType)}</option>)}</Select></Field>
+                          <Field label="Sub-type"><Select value={detail.taskSubType ?? ""} onChange={(e) => canFull && patchDetail({ taskSubType: e.target.value || null }, "Sub-type updated")} disabled={!canFull || !subtypesFor(detail.taskType).length} className="!py-1.5"><option value="">Not set</option>{subtypesFor(detail.taskType).map((s) => (<option key={s.key} value={s.key}>{s.label}</option>))}{detail.taskSubType && !subtypesFor(detail.taskType).some((s) => s.key === detail.taskSubType) && (<option value={detail.taskSubType}>{subtypeLabel(detail.taskType, detail.taskSubType)}</option>)}</Select></Field>
                           <Field label="Estimated hours"><Input type="number" min={0} step={0.5} value={detail.estimatedHours ?? ""} onChange={(e) => canFull && patchDetail({ estimatedHours: e.target.value ? Number(e.target.value) : null }, "Hours updated")} disabled={!canFull} /></Field>
                           <Field label="Start date"><Input type="date" value={detail.startDate?.slice(0, 10) ?? ""} onChange={(e) => canFull && patchDetail({ startDate: e.target.value || null }, "Start date updated")} disabled={!canFull} /></Field>
                           <Field label="Due date"><Input type="date" value={detail.dueDate?.slice(0, 10) ?? ""} onChange={(e) => canFull && patchDetail({ dueDate: e.target.value || null }, "Due date updated")} disabled={!canFull} /></Field>

@@ -223,6 +223,12 @@ export class AssignDeliverableTasksDto {
   @IsString()
   @MaxLength(40)
   taskType?: string;
+
+  /** Optional sub-category inside the chosen task category. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  taskSubType?: string;
 }
 
 export class GenerateReportDto {

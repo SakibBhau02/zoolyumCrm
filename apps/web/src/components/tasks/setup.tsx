@@ -22,8 +22,8 @@ import { Field, FormActions, Input, Modal, Select } from "@/components/ui";
 import { EstimationPanel } from "@/components/tasks/estimation";
 import {
   PRIORITIES,
+  TASK_CATEGORIES,
   TASK_STATUS_OPTS,
-  TASK_TYPES,
   label,
   normalizePriority,
 } from "@/components/tasks/domain";
@@ -168,9 +168,9 @@ export function TemplateModal({
             <div key={i} className="flex items-center gap-2">
               <Input value={r.title} onChange={(e) => patchRow(i, { title: e.target.value })} placeholder="Task title" />
               <Select value={r.taskType} onChange={(e) => patchRow(i, { taskType: e.target.value })} className="!w-32">
-                {TASK_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {TASK_CATEGORIES.map((c) => (
+                  <option key={c.key} value={c.key}>
+                    {c.label}
                   </option>
                 ))}
               </Select>
@@ -807,18 +807,18 @@ export function TaskTypeRulesPanel({ onNotify }: { onNotify?: (m: string) => voi
                     </span>
                   )}
                   <div className={cn("ml-auto flex flex-wrap gap-1", !canPlan && "pointer-events-none opacity-60")}>
-                    {TASK_TYPES.map((t) => {
-                      const on = active.includes(t);
+                    {TASK_CATEGORIES.map((c) => {
+                      const on = active.includes(c.key);
                       return (
                         <button
-                          key={t}
-                          onClick={() => toggleType(d, t)}
+                          key={c.key}
+                          onClick={() => toggleType(d, c.key)}
                           className={cn(
-                            "rounded-full border px-2 py-0.5 text-micro font-bold capitalize transition-colors",
+                            "rounded-full border px-2 py-0.5 text-micro font-bold transition-colors",
                             on ? "border-primary/40 bg-primary/15 text-primary" : "border-border text-muted-foreground hover:text-foreground"
                           )}
                         >
-                          {t}
+                          {c.label}
                         </button>
                       );
                     })}
